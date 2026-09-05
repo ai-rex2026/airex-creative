@@ -1,0 +1,15 @@
+{
+  "size": { "w": 1080, "h": 1080 },
+  "theme": { "bg": "#000", "accent": "#f0b429", "glow": "rgba(240,180,41,.16)" },
+  "logo": { "name": "AI-REX", "sub": "エーアイレックス", "mark": "assets/rex-clean.png" },
+  "headline": [
+    { "text": "その広告費、", "size": 118 },
+    { "text": "効いてますか？", "size": 118, "accent": true }
+  ],
+  "ribbon": { "top": "競合と自社を丸裸に", "bottom": "無料でAI診断" },
+  "body": "どのキーワードに、いくら取られているか。競合がどこで勝っているか。URLを入れるだけでレポートにします。",
+  "cta": "10分で診断する",
+  "art": "assets/rex-clean.png",
+  "artBottom": 300,
+  "artWidth": 520
+}

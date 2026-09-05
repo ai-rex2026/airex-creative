@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><style>
+  @page { margin: 0 }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1080px; height:1920px; }
+  body {
+    font-family: "Hiragino Sans", "ヒラギノ角ゴシック", sans-serif;
+    background:#000;
+    overflow:hidden;
+  }
+  .stage { position:relative; width:1080px; height:1920px; overflow:hidden;
+    background:
+      radial-gradient(120% 70% at 50% 8%, rgba(240,180,41,.20) 0%, rgba(0,0,0,0) 60%),
+      linear-gradient(180deg, #2a2a2a 0%, #0b0b0b 45%, #000 100%);
+  }
+  /* 右上の斜めストライプ */
+  .stripes { position:absolute; top:-70.00px; right:-70.00px; width:360.00px; height:300.00px;
+    transform:rotate(-38deg); display:flex; gap:14.00px; align-items:flex-start; }
+  .stripes i { display:block; width:16.00px; height:100%; background:#f0b429; opacity:.85; }
+  .stripes i:nth-child(2){ height:72%; opacity:.55 }
+  .stripes i:nth-child(3){ height:88%; background:#fff; opacity:.28 }
+  .stripes i:nth-child(4){ height:56%; opacity:.35 }
+
+  .logo { position:absolute; top:46.00px; left:46.00px; display:flex; align-items:center; gap:16.00px }
+  .logo img { width:92.00px; height:92.00px; object-fit:contain; mix-blend-mode:screen }
+  .logo .wm { line-height:1 }
+  .logo .wm b { display:block; font-weight:900; color:#fff; font-size:50.00px; letter-spacing:1.00px }
+  .logo .wm span { display:block; color:#f0b429; font-size:20.00px; font-weight:700; letter-spacing:3.00px; margin-top:6.00px }
+
+  .art { position:absolute; right:-70.00px; bottom:430.00px; width:1000.00px; z-index:1;
+    mix-blend-mode:screen; opacity:.9 }
+  .art img { width:100%; display:block }
+
+  .copy { position:absolute; top:200.00px; left:52.00px; right:52.00px; z-index:4 }
+  .hl-line { font-weight:900; color:#fff; line-height:1.02; letter-spacing:-4.00px;
+    text-shadow: 0 10.00px 22.00px rgba(0,0,0,.65);
+    -webkit-text-stroke: 2.00px rgba(0,0,0,.35); }
+  .hl-line.accent { color:#f0b429;
+    background:linear-gradient(180deg, #ffe9a3 0%, #f0b429 48%, #b8860b 100%);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .subhead { margin-top:14.00px; font-weight:900; color:#fff; font-size:64.00px; letter-spacing:-1.00px;
+    text-shadow:0 6.00px 16.00px rgba(0,0,0,.6) }
+
+  .ribbon { position:relative; display:inline-block; margin-top:38.00px; padding:18.00px 38.00px 22.00px;
+    background:#fff; transform:skewX(-6deg); box-shadow:0 10.00px 24.00px rgba(0,0,0,.45);
+    clip-path: polygon(0 6%, 100% 0, 99% 100%, 1% 94%); }
+  .ribbon > div { transform:skewX(6deg) }
+  .ribbon .r1 { font-weight:900; color:#111; font-size:46.00px; letter-spacing:-1.00px }
+  .ribbon .r2 { font-weight:900; color:#c30d1e; font-size:64.00px; letter-spacing:-2.00px; margin-top:4.00px;
+    border-bottom:8.00px solid #c30d1e; display:inline-block; padding-bottom:2.00px }
+
+  .footer { position:absolute; left:0; right:0; bottom:0; z-index:6; background:#000;
+    padding:44.00px 52.00px 52.00px; }
+  .footer p { color:#fff; font-weight:700; font-size:38.00px; line-height:1.5; letter-spacing:-0.50px }
+  .cta { margin:34.00px auto 0; width:fit-content; background:#fff; border-radius:999.00px;
+    padding:24.00px 64.00px; display:flex; align-items:center; gap:18.00px;
+    box-shadow:0 8.00px 20.00px rgba(255,255,255,.18) }
+  .cta svg { width:44.00px; height:44.00px }
+  .cta b { font-weight:900; color:#111; font-size:46.00px; letter-spacing:-1.00px }
+</style></head>
+<body><div class="stage">
+  <div class="stripes"><i></i><i></i><i></i><i></i></div>
+  <div class="art"><img src="file:///Users/yuhenagisa/projects/airex-creative/banner/assets/rex-clean.png"></div>
+  <div class="logo">
+    <img src="file:///Users/yuhenagisa/projects/airex-creative/banner/assets/rex-clean.png">
+    <div class="wm"><b>AI-REX</b><span>エーアイレックス</span></div>
+  </div>
+  <div class="copy">
+    <div class="hl-line " style="font-size:140.00px">広告運用、</div>
+<div class="hl-line accent" style="font-size:128.00px">まるごとAIに。</div>
+    <div class="subhead">分析 → 制作 → 配信 → 改善</div>
+    <div class="ribbon"><div class="r1">作って、出して、直すまで</div><div class="r2">ぜんぶ自動</div></div>
+  </div>
+  <div class="footer">
+    <p>AIが競合を分析し、バナーとLPを作り、配信して、数字を見て差し替える。人が決めるのはゴールだけ。</p>
+    <div class="cta">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#1a73e8" stroke-width="2.4" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7L12 19"/></svg>
+      <b>資料を受け取る</b>
+    </div>
+  </div>
+</div></body></html>

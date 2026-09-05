@@ -1,0 +1,37 @@
+{
+  "size": {
+    "w": 1080,
+    "h": 1920
+  },
+  "theme": {
+    "bg": "#000",
+    "accent": "#f0b429",
+    "glow": "rgba(240,180,41,.20)"
+  },
+  "logo": {
+    "name": "AI-REX",
+    "sub": "エーアイレックス",
+    "mark": "assets/rex-clean.png"
+  },
+  "headline": [
+    {
+      "text": "広告運用、",
+      "size": 140
+    },
+    {
+      "text": "まるごとAIに。",
+      "size": 128,
+      "accent": true
+    }
+  ],
+  "subhead": "分析 → 制作 → 配信 → 改善",
+  "ribbon": {
+    "top": "作って、出して、直すまで",
+    "bottom": "ぜんぶ自動"
+  },
+  "body": "AIが競合を分析し、バナーとLPを作り、配信して、数字を見て差し替える。人が決めるのはゴールだけ。",
+  "cta": "資料を受け取る",
+  "art": "assets/rex-clean.png",
+  "artBottom": 430,
+  "artWidth": 1000
+}

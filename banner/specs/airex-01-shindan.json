@@ -1,0 +1,14 @@
+{
+  "size": { "w": 1080, "h": 1350 },
+  "theme": { "bg": "#000", "accent": "#f0b429", "glow": "rgba(240,180,41,.18)" },
+  "logo": { "name": "AI-REX", "sub": "エーアイレックス", "mark": "assets/rex-clean.png" },
+  "headline": [
+    { "text": "URLを入れる", "size": 132 },
+    { "text": "だけでいい。", "size": 132, "accent": true }
+  ],
+  "subhead": "広告戦略レポート",
+  "ribbon": { "top": "登録不要・クレカ不要", "bottom": "まずは無料で診断" },
+  "body": "サイトのURLを入れるだけ。プロ監修のAIが競合と自社を分析し、広告戦略を7章のレポートにまとめます（約8〜10分）。",
+  "cta": "無料で診断する",
+  "art": "assets/rex-clean.png", "artBottom": 355, "artWidth": 600
+}
