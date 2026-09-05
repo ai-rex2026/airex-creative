@@ -9,7 +9,7 @@ import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import { INDUSTRY_LABEL } from "@/lib/types";
 import Link from "next/link";
 import { Banner } from "./Banner";
-import { Logo, SiteFooter } from "./Chrome";
+import { IconArrowRight, IconGlobe, Logo, SiteFooter } from "./Chrome";
 
 const STORE = "airex-studio-v1";
 
@@ -109,6 +109,7 @@ export function Studio() {
         </div>
       </header>
 
+      <main className="grow">
       <div className="hero">
         <div className="wrap">
           <h1>
@@ -124,7 +125,7 @@ export function Studio() {
 
           <div style={{ maxWidth: 620, margin: "30px auto 0" }}>
             <div className="field">
-              <Globe />
+              <IconGlobe />
               <input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
@@ -134,7 +135,7 @@ export function Studio() {
                 }}
               />
               <button className="go" onClick={runDiag} disabled={!!busy} aria-label="診断する">
-                →
+                <IconArrowRight />
               </button>
             </div>
             <textarea
@@ -155,7 +156,7 @@ export function Studio() {
         </div>
       </div>
 
-      <div className="wrap" style={{ paddingTop: 40, paddingBottom: 80 }}>
+      <div className="wrap" style={d || err ? { paddingTop: 40, paddingBottom: 80 } : undefined}>
         {err && <div className="alert">{err}</div>}
 
         {/* 1. 診断結果 */}
@@ -394,6 +395,7 @@ export function Studio() {
           </section>
         )}
       </div>
+      </main>
       <SiteFooter />
     </>
   );
@@ -415,11 +417,4 @@ function GuardTag({ g }: { g?: GuardVerdict }) {
   return <span className={`tag ${cls}`}>法令 {label}</span>;
 }
 
-function Globe() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="#8B857A" strokeWidth="1.5" style={{ width: 18, height: 18, flex: "0 0 18px" }}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3c2.5 2.6 2.5 15.4 0 18M12 3c-2.5 2.6-2.5 15.4 0 18" />
-    </svg>
-  );
-}
+

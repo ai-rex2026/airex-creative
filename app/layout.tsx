@@ -13,6 +13,7 @@ export const metadata: Metadata = {
     "サイトのURLから、訴求軸・コピー・バナー・LPまでを作る。生成と同時に景表法・薬機法の表現チェックを通します。",
   // 社内向けツールなので検索結果には出さない
   robots: { index: false, follow: false },
+  icons: { icon: "/icon.svg" },
 };
 
 export default function RootLayout({
