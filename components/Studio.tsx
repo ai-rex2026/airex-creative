@@ -7,7 +7,9 @@ import { runCopies, runDiagnosis, runLp } from "@/app/actions";
 import { SIZES } from "@/lib/sizes";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import { INDUSTRY_LABEL } from "@/lib/types";
+import Link from "next/link";
 import { Banner } from "./Banner";
+import { Logo, SiteFooter } from "./Chrome";
 
 const STORE = "airex-studio-v1";
 
@@ -98,11 +100,12 @@ export function Studio() {
     <>
       <header className="site-header">
         <div className="wrap">
-          <span className="logo">
-            <Sun />
-            AI-REX
-            <span className="sfx">Studio</span>
-          </span>
+          <Logo suffix="Studio" />
+          <nav>
+            <a href="/lp.html">サービスについて</a>
+            <Link href="/contact">お問い合わせ</Link>
+            <Link href="/login">ログイン</Link>
+          </nav>
         </div>
       </header>
 
@@ -391,6 +394,7 @@ export function Studio() {
           </section>
         )}
       </div>
+      <SiteFooter />
     </>
   );
 }
@@ -409,15 +413,6 @@ function GuardTag({ g }: { g?: GuardVerdict }) {
   const map = { green: ["問題なし", "ok"], yellow: ["要確認", "warn"], red: ["修正必要", "ng"] } as const;
   const [label, cls] = map[g.level];
   return <span className={`tag ${cls}`}>法令 {label}</span>;
-}
-
-function Sun() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="#9A7A2A" strokeWidth="1.6">
-      <circle cx="12" cy="12" r="4.2" />
-      <path d="M12 1.6v3M12 19.4v3M1.6 12h3M19.4 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M19.4 4.6l-2.1 2.1M6.7 17.3l-2.1 2.1" />
-    </svg>
-  );
 }
 
 function Globe() {

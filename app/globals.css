@@ -25,7 +25,10 @@ h1,h2,h3,b,strong,.disp{font-family:var(--font-display),"Noto Sans JP",sans-seri
 .wrap{max-width:1000px;margin:0 auto;padding:0 24px}
 .site-header{position:sticky;top:0;z-index:50;background:rgba(250,250,247,.9);
   backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-.site-header .wrap{display:flex;align-items:center;height:64px;gap:12px}
+.site-header .wrap{max-width:none;padding:0 24px;display:flex;align-items:center;height:64px;gap:12px}
+.site-header nav{margin-left:auto;display:flex;align-items:center;gap:22px}
+.site-header nav a{color:var(--muted);text-decoration:none;font-size:13px}
+.site-header nav a:hover{color:var(--head)}
 .logo{display:flex;align-items:center;gap:9px;font-family:var(--font-display),sans-serif;
   font-weight:700;font-size:19px;color:var(--head)}
 .logo svg{width:20px;height:20px}
@@ -96,3 +99,73 @@ textarea.box:focus,.field:focus-within{border-color:var(--gold)}
 .thumb{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
 .link{background:none;border:0;padding:0;color:var(--gold-text);font:inherit;font-size:12.5px;
   cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+
+
+/* ── 追加ページ（ログイン／お問い合わせ／規約類） ── */
+.page{max-width:660px;margin:0 auto;padding:56px 24px 96px}
+.page h1{font-size:28px;letter-spacing:-.6px}
+.page .intro{margin-top:12px;color:var(--muted);font-size:14px}
+.page h2{font-size:18px;margin-top:34px}
+.page p,.page li{font-size:14px;color:var(--text)}
+.page ul{margin:10px 0 0 20px}
+.page .updated{margin-top:34px;font-size:12.5px;color:var(--faint)}
+
+table.spec{width:100%;border-collapse:collapse;margin-top:26px;font-size:13.5px;background:#fff}
+table.spec th,table.spec td{border:1px solid var(--line);padding:14px 18px;text-align:left;vertical-align:top}
+table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sans-serif;font-weight:600;color:var(--head)}
+
+.backlink{margin-left:auto;color:var(--muted);text-decoration:none;font-size:13px}
+
+/* フォーム */
+.form{background:#fff;border:1px solid var(--line);border-radius:12px;padding:26px;margin-top:22px}
+.form .req{font-size:12px;color:var(--faint);margin-bottom:18px}
+.form label{display:block;margin-top:18px;font-size:13px;font-weight:600;color:var(--head)}
+.form label:first-of-type{margin-top:0}
+.form .must{color:var(--ng);margin-left:4px}
+.form input,.form select,.form textarea{width:100%;margin-top:7px;border:1px solid var(--line);
+  border-radius:10px;background:#fff;padding:12px 14px;font:inherit;font-size:14px;color:var(--text);outline:none}
+.form input:focus,.form select:focus,.form textarea:focus{border-color:var(--gold)}
+.form .actions{display:flex;gap:12px;margin-top:26px}
+
+/* 信頼カード（お問い合わせ上部） */
+.trust{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-top:24px}
+.trust .top{display:flex;align-items:center;gap:8px;font-family:var(--font-display),sans-serif;font-weight:700;font-size:14px;color:var(--head)}
+.trust .top .more{margin-left:auto;font-size:12px;color:var(--gold-text);text-decoration:none}
+.trust .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+.trust .st{border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center;background:var(--sunk)}
+.trust .st b{display:block;font-size:19px;color:var(--gold-text)}
+.trust .st small{display:block;font-size:11.5px;color:var(--faint);margin-top:2px}
+.trust .fine{margin-top:14px;font-size:12px;color:var(--faint)}
+@media(max-width:560px){.trust .stats{grid-template-columns:1fr}}
+
+/* ログイン（左右2枚） */
+.auth{display:grid;grid-template-columns:38% 1fr;min-height:100vh}
+.auth .side{background:var(--sunk);border-right:1px solid var(--line);padding:32px 40px;display:flex;flex-direction:column}
+.auth .side .body{margin-top:auto;margin-bottom:auto;max-width:340px}
+.auth .side h1{font-size:26px;line-height:1.45;margin-top:10px}
+.auth .side p{margin-top:16px;font-size:13.5px;color:var(--muted)}
+.auth .side .pt{display:flex;gap:10px;align-items:center;margin-top:14px;font-size:13px;color:var(--muted)}
+.auth .side .pt i{flex:0 0 26px;height:26px;border-radius:8px;background:#fff;border:1px solid var(--line);
+  display:grid;place-items:center;color:var(--gold-text);font-style:normal;font-size:12px}
+.auth .main{display:grid;place-items:center;padding:40px 24px}
+.auth .main .inner{width:100%;max-width:360px}
+.auth .main h2{font-size:19px}
+.auth .main .sub{font-size:13px;color:var(--muted);margin-top:4px}
+.auth .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px;margin-top:18px}
+.auth .card label{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;font-weight:600;color:var(--head);margin-top:16px}
+.auth .card label:first-child{margin-top:0}
+.auth .card label a{font-size:12px;font-weight:400;color:var(--gold-text);text-decoration:none}
+.auth .card input{width:100%;margin-top:7px;border:1px solid var(--line);border-radius:10px;
+  padding:11px 14px;font:inherit;font-size:14px;outline:none}
+.auth .card input:focus{border-color:var(--gold)}
+.auth .card .btn{width:100%;justify-content:center;margin-top:22px}
+.auth .foot{text-align:center;margin-top:16px;font-size:13px;color:var(--muted)}
+.auth .foot a{color:var(--head);font-weight:600;text-decoration:none}
+@media(max-width:820px){.auth{grid-template-columns:1fr}.auth .side{border-right:0;border-bottom:1px solid var(--line);min-height:auto}}
+
+/* 共通フッター */
+.site-footer{border-top:1px solid var(--line);background:var(--bg);padding:28px 0;font-size:12.5px;color:var(--faint)}
+.site-footer .wrap{max-width:none;padding:0 24px;display:flex;gap:20px;flex-wrap:wrap;align-items:center}
+.site-footer a{color:var(--faint);text-decoration:none}
+.site-footer a:hover{color:var(--head)}
+.site-footer .cp{margin-left:auto}
