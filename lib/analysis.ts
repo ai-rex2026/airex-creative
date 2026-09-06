@@ -6,6 +6,7 @@ import { generateSummary } from "./summary";
 import { findCompetitors, type CompetitorScan } from "./competitors";
 import { generateTactics, type TacticPlan } from "./tactics";
 import { generateAdOps, type AdOps } from "./ad-ops";
+import { hasPlacesApi, scanMeo, type MeoScan } from "./meo";
 import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
 import type { BannerCopy, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
@@ -36,6 +37,7 @@ export type Analysis = {
   competitors: CompetitorScan | null;
   tactics: TacticPlan | null;
   ad_ops: AdOps | null;
+  meo: MeoScan | null;
   gsc: GscData | null;
   ga4: Ga4Data | null;
   created_at: string;
@@ -63,6 +65,11 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       await save({ status: "running", step: "サイトの構成を調べています", progress: 8 });
       const site = await scanSite(a.url);
       return await save({ site, seo: estimateSeo(site), step: "サイトを読んでいます", progress: 18 });
+    }
+    if (a.url && hasPlacesApi() && !a.meo) {
+      // 失敗しても分析全体は止めない。取れなければ画面に理由を出す
+      const meo = await scanMeo(a.site, a.url).catch(() => null);
+      if (meo) return await save({ meo, step: "サイトを読んでいます", progress: 22 });
     }
     if (!a.diagnosis) {
       await save({ status: "running", step: "サイトを読んでいます", progress: 15 });

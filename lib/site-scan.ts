@@ -24,6 +24,12 @@ export type SiteScan = {
   externalLinks: number;
   adTags: string[];
   tech: string[];
+  /** JSON-LD から拾えた事業所情報。MEO の照合に使う */
+  bizName: string | null;
+  bizAddress: string | null;
+  bizPhone: string | null;
+  /** サイトから辿れる公式SNS。実際に張られているリンクだけ */
+  social: { platform: string; url: string; handle: string }[];
   passed: number;
   total: number;
 };
@@ -80,6 +86,8 @@ export async function scanSite(input: string): Promise<SiteScan> {
   }
 
   const structuredData = /application\/ld\+json/i.test(html);
+  const biz = readBusiness(html);
+  const social = readSocial(html, host);
 
   const adTags: string[] = [];
   if (/connect\.facebook\.net|fbq\(/i.test(html)) adTags.push("Meta Pixel");
@@ -118,6 +126,10 @@ export async function scanSite(input: string): Promise<SiteScan> {
     externalLinks,
     adTags,
     tech,
+    bizName: biz.name,
+    bizAddress: biz.address,
+    bizPhone: biz.phone,
+    social,
     passed,
     total: 10,
   };
@@ -154,4 +166,76 @@ export function estimateSeo(s: SiteScan): SeoEstimate {
         ? "土台に穴があります。まずは構造化データとサイトマップ、セキュリティヘッダーを埋めるのが早いです。"
         : "技術面の整備が進んでいません。競合の激しいキーワードでは上位表示に時間がかかります。ロングテールから攻めることを推奨します。";
   return { score, label, comment };
+}
+
+/**
+ * JSON-LD から店舗名・住所・電話を拾う。
+ * MEO で「そのGoogleビジネスプロフィールが本当にこのサイトの店か」を照合するのに使う。
+ */
+function readBusiness(html: string) {
+  const out: { name: string | null; address: string | null; phone: string | null } = {
+    name: null, address: null, phone: null,
+  };
+  for (const m of html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    let json: unknown;
+    try {
+      json = JSON.parse(m[1].trim());
+    } catch {
+      continue; // 壊れた JSON-LD は珍しくない。無視して次へ
+    }
+    const nodes: Record<string, unknown>[] = [];
+    const walk = (v: unknown) => {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === "object") {
+        const o = v as Record<string, unknown>;
+        nodes.push(o);
+        if (Array.isArray(o["@graph"])) walk(o["@graph"]);
+      }
+    };
+    walk(json);
+    for (const n of nodes) {
+      const type = String(n["@type"] ?? "");
+      // LocalBusiness とその派生（Dentist, Restaurant, MedicalClinic …）だけを見る
+      if (!/Business|Store|Clinic|Dentist|Restaurant|Organization|Hospital|Salon/i.test(type)) continue;
+      if (!out.name && typeof n.name === "string") out.name = n.name;
+      if (!out.phone && typeof n.telephone === "string") out.phone = n.telephone;
+      if (!out.address) {
+        const a = n.address;
+        if (typeof a === "string") out.address = a;
+        else if (a && typeof a === "object") {
+          const o = a as Record<string, unknown>;
+          const parts = ["postalCode", "addressRegion", "addressLocality", "streetAddress"]
+            .map((k) => (typeof o[k] === "string" ? (o[k] as string) : ""))
+            .filter(Boolean);
+          if (parts.length) out.address = parts.join(" ");
+        }
+      }
+    }
+  }
+  return out;
+}
+
+const SOCIAL_HOSTS: { platform: string; re: RegExp }[] = [
+  { platform: "Instagram", re: /instagram\.com\/([A-Za-z0-9._]+)/i },
+  { platform: "X（Twitter）", re: /(?:twitter|x)\.com\/([A-Za-z0-9_]+)/i },
+  { platform: "Facebook", re: /facebook\.com\/([A-Za-z0-9.\-]+)/i },
+  { platform: "TikTok", re: /tiktok\.com\/@([A-Za-z0-9._]+)/i },
+  { platform: "YouTube", re: /youtube\.com\/(?:@|channel\/|c\/|user\/)([A-Za-z0-9._\-]+)/i },
+  { platform: "LINE", re: /(?:lin\.ee|line\.me)\/([A-Za-z0-9._~\-@%]+)/i },
+];
+
+/** サイトに実際に張られている公式SNSリンクだけを拾う。推測はしない */
+function readSocial(html: string, host: string) {
+  const found = new Map<string, { platform: string; url: string; handle: string }>();
+  for (const m of html.matchAll(/<a\s[^>]*href=["']([^"']+)["']/gi)) {
+    const href = m[1];
+    if (href.includes(host)) continue;
+    for (const { platform, re } of SOCIAL_HOSTS) {
+      const hit = href.match(re);
+      // share ボタンなど、自分のページを渡すだけのリンクは公式アカウントではない
+      if (!hit || /\/(share|sharer|intent|home)\b/i.test(href)) continue;
+      if (!found.has(platform)) found.set(platform, { platform, url: href, handle: hit[1] });
+    }
+  }
+  return [...found.values()];
 }

@@ -10,6 +10,7 @@ import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
 import type { CompetitorScan } from "@/lib/competitors";
 import type { TacticPlan } from "@/lib/tactics";
 import { adWidth, type AdOps } from "@/lib/ad-ops";
+import type { MeoScan } from "@/lib/meo";
 import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { INDUSTRY_LABEL } from "@/lib/types";
@@ -30,6 +31,7 @@ export function Report({
   competitors,
   tactics,
   adOps,
+  meo,
   gsc,
   ga4,
 }: {
@@ -44,6 +46,7 @@ export function Report({
   competitors: CompetitorScan | null;
   tactics: TacticPlan | null;
   adOps: AdOps | null;
+  meo: MeoScan | null;
   gsc: GscData | null;
   ga4: Ga4Data | null;
 }) {
@@ -90,6 +93,14 @@ export function Report({
     }
     if (adOps.overLength.length > 0) {
       todos.push({ level: "mid", text: `広告原稿 ${adOps.overLength.length}件が文字数超過（そのままでは入稿できません）`, tab: "strategy", anchor: "sec-adops" });
+    }
+  }
+  if (meo?.self) {
+    if (meo.reviewRank && meo.totalShops > 1 && meo.reviewRank > meo.totalShops / 2) {
+      todos.push({ level: "mid", text: `Googleのレビュー数が近隣${meo.totalShops}店中${meo.reviewRank}位（比較検討で不利になります）`, tab: "strategy", anchor: "sec-meo" });
+    }
+    for (const b of meo.breakdown.filter((x) => x.got === 0 && x.max === 10)) {
+      todos.push({ level: "mid", text: `Googleビジネスプロフィールの${b.label}がない`, tab: "strategy", anchor: "sec-meo" });
     }
   }
   const redN = copies.filter((c) => c.guard?.level === "red").length;
@@ -384,6 +395,30 @@ export function Report({
         <div><b>{copies.filter((c) => c.guard?.level === "green").length}/{copies.length}</b><small>法令チェック通過</small></div>
       </div>
 
+      {site && site.social.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">◍</span>
+            <div>
+              <h2 id="sec-social">公式SNSアカウント</h2>
+              <div className="sub">サイトから実際にリンクされているものだけを載せています</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div className="rows measure">
+            {site.social.map((x, i) => (
+              <div className="r" key={i}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <b>{x.platform}</b>
+                  <small>{x.handle}</small>
+                </div>
+                <a className="tag" href={x.url} target="_blank" rel="noreferrer noopener">開く</a>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {site && (
         <>
           <div className="sec-head">
@@ -590,6 +625,97 @@ export function Report({
               予算配分も、実際の運用結果を見ながら調整する前提の初期値です。
             </span>
           </div>
+        </>
+      )}
+
+      {meo && (
+        <>
+          <div className="sec-head">
+            <span className="ic">◉</span>
+            <div>
+              <h2 id="sec-meo">MEO（Googleマップ対策）</h2>
+              <div className="sub">Googleマップの実データで、近隣の同業と比べています</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          {!meo.self ? (
+            <div className="note">
+              <i className="i">i</i>
+              <span>{meo.reason}</span>
+            </div>
+          ) : (
+            <>
+              <div className="meo measure">
+                <div className="gauge">
+                  <b>{meo.score}</b>
+                  <small>/ 100</small>
+                  <span className={meo.score >= 75 ? "ok" : meo.score >= 50 ? "warn" : "ng"}>
+                    {meo.score >= 75 ? "良好" : meo.score >= 50 ? "改善の余地あり" : "要対策"}
+                  </span>
+                </div>
+                <div className="kpis">
+                  <div className="kpi">
+                    <b>{meo.self.rating?.toFixed(1) ?? "—"}</b>
+                    <small>評価{meo.avgRating !== null ? `（近隣平均 ${meo.avgRating}）` : ""}</small>
+                  </div>
+                  <div className="kpi">
+                    <b>{meo.self.reviews}</b>
+                    <small>レビュー数{meo.avgReviews !== null ? `（近隣平均 ${meo.avgReviews}）` : ""}</small>
+                  </div>
+                  <div className="kpi">
+                    <b>{meo.ratingRank ? `${meo.ratingRank}位` : "—"}</b>
+                    <small>評価の順位 / {meo.totalShops}店</small>
+                  </div>
+                  <div className="kpi">
+                    <b>{meo.reviewRank ? `${meo.reviewRank}位` : "—"}</b>
+                    <small>レビュー数の順位 / {meo.totalShops}店</small>
+                  </div>
+                </div>
+              </div>
+
+              <details className="flags measure">
+                <summary>点数の内訳（何を測ったか）</summary>
+                <div className="rows" style={{ margin: 0 }}>
+                  {meo.breakdown.map((b, i) => (
+                    <div className="r" key={i}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <b>{b.label}</b>
+                        <small>{b.note}</small>
+                      </div>
+                      <span className={`tag${b.got === 0 ? " warn" : ""}`}>{b.got} / {b.max}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+
+              {meo.competitors.length > 0 && (
+                <details className="flags measure">
+                  <summary>近隣の同業（{meo.competitors.length}店）</summary>
+                  <div className="rows" style={{ margin: 0 }}>
+                    {meo.competitors.map((c, i) => (
+                      <div className="r" key={i}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <b>{c.name}</b>
+                          <small>{c.address}</small>
+                        </div>
+                        <span className="tag">★ {c.rating?.toFixed(1) ?? "—"}</span>
+                        <span className="tag">{c.reviews}件</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+
+              <div className="note">
+                <i className="i">i</i>
+                <span>
+                  写真の枚数や投稿頻度は Google の公開データでは取得できないため、点数に入れていません。
+                  上の点数は<b style={{ fontWeight: 600 }}>実際に取得できた項目だけ</b>で計算しています。
+                </span>
+              </div>
+            </>
+          )}
         </>
       )}
 
