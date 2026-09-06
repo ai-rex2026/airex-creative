@@ -50,7 +50,16 @@ export function Report({
     if (!site.https) todos.push({ level: "high", text: "HTTPS に対応していない", tab: "overview", anchor: "sec-security" });
     if (!site.structuredData) todos.push({ level: "mid", text: "構造化データが無い（検索結果での見え方が弱くなる）", tab: "overview", anchor: "sec-seo" });
     if (!site.sitemapXml) todos.push({ level: "mid", text: "sitemap.xml が無い", tab: "overview", anchor: "sec-seo" });
-    if (site.adTags.length === 0) todos.push({ level: "high", text: "広告タグが1つも入っていない（配信しても成果を計測できない）", tab: "overview", anchor: "sec-overview" });
+    if (site.adTags.length === 0) {
+      // GTM が入っていると広告タグは実行時に差し込まれるため、HTMLだけでは「無い」と断定できない。
+      // 断定できないものを「要対応」で出すと、事実と違う指摘になる。
+      const viaGtm = site.tech.includes("Google Tag Manager");
+      todos.push(
+        viaGtm
+          ? { level: "mid", text: "広告タグをHTMLから確認できない（GTM経由の可能性あり。GTMの中身を要確認）", tab: "overview", anchor: "sec-overview" }
+          : { level: "high", text: "広告タグが1つも入っていない（配信しても成果を計測できない）", tab: "overview", anchor: "sec-overview" }
+      );
+    }
   }
   if (seo && seo.score < 45) {
     todos.push({ level: "mid", text: `SEO強度が ${seo.score}点（低権威）`, tab: "overview", anchor: "sec-seo" });
@@ -202,16 +211,20 @@ export function Report({
             <span className="chip-s">内部リンク {site.internalLinks} / 外部リンク {site.externalLinks}</span>
           </div>
 
-          {site.adTags.length > 0 && (
-            <>
-              <div className="label" style={{ marginTop: 18 }}>検出された広告タグ</div>
-              <div className="chips">
-                {site.adTags.map((t) => (
-                  <span key={t} className="chip-s" style={{ background: "#FBEDE9", borderColor: "#EFD3CA", color: "var(--ng)" }}>{t}</span>
-                ))}
-              </div>
-            </>
-          )}
+          <div className="label" style={{ marginTop: 18 }}>検出された広告タグ</div>
+          <div className="chips">
+            {site.adTags.length > 0 ? (
+              site.adTags.map((t) => (
+                <span key={t} className="chip-s" style={{ background: "#FBEDE9", borderColor: "#EFD3CA", color: "var(--ng)" }}>{t}</span>
+              ))
+            ) : (
+              <span className="chip-s">
+                {site.tech.includes("Google Tag Manager")
+                  ? "HTMLからは検出できず（GTM経由の可能性あり）"
+                  : "検出できず"}
+              </span>
+            )}
+          </div>
 
           {site.tech.length > 0 && (
             <>
