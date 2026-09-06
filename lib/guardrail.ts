@@ -72,6 +72,14 @@ function dedupe(hits: GuardHit[]): GuardHit[] {
   return [...seen.values()];
 }
 
+/**
+ * 辞書だけで検査する。AI を呼ばないので無料。
+ * チャットの回答のように「毎回 AI に通すとコストが釣り合わない」場面で使う。
+ */
+export function checkGuardDict(texts: string[], industry: Industry): GuardHit[] {
+  return dedupe(dictScan(texts, industry));
+}
+
 export async function checkGuard(texts: string[], industry: Industry): Promise<GuardVerdict> {
   const dictHits = dedupe(dictScan(texts, industry));
   let aiHits: GuardHit[] = [];

@@ -655,3 +655,35 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
 .sg .qh{font-size:12.5px;font-weight:600}
 .chip.warn{color:var(--warn);border-color:#EADFC6;background:#FCF8EF}
 .chip.dim{color:var(--faint);background:transparent;border-style:dashed}
+
+/* ── レポートについて聞く ───────────────────── */
+.chat-fab{position:fixed;right:24px;bottom:24px;z-index:40;display:inline-flex;align-items:center;
+  gap:8px;padding:12px 20px;border:0;border-radius:999px;background:var(--btn);color:#fff;
+  font:inherit;font-size:13px;cursor:pointer;box-shadow:0 2px 12px rgba(31,30,27,.18)}
+.chat-fab .ic{color:var(--gold)}
+.chat{position:fixed;top:0;right:0;bottom:0;width:min(400px,100vw);z-index:50;background:#fff;
+  border-left:1px solid var(--line);display:flex;flex-direction:column}
+.chat .ch{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;
+  border-bottom:1px solid var(--line)}
+.chat .ch b{font-size:14px}
+.chat .ch button{background:0;border:0;font-size:15px;color:var(--faint);cursor:pointer;line-height:1}
+.chat .cb{flex:1;overflow-y:auto;padding:18px;display:grid;gap:12px;align-content:start}
+.chat .m{font-size:13px;line-height:1.85;padding:11px 14px;border-radius:12px;max-width:92%;
+  white-space:pre-wrap}
+.chat .m.a{background:var(--sunk);justify-self:start}
+.chat .m.u{background:var(--dark);color:#fff;justify-self:end}
+.chat .m.dim{color:var(--faint)}
+.chat .m.err{background:#FBF0EE;color:var(--ng);justify-self:start}
+.chat .mflag{margin-top:8px;padding-top:8px;border-top:1px solid #E4DFD6;font-size:11.5px;
+  line-height:1.7;color:var(--ng)}
+.chat .presets{display:grid;gap:6px;justify-items:start}
+.chat .presets button{font-size:12px;padding:7px 13px;border-radius:999px;border:1px solid var(--line);
+  background:#fff;cursor:pointer;text-align:left}
+.chat .presets button:disabled{opacity:.5;cursor:default}
+.chat .cf{border-top:1px solid var(--line);padding:14px 18px;display:grid;gap:8px}
+.chat .cf textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+  font:inherit;font-size:13px;resize:vertical;outline:none}
+.chat .cf textarea:focus{border-color:var(--gold)}
+.chat .cf .btn{justify-self:end}
+.chat .cf small{font-size:11px;color:var(--faint);line-height:1.6}
+@media print{.chat-fab,.chat{display:none}}

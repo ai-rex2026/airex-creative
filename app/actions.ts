@@ -3,12 +3,13 @@
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { newAnalysisId } from "@/lib/analysis";
+import { newAnalysisId, type Analysis } from "@/lib/analysis";
+import { askAboutReport } from "@/lib/chat";
 import type { AnalysisMode, BudgetBand } from "@/lib/types";
 import { processAnalysis } from "@/lib/worker";
 import { generateLp } from "@/lib/lp";
 import { hasAnthropic } from "@/lib/anthropic";
-import type { BannerCopy, Diagnosis } from "@/lib/types";
+import type { BannerCopy, Diagnosis, GuardHit } from "@/lib/types";
 
 function assertKey() {
   if (!hasAnthropic()) throw new Error("ANTHROPIC_API_KEY が未設定です");
@@ -163,4 +164,48 @@ export async function replanForBudget(id: string, budget: BudgetBand) {
       // 取りこぼしは cron のワーカーが拾う
     }
   });
+}
+
+export type ChatMsg = { role: "user" | "assistant"; content: string; flags?: GuardHit[] | null };
+
+/** これまでのやり取り。レポートを開いたときに読む */
+export async function loadChat(id: string): Promise<ChatMsg[]> {
+  const sb = await createClient();
+  const { data } = await sb
+    .from("chat_messages")
+    .select("role, content, flags")
+    .eq("analysis_id", id)
+    .order("created_at", { ascending: true })
+    .limit(60);
+  return (data ?? []) as ChatMsg[];
+}
+
+/**
+ * レポートについて質問する。
+ * この段階ではレポートを書き換えない。読んで答えるだけ。
+ */
+export async function sendChat(id: string, question: string): Promise<ChatMsg> {
+  assertKey();
+  const q = question.trim();
+  if (!q) throw new Error("質問を入力してください");
+  if (q.length > 500) throw new Error("質問は500文字以内でお願いします");
+
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
+  const { data: row } = await sb.from("analyses").select("*").eq("id", id).eq("owner_id", user.id).single();
+  if (!row) throw new Error("分析が見つかりません");
+
+  const history = (await loadChat(id)).map((m) => ({ role: m.role, content: m.content }));
+  const ans = await askAboutReport(row as Analysis, history, q);
+
+  await sb.from("chat_messages").insert([
+    { analysis_id: id, role: "user", content: q },
+    { analysis_id: id, role: "assistant", content: ans.text, flags: ans.flags.length ? ans.flags : null },
+  ]);
+
+  return { role: "assistant", content: ans.text, flags: ans.flags };
 }

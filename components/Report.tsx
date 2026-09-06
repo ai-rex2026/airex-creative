@@ -17,6 +17,7 @@ import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "@/lib/types";
 import { Banner } from "./Banner";
+import { ReportChat } from "./ReportChat";
 
 type Tab = "overview" | "strategy" | "creative";
 type Todo = { level: "high" | "mid"; text: string; tab: Tab; anchor: string };
@@ -1486,6 +1487,7 @@ export function Report({
         );
       })()}
 
+      <ReportChat id={id} />
     </div>
   );
 }
