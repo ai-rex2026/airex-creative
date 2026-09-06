@@ -60,7 +60,7 @@ export function Report({ d, copies }: { d: Diagnosis; copies: BannerCopy[] }) {
   }
 
   return (
-    <div className="wrap" style={{ paddingTop: 40, paddingBottom: 80 }}>
+    <div>
       {err && <div className="alert">{err}</div>}
 
       <section className="block">

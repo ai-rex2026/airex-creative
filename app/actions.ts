@@ -50,7 +50,7 @@ export async function startAnalysis(input: { url?: string; text?: string }) {
     }
   });
 
-  redirect(`/analysis/${id}`);
+  redirect(`/analysis/${id}/waiting`);
 }
 
 /** 本登録。匿名のまま作った分析は uid が変わらないのでそのまま引き継がれる */
