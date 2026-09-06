@@ -5,7 +5,7 @@ import { generateMediaPlan } from "./media-plan";
 import { generateSummary } from "./summary";
 import { findCompetitors, type CompetitorScan } from "./competitors";
 import { generateTactics, type TacticPlan } from "./tactics";
-import { generateAdOps, type AdOps } from "./ad-ops";
+import { finishAdOps, generateCampaign, opsTargets, type AdOps } from "./ad-ops";
 import { hasPlacesApi, scanMeo, type MeoScan } from "./meo";
 import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
 import type { BannerCopy, Diagnosis, MediaPlanItem, Summary } from "./types";
@@ -116,11 +116,28 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     }
     if (!a.media_plan) {
       const plan = await generateMediaPlan(a.diagnosis, a.site);
-      return await save({ media_plan: plan, step: "訴求軸ごとにコピーを書いています", progress: 55 });
+      return await save({ media_plan: plan, step: "広告の運用設計を書いています", progress: 55 });
     }
-    if (!a.ad_ops) {
-      const ops = await generateAdOps(a.diagnosis, a.site, a.media_plan);
-      return await save({ ad_ops: ops, step: "広告以外の施策を整理しています", progress: 60 });
+    // 媒体1つ＝1工程。まとめて生成すると1リクエストの実行時間に収まらず、
+    // 何も保存されないまま再試行を繰り返して進捗が止まる
+    if (!a.ad_ops?.done) {
+      const targets = opsTargets(a.media_plan);
+      const built = a.ad_ops?.campaigns ?? [];
+      const next = targets[built.length];
+      if (next) {
+        const c = await generateCampaign(a.diagnosis, a.site, next);
+        const ops: AdOps = {
+          done: false, campaigns: [...built, c], tags: [], overLength: [],
+          guard: { level: "green", hits: [] },
+        };
+        return await save({
+          ad_ops: ops,
+          step: `広告の運用設計を書いています（${built.length + 1}/${targets.length}）`,
+          progress: 55 + Math.round((5 * (built.length + 1)) / targets.length),
+        });
+      }
+      const ops = await finishAdOps(built, a.site, a.media_plan, a.diagnosis.industry);
+      return await save({ ad_ops: ops, step: "広告以外の施策を整理しています", progress: 62 });
     }
     if (!a.tactics) {
       const t = await generateTactics(a.diagnosis, a.site);

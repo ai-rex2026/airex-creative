@@ -17,7 +17,7 @@ function client() {
 
 export type AiUsage = { model: string; input_tokens: number; output_tokens: number };
 
-export type AskOpts = { maxTokens?: number; model?: string; meter?: (u: AiUsage) => void };
+export type AskOpts = { maxTokens?: number; model?: string; timeoutMs?: number; meter?: (u: AiUsage) => void };
 
 function stripFence(raw: string) {
   return raw
@@ -29,12 +29,16 @@ function stripFence(raw: string) {
 /** JSON だけを返させる。壊れた出力は最初の { … } / [ … ] を拾って救済する */
 export async function askJson<T>(system: string, user: string, opts: AskOpts = {}): Promise<T> {
   const model = opts.model ?? MODEL;
-  const res = await client().messages.create({
-    model,
-    max_tokens: opts.maxTokens ?? 4000,
-    system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。",
-    messages: [{ role: "user", content: user }],
-  });
+  const res = await client().messages.create(
+    {
+      model,
+      max_tokens: opts.maxTokens ?? 4000,
+      system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。",
+      messages: [{ role: "user", content: user }],
+    },
+    // 返ってこない呼び出しに実行時間を食われると、工程を保存できないまま関数ごと切られる
+    { timeout: opts.timeoutMs ?? 150_000, maxRetries: 1 }
+  );
   opts.meter?.({
     model,
     input_tokens: res.usage.input_tokens,

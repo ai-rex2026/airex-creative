@@ -83,7 +83,7 @@ export function Report({
   if (seo && seo.score < 45) {
     todos.push({ level: "mid", text: `SEO強度が ${seo.score}点（低権威）`, tab: "overview", anchor: "sec-seo" });
   }
-  if (adOps) {
+  if (adOps?.done) {
     // 必須なのに入っていないタグは、配信しても成果が測れないので最優先
     for (const t of adOps.tags.filter((x) => x.need === "必須" && x.status === "未導入")) {
       todos.push({ level: "high", text: `${t.name} が未導入（この媒体に出しても成果を計測できません）`, tab: "strategy", anchor: "sec-adops" });
@@ -719,7 +719,7 @@ export function Report({
         </>
       )}
 
-      {adOps && adOps.campaigns.length > 0 && (
+      {adOps?.done && adOps.campaigns.length > 0 && (
         <>
           <div className="sec-head">
             <span className="ic">▣</span>

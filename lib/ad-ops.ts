@@ -49,6 +49,8 @@ export type MeasureTag = {
 };
 
 export type AdOps = {
+  /** 設計し終えたか。媒体ごとに1回ずつ生成するので、途中の状態がありうる */
+  done: boolean;
   campaigns: Campaign[];
   tags: MeasureTag[];
   /** 上限を超えた原稿。入稿前に直す必要がある */
@@ -150,28 +152,35 @@ function findOverLength(campaigns: Campaign[]) {
   return out;
 }
 
-export async function generateAdOps(
+/** 予算配分の多い順に、設計対象の媒体を最大3つ選ぶ */
+export function opsTargets(plan: MediaPlanItem[]) {
+  return [...plan].sort((a, b) => b.share - a.share).slice(0, 3);
+}
+
+/**
+ * 媒体1つ分のキャンペーンを設計する。
+ * 全媒体を1回で生成すると1リクエストの実行時間に収まらず、
+ * 途中で切られて何も保存されないまま再試行を繰り返すため、媒体ごとに分けている。
+ */
+export async function generateCampaign(
   d: Diagnosis,
   site: SiteScan | null,
-  plan: MediaPlanItem[]
-): Promise<AdOps> {
-  // 予算を多く積む上位3媒体だけ設計する。全媒体書くと薄くなるし生成コストも跳ねる
-  const top = [...plan].sort((a, b) => b.share - a.share).slice(0, 3);
+  item: MediaPlanItem
+): Promise<Campaign> {
+  const search = /検索|Google|Yahoo/i.test(item.channel) && !/P-?MAX|YouTube|ディスプレイ/i.test(item.channel);
 
-  const res = await askJson<{ campaigns: Campaign[] }>(
-    `あなたは広告運用者です。管理画面にそのまま入稿できる粒度でキャンペーンを設計します。
+  return askJson<Campaign>(
+    `あなたは広告運用者です。指定された媒体1つ分のキャンペーンを、管理画面にそのまま入稿できる粒度で設計します。
 
 守ること:
-- campaigns は渡された媒体ごとに1つ。groups は検索系なら2〜4個、SNS・動画系なら1〜2個
-- keywords は検索系のみ10〜15件。SNS・動画・P-MAX の campaign では空配列にする
-- negatives は「無料」「求人」「自分で」など、その商材で実際に無駄打ちになる語を5〜10件
-- headlines は15件。**全角15文字（半角30文字）以内**。文字数を必ず自分で数えること
+- groups は${search ? "2〜3個" : "1〜2個"}
+- keywords は${search ? "10〜15件" : "空配列にする（この媒体はキーワードで買う面ではない）"}
+- negatives は${search ? "「無料」「求人」「自分で」など、その商材で実際に無駄打ちになる語を5〜8件" : "空配列にする"}
+- headlines は12件。**全角15文字（半角30文字）以内**。文字数を必ず自分で数えること
 - descriptions は4件。**全角45文字（半角90文字）以内**
-- 見出しは「訴求を1つだけ」入れる。1本に詰め込まない
-- settings は管理画面の設定項目名と値の対。配信地域・年齢・性別・マッチタイプ方針・
-  CV済みユーザー除外・検索パートナー配信・ディスプレイネットワーク配信・配信スケジュールなど、
-  **その媒体に実在する項目だけ**を6〜10件
-- notes は「外し忘れると費用が漏れる設定」を2〜4件。一般論ではなく設定名で書く
+- 見出しは訴求を1つだけ入れる。1本に詰め込まない
+- settings は管理画面の設定項目名と値の対を6〜10件。**その媒体に実在する項目だけ**を書く
+- notes は「外し忘れると費用が漏れる設定」を2〜3件。一般論ではなく設定名で書く
 - targeting は誰にどこで出すかを1〜2文で
 - 効果を断定する表現・最上級表現は書かない（別で法令チェックにかけます）`,
     `商材: ${d.product}
@@ -182,23 +191,34 @@ export async function generateAdOps(
 訴求軸: ${d.angles.map((a) => a.name).join(" / ")}
 ${site ? `サイト: ${site.title}` : ""}
 
-設計する媒体（予算配分順）:
-${top.map((p) => `- ${p.channel}（配分${p.share}%・${p.priority}）: ${p.reason}`).join("\n")}
+設計する媒体: ${item.channel}（配分${item.share}%・${item.priority}）
+選定理由: ${item.reason}
 
 出力:
-{"campaigns":[{"name":"","channel":"","bidStrategy":"",
+{"name":"","channel":"${item.channel}","bidStrategy":"",
  "settings":[{"label":"","value":""}],
  "groups":[{"name":"","targeting":"","keywords":[""],"negatives":[""],
             "headlines":[""],"descriptions":[""]}],
- "notes":[""]}]}`,
-    { maxTokens: 12000 }
+ "notes":[""]}`,
+    { maxTokens: 6000 }
   );
+}
 
-  const campaigns = res.campaigns ?? [];
-
+/** 全媒体を設計し終えたあとの仕上げ。文字数を数え、原稿をガードレールに通す */
+export async function finishAdOps(
+  campaigns: Campaign[],
+  site: SiteScan | null,
+  plan: MediaPlanItem[],
+  industry: Diagnosis["industry"]
+): Promise<AdOps> {
   // 生成した原稿は全部ガードレールに通す。ここを素通りさせると入稿事故になる
   const texts = campaigns.flatMap((c) => (c.groups ?? []).flatMap((g) => [...(g.headlines ?? []), ...(g.descriptions ?? [])]));
-  const guard = await checkGuard(texts, d.industry);
-
-  return { campaigns, tags: diagnoseTags(site, plan), overLength: findOverLength(campaigns), guard };
+  const guard = await checkGuard(texts, industry);
+  return {
+    done: true,
+    campaigns,
+    tags: diagnoseTags(site, plan),
+    overLength: findOverLength(campaigns),
+    guard,
+  };
 }
