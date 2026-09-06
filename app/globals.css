@@ -321,3 +321,24 @@ table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sa
 .wall .btn{margin-top:22px}
 .wall .alt{font-size:12.5px;color:var(--muted);margin-top:14px}
 .wall .alt a{color:var(--head);font-weight:600;text-decoration:none}
+
+/* 広告手法一覧 */
+.plan{display:grid;gap:12px;margin-top:4px}
+.plan .p{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.plan .p .top{display:flex;align-items:center;gap:12px;padding:16px 20px}
+.plan .p .ic{flex:0 0 32px;height:32px;border-radius:9px;background:var(--sunk);display:grid;place-items:center;font-size:14px}
+.plan .p b{font-size:15px}
+.plan .p .pr{margin-left:auto;font-size:11px;font-weight:600;padding:4px 11px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+.plan .p .pr.top1{background:#F5EBD8;color:var(--gold-text)}
+.plan .p .share{font-family:var(--font-display),sans-serif;font-weight:700;font-size:17px;color:var(--head);margin-left:14px}
+.plan .p .body{padding:0 20px 18px}
+.plan .p .body p{font-size:13px;color:var(--muted)}
+.plan .p .bar{margin:12px 0 14px}
+.plan .p .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.plan .p .kpi{border:1px solid var(--line);border-radius:10px;background:var(--sunk);padding:10px;text-align:center}
+.plan .p .kpi b{display:block;font-size:14px}
+.plan .p .kpi small{display:block;font-size:10.5px;color:var(--faint);margin-top:2px}
+.hit-sev{font-size:10px;font-weight:600;border-radius:999px;padding:1px 7px;margin-right:6px}
+.hit-sev.high{background:#F7E4DE;color:var(--ng)}
+.hit-sev.medium{background:#FBF4E4;color:var(--warn)}
+.hit-sev.low{background:var(--sunk);color:var(--faint)}

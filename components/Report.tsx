@@ -7,6 +7,7 @@ import { runLp } from "@/app/actions";
 import { SIZES } from "@/lib/sizes";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
+import type { MediaPlanItem } from "@/lib/types";
 import { INDUSTRY_LABEL } from "@/lib/types";
 import { Banner } from "./Banner";
 
@@ -17,6 +18,7 @@ export function Report({
   isGuest,
   site,
   seo,
+  plan,
 }: {
   d: Diagnosis;
   copies: BannerCopy[];
@@ -24,6 +26,7 @@ export function Report({
   isGuest: boolean;
   site: SiteScan | null;
   seo: SeoEstimate | null;
+  plan: MediaPlanItem[] | null;
 }) {
   const [picked, setPicked] = useState<number[]>(copies.map((_, i) => i).slice(0, 3));
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "google-lb"]);
@@ -264,6 +267,51 @@ export function Report({
         ))}
       </div>
 
+      {plan && plan.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">◈</span>
+            <div>
+              <h2>広告手法一覧</h2>
+              <div className="sub">サイト分析をもとに、使うべき媒体を優先順位付きで出しています</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          <div className="plan">
+            {plan.map((m, i) => (
+              <div className="p" key={m.channel + i}>
+                <div className="top">
+                  <span className="ic">◎</span>
+                  <b>{m.channel}</b>
+                  <span className="share">{m.share}%</span>
+                  <span className={`pr${m.priority === "最優先" ? " top1" : ""}`}>{m.priority}</span>
+                </div>
+                <div className="body">
+                  <div className="bar"><span style={{ width: `${m.share}%` }} /></div>
+                  <p>{m.reason}</p>
+                  {(m.cpa || m.cvr || m.ctr) && (
+                    <div className="kpis" style={{ marginTop: 14 }}>
+                      <div className="kpi"><b>{m.cpa ?? "—"}</b><small>CPA 目安</small></div>
+                      <div className="kpi"><b>{m.cvr ?? "—"}</b><small>CVR 目安</small></div>
+                      <div className="kpi"><b>{m.ctr ?? "—"}</b><small>CTR 目安</small></div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="note">
+            <i className="i">i</i>
+            <span>
+              CPA・CVR・CTR は業界平均をもとにした<b style={{ fontWeight: 600 }}>目安</b>です。実績を保証するものではありません。
+              予算配分も、実際の運用結果を見ながら調整する前提の初期値です。
+            </span>
+          </div>
+        </>
+      )}
+
       <div className="sec-head">
         <span className="ic">↗</span>
         <div>
@@ -319,7 +367,12 @@ export function Report({
                     {c.guard && c.guard.hits.length > 0 && (
                       <div className="hits">
                         {c.guard.hits.map((h, k) => (
-                          <div key={k} className="hit"><b>「{h.text}」</b> {h.law}：{h.reason} → {h.suggestion}</div>
+                          <div key={k} className="hit">
+                            <span className={`hit-sev ${h.severity ?? "medium"}`}>
+                              {h.severity === "high" ? "要修正" : h.severity === "low" ? "参考" : "要確認"}
+                            </span>
+                            <b>「{h.text}」</b> {h.law}：{h.reason} → {h.suggestion}
+                          </div>
                         ))}
                       </div>
                     )}

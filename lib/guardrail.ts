@@ -1,5 +1,5 @@
 import { askJson, MODEL_FAST } from "./anthropic";
-import type { GuardVerdict, Industry } from "./types";
+import type { GuardHit, GuardVerdict, Industry } from "./types";
 
 /**
  * 法令ガードレール（ロードマップ #10 / リスク R-02）。
@@ -48,13 +48,14 @@ const BY_INDUSTRY: Record<Industry, Rule[]> = {
   general: [],
 };
 
-function dictScan(texts: string[], industry: Industry): GuardVerdict["hits"] {
+function dictScan(texts: string[], industry: Industry): GuardHit[] {
   const rules = [...COMMON, ...BY_INDUSTRY[industry]];
-  const hits: GuardVerdict["hits"] = [];
+  const hits: GuardHit[] = [];
   for (const t of texts) {
     for (const r of rules) {
       for (const m of t.matchAll(r.pattern)) {
-        hits.push({ text: m[0], reason: r.reason, law: r.law, suggestion: r.suggestion });
+        // 辞書に載っている語は文脈によらず問題になるので high 固定
+        hits.push({ text: m[0], reason: r.reason, law: r.law, suggestion: r.suggestion, severity: "high" });
       }
     }
   }
@@ -62,22 +63,38 @@ function dictScan(texts: string[], industry: Industry): GuardVerdict["hits"] {
 }
 
 export async function checkGuard(texts: string[], industry: Industry): Promise<GuardVerdict> {
-  const hits = dictScan(texts, industry);
-  let aiHits: GuardVerdict["hits"] = [];
+  const dictHits = dictScan(texts, industry);
+  let aiHits: GuardHit[] = [];
   try {
-    const res = await askJson<{ hits: GuardVerdict["hits"] }>(
-      `あなたは日本の広告審査担当です。景表法・薬機法・医療広告ガイドライン・金商法の観点で、
-広告表現に問題がある箇所だけを挙げます。問題がなければ hits は空配列にします。
-業種: ${industry}。辞書で機械的に拾える語は既に検出済みなので、文脈で初めて問題になるものを中心に見てください。`,
+    const res = await askJson<{ hits: GuardHit[] }>(
+      `あなたは日本の広告審査担当です。業種: ${industry}。
+断定・最上級・保証表現は辞書側で既に検出済みなので、**あなたは文脈で初めて問題になるものだけ**を見ます。
+
+severity の付け方（ここが最重要）:
+- high  … そのまま出すと媒体審査で止まる、または明確に違反する
+- medium… 出せなくはないが、根拠の併記や条件の明示が必要
+- low   … 表現を整えるとより安全、という程度
+
+**次のものは挙げないこと**: 一般的な言い回し（「安心」「わかりやすい」等）、
+主観的だが誤認を生まない表現、根拠の要らない事実の記述、言い換えれば済む程度の語感の問題。
+**指摘は多くても2件**。問題がなければ hits は空配列にします。迷ったら挙げないでください。`,
       `次の広告文を審査してください。\n${texts.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n
-出力: {"hits":[{"text":"該当箇所","reason":"なぜ問題か","law":"根拠","suggestion":"言い換え案"}]}`,
-      { model: MODEL_FAST, maxTokens: 1500 }
+出力: {"hits":[{"text":"該当箇所","reason":"なぜ問題か","law":"根拠","suggestion":"言い換え案","severity":"high|medium|low"}]}`,
+      { model: MODEL_FAST, maxTokens: 1200 }
     );
-    aiHits = res.hits ?? [];
+    aiHits = (res.hits ?? []).slice(0, 2).map((h) => ({ ...h, severity: h.severity ?? "medium" }));
   } catch {
     // AI が落ちても辞書判定だけで結果を返す（素通りさせない）
   }
-  const all = [...hits, ...aiHits];
-  const level: GuardVerdict["level"] = all.length === 0 ? "green" : hits.length > 0 ? "red" : "yellow";
+
+  const all = [...dictHits, ...aiHits];
+  // low は参考として表示するだけで、判定には効かせない。
+  // 以前は「AIが何か言えば黄色」にしていたため、AIが必ず何か言う結果、全件黄色になっていた。
+  const level: GuardVerdict["level"] =
+    dictHits.length > 0 || aiHits.some((h) => h.severity === "high")
+      ? "red"
+      : aiHits.some((h) => h.severity === "medium")
+        ? "yellow"
+        : "green";
   return { level, hits: all };
 }

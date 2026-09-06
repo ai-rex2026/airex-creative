@@ -47,10 +47,20 @@ export type BrandProfile = {
 };
 
 /** 法令ガードレールの判定（ロードマップ #10。生成と同時に必ず通す） */
+export type GuardSeverity = "high" | "medium" | "low";
+
+export type GuardHit = {
+  text: string;
+  reason: string;
+  law: string;
+  suggestion: string;
+  /** high: 出せない／medium: 要判断／low: 参考。判定に効くのは high と medium だけ */
+  severity: GuardSeverity;
+};
+
 export type GuardVerdict = {
   level: "red" | "yellow" | "green";
-  /** 引っかかった箇所 */
-  hits: { text: string; reason: string; law: string; suggestion: string }[];
+  hits: GuardHit[];
 };
 
 export type BannerCopy = {
@@ -66,4 +76,18 @@ export type BannerCopy = {
   score?: number;
   scoreReason?: string;
   guard?: GuardVerdict;
+};
+
+
+/** 広告手法の提案。媒体ごとに優先度と予算配分を出す */
+export type MediaPlanItem = {
+  channel: string;
+  priority: "最優先" | "推奨" | "検討";
+  /** 予算配分（%） */
+  share: number;
+  reason: string;
+  /** 業界平均をもとにした目安。実績の保証ではない */
+  cpa?: string;
+  cvr?: string;
+  ctr?: string;
 };
