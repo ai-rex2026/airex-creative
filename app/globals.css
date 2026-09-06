@@ -654,3 +654,4 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
 .sg .q{border:1px solid var(--line);border-radius:12px;background:#fff;padding:16px 18px}
 .sg .qh{font-size:12.5px;font-weight:600}
 .chip.warn{color:var(--warn);border-color:#EADFC6;background:#FCF8EF}
+.chip.dim{color:var(--faint);background:transparent;border-style:dashed}

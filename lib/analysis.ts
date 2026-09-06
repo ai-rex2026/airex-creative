@@ -170,7 +170,13 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     }
     // サジェストは Google の公開エンドポイントから実測する。AI は使わないので速い
     if (!a.suggests) {
-      const suggests = await scanSuggests(a.diagnosis, a.site);
+      // 地名は MEO の実測住所から。町名まで細かいとサジェストが返らないので、
+      // 「渋谷区」と方角を落とした町名（恵比寿西→恵比寿）の両方を候補にする
+      const addr = a.meo?.self?.address ?? "";
+      const ward = addr.match(/[都道府県](.*?[市区町村])/)?.[1] ?? "";
+      const town = addr.match(/[市区町村]([^\d\s]{2,6})/)?.[1]?.replace(/[東西南北]$/, "") ?? "";
+      const areas = [town, ward].filter(Boolean);
+      const suggests = await scanSuggests(a.diagnosis, a.site, areas);
       return await save({ suggests, step: "外部露出の施策を書いています", progress: 79 });
     }
     if (!a.outreach) {

@@ -1122,7 +1122,11 @@ export function Report({
                     <div className="qh">「{q}」で検索したとき</div>
                     <div className="chips">
                       {suggests.rows.filter((r) => r.keyword === q).map((r, i) => (
-                        <span className={`chip${r.kind === "注意" ? " ng" : r.kind === "誘導先に注意" ? " warn" : ""}`} key={i}>
+                        <span
+                          className={`chip${r.kind === "注意" ? " ng" : r.kind === "誘導先に注意" ? " warn" : r.kind === "同名の別物" ? " dim" : ""}`}
+                          key={i}
+                          title={r.kind}
+                        >
                           {r.suggestion}
                         </span>
                       ))}
@@ -1135,6 +1139,7 @@ export function Report({
                 <span>
                   赤は放置すると不利になる語、黄は第三者サイトへ流れる語（口コミ・比較など）です。
                   黄は必ずしも悪くありませんが、遷移先の内容を自社で制御できません。
+                  グレーは同名の別施設・別サービスのサジェストで、指名検索で埋もれている状態を示します。
                 </span>
               </div>
               {outreach && outreach.suggestActions?.length > 0 && (

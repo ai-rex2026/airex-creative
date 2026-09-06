@@ -15,7 +15,7 @@ const LEAKY = /口コミ|評判|レビュー|比較|ランキング|おすすめ
 /** そのまま見せると不利になる語 */
 const HARMFUL = /悪い|ひどい|最悪|やばい|失敗|後悔|炎上|訴訟|詐欺|ステマ|嘘|被害|クレーム|返金|解約|退職|ブラック|パワハラ/;
 
-export type SuggestKind = "注意" | "誘導先に注意" | "中立";
+export type SuggestKind = "注意" | "誘導先に注意" | "同名の別物" | "中立";
 
 export type SuggestRow = {
   keyword: string;
@@ -48,28 +48,50 @@ async function suggestFor(q: string): Promise<string[]> {
   }
 }
 
+const JA = /[ぁ-んァ-ヶ一-龠]/;
+
 function classify(s: string, base: string): SuggestKind {
-  const tail = s.replace(base, "").trim();
+  const tail = s.replace(new RegExp(base, "i"), "").trim();
   if (HARMFUL.test(tail)) return "注意";
   if (LEAKY.test(tail)) return "誘導先に注意";
+  // ブランド名が英字だと同名の海外施設が混ざる。指名検索で埋もれている状態なので、
+  // ノイズとして捨てずに「別物」として見せる
+  if (!JA.test(s) && !JA.test(base)) return "同名の別物";
   return "中立";
 }
 
 /** ブランド名まわりのサジェストを実測する */
-export async function scanSuggests(d: Diagnosis, site: SiteScan | null): Promise<SuggestScan> {
+/**
+ * サジェストに投げる語。
+ * 商材の説明文のような長い文はサジェストが返らないので、短い語だけを使う。
+ * 地名は候補を順に試し、実際に返ったものだけ採用する（町名まで細かいと何も返らない）。
+ */
+function candidates(site: SiteScan | null, areas: string[]): string[] {
   const brand = site?.bizName || site?.title?.split(/[|｜\-–—:：]/).pop()?.trim() || "";
-  const queries = [brand, d.product].map((x) => x?.trim()).filter((x): x is string => !!x && x.length >= 2);
-  const uniq = [...new Set(queries)].slice(0, 2);
+  if (brand.length < 2) return [];
+  const out = [brand, ...areas.map((a) => `${brand} ${a}`)];
+  return [...new Set(out.map((x) => x.trim()).filter((x) => x.length >= 2 && x.length <= 25))];
+}
 
+export async function scanSuggests(
+  d: Diagnosis,
+  site: SiteScan | null,
+  areas: string[] = []
+): Promise<SuggestScan> {
   const rows: SuggestRow[] = [];
-  for (const q of uniq) {
-    for (const s of (await suggestFor(q)).slice(0, 10)) {
+  const got: string[] = [];
+
+  for (const q of candidates(site, areas)) {
+    if (got.length >= 2) break;
+    const list = (await suggestFor(q)).filter(
       // 検索語そのものは対策対象ではない
-      if (s.trim().toLowerCase() === q.trim().toLowerCase()) continue;
-      rows.push({ keyword: q, suggestion: s, kind: classify(s, q) });
-    }
+      (x) => x.trim().toLowerCase() !== q.trim().toLowerCase()
+    );
+    if (list.length === 0) continue; // 何も返らなかった語は画面に出さない
+    got.push(q);
+    for (const x of list.slice(0, 10)) rows.push({ keyword: q, suggestion: x, kind: classify(x, q) });
   }
-  return { rows, queried: uniq, fetchedAt: new Date().toISOString() };
+  return { rows, queried: got, fetchedAt: new Date().toISOString() };
 }
 
 // ── 外部施策 ────────────────────────────────────
