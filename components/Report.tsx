@@ -6,6 +6,7 @@ import JSZip from "jszip";
 import { runLp } from "@/app/actions";
 import { SIZES } from "@/lib/sizes";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
+import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
 import { INDUSTRY_LABEL } from "@/lib/types";
 import { Banner } from "./Banner";
 
@@ -14,11 +15,15 @@ export function Report({
   copies,
   url,
   isGuest,
+  site,
+  seo,
 }: {
   d: Diagnosis;
   copies: BannerCopy[];
   url: string | null;
   isGuest: boolean;
+  site: SiteScan | null;
+  seo: SeoEstimate | null;
 }) {
   const [picked, setPicked] = useState<number[]>(copies.map((_, i) => i).slice(0, 3));
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "google-lb"]);
@@ -110,12 +115,133 @@ export function Report({
         </div>
       </div>
 
+      {site && (
+        <>
+          <div className="chips">
+            <span className="chip-s">{site.https ? "HTTPS 対応済み" : "HTTPS 未対応"}</span>
+            <span className="chip-s">robots.txt {site.robotsTxt ? "有り" : "無し"}</span>
+            <span className="chip-s">sitemap.xml {site.sitemapXml ? "有り" : "無し"}</span>
+            <span className="chip-s">構造化データ {site.structuredData ? "有り" : "無し"}</span>
+            <span className="chip-s">内部リンク {site.internalLinks} / 外部リンク {site.externalLinks}</span>
+          </div>
+
+          {site.adTags.length > 0 && (
+            <>
+              <div className="label" style={{ marginTop: 18 }}>検出された広告タグ</div>
+              <div className="chips">
+                {site.adTags.map((t) => (
+                  <span key={t} className="chip-s" style={{ background: "#FBEDE9", borderColor: "#EFD3CA", color: "var(--ng)" }}>{t}</span>
+                ))}
+              </div>
+            </>
+          )}
+
+          {site.tech.length > 0 && (
+            <>
+              <div className="label" style={{ marginTop: 14 }}>使用技術</div>
+              <div className="chips">
+                {site.tech.map((t) => <span key={t} className="chip-s">{t}</span>)}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
       <div className="stat-row" style={{ marginTop: 14 }}>
         <div><b>{d.strengths.length}</b><small>強み</small></div>
         <div><b>{d.objections.length}</b><small>買わない理由</small></div>
         <div><b>{d.angles.length}</b><small>訴求軸</small></div>
         <div><b>{copies.filter((c) => c.guard?.level === "green").length}/{copies.length}</b><small>法令チェック通過</small></div>
       </div>
+
+      {site && (
+        <>
+          <div className="sec-head">
+            <span className="ic">⛨</span>
+            <div>
+              <h2>セキュリティチェック</h2>
+              <div className="sub">セキュリティヘッダー検査結果</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          <div className="score">
+            <div style={{ textAlign: "center" }}>
+              <div className="n">{site.passed}</div>
+              <div className="of">/ {site.total} 通過</div>
+              <span className={`tag ${site.passed >= 8 ? "ok" : site.passed >= 5 ? "warn" : "ng"}`} style={{ marginTop: 8 }}>
+                {site.passed >= 8 ? "良好" : site.passed >= 5 ? "要確認" : "要対応"}
+              </span>
+            </div>
+            <div className="body">
+              <div className="bar"><span style={{ width: `${(site.passed / site.total) * 100}%` }} /></div>
+              <p>HTTPS・セキュリティヘッダー・robots.txt・sitemap.xml・構造化データの設定状況を実際に取得して調べました。</p>
+            </div>
+          </div>
+
+          <div className="rows">
+            <div className="rh">セキュリティヘッダー</div>
+            {site.headers.map((h) => (
+              <div className="r" key={h.key}>
+                <span className="st" style={{ color: h.pass ? "var(--ok)" : "var(--ng)" }}>{h.pass ? "✓" : "✕"}</span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <b>{h.label}</b>
+                  <small>{h.desc}</small>
+                  {h.value && (
+                    <code style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginTop: 4, wordBreak: "break-all" }}>
+                      {h.value.slice(0, 120)}
+                    </code>
+                  )}
+                </div>
+                <span className={`pill ${h.pass ? "ok" : "ng"}`}>{h.pass ? "通過" : "要対応"}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {seo && site && (
+        <>
+          <div className="sec-head">
+            <span className="ic">⛓</span>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div>
+                <h2>ドメインパワー（SEO強度）</h2>
+                <div className="sub">推定スコア</div>
+              </div>
+              <span className="ai">AI推定</span>
+            </div>
+            <span className="rule" />
+          </div>
+
+          <div className="score">
+            <div style={{ textAlign: "center" }}>
+              <div className="n">{seo.score}</div>
+              <div className="of">/ 100</div>
+              <span className="tag score" style={{ marginTop: 8 }}>{seo.label}</span>
+            </div>
+            <div className="body">
+              <div className="bar"><span style={{ width: `${seo.score}%` }} /></div>
+              <p>{seo.comment}</p>
+            </div>
+          </div>
+
+          <div className="stat-row" style={{ marginTop: 14 }}>
+            <div><b>{site.internalLinks}</b><small>内部リンク数</small></div>
+            <div><b>{site.externalLinks}</b><small>外部リンク数</small></div>
+            <div><b>—</b><small>被リンク数（未取得）</small></div>
+            <div><b>—</b><small>参照ドメイン数（未取得）</small></div>
+          </div>
+
+          <div className="note">
+            <i className="i">i</i>
+            <span>
+              スコアは、その場で取得できた指標（HTTPS・ヘッダー・サイトマップ・構造化データ・内部リンク）
+              だけから出した<b style={{ fontWeight: 600 }}>推定値</b>です。被リンク数と参照ドメイン数は外部データが必要なため取得していません。
+            </span>
+          </div>
+        </>
+      )}
 
       <div className="sec-head">
         <span className="ic">◆</span>

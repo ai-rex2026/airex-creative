@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { diagnose } from "./diagnose";
 import { generateCopies, scoreCopies } from "./copy";
 import type { BannerCopy, Diagnosis } from "./types";
+import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 
 /** 本番と同じ見た目の短いID（英数20文字） */
 export function newAnalysisId() {
@@ -22,6 +23,8 @@ export type Analysis = {
   error: string | null;
   diagnosis: Diagnosis | null;
   copies: BannerCopy[] | null;
+  site: SiteScan | null;
+  seo: SeoEstimate | null;
   created_at: string;
 };
 
@@ -42,6 +45,12 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
   };
 
   try {
+    // 最初にサイトの技術面を測る。AIを使わないので数秒で終わる
+    if (a.url && !a.site) {
+      await save({ status: "running", step: "サイトの構成を調べています", progress: 8 });
+      const site = await scanSite(a.url);
+      return await save({ site, seo: estimateSeo(site), step: "サイトを読んでいます", progress: 18 });
+    }
     if (!a.diagnosis) {
       await save({ status: "running", step: "サイトを読んでいます", progress: 15 });
       const d = await diagnose({ url: a.url ?? undefined, text: a.input_text ?? undefined });
