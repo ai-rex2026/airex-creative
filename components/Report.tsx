@@ -102,7 +102,7 @@ export function Report({
         <span className="rule" />
       </div>
 
-      <div className="card">
+      <div className="card measure">
         <div className="label">商材</div>
         <p style={{ fontSize: 14, marginTop: 4 }}>{d.product}</p>
         <div className="label" style={{ marginTop: 16 }}>ターゲット</div>
@@ -254,13 +254,13 @@ export function Report({
         </div>
         <span className="rule" />
       </div>
-      <div className="rows">
+      <div className="rows measure">
         <div className="rh">強み</div>
         {d.strengths.map((t, i) => (
           <div className="r" key={i}><span className="st" style={{ color: "var(--ok)" }}>✓</span><b style={{ fontWeight: 400 }}>{t}</b></div>
         ))}
       </div>
-      <div className="rows">
+      <div className="rows measure">
         <div className="rh">買わない理由</div>
         {d.objections.map((t, i) => (
           <div className="r" key={i}><span className="st" style={{ color: "var(--ng)" }}>✕</span><b style={{ fontWeight: 400 }}>{t}</b></div>
@@ -278,7 +278,7 @@ export function Report({
             <span className="rule" />
           </div>
 
-          <div className="plan">
+          <div className="plan measure">
             {plan.map((m, i) => (
               <div className="p" key={m.channel + i}>
                 <div className="top">
@@ -341,40 +341,62 @@ export function Report({
         <span className="rule" />
       </div>
       <section>
-        <div style={{ display: "grid", gap: 12 }}>
+        <div className="measure" style={{ display: "grid", gap: 12 }}>
           {[...copies.entries()]
             .sort((a, b) => (b[1].score ?? 0) - (a[1].score ?? 0))
             .map(([i, c]) => (
-              <label key={i} className={`card${picked.includes(i) ? " sel" : ""}`} style={{ display: "block", cursor: "pointer" }}>
+              <label key={i} className={`card copy-card${picked.includes(i) ? " sel" : ""}`} style={{ display: "block", cursor: "pointer" }}>
                 <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                   <input
                     type="checkbox"
                     checked={picked.includes(i)}
                     onChange={(e) => setPicked((p) => (e.target.checked ? [...p, i] : p.filter((x) => x !== i)))}
-                    style={{ marginTop: 7 }}
+                    style={{ marginTop: 8 }}
                   />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                      <b style={{ fontSize: 16 }}>{c.headline.join("")}</b>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
                       <GuardTag g={c.guard} />
                       {typeof c.score === "number" && <span className="tag score">勝ち筋 {c.score}</span>}
                     </div>
-                    <p style={{ fontSize: 13.5, color: "var(--muted)", marginTop: 6 }}>{c.body}</p>
-                    <p style={{ fontSize: 12.5, color: "var(--faint)", marginTop: 4 }}>
-                      {c.ribbonTop} / {c.ribbonBottom} / CTA: {c.cta}
-                    </p>
-                    {c.scoreReason && <p style={{ fontSize: 12.5, color: "var(--faint)", marginTop: 4 }}>評価: {c.scoreReason}</p>}
+
+                    <div className="hl">{c.headline.join("")}</div>
+                    <p className="body">{c.body}</p>
+
+                    <div className="meta">
+                      {c.ribbonTop && <span className="m"><em>条件</em>{c.ribbonTop}</span>}
+                      {c.ribbonBottom && <span className="m"><em>強調</em>{c.ribbonBottom}</span>}
+                      <span className="m"><em>CTA</em>{c.cta}</span>
+                    </div>
+
+                    {c.scoreReason && <p className="why">{c.scoreReason}</p>}
+
                     {c.guard && c.guard.hits.length > 0 && (
-                      <div className="hits">
+                      <details className="flags">
+                        <summary onClick={(e) => e.stopPropagation()}>
+                          法令の指摘 {c.guard.hits.length}件
+                          {c.guard.hits.some((h) => h.severity === "high") && (
+                            <span className="hit-sev high">要修正 {c.guard.hits.filter((h) => h.severity === "high").length}</span>
+                          )}
+                        </summary>
                         {c.guard.hits.map((h, k) => (
-                          <div key={k} className="hit">
-                            <span className={`hit-sev ${h.severity ?? "medium"}`}>
-                              {h.severity === "high" ? "要修正" : h.severity === "low" ? "参考" : "要確認"}
-                            </span>
-                            <b>「{h.text}」</b> {h.law}：{h.reason} → {h.suggestion}
+                          <div key={k} className={`flag ${h.severity ?? "medium"}`}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span className={`hit-sev ${h.severity ?? "medium"}`}>
+                                {h.severity === "high" ? "要修正" : h.severity === "low" ? "参考" : "要確認"}
+                              </span>
+                              <span className="q">「{h.text}」</span>
+                            </div>
+                            <dl>
+                              <dt>根拠</dt>
+                              <dd>{h.law}</dd>
+                              <dt>なぜ</dt>
+                              <dd>{h.reason}</dd>
+                              <dt>言い換え</dt>
+                              <dd className="fix">{h.suggestion}</dd>
+                            </dl>
                           </div>
                         ))}
-                      </div>
+                      </details>
                     )}
                   </div>
                 </div>

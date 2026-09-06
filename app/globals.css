@@ -344,3 +344,41 @@ table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sa
 .hit-sev.low{background:var(--sunk);color:var(--faint)}
 .or{display:flex;align-items:center;gap:12px;margin-top:16px;color:var(--faint);font-size:11.5px}
 .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* ── 読みやすさの調整 ───────────────────
+   長文が全幅に流れると目が戻れないので、読み物は行長を制限する。
+   本文サイズも上げ、セクション間の余白を広げて塊を分ける。 */
+.app-body{font-size:14.5px}
+.measure{max-width:760px}
+.sec-head{margin:56px 0 18px}
+.sec-head:first-child{margin-top:0}
+
+/* コピー案カード */
+.copy-card{padding:20px 22px}
+.copy-card .hl{font-family:var(--font-display),sans-serif;font-weight:700;font-size:19px;
+  line-height:1.5;letter-spacing:-.3px;color:var(--head)}
+.copy-card .body{font-size:14.5px;color:var(--text);margin-top:8px;line-height:1.85}
+.copy-card .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.copy-card .meta .m{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);
+  border-radius:8px;padding:4px 10px;font-size:12px;color:var(--muted)}
+.copy-card .meta .m em{font-style:normal;color:var(--faint);font-size:11px}
+.copy-card .why{font-size:13px;color:var(--muted);margin-top:12px;padding-left:12px;
+  border-left:2px solid var(--line)}
+
+/* 法令の指摘：畳んでおいて、開くと1件ずつ構造化して見せる */
+.flags{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.flags > summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;
+  font-size:13px;color:var(--muted)}
+.flags > summary::-webkit-details-marker{display:none}
+.flags > summary::after{content:"開く";margin-left:auto;font-size:11.5px;color:var(--gold-text)}
+.flags[open] > summary::after{content:"閉じる"}
+.flag{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-top:10px;background:var(--sunk)}
+.flag.high{border-left:3px solid var(--ng)}
+.flag.medium{border-left:3px solid var(--warn)}
+.flag.low{border-left:3px solid var(--line)}
+.flag .q{font-family:var(--font-display),sans-serif;font-weight:700;font-size:14.5px;color:var(--head)}
+.flag dl{margin-top:10px;display:grid;grid-template-columns:76px 1fr;gap:6px 12px;font-size:13px}
+.flag dt{color:var(--faint);font-size:11.5px;padding-top:2px}
+.flag dd{color:var(--text);line-height:1.8}
+.flag dd.fix{color:var(--ok)}
+@media(max-width:620px){.flag dl{grid-template-columns:1fr}.flag dt{padding-top:6px}}
