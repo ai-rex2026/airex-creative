@@ -190,3 +190,7 @@ table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sa
 .site-footer a{color:var(--faint);text-decoration:none}
 .site-footer a:hover{color:var(--head)}
 .site-footer .cp{margin-left:auto}
+
+/* 進捗バー */
+.bar{height:6px;border-radius:999px;background:var(--sunk);border:1px solid var(--line);overflow:hidden}
+.bar span{display:block;height:100%;background:var(--gold-grad);transition:width .5s ease}

@@ -1,10 +1,16 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 import { Logo } from "@/components/Chrome";
+import { AuthForm } from "@/components/AuthForm";
 
 export const metadata: Metadata = { title: "ログイン｜AI-REX Studio" };
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ callbackUrl?: string; mode?: string }>;
+}) {
+  const { callbackUrl, mode } = await searchParams;
+
   return (
     <div className="auth">
       <div className="side">
@@ -24,29 +30,8 @@ export default function LoginPage() {
           <div className="pt"><i>◆</i>Meta・Google・Yahoo のサイズを一括書き出し</div>
         </div>
       </div>
-
       <div className="main">
-        <div className="inner">
-          <h2>ログイン</h2>
-          <p className="sub">メールアドレスとパスワードを入力してください</p>
-          <form className="card" action="#" method="post">
-            <label htmlFor="email">メールアドレス</label>
-            <input id="email" name="email" type="email" placeholder="example@email.com" autoComplete="email" />
-            <label htmlFor="pw">
-              パスワード
-              <a href="#">パスワードを忘れた</a>
-            </label>
-            <input id="pw" name="password" type="password" placeholder="••••••••" autoComplete="current-password" />
-            <button className="btn" type="submit">ログインする</button>
-          </form>
-          <p className="foot">
-            アカウントをお持ちでない方は <Link href="/contact">お問い合わせ</Link>
-          </p>
-          <p className="note" style={{ justifyContent: "center", marginTop: 24 }}>
-            <i className="i">i</i>
-            <span>認証機能はまだ実装していません。この画面は本番サイトの体裁に合わせた枠だけです。</span>
-          </p>
-        </div>
+        <AuthForm callbackUrl={callbackUrl ?? "/"} initialMode={mode === "signup" ? "signup" : "signin"} />
       </div>
     </div>
   );

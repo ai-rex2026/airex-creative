@@ -1,5 +1,5 @@
-import { Studio } from "@/components/Studio";
+import { Home } from "@/components/Home";
 
 export default function Page() {
-  return <Studio />;
+  return <Home />;
 }
