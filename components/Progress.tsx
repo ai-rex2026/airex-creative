@@ -19,23 +19,23 @@ export function Progress({ id, initial }: { id: string; initial: State }) {
     running.current = true;
     let stopped = false;
 
-    (async () => {
-      let cur = s;
-      while (!stopped && cur.status !== "done" && cur.status !== "failed") {
-        const res = await fetch(`/api/analysis/${id}/tick`, { method: "POST" });
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          cur = { status: "failed", step: "失敗しました", progress: cur.progress, error: j.error ?? "エラーが発生しました" };
-        } else {
-          cur = await res.json();
-        }
-        if (!stopped) setS(cur);
+    // 進めるのはサーバー側のワーカー。ここは状態を見に行くだけ
+    const timer = setInterval(async () => {
+      const res = await fetch(`/api/analysis/${id}/status`, { cache: "no-store" });
+      if (!res.ok) return;
+      const cur: State = await res.json();
+      if (stopped) return;
+      setS(cur);
+      if (cur.status === "done") {
+        clearInterval(timer);
+        router.replace(`/analysis/${id}/report`);
       }
-      if (!stopped && cur.status === "done") router.replace(`/analysis/${id}/report`);
-    })();
+      if (cur.status === "failed") clearInterval(timer);
+    }, 3000);
 
     return () => {
       stopped = true;
+      clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -73,7 +73,7 @@ export function Progress({ id, initial }: { id: string; initial: State }) {
         ) : (
           <p className="note" style={{ justifyContent: "center", marginTop: 26 }}>
             <i className="i">i</i>
-            <span>この画面を開いたままにしてください。閉じると分析が止まります。</span>
+            <span>分析はサーバー側で進みます。この画面を閉じても止まりません。あとから同じURLを開けば続きが見られます。</span>
           </p>
         )}
       </div>

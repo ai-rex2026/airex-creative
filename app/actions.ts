@@ -1,8 +1,10 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { newAnalysisId } from "@/lib/analysis";
+import { processAnalysis } from "@/lib/worker";
 import { generateLp } from "@/lib/lp";
 import { hasAnthropic } from "@/lib/anthropic";
 import type { BannerCopy, Diagnosis } from "@/lib/types";
@@ -38,6 +40,15 @@ export async function startAnalysis(input: { url?: string; text?: string }) {
     input_text: input.text ?? null,
   });
   if (error) throw new Error(`分析を登録できませんでした: ${error.message}`);
+
+  // 画面ではなくサーバー側で走らせる。ブラウザを閉じても止まらない
+  after(async () => {
+    try {
+      await processAnalysis(id);
+    } catch {
+      // 取りこぼしは cron のワーカーが拾う
+    }
+  });
 
   redirect(`/analysis/${id}`);
 }
