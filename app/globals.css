@@ -648,3 +648,9 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
   color:var(--gold-text);text-decoration:underline;cursor:pointer}
 .linkbtn:disabled{opacity:.5;cursor:default;text-decoration:none}
 .note.warn small{display:block;margin-top:4px;font-size:11px;color:var(--faint)}
+
+/* ── 検索サジェスト ─────────────────────────── */
+.sg{display:grid;gap:12px;margin-top:16px}
+.sg .q{border:1px solid var(--line);border-radius:12px;background:#fff;padding:16px 18px}
+.sg .qh{font-size:12.5px;font-weight:600}
+.chip.warn{color:var(--warn);border-color:#EADFC6;background:#FCF8EF}

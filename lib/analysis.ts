@@ -8,6 +8,7 @@ import { generateTactics, type TacticPlan } from "./tactics";
 import { finishAdOps, generateCampaign, opsTargets, type AdOps } from "./ad-ops";
 import { hasPlacesApi, scanMeo, type MeoScan } from "./meo";
 import { generateKeywords, generateLine, generateLpo, type KeywordPlan, type LinePlan, type LpoPlan } from "./deep";
+import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } from "./outreach";
 import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
 import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
@@ -42,6 +43,8 @@ export type Analysis = {
   lpo: LpoPlan | null;
   keywords: KeywordPlan | null;
   line_plan: LinePlan | null;
+  suggests: SuggestScan | null;
+  outreach: OutreachPlan | null;
   mode: AnalysisMode;
   budget: BudgetBand | null;
   gsc: GscData | null;
@@ -165,9 +168,18 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const line_plan = await generateLine(a.diagnosis, a.site);
       return await save({ line_plan, step: "訴求軸ごとにコピーを書いています", progress: 78 });
     }
+    // サジェストは Google の公開エンドポイントから実測する。AI は使わないので速い
+    if (!a.suggests) {
+      const suggests = await scanSuggests(a.diagnosis, a.site);
+      return await save({ suggests, step: "外部露出の施策を書いています", progress: 79 });
+    }
+    if (!a.outreach) {
+      const outreach = await generateOutreach(a.diagnosis, a.suggests, a.competitors);
+      return await save({ outreach, step: "訴求軸ごとにコピーを書いています", progress: 82 });
+    }
     if (!a.copies) {
       const copies = await generateCopies(a.diagnosis, 2);
-      return await save({ copies, step: "勝ち筋を採点しています", progress: 84 });
+      return await save({ copies, step: "勝ち筋を採点しています", progress: 86 });
     }
     if (!a.copies[0]?.score) {
       const scored = await scoreCopies(a.diagnosis, a.copies);

@@ -1,0 +1,143 @@
+import { askJson } from "./anthropic";
+import type { Diagnosis } from "./types";
+import type { SiteScan } from "./site-scan";
+import type { CompetitorScan } from "./competitors";
+
+/**
+ * 検索サジェスト対策と外部施策。
+ *
+ * サジェストは Google の公開エンドポイントから実測する。
+ * 「どう対策するか」だけを AI に書かせても、いま何が出ているかが分からなければ動けない。
+ */
+
+/** 第三者サイトへ流れる語。ここに流れると自社で内容を制御できない */
+const LEAKY = /口コミ|評判|レビュー|比較|ランキング|おすすめ|2ch|5ch|知恵袋/;
+/** そのまま見せると不利になる語 */
+const HARMFUL = /悪い|ひどい|最悪|やばい|失敗|後悔|炎上|訴訟|詐欺|ステマ|嘘|被害|クレーム|返金|解約|退職|ブラック|パワハラ/;
+
+export type SuggestKind = "注意" | "誘導先に注意" | "中立";
+
+export type SuggestRow = {
+  keyword: string;
+  suggestion: string;
+  kind: SuggestKind;
+};
+
+export type SuggestScan = {
+  rows: SuggestRow[];
+  /** 取得できた検索語 */
+  queried: string[];
+  fetchedAt: string;
+};
+
+/** Google の公開サジェスト。認証も課金も要らない */
+async function suggestFor(q: string): Promise<string[]> {
+  const url =
+    "https://suggestqueries.google.com/complete/search?client=firefox&hl=ja&gl=jp&q=" +
+    encodeURIComponent(q);
+  try {
+    const res = await fetch(url, {
+      headers: { "user-agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const j = (await res.json()) as [string, string[]];
+    return Array.isArray(j?.[1]) ? j[1] : [];
+  } catch {
+    return [];
+  }
+}
+
+function classify(s: string, base: string): SuggestKind {
+  const tail = s.replace(base, "").trim();
+  if (HARMFUL.test(tail)) return "注意";
+  if (LEAKY.test(tail)) return "誘導先に注意";
+  return "中立";
+}
+
+/** ブランド名まわりのサジェストを実測する */
+export async function scanSuggests(d: Diagnosis, site: SiteScan | null): Promise<SuggestScan> {
+  const brand = site?.bizName || site?.title?.split(/[|｜\-–—:：]/).pop()?.trim() || "";
+  const queries = [brand, d.product].map((x) => x?.trim()).filter((x): x is string => !!x && x.length >= 2);
+  const uniq = [...new Set(queries)].slice(0, 2);
+
+  const rows: SuggestRow[] = [];
+  for (const q of uniq) {
+    for (const s of (await suggestFor(q)).slice(0, 10)) {
+      // 検索語そのものは対策対象ではない
+      if (s.trim().toLowerCase() === q.trim().toLowerCase()) continue;
+      rows.push({ keyword: q, suggestion: s, kind: classify(s, q) });
+    }
+  }
+  return { rows, queried: uniq, fetchedAt: new Date().toISOString() };
+}
+
+// ── 外部施策 ────────────────────────────────────
+
+export type CitationTarget = {
+  site: string;
+  kind: string;
+  why: string;
+  how: string;
+};
+
+export type AffiliatePlan = {
+  /** 向かないなら false。理由を必ず書く */
+  fit: boolean;
+  reason: string;
+  asps: string[];
+  /** 成果地点と単価の考え方 */
+  terms: string;
+  /** 業種特有の注意（医療広告GL 等） */
+  caution: string | null;
+};
+
+export type OutreachPlan = {
+  citations: CitationTarget[];
+  affiliate: AffiliatePlan;
+  /** サジェストへの打ち手。実測した内容を踏まえて書かせる */
+  suggestActions: string[];
+  prThemes: string[];
+};
+
+export async function generateOutreach(
+  d: Diagnosis,
+  suggests: SuggestScan,
+  competitors: CompetitorScan | null
+): Promise<OutreachPlan> {
+  const risky = suggests.rows.filter((r) => r.kind !== "中立");
+
+  return askJson<OutreachPlan>(
+    `あなたは外部露出（PR・掲載・アフィリエイト）の実務者です。自社サイトの外側で何をするかを設計します。
+
+守ること:
+- citations は4〜6件。**その業種で実在する掲載先の種類**を挙げる
+  （例：業種別ポータル、比較メディア、地域情報サイト、業界紙、プレスリリース配信）
+  site は媒体名かカテゴリ名。実在が確かでないサービス名を書かない
+  how は「誰がどう申し込むか」を1文で
+- affiliate は、この商材にアフィリエイトが向くかを先に判断する
+  向かない例：医療・士業など広告規制が厳しいもの、単価が低く報酬が出せないもの、
+  在庫や来店枠に限りがあるもの。向かないなら fit:false と理由を書き、asps は空にする
+  向くなら日本で実在する ASP 名を2〜3件
+  caution には業種特有の規制（医療広告ガイドライン等）があれば書く。無ければ null
+- suggestActions は3〜5件。**下に渡す実測のサジェストを踏まえて**書く。
+  一般論（「ポジティブな情報を増やす」等）は書かない。どの語に何をするかを書く
+- prThemes は3〜4件。この商材の事実を使う。誇張しない
+- 効果を断定する表現・最上級表現は書かない`,
+    `商材: ${d.product}
+ターゲット: ${d.audience}
+業種: ${d.industry}
+強み: ${d.strengths.join(" / ")}
+買わない理由: ${d.objections.join(" / ")}
+
+実測した検索サジェスト（${suggests.queried.join(" / ")}）:
+${suggests.rows.length ? suggests.rows.map((r) => `- ${r.suggestion}（${r.kind}）`).join("\n") : "- 取得できませんでした"}
+${risky.length ? `\n※ このうち ${risky.map((r) => `「${r.suggestion}」`).join("・")} は放置すると不利になります` : ""}
+${competitors?.items?.length ? `\n競合: ${competitors.items.slice(0, 5).map((c) => c.name).join(" / ")}` : ""}
+
+出力: {"citations":[{"site":"","kind":"","why":"","how":""}],
+ "affiliate":{"fit":true,"reason":"","asps":[""],"terms":"","caution":null},
+ "suggestActions":[""],"prThemes":[""]}`,
+    { maxTokens: 4000 }
+  );
+}

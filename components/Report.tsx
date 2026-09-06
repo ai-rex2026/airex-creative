@@ -12,6 +12,7 @@ import type { TacticPlan } from "@/lib/tactics";
 import { adWidth, type AdOps } from "@/lib/ad-ops";
 import type { MeoScan } from "@/lib/meo";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
+import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
 import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "@/lib/types";
@@ -36,6 +37,8 @@ export function Report({
   lpo,
   keywords,
   linePlan,
+  suggests,
+  outreach,
   budget: initialBudget,
   id,
   gsc,
@@ -56,6 +59,8 @@ export function Report({
   lpo: LpoPlan | null;
   keywords: KeywordPlan | null;
   linePlan: LinePlan | null;
+  suggests: SuggestScan | null;
+  outreach: OutreachPlan | null;
   budget: BudgetBand | null;
   id: string;
   gsc: GscData | null;
@@ -127,6 +132,14 @@ export function Report({
     for (const b of meo.breakdown.filter((x) => x.got === 0 && x.max === 10)) {
       todos.push({ level: "mid", text: `Googleビジネスプロフィールの${b.label}がない`, tab: "strategy", anchor: "sec-meo" });
     }
+  }
+  const risky = suggests?.rows.filter((r) => r.kind === "注意") ?? [];
+  if (risky.length > 0) {
+    todos.push({
+      level: "mid",
+      text: `検索サジェストに「${risky[0].suggestion}」が出ている（放置すると指名検索で不利になります）`,
+      tab: "strategy", anchor: "sec-suggest",
+    });
   }
   const redN = copies.filter((c) => c.guard?.level === "red").length;
   if (redN > 0) {
@@ -1089,6 +1102,110 @@ export function Report({
                     </div>
                   )}
                 </>
+              )}
+            </>
+          )}
+
+          {suggests && suggests.rows.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">⌕</span>
+                <div>
+                  <h2 id="sec-suggest">検索サジェスト</h2>
+                  <div className="sub">いま実際に出ているサジェストです（Googleから取得）</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="sg measure">
+                {suggests.queried.map((q) => (
+                  <div className="q" key={q}>
+                    <div className="qh">「{q}」で検索したとき</div>
+                    <div className="chips">
+                      {suggests.rows.filter((r) => r.keyword === q).map((r, i) => (
+                        <span className={`chip${r.kind === "注意" ? " ng" : r.kind === "誘導先に注意" ? " warn" : ""}`} key={i}>
+                          {r.suggestion}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="note">
+                <i className="i">i</i>
+                <span>
+                  赤は放置すると不利になる語、黄は第三者サイトへ流れる語（口コミ・比較など）です。
+                  黄は必ずしも悪くありませんが、遷移先の内容を自社で制御できません。
+                </span>
+              </div>
+              {outreach && outreach.suggestActions?.length > 0 && (
+                <div className="tactic measure" style={{ marginTop: 12 }}>
+                  <div className="top"><b>この状態に対してやること</b></div>
+                  <ul>{outreach.suggestActions.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                </div>
+              )}
+            </>
+          )}
+
+          {outreach && (
+            <>
+              <div className="sec-head">
+                <span className="ic">↗</span>
+                <div>
+                  <h2 id="sec-outreach">外部施策（自社サイトの外でやること）</h2>
+                  <div className="sub">掲載・アフィリエイト・PR</div>
+                </div>
+                <span className="rule" />
+              </div>
+
+              {outreach.citations?.length > 0 && (
+                <div className="rows measure">
+                  <div className="rh">掲載を狙う先</div>
+                  {outreach.citations.map((c, i) => (
+                    <div className="r" key={i}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <b>{c.site}</b>
+                        <small>{c.why}</small>
+                        <small style={{ color: "var(--text)" }}>{c.how}</small>
+                      </div>
+                      <span className="tag">{c.kind}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {outreach.affiliate && (
+                <div className="tactic measure" style={{ marginTop: 12 }}>
+                  <div className="top">
+                    <b>アフィリエイト</b>
+                    <span className={`tag${outreach.affiliate.fit ? "" : " warn"}`}>
+                      {outreach.affiliate.fit ? "向いています" : "向きません"}
+                    </span>
+                  </div>
+                  <p>{outreach.affiliate.reason}</p>
+                  {outreach.affiliate.fit && (
+                    <>
+                      {outreach.affiliate.asps?.length > 0 && (
+                        <div className="chips" style={{ paddingTop: 8 }}>
+                          {outreach.affiliate.asps.map((a, i) => <span className="chip" key={i}>{a}</span>)}
+                        </div>
+                      )}
+                      {outreach.affiliate.terms && <p style={{ marginTop: 10 }}>{outreach.affiliate.terms}</p>}
+                    </>
+                  )}
+                  {outreach.affiliate.caution && (
+                    <div className="note warn" style={{ marginTop: 10 }}>
+                      <i className="i">!</i>
+                      <span>{outreach.affiliate.caution}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {outreach.prThemes?.length > 0 && (
+                <div className="tactic measure" style={{ marginTop: 12 }}>
+                  <div className="top"><b>PRで出せる話</b></div>
+                  <ul>{outreach.prThemes.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                </div>
               )}
             </>
           )}
