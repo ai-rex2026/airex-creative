@@ -1,5 +1,4 @@
 import { notFound, redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Report } from "@/components/Report";
 import { Shell } from "@/components/Shell";
@@ -23,10 +22,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
 
   return (
     <Shell active="analysis">
-      <div style={{ marginBottom: 18 }}>
-        <Link className="btn ghost sm" href="/analysis">← 分析一覧に戻る</Link>
-      </div>
-      <Report d={a.diagnosis} copies={a.copies} />
+      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} />
     </Shell>
   );
 }

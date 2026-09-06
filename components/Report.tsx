@@ -9,7 +9,17 @@ import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import { INDUSTRY_LABEL } from "@/lib/types";
 import { Banner } from "./Banner";
 
-export function Report({ d, copies }: { d: Diagnosis; copies: BannerCopy[] }) {
+export function Report({
+  d,
+  copies,
+  url,
+  isGuest,
+}: {
+  d: Diagnosis;
+  copies: BannerCopy[];
+  url: string | null;
+  isGuest: boolean;
+}) {
   const [picked, setPicked] = useState<number[]>(copies.map((_, i) => i).slice(0, 3));
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "google-lb"]);
   const [lp, setLp] = useState<{ html: string; guard: GuardVerdict } | null>(null);
@@ -63,38 +73,100 @@ export function Report({ d, copies }: { d: Diagnosis; copies: BannerCopy[] }) {
     <div>
       {err && <div className="alert">{err}</div>}
 
-      <section className="block">
-        <div className="step-head"><span className="n">1</span><h2>診断</h2></div>
-        <div className="card">
-          <div className="grid2">
-            <Field label="商材">{d.product}</Field>
-            <Field label="ターゲット">{d.audience}</Field>
-            <Field label="業種（表現規制）">{INDUSTRY_LABEL[d.industry]}</Field>
-            <Field label="ブランド色">
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <span style={{ width: 16, height: 16, borderRadius: 4, background: d.brand.accent, border: "1px solid var(--line)" }} />
-                {d.brand.accent}
-              </span>
-            </Field>
-            <Field label="強み">{d.strengths.join(" / ")}</Field>
-            <Field label="買わない理由">{d.objections.join(" / ")}</Field>
-          </div>
-          <div style={{ marginTop: 22 }}>
-            <p className="eyebrow">訴求軸</p>
-            <div className="grid2" style={{ marginTop: 12 }}>
-              {d.angles.map((a) => (
-                <div key={a.id} className="card" style={{ background: "var(--sunk)", padding: 16 }}>
-                  <b style={{ fontSize: 14 }}>{a.name}</b>
-                  <span style={{ display: "block", fontSize: 12.5, color: "var(--muted)", marginTop: 4 }}>{a.why}</span>
-                </div>
-              ))}
+      <div className="rep-top">
+        <a className="icon-btn" href="/analysis">←</a>
+        <div className="right">
+          <button className="icon-btn" onClick={() => window.print()}>⤓ PDF出力</button>
+        </div>
+      </div>
+
+      <div className="rep-hero">
+        {url && <div className="u">{url}</div>}
+        <h2>{url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入力テキストから分析"}</h2>
+      </div>
+
+      <div className="sec-head">
+        <span className="ic">◎</span>
+        <div>
+          <h2>サイト概要</h2>
+          <div className="sub">何を、誰に売っているか</div>
+        </div>
+        <span className="rule" />
+      </div>
+
+      <div className="card">
+        <div className="label">商材</div>
+        <p style={{ fontSize: 14, marginTop: 4 }}>{d.product}</p>
+        <div className="label" style={{ marginTop: 16 }}>ターゲット</div>
+        <p style={{ fontSize: 14, marginTop: 4 }}>{d.audience}</p>
+        <div className="chips">
+          <span className="chip-s">業種 {INDUSTRY_LABEL[d.industry]}</span>
+          <span className="chip-s">
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: d.brand.accent, display: "inline-block" }} />
+            ブランド色 {d.brand.accent}
+          </span>
+          <span className="chip-s">訴求軸 {d.angles.length}本</span>
+          <span className="chip-s">コピー {copies.length}案</span>
+        </div>
+      </div>
+
+      <div className="stat-row" style={{ marginTop: 14 }}>
+        <div><b>{d.strengths.length}</b><small>強み</small></div>
+        <div><b>{d.objections.length}</b><small>買わない理由</small></div>
+        <div><b>{d.angles.length}</b><small>訴求軸</small></div>
+        <div><b>{copies.filter((c) => c.guard?.level === "green").length}/{copies.length}</b><small>法令チェック通過</small></div>
+      </div>
+
+      <div className="sec-head">
+        <span className="ic">◆</span>
+        <div>
+          <h2>強みと、買わない理由</h2>
+          <div className="sub">ここを潰すコピーが一番効く</div>
+        </div>
+        <span className="rule" />
+      </div>
+      <div className="rows">
+        <div className="rh">強み</div>
+        {d.strengths.map((t, i) => (
+          <div className="r" key={i}><span className="st" style={{ color: "var(--ok)" }}>✓</span><b style={{ fontWeight: 400 }}>{t}</b></div>
+        ))}
+      </div>
+      <div className="rows">
+        <div className="rh">買わない理由</div>
+        {d.objections.map((t, i) => (
+          <div className="r" key={i}><span className="st" style={{ color: "var(--ng)" }}>✕</span><b style={{ fontWeight: 400 }}>{t}</b></div>
+        ))}
+      </div>
+
+      <div className="sec-head">
+        <span className="ic">↗</span>
+        <div>
+          <h2>訴求軸</h2>
+          <div className="sub">この切り口でコピーを作りました</div>
+        </div>
+        <span className="rule" />
+      </div>
+      <div style={{ display: "grid", gap: 10 }}>
+        {d.angles.map((a, i) => (
+          <div key={a.id} className="card" style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: 18 }}>
+            <span className="tag score" style={{ flex: "0 0 auto" }}>{i + 1}</span>
+            <div>
+              <b style={{ fontSize: 14.5 }}>{a.name}</b>
+              <span style={{ display: "block", fontSize: 12.5, color: "var(--muted)", marginTop: 4 }}>{a.why}</span>
             </div>
           </div>
-        </div>
-      </section>
+        ))}
+      </div>
 
-      <section className="block">
-        <div className="step-head"><span className="n">2</span><h2>コピーと法令チェック</h2></div>
+      <div className="sec-head">
+        <span className="ic">✎</span>
+        <div>
+          <h2>コピーと法令チェック</h2>
+          <div className="sub">生成と同時に景表法・薬機法を確認しています</div>
+        </div>
+        <span className="rule" />
+      </div>
+      <section>
         <div style={{ display: "grid", gap: 12 }}>
           {[...copies.entries()]
             .sort((a, b) => (b[1].score ?? 0) - (a[1].score ?? 0))
@@ -136,9 +208,16 @@ export function Report({ d, copies }: { d: Diagnosis; copies: BannerCopy[] }) {
         </div>
       </section>
 
-      {chosen.length > 0 && (
+      {!isGuest && chosen.length > 0 && (
         <section className="block">
-          <div className="step-head"><span className="n">3</span><h2>バナー書き出し</h2></div>
+          <div className="sec-head" style={{ marginTop: 0 }}>
+            <span className="ic">▤</span>
+            <div>
+              <h2>バナー書き出し</h2>
+              <div className="sub">Meta・Google・Yahoo の各サイズを同時に出します</div>
+            </div>
+            <span className="rule" />
+          </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {SIZES.map((s) => (
               <button
@@ -185,9 +264,16 @@ export function Report({ d, copies }: { d: Diagnosis; copies: BannerCopy[] }) {
         </section>
       )}
 
-      {chosen.length > 0 && (
+      {!isGuest && chosen.length > 0 && (
         <section className="block">
-          <div className="step-head"><span className="n">4</span><h2>リンク先LP</h2></div>
+          <div className="sec-head" style={{ marginTop: 0 }}>
+            <span className="ic">▣</span>
+            <div>
+              <h2>リンク先LP</h2>
+              <div className="sub">広告と同じ訴求軸で着地を作ります</div>
+            </div>
+            <span className="rule" />
+          </div>
           <button className="btn" onClick={() => guarded("lp", async () => setLp(await runLp(d, chosen[0])))} disabled={!!busy}>
             {busy === "lp" ? "生成中…" : `「${chosen[0].headline.join("")}」に合わせたLPを作る`}<span className="arw">→</span>
           </button>
@@ -206,6 +292,21 @@ export function Report({ d, copies }: { d: Diagnosis; copies: BannerCopy[] }) {
             </div>
           )}
         </section>
+      )}
+      {isGuest && (
+        <div className="wall">
+          <div className="lock">🔒</div>
+          <h2>バナーとLPは会員登録で</h2>
+          <p>
+            分析は完了しています。会員登録（無料）すると、媒体サイズのバナー一式とリンク先LPの作成・
+            書き出しがご利用いただけます。
+          </p>
+          <p className="fine">※ 登録しても、いま実行した分析結果はそのまま引き継がれます。</p>
+          <a className="btn" href="/login?mode=signup">無料で会員登録して続きを見る</a>
+          <p className="alt">
+            すでにアカウントをお持ちですか？ <a href="/login">ログイン</a>
+          </p>
+        </div>
       )}
     </div>
   );
