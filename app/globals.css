@@ -544,3 +544,29 @@ table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sa
 .linked th{text-align:left;color:var(--faint);font-weight:400;font-size:11px;padding:4px 0}
 .linked td{padding:5px 0;border-top:1px solid var(--line)}
 .linked td.n{text-align:right;color:var(--muted)}
+
+/* ── 広告運用設計 ───────────────────────────── */
+.ops{display:grid;gap:14px;margin-top:16px}
+.ops .cmp{border:1px solid var(--line);border-radius:12px;background:#fff;padding:18px 20px}
+.ops .cmp > .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ops .cmp > .top b{font-size:15px}
+.ops .bid{margin:8px 0 0;font-size:12.5px;color:var(--muted)}
+.adg{margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
+.adg .h{display:flex;align-items:center;gap:8px}
+.adg .h b{font-size:13.5px}
+.adg .h .ic{font-size:11px;color:var(--gold-text)}
+.adg > p{margin:6px 0 0;font-size:12.5px;color:var(--muted);line-height:1.75}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding-top:10px}
+.chip{font-size:12px;padding:4px 10px;border-radius:999px;background:var(--sunk);
+  border:1px solid var(--line);color:var(--text)}
+.chip.ng{color:var(--ng);border-color:#E9D5D2}
+.lines{display:grid;gap:6px;padding-top:10px}
+.ln{display:flex;align-items:baseline;gap:10px;font-size:13px;padding:7px 12px;
+  border-radius:8px;background:var(--sunk)}
+.ln span{flex:1;min-width:0}
+.ln small{flex:0 0 auto;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.ln.over{background:#FBF0EE}
+.ln.over small{color:var(--ng);font-weight:600}
+.ops .notes{margin:14px 0 0;padding-left:18px;display:grid;gap:6px}
+.ops .notes li{font-size:12.5px;color:var(--muted);line-height:1.7}
+.note.warn .i{border-color:var(--warn);color:var(--warn)}

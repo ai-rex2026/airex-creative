@@ -9,6 +9,7 @@ import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
 import type { CompetitorScan } from "@/lib/competitors";
 import type { TacticPlan } from "@/lib/tactics";
+import { adWidth, type AdOps } from "@/lib/ad-ops";
 import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { INDUSTRY_LABEL } from "@/lib/types";
@@ -28,6 +29,7 @@ export function Report({
   summary,
   competitors,
   tactics,
+  adOps,
   gsc,
   ga4,
 }: {
@@ -41,6 +43,7 @@ export function Report({
   summary: Summary | null;
   competitors: CompetitorScan | null;
   tactics: TacticPlan | null;
+  adOps: AdOps | null;
   gsc: GscData | null;
   ga4: Ga4Data | null;
 }) {
@@ -76,6 +79,18 @@ export function Report({
   }
   if (seo && seo.score < 45) {
     todos.push({ level: "mid", text: `SEO強度が ${seo.score}点（低権威）`, tab: "overview", anchor: "sec-seo" });
+  }
+  if (adOps) {
+    // 必須なのに入っていないタグは、配信しても成果が測れないので最優先
+    for (const t of adOps.tags.filter((x) => x.need === "必須" && x.status === "未導入")) {
+      todos.push({ level: "high", text: `${t.name} が未導入（この媒体に出しても成果を計測できません）`, tab: "strategy", anchor: "sec-adops" });
+    }
+    for (const t of adOps.tags.filter((x) => x.need === "必須" && x.status === "要確認")) {
+      todos.push({ level: "mid", text: `${t.name} の有無をGTMで確認する`, tab: "strategy", anchor: "sec-adops" });
+    }
+    if (adOps.overLength.length > 0) {
+      todos.push({ level: "mid", text: `広告原稿 ${adOps.overLength.length}件が文字数超過（そのままでは入稿できません）`, tab: "strategy", anchor: "sec-adops" });
+    }
   }
   const redN = copies.filter((c) => c.guard?.level === "red").length;
   if (redN > 0) {
@@ -575,6 +590,153 @@ export function Report({
               予算配分も、実際の運用結果を見ながら調整する前提の初期値です。
             </span>
           </div>
+        </>
+      )}
+
+      {adOps && adOps.campaigns.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">▣</span>
+            <div>
+              <h2 id="sec-adops">広告運用設計</h2>
+              <div className="sub">管理画面にそのまま入稿できる粒度で出しています</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          {adOps.tags.length > 0 && (
+            <>
+              <div className="rows measure">
+                <div className="rh">計測タグの導入状況<small>サイトを実際に読んで判定しています</small></div>
+                {adOps.tags.map((t, i) => (
+                  <div className="r" key={i}>
+                    <span className="st" style={{ color: t.status === "導入済み" ? "var(--ok)" : t.status === "要確認" ? "var(--warn)" : "var(--ng)" }}>
+                      {t.status === "導入済み" ? "✓" : t.status === "要確認" ? "?" : "✕"}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <b>{t.name}</b>
+                      <small>{t.note}</small>
+                    </div>
+                    <span className={`tag${t.need === "必須" && t.status === "未導入" ? " warn" : ""}`}>{t.need}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="note">
+                <i className="i">i</i>
+                <span>
+                  「要確認」は<b style={{ fontWeight: 600 }}>未導入という意味ではありません</b>。
+                  Google タグマネージャーはタグを表示時に差し込むため、HTMLを読むだけでは有無を判定できません。GTMの管理画面でご確認ください。
+                </span>
+              </div>
+            </>
+          )}
+
+          {adOps.overLength.length > 0 && (
+            <div className="note warn" style={{ marginTop: 14 }}>
+              <i className="i">!</i>
+              <span>
+                <b style={{ fontWeight: 600 }}>{adOps.overLength.length}件</b>の原稿が文字数の上限を超えています。該当箇所は赤で表示しています。
+              </span>
+            </div>
+          )}
+
+          <div className="ops measure">
+            {adOps.campaigns.map((c, ci) => (
+              <div className="cmp" key={ci}>
+                <div className="top">
+                  <b>{c.name}</b>
+                  <span className="tag">{c.channel}</span>
+                </div>
+                {c.bidStrategy && <p className="bid">入札戦略：{c.bidStrategy}</p>}
+
+                {c.settings?.length > 0 && (
+                  <details className="flags">
+                    <summary>ターゲティング設定（{c.settings.length}項目）</summary>
+                    <div className="rows" style={{ margin: 0 }}>
+                      {c.settings.map((st, i) => (
+                        <div className="r" key={i}>
+                          <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 400 }}>{st.label}</b></div>
+                          <span className="tag">{st.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+
+                {c.groups?.map((g, gi) => (
+                  <div className="adg" key={gi}>
+                    <div className="h">
+                      <span className="ic">◆</span>
+                      <b>{g.name}</b>
+                    </div>
+                    {g.targeting && <p>{g.targeting}</p>}
+
+                    {g.keywords?.length > 0 && (
+                      <details className="flags">
+                        <summary>キーワード（{g.keywords.length}件）</summary>
+                        <div className="chips">{g.keywords.map((k, i) => <span className="chip" key={i}>{k}</span>)}</div>
+                      </details>
+                    )}
+                    {g.negatives?.length > 0 && (
+                      <details className="flags">
+                        <summary>除外キーワード（{g.negatives.length}件）</summary>
+                        <div className="chips">{g.negatives.map((k, i) => <span className="chip ng" key={i}>{k}</span>)}</div>
+                      </details>
+                    )}
+                    {g.headlines?.length > 0 && (
+                      <details className="flags">
+                        <summary>見出し案（{g.headlines.length}件・全角15文字まで）</summary>
+                        <div className="lines">
+                          {g.headlines.map((t, i) => {
+                            const w = adWidth(t);
+                            return (
+                              <div className={`ln${w > 30 ? " over" : ""}`} key={i}>
+                                <span>{t}</span>
+                                <small>{w}/30</small>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    )}
+                    {g.descriptions?.length > 0 && (
+                      <details className="flags">
+                        <summary>説明文案（{g.descriptions.length}件・全角45文字まで）</summary>
+                        <div className="lines">
+                          {g.descriptions.map((t, i) => {
+                            const w = adWidth(t);
+                            return (
+                              <div className={`ln${w > 90 ? " over" : ""}`} key={i}>
+                                <span>{t}</span>
+                                <small>{w}/90</small>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                ))}
+
+                {c.notes?.length > 0 && (
+                  <ul className="notes">
+                    {c.notes.map((n, i) => <li key={i}>{n}</li>)}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {adOps.guard && adOps.guard.hits?.length > 0 && (
+            <div className="note warn" style={{ marginTop: 16 }}>
+              <i className="i">!</i>
+              <span>
+                上の原稿のうち <b style={{ fontWeight: 600 }}>{adOps.guard.hits.length}件</b>に法令上の指摘があります：
+                {adOps.guard.hits.slice(0, 4).map((h) => `「${h.text}」`).join("・")}
+                {adOps.guard.hits.length > 4 ? " ほか" : ""}。入稿前に言い換えてください。
+              </span>
+            </div>
+          )}
         </>
       )}
 

@@ -5,6 +5,7 @@ import { generateMediaPlan } from "./media-plan";
 import { generateSummary } from "./summary";
 import { findCompetitors, type CompetitorScan } from "./competitors";
 import { generateTactics, type TacticPlan } from "./tactics";
+import { generateAdOps, type AdOps } from "./ad-ops";
 import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
 import type { BannerCopy, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
@@ -34,6 +35,7 @@ export type Analysis = {
   summary: Summary | null;
   competitors: CompetitorScan | null;
   tactics: TacticPlan | null;
+  ad_ops: AdOps | null;
   gsc: GscData | null;
   ga4: Ga4Data | null;
   created_at: string;
@@ -109,9 +111,13 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const plan = await generateMediaPlan(a.diagnosis, a.site);
       return await save({ media_plan: plan, step: "訴求軸ごとにコピーを書いています", progress: 55 });
     }
+    if (!a.ad_ops) {
+      const ops = await generateAdOps(a.diagnosis, a.site, a.media_plan);
+      return await save({ ad_ops: ops, step: "広告以外の施策を整理しています", progress: 60 });
+    }
     if (!a.tactics) {
       const t = await generateTactics(a.diagnosis, a.site);
-      return await save({ tactics: t, step: "訴求軸ごとにコピーを書いています", progress: 62 });
+      return await save({ tactics: t, step: "訴求軸ごとにコピーを書いています", progress: 66 });
     }
     if (!a.copies) {
       const copies = await generateCopies(a.diagnosis, 2);
