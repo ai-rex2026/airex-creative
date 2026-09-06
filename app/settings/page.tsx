@@ -2,6 +2,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/Shell";
 import { SignOutButton } from "@/components/SignOutButton";
+import { GoogleConnect } from "@/components/GoogleConnect";
+import { googleConnection } from "@/app/actions";
+import { hasGoogleApp } from "@/lib/google";
 
 export const metadata = { title: "設定｜AI-REX Studio" };
 
@@ -11,6 +14,8 @@ export default async function SettingsPage() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect("/login?callbackUrl=%2Fsettings");
+
+  const conn = await googleConnection();
 
   return (
     <Shell active="settings">
@@ -40,6 +45,34 @@ export default async function SettingsPage() {
             <SignOutButton />
           </div>
         </div>
+
+        <div className="rows" style={{ marginTop: 20 }}>
+          <div className="rh">データ連携</div>
+          <div className="r">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <b>Search Console / Google Analytics 4</b>
+              <small>
+                {conn
+                  ? `連携済み（${new Date(conn.connected_at).toLocaleDateString("ja-JP")}）。分析するとレポートに実データが入ります。`
+                  : "連携すると、検索クエリ・順位・流入チャネルを推定ではなく実データで出せます。"}
+              </small>
+            </div>
+            {hasGoogleApp() ? (
+              <GoogleConnect connected={!!conn} />
+            ) : (
+              <span className="tag warn">未設定</span>
+            )}
+          </div>
+        </div>
+
+        {!hasGoogleApp() && (
+          <p className="note">
+            <i className="i">i</i>
+            <span>
+              連携には <code>GOOGLE_CLIENT_ID</code> と <code>GOOGLE_CLIENT_SECRET</code> の設定が必要です。
+            </span>
+          </p>
+        )}
 
         {user.is_anonymous && (
           <p className="note">

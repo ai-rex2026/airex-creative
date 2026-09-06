@@ -4,6 +4,8 @@ import { generateCopies, scoreCopies } from "./copy";
 import { generateMediaPlan } from "./media-plan";
 import { generateSummary } from "./summary";
 import { findCompetitors, type CompetitorScan } from "./competitors";
+import { generateTactics, type TacticPlan } from "./tactics";
+import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
 import type { BannerCopy, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 
@@ -31,6 +33,9 @@ export type Analysis = {
   media_plan: MediaPlanItem[] | null;
   summary: Summary | null;
   competitors: CompetitorScan | null;
+  tactics: TacticPlan | null;
+  gsc: GscData | null;
+  ga4: Ga4Data | null;
   created_at: string;
 };
 
@@ -62,6 +67,34 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const d = await diagnose({ url: a.url ?? undefined, text: a.input_text ?? undefined });
       return await save({ diagnosis: d, step: "広告手法を選んでいます", progress: 45 });
     }
+    // Google 連携があれば実データを取り込む。無ければ何もしない
+    if (a.url && hasGoogleApp() && a.gsc === null && a.ga4 === null) {
+      const { data: conn } = await sb
+        .from("google_connections")
+        .select("refresh_token")
+        .eq("user_id", a.owner_id)
+        .maybeSingle();
+      if (conn?.refresh_token) {
+        let gsc: GscData | null = null;
+        let ga4: Ga4Data | null = null;
+        try {
+          gsc = await fetchSearchConsole(conn.refresh_token, a.url);
+        } catch {
+          // 権限が無い・所有していない等。落とさず先へ
+        }
+        try {
+          ga4 = await fetchGa4(conn.refresh_token, a.url);
+        } catch {
+          // 同上
+        }
+        return await save({
+          gsc: gsc ?? ({ site: "", from: "", to: "", totals: { clicks: 0, impressions: 0, position: 0 }, queries: [] } as GscData),
+          ga4: ga4 ?? ({ property: "", from: "", to: "", sessions: 0, users: 0, channels: [] } as Ga4Data),
+          step: "競合を調べています",
+          progress: 34,
+        });
+      }
+    }
     if (!a.competitors) {
       // Web検索は1検索ごとに従量課金があるので、失敗しても分析全体は止めない
       let comp: CompetitorScan = { keywords: [], items: [], searchedAt: new Date().toISOString() };
@@ -75,6 +108,10 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     if (!a.media_plan) {
       const plan = await generateMediaPlan(a.diagnosis, a.site);
       return await save({ media_plan: plan, step: "訴求軸ごとにコピーを書いています", progress: 55 });
+    }
+    if (!a.tactics) {
+      const t = await generateTactics(a.diagnosis, a.site);
+      return await save({ tactics: t, step: "訴求軸ごとにコピーを書いています", progress: 62 });
     }
     if (!a.copies) {
       const copies = await generateCopies(a.diagnosis, 2);

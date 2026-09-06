@@ -8,6 +8,8 @@ import { SIZES } from "@/lib/sizes";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
 import type { CompetitorScan } from "@/lib/competitors";
+import type { TacticPlan } from "@/lib/tactics";
+import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { INDUSTRY_LABEL } from "@/lib/types";
 import { Banner } from "./Banner";
@@ -25,6 +27,9 @@ export function Report({
   plan,
   summary,
   competitors,
+  tactics,
+  gsc,
+  ga4,
 }: {
   d: Diagnosis;
   copies: BannerCopy[];
@@ -35,6 +40,9 @@ export function Report({
   plan: MediaPlanItem[] | null;
   summary: Summary | null;
   competitors: CompetitorScan | null;
+  tactics: TacticPlan | null;
+  gsc: GscData | null;
+  ga4: Ga4Data | null;
 }) {
   const [picked, setPicked] = useState<number[]>(copies.map((_, i) => i).slice(0, 3));
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "google-lb"]);
@@ -181,6 +189,66 @@ export function Report({
 
       {tab === "overview" && (
       <>
+      {((gsc && gsc.queries.length > 0) || (ga4 && ga4.sessions > 0)) && (
+        <>
+          <div className="sec-head" style={{ marginTop: 0 }}>
+            <span className="ic">⇄</span>
+            <div>
+              <h2 id="sec-linked">連携データ</h2>
+              <div className="sub">Search Console / GA4 の実データです（推定ではありません）</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          <div className="linked measure">
+            {gsc && gsc.queries.length > 0 && (
+              <div className="k">
+                <div className="h">Search Console<span className="live">実データ</span></div>
+                <div className="b">
+                  <div className="big">
+                    <div><b>{gsc.totals.clicks.toLocaleString()}</b><small>クリック（28日）</small></div>
+                    <div><b>{gsc.totals.impressions.toLocaleString()}</b><small>表示回数</small></div>
+                    <div><b>{gsc.totals.position}</b><small>平均掲載順位</small></div>
+                  </div>
+                  <table>
+                    <thead><tr><th>検索語</th><th style={{ textAlign: "right" }}>クリック</th><th style={{ textAlign: "right" }}>順位</th></tr></thead>
+                    <tbody>
+                      {gsc.queries.slice(0, 6).map((q) => (
+                        <tr key={q.query}>
+                          <td>{q.query}</td>
+                          <td className="n">{q.clicks}</td>
+                          <td className="n">{q.position}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {ga4 && ga4.sessions > 0 && (
+              <div className="k">
+                <div className="h">Google Analytics 4<span className="live">実データ</span></div>
+                <div className="b">
+                  <div className="big">
+                    <div><b>{ga4.sessions.toLocaleString()}</b><small>セッション（28日）</small></div>
+                    <div><b>{ga4.users.toLocaleString()}</b><small>ユーザー</small></div>
+                  </div>
+                  <table>
+                    <thead><tr><th>流入チャネル</th><th style={{ textAlign: "right" }}>セッション</th></tr></thead>
+                    <tbody>
+                      {ga4.channels.slice(0, 6).map((c) => (
+                        <tr key={c.name}><td>{c.name}</td><td className="n">{c.sessions.toLocaleString()}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
       {summary && summary.firstSteps?.length > 0 && (
         <>
           <div className="sec-head">
@@ -529,6 +597,78 @@ export function Report({
           </div>
         ))}
       </div>
+
+      {tactics && tactics.items?.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">◇</span>
+            <div>
+              <h2 id="sec-tactics">広告以外の施策</h2>
+              <div className="sub">出稿と並行してやると効くもの</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div className="measure" style={{ display: "grid", gap: 12 }}>
+            {tactics.items.map((t, i) => (
+              <div className="tactic" key={i}>
+                <div className="top">
+                  <b>{t.area}</b>
+                  {t.kpi && <span className="kpi">見る数字：{t.kpi}</span>}
+                </div>
+                <p>{t.summary}</p>
+                <ul>
+                  {t.actions?.map((a, k) => <li key={k}>{a}</li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          {tactics.schedule?.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">▤</span>
+                <div>
+                  <h2 id="sec-sched">実行スケジュール</h2>
+                  <div className="sub">どの順で手を付けるか</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="sched">
+                {tactics.schedule.map((p, i) => (
+                  <div className="p" key={i}>
+                    <div className="h">
+                      <b>{p.phase}</b>
+                      <small>{p.period}</small>
+                    </div>
+                    <ul>{p.items?.map((x, k) => <li key={k}>{x}</li>)}</ul>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {tactics.risks?.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">⚠</span>
+                <div>
+                  <h2 id="sec-risk">リスクと注意点</h2>
+                  <div className="sub">先に潰しておくもの</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="rows measure">
+                {tactics.risks.map((r, i) => (
+                  <div className="r" key={i}>
+                    <span className="st" style={{ color: "var(--warn)" }}>!</span>
+                    <b style={{ fontWeight: 400 }}>{r}</b>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
 
       </>
       )}

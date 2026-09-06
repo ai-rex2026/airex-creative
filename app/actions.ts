@@ -75,6 +75,26 @@ export async function signIn(email: string, password: string) {
   if (error) throw new Error("メールアドレスかパスワードが違います");
 }
 
+/** Google 連携の状態。設定画面で出す */
+export async function googleConnection() {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) return null;
+  const { data } = await sb.from("google_connections").select("connected_at").eq("user_id", user.id).maybeSingle();
+  return data ?? null;
+}
+
+export async function disconnectGoogle() {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) return;
+  await sb.from("google_connections").delete().eq("user_id", user.id);
+}
+
 export async function signOut() {
   const sb = await createClient();
   await sb.auth.signOut();
