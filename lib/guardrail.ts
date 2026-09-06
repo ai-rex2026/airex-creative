@@ -62,8 +62,18 @@ function dictScan(texts: string[], industry: Industry): GuardHit[] {
   return hits;
 }
 
+/** 同じ語が複数の原稿に出ると同じ指摘が並ぶので、語と法令で1件にまとめる */
+function dedupe(hits: GuardHit[]): GuardHit[] {
+  const seen = new Map<string, GuardHit>();
+  for (const h of hits) {
+    const key = `${h.text}\u0000${h.law}`;
+    if (!seen.has(key)) seen.set(key, h);
+  }
+  return [...seen.values()];
+}
+
 export async function checkGuard(texts: string[], industry: Industry): Promise<GuardVerdict> {
-  const dictHits = dictScan(texts, industry);
+  const dictHits = dedupe(dictScan(texts, industry));
   let aiHits: GuardHit[] = [];
   try {
     const res = await askJson<{ hits: GuardHit[] }>(

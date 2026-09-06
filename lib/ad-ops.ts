@@ -48,6 +48,9 @@ export type MeasureTag = {
   note: string;
 };
 
+/** どの原稿がどの指摘に当たったか。原稿の横に理由と言い換え案を出すために持つ */
+export type FlaggedText = { text: string; law: string; reason: string; suggestion: string };
+
 export type AdOps = {
   /** 設計し終えたか。媒体ごとに1回ずつ生成するので、途中の状態がありうる */
   done: boolean;
@@ -56,6 +59,7 @@ export type AdOps = {
   /** 上限を超えた原稿。入稿前に直す必要がある */
   overLength: { campaign: string; group: string; kind: "見出し" | "説明文"; text: string; width: number; limit: number }[];
   guard: GuardVerdict;
+  flagged: FlaggedText[];
 };
 
 /**
@@ -275,11 +279,23 @@ export async function finishAdOps(
   // 生成した原稿は全部ガードレールに通す。ここを素通りさせると入稿事故になる
   const texts = repaired.flatMap((c) => (c.groups ?? []).flatMap((g) => [...(g.headlines ?? []), ...(g.descriptions ?? [])]));
   const guard = await checkGuard(texts, industry);
+  // 指摘語を含む原稿を特定して紐付ける。まとめて件数だけ出しても直せない
+  const flagged: FlaggedText[] = [];
+  for (const t of new Set(texts)) {
+    for (const h of guard.hits) {
+      if (h.severity !== "low" && t.includes(h.text)) {
+        flagged.push({ text: t, law: h.law, reason: h.reason, suggestion: h.suggestion });
+        break;
+      }
+    }
+  }
+
   return {
     done: true,
     campaigns: repaired,
     tags: diagnoseTags(site, plan),
     overLength: findOverLength(repaired),
     guard,
+    flagged,
   };
 }

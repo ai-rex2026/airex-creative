@@ -108,6 +108,9 @@ export function Report({
     todos.push({ level: "high", text: `コピー ${redN}案が法令で要修正（そのままでは出せません）`, tab: "creative", anchor: "sec-copies" });
   }
 
+  /** その原稿に付いた法令の指摘。無ければ null */
+  const flagOf = (t: string) => adOps?.flagged?.find((f) => f.text === t) ?? null;
+
   function jump(t: Todo) {
     setTab(t.tab);
     setTimeout(() => document.getElementById(t.anchor)?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
@@ -813,15 +816,7 @@ export function Report({
                       <details className="flags">
                         <summary>見出し案（{g.headlines.length}件・全角15文字まで）</summary>
                         <div className="lines">
-                          {g.headlines.map((t, i) => {
-                            const w = adWidth(t);
-                            return (
-                              <div className={`ln${w > 30 ? " over" : ""}`} key={i}>
-                                <span>{t}</span>
-                                <small>{w}/30</small>
-                              </div>
-                            );
-                          })}
+                          {g.headlines.map((t, i) => <AdLine key={i} text={t} limit={30} flag={flagOf(t)} />)}
                         </div>
                       </details>
                     )}
@@ -829,15 +824,7 @@ export function Report({
                       <details className="flags">
                         <summary>説明文案（{g.descriptions.length}件・全角45文字まで）</summary>
                         <div className="lines">
-                          {g.descriptions.map((t, i) => {
-                            const w = adWidth(t);
-                            return (
-                              <div className={`ln${w > 90 ? " over" : ""}`} key={i}>
-                                <span>{t}</span>
-                                <small>{w}/90</small>
-                              </div>
-                            );
-                          })}
+                          {g.descriptions.map((t, i) => <AdLine key={i} text={t} limit={90} flag={flagOf(t)} />)}
                         </div>
                       </details>
                     )}
@@ -857,9 +844,10 @@ export function Report({
             <div className="note warn" style={{ marginTop: 16 }}>
               <i className="i">!</i>
               <span>
-                上の原稿のうち <b style={{ fontWeight: 600 }}>{adOps.guard.hits.length}件</b>に法令上の指摘があります：
-                {adOps.guard.hits.slice(0, 4).map((h) => `「${h.text}」`).join("・")}
-                {adOps.guard.hits.length > 4 ? " ほか" : ""}。入稿前に言い換えてください。
+                <b style={{ fontWeight: 600 }}>{adOps.flagged.length}本</b>の原稿に法令上の指摘があります
+                （{adOps.guard.hits.slice(0, 3).map((h) => `「${h.text}」`).join("・")}
+                {adOps.guard.hits.length > 3 ? " ほか" : ""}）。
+                該当する原稿には理由と言い換え案を付けています。入稿前に直してください。
               </span>
             </div>
           )}
@@ -1200,4 +1188,25 @@ function GuardTag({ g }: { g?: GuardVerdict }) {
   const map = { green: ["問題なし", "ok"], yellow: ["要確認", "warn"], red: ["修正必要", "ng"] } as const;
   const [label, cls] = map[g.level];
   return <span className={`tag ${cls}`}>法令 {label}</span>;
+}
+
+/** 広告原稿1本。文字数と法令の指摘をその場に出す */
+function AdLine({ text, limit, flag }: { text: string; limit: number; flag: { law: string; reason: string; suggestion: string } | null }) {
+  const w = adWidth(text);
+  const over = w > limit;
+  return (
+    <div className={`ln${over ? " over" : ""}${flag ? " flagged" : ""}`}>
+      <div className="t">
+        <span>{text}</span>
+        <small>{w}/{limit}</small>
+      </div>
+      {flag && (
+        <div className="why">
+          <b>{flag.law}</b>
+          <span>{flag.reason}</span>
+          <span className="fix">言い換え：{flag.suggestion}</span>
+        </div>
+      )}
+    </div>
+  );
 }

@@ -128,7 +128,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
         const c = await generateCampaign(a.diagnosis, a.site, next);
         const ops: AdOps = {
           done: false, campaigns: [...built, c], tags: [], overLength: [],
-          guard: { level: "green", hits: [] },
+          guard: { level: "green", hits: [] }, flagged: [],
         };
         return await save({
           ad_ops: ops,

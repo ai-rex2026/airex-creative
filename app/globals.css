@@ -561,12 +561,17 @@ table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sa
   border:1px solid var(--line);color:var(--text)}
 .chip.ng{color:var(--ng);border-color:#E9D5D2}
 .lines{display:grid;gap:6px;padding-top:10px}
-.ln{display:flex;align-items:baseline;gap:10px;font-size:13px;padding:7px 12px;
-  border-radius:8px;background:var(--sunk)}
-.ln span{flex:1;min-width:0}
-.ln small{flex:0 0 auto;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.ln{font-size:13px;padding:7px 12px;border-radius:8px;background:var(--sunk)}
+.ln .t{display:flex;align-items:baseline;gap:10px}
+.ln .t span{flex:1;min-width:0}
+.ln .t small{flex:0 0 auto;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
 .ln.over{background:#FBF0EE}
-.ln.over small{color:var(--ng);font-weight:600}
+.ln.over .t small{color:var(--ng);font-weight:600}
+.ln.flagged{background:#FBF0EE;border-left:2px solid var(--ng)}
+.ln .why{display:grid;gap:3px;margin-top:6px;padding-top:6px;border-top:1px solid #EBDDDA;
+  font-size:11.5px;line-height:1.6;color:var(--muted)}
+.ln .why b{color:var(--ng);font-weight:600;font-size:11px}
+.ln .why .fix{color:var(--text)}
 .ops .notes{margin:14px 0 0;padding-left:18px;display:grid;gap:6px}
 .ops .notes li{font-size:12.5px;color:var(--muted);line-height:1.7}
 .note.warn .i{border-color:var(--warn);color:var(--warn)}
