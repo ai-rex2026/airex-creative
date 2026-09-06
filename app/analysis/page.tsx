@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/Shell";
+import { AnalysisList } from "@/components/AnalysisList";
 import type { Analysis } from "@/lib/analysis";
 
 export const metadata = { title: "分析サマリー｜AI-REX Studio" };
@@ -40,24 +41,7 @@ export default async function AnalysisListPage() {
             </p>
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 10, marginTop: 22 }}>
-            {rows.map((a) => {
-              const [text, cls] = PILL[a.status] ?? ["", ""];
-              const to = a.status === "done" ? `/analysis/${a.id}/report` : `/analysis/${a.id}/waiting`;
-              const site = a.url ? a.url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入力テキスト";
-              return (
-                <Link key={a.id} href={to} className="card" style={{ display: "flex", gap: 14, alignItems: "center", textDecoration: "none", padding: 18 }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <b style={{ fontSize: 15 }}>{a.diagnosis?.product?.slice(0, 46) ?? site}</b>
-                    <span style={{ display: "block", fontSize: 12.5, color: "var(--faint)", marginTop: 3 }}>
-                      {site} ・ {new Date(a.created_at).toLocaleString("ja-JP")}
-                    </span>
-                  </div>
-                  <span className={`tag ${cls === "ok" ? "ok" : cls === "ng" ? "ng" : ""}`}>{text}</span>
-                </Link>
-              );
-            })}
-          </div>
+          <AnalysisList rows={rows} />
         )}
       </div>
     </Shell>

@@ -20,7 +20,7 @@ export async function Shell({
   active,
   children,
 }: {
-  active: "new" | "summary" | "analysis";
+  active: "new" | "summary" | "analysis" | "settings";
   children: React.ReactNode;
 }) {
   const sb = await createClient();
@@ -70,10 +70,13 @@ export async function Shell({
           })
         )}
 
-        <div className="user">
+        <Link href="/settings" className={`user${active === "settings" ? " on" : ""}`} style={{ textDecoration: "none" }}>
           <span className="av">{user?.is_anonymous ? "ゲ" : "ユー"}</span>
-          {user?.is_anonymous ? "ゲスト" : user?.email ?? "ユーザー"}
-        </div>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {user?.is_anonymous ? "ゲスト" : user?.email ?? "ユーザー"}
+          </span>
+          <span style={{ marginLeft: "auto", fontSize: 13 }}>⚙</span>
+        </Link>
       </nav>
 
       <div className="app-main">

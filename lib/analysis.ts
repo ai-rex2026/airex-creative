@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { diagnose } from "./diagnose";
 import { generateCopies, scoreCopies } from "./copy";
 import { generateMediaPlan } from "./media-plan";
-import type { BannerCopy, Diagnosis, MediaPlanItem } from "./types";
+import { generateSummary } from "./summary";
+import type { BannerCopy, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 
 /** 本番と同じ見た目の短いID（英数20文字） */
@@ -27,6 +28,7 @@ export type Analysis = {
   site: SiteScan | null;
   seo: SeoEstimate | null;
   media_plan: MediaPlanItem[] | null;
+  summary: Summary | null;
   created_at: string;
 };
 
@@ -66,8 +68,12 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const copies = await generateCopies(a.diagnosis, 2);
       return await save({ copies, step: "勝ち筋を採点しています", progress: 82 });
     }
-    const scored = await scoreCopies(a.diagnosis, a.copies);
-    return await save({ copies: scored, status: "done", step: "完了しました", progress: 100 });
+    if (!a.copies[0]?.score) {
+      const scored = await scoreCopies(a.diagnosis, a.copies);
+      return await save({ copies: scored, step: "要約をまとめています", progress: 92 });
+    }
+    const summary = await generateSummary(a.diagnosis, a.site, a.seo, a.copies);
+    return await save({ summary, status: "done", step: "完了しました", progress: 100 });
   } catch (e) {
     return await save({
       status: "failed",

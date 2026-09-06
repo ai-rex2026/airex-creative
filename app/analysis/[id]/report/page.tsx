@@ -22,7 +22,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
 
   return (
     <Shell active="analysis">
-      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} site={a.site} seo={a.seo} plan={a.media_plan} />
+      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} site={a.site} seo={a.seo} plan={a.media_plan} summary={a.summary} />
     </Shell>
   );
 }

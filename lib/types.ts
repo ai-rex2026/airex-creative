@@ -91,3 +91,31 @@ export type MediaPlanItem = {
   cvr?: string;
   ctr?: string;
 };
+
+export type ScoreLevel = "強" | "標準" | "弱";
+
+export type Persona = {
+  name: string;
+  who: string;
+  pain: string;
+  trigger: string;
+};
+
+export type FirstStep = {
+  action: string;
+  /** いつまでに */
+  due: string;
+  /** 何をもって完了とするか */
+  done: string;
+};
+
+/** レポート冒頭の要約。一覧カードにも同じものを出す */
+export type Summary = {
+  overall: "良好" | "標準" | "要改善";
+  excerpt: string;
+  scores: { cvr: ScoreLevel; seo: ScoreLevel; targeting: ScoreLevel; lp: ScoreLevel };
+  best: string;
+  worst: string;
+  personas: Persona[];
+  firstSteps: FirstStep[];
+};

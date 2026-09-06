@@ -7,7 +7,7 @@ import { runLp } from "@/app/actions";
 import { SIZES } from "@/lib/sizes";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
-import type { MediaPlanItem } from "@/lib/types";
+import type { MediaPlanItem, Summary } from "@/lib/types";
 import { INDUSTRY_LABEL } from "@/lib/types";
 import { Banner } from "./Banner";
 
@@ -22,6 +22,7 @@ export function Report({
   site,
   seo,
   plan,
+  summary,
 }: {
   d: Diagnosis;
   copies: BannerCopy[];
@@ -30,6 +31,7 @@ export function Report({
   site: SiteScan | null;
   seo: SeoEstimate | null;
   plan: MediaPlanItem[] | null;
+  summary: Summary | null;
 }) {
   const [picked, setPicked] = useState<number[]>(copies.map((_, i) => i).slice(0, 3));
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "google-lb"]);
@@ -176,6 +178,58 @@ export function Report({
 
       {tab === "overview" && (
       <>
+      {summary && summary.firstSteps?.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">①</span>
+            <div>
+              <h2 id="sec-first">まずやること3つ</h2>
+              <div className="sub">優先度の高い順に、今週から始められるものです</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div className="steps3 measure">
+            {summary.firstSteps.map((f, i) => (
+              <div className="step3" key={i}>
+                <span className="n">{i + 1}</span>
+                <div className="b">
+                  <p className="act">{f.action}</p>
+                  <dl>
+                    <dt>期限</dt><dd>{f.due}</dd>
+                    <dt>完了条件</dt><dd className="done">{f.done}</dd>
+                  </dl>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {summary && summary.personas?.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">☺</span>
+            <div>
+              <h2 id="sec-persona">お客様像</h2>
+              <div className="sub">この人たちに向けてコピーを書いています</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div className="grid2 measure">
+            {summary.personas.map((p, i) => (
+              <div className="persona" key={i}>
+                <b>{p.name}</b>
+                <dl>
+                  <dt>どんな人</dt><dd>{p.who}</dd>
+                  <dt>困りごと</dt><dd>{p.pain}</dd>
+                  <dt>動く瞬間</dt><dd>{p.trigger}</dd>
+                </dl>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="sec-head">
         <span className="ic">◎</span>
         <div>
