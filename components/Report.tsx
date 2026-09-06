@@ -84,7 +84,16 @@ export function Report({
       <div className="rep-top">
         <a className="icon-btn" href="/analysis">←</a>
         <div className="right">
-          <button className="icon-btn" onClick={() => window.print()}>⤓ PDF出力</button>
+          <button
+            className="icon-btn"
+            onClick={() => {
+              // 畳んだ指摘が閉じたまま印刷されると中身が落ちるので、先に全部開く
+              document.querySelectorAll("details.flags").forEach((d) => ((d as HTMLDetailsElement).open = true));
+              window.print();
+            }}
+          >
+            ⤓ PDF出力
+          </button>
         </div>
       </div>
 

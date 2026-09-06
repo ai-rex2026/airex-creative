@@ -382,3 +382,22 @@ table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sa
 .flag dd{color:var(--text);line-height:1.8}
 .flag dd.fix{color:var(--ok)}
 @media(max-width:620px){.flag dl{grid-template-columns:1fr}.flag dt{padding-top:6px}}
+
+/* ── 印刷（PDF出力）─────────────────────
+   畳んだ指摘が閉じたまま印刷されると中身が消えるので、印刷時は必ず開く。
+   画面の枠（サイドバー・上部・ゲスト帯・操作ボタン）は紙に要らないので落とす。 */
+@media print{
+  .side-nav,.app-top,.guest,.app-foot,.rep-top,.note,.wall,input[type="checkbox"]{display:none!important}
+  .app{display:block}
+  .app-main{background:#fff}
+  .app-body{padding:0}
+  .measure{max-width:none}
+  details.flags{display:block}
+  details.flags > summary{display:none}
+  details.flags > *:not(summary){display:block!important}
+  .card,.rows,.panel,.plan .p,.score,.stat-row{break-inside:avoid;box-shadow:none}
+  .sec-head{margin:26px 0 12px;break-after:avoid}
+  .rep-hero{background:#1F1E1B!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .bar span,.hit-sev,.tag{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{font-size:11pt}
+}
