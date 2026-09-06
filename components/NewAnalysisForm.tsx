@@ -2,14 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { startAnalysis } from "@/app/actions";
-import { BUDGETS, type AnalysisMode, type BudgetBand } from "@/lib/types";
+import type { AnalysisMode } from "@/lib/types";
 import { IconArrowRight, IconGlobe } from "./Chrome";
 
 export function NewAnalysisForm({ initialUrl }: { initialUrl: string }) {
   const [url, setUrl] = useState(initialUrl);
   const [text, setText] = useState("");
   const [mode, setMode] = useState<AnalysisMode>("report");
-  const [budget, setBudget] = useState<BudgetBand | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -21,7 +20,6 @@ export function NewAnalysisForm({ initialUrl }: { initialUrl: string }) {
           url: url || undefined,
           text: mode === "meo" ? undefined : text || undefined,
           mode,
-          budget: mode === "meo" ? null : budget,
         });
       } catch (e) {
         const m = e instanceof Error ? e.message : String(e);
@@ -71,21 +69,6 @@ export function NewAnalysisForm({ initialUrl }: { initialUrl: string }) {
             rows={2}
           />
 
-          <div className="budget">
-            <div className="bh">月間広告予算<span>任意</span></div>
-            <div className="bb">
-              {BUDGETS.map((b) => (
-                <button
-                  key={b.id}
-                  className={budget === b.id ? "on" : ""}
-                  onClick={() => setBudget(budget === b.id ? null : b.id)}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
-            <p>入れると、配分%だけでなく媒体ごとの実額を出します。予算に対して媒体を広げすぎない配分にもなります。</p>
-          </div>
         </>
       )}
 

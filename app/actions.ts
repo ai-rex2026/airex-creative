@@ -114,3 +114,53 @@ export async function runLp(d: Diagnosis, copy: BannerCopy) {
   assertKey();
   return generateLp(d, copy);
 }
+
+/**
+ * レポートを見たあとで予算を決める導線。
+ * 配分%を実額に直すだけなら再生成は要らないので、保存して画面で計算する。
+ */
+export async function setBudget(id: string, budget: BudgetBand | null) {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
+  const { error } = await sb.from("analyses").update({ budget }).eq("id", id).eq("owner_id", user.id);
+  if (error) throw new Error("予算を保存できませんでした");
+}
+
+/**
+ * その予算で媒体構成から作り直す。
+ * 予算に対して媒体を広げすぎている場合の直し方で、AI の生成が走るので明示的に呼ばせる。
+ */
+export async function replanForBudget(id: string, budget: BudgetBand) {
+  assertKey();
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
+  const { error } = await sb
+    .from("analyses")
+    .update({
+      budget,
+      media_plan: null,
+      ad_ops: null,
+      status: "queued",
+      step: "広告手法を選び直しています",
+      progress: 50,
+    })
+    .eq("id", id)
+    .eq("owner_id", user.id);
+  if (error) throw new Error("作り直しを登録できませんでした");
+
+  after(async () => {
+    try {
+      await processAnalysis(id);
+    } catch {
+      // 取りこぼしは cron のワーカーが拾う
+    }
+  });
+}

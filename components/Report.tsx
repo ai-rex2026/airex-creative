@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
-import { runLp } from "@/app/actions";
+import { replanForBudget, runLp, setBudget } from "@/app/actions";
 import { SIZES } from "@/lib/sizes";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
@@ -14,7 +14,7 @@ import type { MeoScan } from "@/lib/meo";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
 import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
-import { INDUSTRY_LABEL, shareToYen, type BudgetBand } from "@/lib/types";
+import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "@/lib/types";
 import { Banner } from "./Banner";
 
 type Tab = "overview" | "strategy" | "creative";
@@ -36,7 +36,8 @@ export function Report({
   lpo,
   keywords,
   linePlan,
-  budget,
+  budget: initialBudget,
+  id,
   gsc,
   ga4,
 }: {
@@ -56,6 +57,7 @@ export function Report({
   keywords: KeywordPlan | null;
   linePlan: LinePlan | null;
   budget: BudgetBand | null;
+  id: string;
   gsc: GscData | null;
   ga4: Ga4Data | null;
 }) {
@@ -68,6 +70,20 @@ export function Report({
   const [hideRed, setHideRed] = useState(false);
   const [zoom, setZoom] = useState<{ ci: number; sizeId: string } | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
+  const [budget, setBudgetState] = useState<BudgetBand | null>(initialBudget);
+  const [replanning, setReplanning] = useState(false);
+
+  // 予算は配分%を実額に直すだけなので、選んだ瞬間に画面へ反映して裏で保存する
+  function pickBudget(b: BudgetBand | null) {
+    setBudgetState(b);
+    void setBudget(id, b).catch(() => {});
+  }
+
+  // 予算に対して媒体が多すぎると、どの媒体もデータが溜まらず判断できなくなる
+  const band = budgetOf(budget);
+  const thin = band
+    ? (plan ?? []).filter((m) => Math.round((band.min * m.share) / 100) < 10)
+    : [];
 
   /** 直すべきところ。散らばっている指摘を1か所に集めて、該当タブへ飛べるようにする */
   const todos: Todo[] = [];
@@ -605,6 +621,43 @@ export function Report({
             </div>
             <span className="rule" />
           </div>
+
+          <div className="budget measure" style={{ marginTop: 16 }}>
+            <div className="bh">月間広告予算<span>任意</span></div>
+            <div className="bb">
+              {BUDGETS.map((b) => (
+                <button key={b.id} className={budget === b.id ? "on" : ""} onClick={() => pickBudget(budget === b.id ? null : b.id)}>
+                  {b.label}
+                </button>
+              ))}
+            </div>
+            <p>
+              {budget
+                ? "配分%を実額に直しています。もう一度押すと解除できます。"
+                : "選ぶと、配分%が媒体ごとの実額に変わります。あとから何度でも変えられます。"}
+            </p>
+          </div>
+
+          {thin.length > 0 && band && (
+            <div className="note warn" style={{ marginTop: 12 }}>
+              <i className="i">!</i>
+              <span>
+                この予算だと <b style={{ fontWeight: 600 }}>{thin.map((m) => m.channel).join("・")}</b> が
+                月10万円を下回ります。予算を薄く広げると、どの媒体もデータが溜まらず良し悪しを判断できません。
+                <button
+                  className="linkbtn"
+                  disabled={replanning}
+                  onClick={() => {
+                    setReplanning(true);
+                    void replanForBudget(id, band.id).catch(() => setReplanning(false));
+                  }}
+                >
+                  {replanning ? "作り直しています…" : "この予算で媒体構成を作り直す"}
+                </button>
+                <small>（広告運用設計も作り直すため、数分かかります）</small>
+              </span>
+            </div>
+          )}
 
           <div className="plan measure">
             {plan.map((m, i) => (
