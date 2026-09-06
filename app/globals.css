@@ -342,3 +342,5 @@ table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sa
 .hit-sev.high{background:#F7E4DE;color:var(--ng)}
 .hit-sev.medium{background:#FBF4E4;color:var(--warn)}
 .hit-sev.low{background:var(--sunk);color:var(--faint)}
+.or{display:flex;align-items:center;gap:12px;margin-top:16px;color:var(--faint);font-size:11.5px}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}

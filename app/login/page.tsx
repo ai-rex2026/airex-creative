@@ -7,9 +7,9 @@ export const metadata: Metadata = { title: "ログイン｜AI-REX Studio" };
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ callbackUrl?: string; mode?: string }>;
+  searchParams: Promise<{ callbackUrl?: string; mode?: string; error?: string }>;
 }) {
-  const { callbackUrl, mode } = await searchParams;
+  const { callbackUrl, mode, error } = await searchParams;
 
   return (
     <div className="auth">
@@ -31,7 +31,7 @@ export default async function LoginPage({
         </div>
       </div>
       <div className="main">
-        <AuthForm callbackUrl={callbackUrl ?? "/"} initialMode={mode === "signup" ? "signup" : "signin"} />
+        <AuthForm callbackUrl={callbackUrl ?? "/"} initialMode={mode === "signup" ? "signup" : "signin"} initialError={error ?? null} />
       </div>
     </div>
   );
