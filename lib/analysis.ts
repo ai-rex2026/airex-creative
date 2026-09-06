@@ -3,6 +3,7 @@ import { diagnose } from "./diagnose";
 import { generateCopies, scoreCopies } from "./copy";
 import { generateMediaPlan } from "./media-plan";
 import { generateSummary } from "./summary";
+import { findCompetitors, type CompetitorScan } from "./competitors";
 import type { BannerCopy, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 
@@ -29,6 +30,7 @@ export type Analysis = {
   seo: SeoEstimate | null;
   media_plan: MediaPlanItem[] | null;
   summary: Summary | null;
+  competitors: CompetitorScan | null;
   created_at: string;
 };
 
@@ -59,6 +61,16 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       await save({ status: "running", step: "サイトを読んでいます", progress: 15 });
       const d = await diagnose({ url: a.url ?? undefined, text: a.input_text ?? undefined });
       return await save({ diagnosis: d, step: "広告手法を選んでいます", progress: 45 });
+    }
+    if (!a.competitors) {
+      // Web検索は1検索ごとに従量課金があるので、失敗しても分析全体は止めない
+      let comp: CompetitorScan = { keywords: [], items: [], searchedAt: new Date().toISOString() };
+      try {
+        comp = await findCompetitors(a.diagnosis, a.url);
+      } catch {
+        // 取れなければ空のまま進む（画面には「取得できず」と出す）
+      }
+      return await save({ competitors: comp, step: "広告手法を選んでいます", progress: 50 });
     }
     if (!a.media_plan) {
       const plan = await generateMediaPlan(a.diagnosis, a.site);

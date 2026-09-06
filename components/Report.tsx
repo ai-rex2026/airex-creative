@@ -7,6 +7,7 @@ import { runLp } from "@/app/actions";
 import { SIZES } from "@/lib/sizes";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
+import type { CompetitorScan } from "@/lib/competitors";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { INDUSTRY_LABEL } from "@/lib/types";
 import { Banner } from "./Banner";
@@ -23,6 +24,7 @@ export function Report({
   seo,
   plan,
   summary,
+  competitors,
 }: {
   d: Diagnosis;
   copies: BannerCopy[];
@@ -32,6 +34,7 @@ export function Report({
   seo: SeoEstimate | null;
   plan: MediaPlanItem[] | null;
   summary: Summary | null;
+  competitors: CompetitorScan | null;
 }) {
   const [picked, setPicked] = useState<number[]>(copies.map((_, i) => i).slice(0, 3));
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "google-lb"]);
@@ -392,6 +395,55 @@ export function Report({
 
       {tab === "strategy" && (
       <>
+      {competitors && (
+        <>
+          <div className="sec-head" style={{ marginTop: 0 }}>
+            <span className="ic">⊕</span>
+            <div>
+              <h2 id="sec-comp">競合サイト比較</h2>
+              <div className="sub">実際に検索して、上位に出ていたサイトです</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          {competitors.items.length === 0 ? (
+            <div className="card measure">
+              <p style={{ fontSize: 13.5, color: "var(--muted)" }}>
+                検索結果を取得できませんでした。再分析すると取り直します。
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="rows comp measure">
+                <div className="rh">
+                  上位に出ていたサイト
+                  <span className="hint">検索語：{competitors.keywords.join(" / ")}</span>
+                </div>
+                {competitors.items.map((c, i) => (
+                  <div className="r" key={i}>
+                    <span className="rk">{c.rank}</span>
+                    <div className="b">
+                      <b>{c.name}</b>
+                      <span className="u">{c.url}</span>
+                      <span className="n">{c.note}</span>
+                    </div>
+                    <span className="kw">{c.keyword}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="note measure">
+                <i className="i">i</i>
+                <span>
+                  {new Date(competitors.searchedAt).toLocaleString("ja-JP")}時点の検索結果です。
+                  順位は検索する場所・端末・時期で変わります。
+                  <b style={{ fontWeight: 600 }}>訪問数や類似度は取得していないため出していません。</b>
+                </span>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
       <div className="sec-head">
         <span className="ic">◆</span>
         <div>
