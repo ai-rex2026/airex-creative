@@ -10,14 +10,15 @@ export default function ContactPage() {
       <div className="page">
         <h1>お問い合わせ</h1>
         <p className="intro">
-          サービスに関するご質問・ご相談は、以下のフォームよりお気軽にお問い合わせください。担当者よりご連絡いたします。
+          サービスに関するご質問・ご相談は <a href="mailto:info@airex-ad.ai">info@airex-ad.ai</a> までご連絡ください。
+          以下のフォームからもお送りいただけます。
         </p>
 
         <div className="trust">
           <div className="top">
             <span style={{ color: "var(--gold-text)" }}>✓</span>
             お問い合わせ先は株式会社アドレクス
-            <a className="more" href="https://airex-ad.ai/ja/contact" target="_blank" rel="noreferrer">会社概要 ↗</a>
+            <a className="more" href="/company">会社概要</a>
           </div>
           <div className="stats">
             <div className="st"><b>100億円超</b><small>広告運用額</small></div>

@@ -2,11 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { startAnalysis } from "@/app/actions";
+import { BUDGETS, type AnalysisMode, type BudgetBand } from "@/lib/types";
 import { IconArrowRight, IconGlobe } from "./Chrome";
 
 export function NewAnalysisForm({ initialUrl }: { initialUrl: string }) {
   const [url, setUrl] = useState(initialUrl);
   const [text, setText] = useState("");
+  const [mode, setMode] = useState<AnalysisMode>("report");
+  const [budget, setBudget] = useState<BudgetBand | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -14,7 +17,12 @@ export function NewAnalysisForm({ initialUrl }: { initialUrl: string }) {
     setErr(null);
     start(async () => {
       try {
-        await startAnalysis({ url: url || undefined, text: text || undefined });
+        await startAnalysis({
+          url: url || undefined,
+          text: mode === "meo" ? undefined : text || undefined,
+          mode,
+          budget: mode === "meo" ? null : budget,
+        });
       } catch (e) {
         const m = e instanceof Error ? e.message : String(e);
         if (!m.includes("NEXT_REDIRECT")) setErr(m);
@@ -23,12 +31,23 @@ export function NewAnalysisForm({ initialUrl }: { initialUrl: string }) {
   }
 
   return (
-    <div style={{ maxWidth: 620, margin: "80px auto 0", textAlign: "center" }}>
+    <div style={{ maxWidth: 620, margin: "64px auto 0", textAlign: "center" }}>
       <h2 style={{ fontSize: 22 }}>広告の伸びしろ、今すぐ見つけましょう</h2>
 
       {err && <div className="alert" style={{ marginTop: 20, textAlign: "left" }}>{err}</div>}
 
-      <div className="field" style={{ marginTop: 24 }}>
+      <div className="modes">
+        <button className={mode === "report" ? "on" : ""} onClick={() => setMode("report")}>
+          <b>サイトレポート</b>
+          <small>戦略・原稿・バナーまで一式</small>
+        </button>
+        <button className={mode === "meo" ? "on" : ""} onClick={() => setMode("meo")}>
+          <b>MEOだけ見る</b>
+          <small>マップ順位を実データで即確認</small>
+        </button>
+      </div>
+
+      <div className="field" style={{ marginTop: 16 }}>
         <IconGlobe />
         <input
           value={url}
@@ -41,19 +60,41 @@ export function NewAnalysisForm({ initialUrl }: { initialUrl: string }) {
         </button>
       </div>
 
-      <textarea
-        className="box"
-        style={{ marginTop: 12, textAlign: "left" }}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="（任意）商品説明・補足。URLが無い場合はここだけでも分析できます"
-        rows={2}
-      />
+      {mode === "report" && (
+        <>
+          <textarea
+            className="box"
+            style={{ marginTop: 12, textAlign: "left" }}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="（任意）商品説明・補足。URLが無い場合はここだけでも分析できます"
+            rows={2}
+          />
 
-      <p style={{ marginTop: 14, fontSize: 12.5, color: "var(--faint)" }}>
+          <div className="budget">
+            <div className="bh">月間広告予算<span>任意</span></div>
+            <div className="bb">
+              {BUDGETS.map((b) => (
+                <button
+                  key={b.id}
+                  className={budget === b.id ? "on" : ""}
+                  onClick={() => setBudget(budget === b.id ? null : b.id)}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+            <p>入れると、配分%だけでなく媒体ごとの実額を出します。予算に対して媒体を広げすぎない配分にもなります。</p>
+          </div>
+        </>
+      )}
+
+      <p style={{ marginTop: 16, fontSize: 12.5, color: "var(--faint)" }}>
         {pending
           ? "分析を積んでいます…"
-          : "サイトを分析し、訴求軸・コピー・バナー・LPまで作ります（約1〜2分）"}
+          : mode === "meo"
+            ? "Googleマップの掲載状況・評価・レビュー数を近隣の同業と比べます（約20秒）"
+            : "サイトを分析し、訴求軸・コピー・バナー・LPまで作ります（約3〜5分）"}
       </p>
     </div>
   );

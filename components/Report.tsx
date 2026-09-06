@@ -11,9 +11,10 @@ import type { CompetitorScan } from "@/lib/competitors";
 import type { TacticPlan } from "@/lib/tactics";
 import { adWidth, type AdOps } from "@/lib/ad-ops";
 import type { MeoScan } from "@/lib/meo";
+import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
 import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
-import { INDUSTRY_LABEL } from "@/lib/types";
+import { INDUSTRY_LABEL, shareToYen, type BudgetBand } from "@/lib/types";
 import { Banner } from "./Banner";
 
 type Tab = "overview" | "strategy" | "creative";
@@ -32,6 +33,10 @@ export function Report({
   tactics,
   adOps,
   meo,
+  lpo,
+  keywords,
+  linePlan,
+  budget,
   gsc,
   ga4,
 }: {
@@ -47,6 +52,10 @@ export function Report({
   tactics: TacticPlan | null;
   adOps: AdOps | null;
   meo: MeoScan | null;
+  lpo: LpoPlan | null;
+  keywords: KeywordPlan | null;
+  linePlan: LinePlan | null;
+  budget: BudgetBand | null;
   gsc: GscData | null;
   ga4: Ga4Data | null;
 }) {
@@ -604,6 +613,7 @@ export function Report({
                   <span className="ic">◎</span>
                   <b>{m.channel}</b>
                   <span className="share">{m.share}%</span>
+                  {shareToYen(budget, m.share) && <span className="yen">{shareToYen(budget, m.share)}</span>}
                   <span className={`pr${m.priority === "最優先" ? " top1" : ""}`}>{m.priority}</span>
                 </div>
                 <div className="body">
@@ -898,6 +908,137 @@ export function Report({
               </div>
             ))}
           </div>
+
+          {lpo && lpo.groups.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">▤</span>
+                <div>
+                  <h2 id="sec-lpo">LP改善（受け皿の直し方）</h2>
+                  <div className="sub">広告を出す前に直すと、同じ予算で獲得数が変わります</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="measure" style={{ display: "grid", gap: 12 }}>
+                {lpo.groups.map((g, i) => (
+                  <div className="tactic" key={i}>
+                    <div className="top"><b>{g.area}</b></div>
+                    <ul>{g.items?.map((x, k) => <li key={k}>{x}</li>)}</ul>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {keywords && keywords.rows.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">⌕</span>
+                <div>
+                  <h2 id="sec-kw">対策キーワード</h2>
+                  <div className="sub">検索広告とSEOの両方で使う語です</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="kwwrap measure">
+                <table className="kw">
+                  <thead>
+                    <tr>
+                      <th>キーワード</th><th>種別</th><th>難易度</th><th>優先度</th>
+                      <th>表示回数</th><th>掲載順位</th><th>やること</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {keywords.rows.map((r, i) => (
+                      <tr key={i}>
+                        <td><b>{r.keyword}</b></td>
+                        <td><span className="tag">{r.kind}</span></td>
+                        <td>{r.difficulty}</td>
+                        <td>{r.priority}</td>
+                        <td className="num">{r.impressions !== null ? r.impressions.toLocaleString() : "—"}</td>
+                        <td className="num">{r.position !== null ? `${r.position}位` : "—"}</td>
+                        <td className="act">{r.action}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="note">
+                <i className="i">i</i>
+                <span>
+                  {keywords.hasRealData
+                    ? "表示回数・掲載順位は Search Console の直近28日の実測です。連携前の語は「—」にしています。"
+                    : "月間検索数は推測して載せていません。Search Console を連携すると、実際に検索されている語の表示回数と掲載順位が入ります。"}
+                </span>
+              </div>
+
+              {(keywords.technical.length > 0 || keywords.content.length > 0 || keywords.meo.length > 0) && (
+                <div className="measure" style={{ display: "grid", gap: 12, marginTop: 16 }}>
+                  {[
+                    { t: "テクニカルSEO", v: keywords.technical },
+                    { t: "コンテンツSEO", v: keywords.content },
+                    { t: "MEO（Googleマップ）", v: keywords.meo },
+                  ].filter((x) => x.v.length > 0).map((x, i) => (
+                    <div className="tactic" key={i}>
+                      <div className="top"><b>{x.t}</b></div>
+                      <ul>{x.v.map((y, k) => <li key={k}>{y}</li>)}</ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {linePlan && (
+            <>
+              <div className="sec-head">
+                <span className="ic">◒</span>
+                <div>
+                  <h2 id="sec-line">LINE公式アカウント</h2>
+                  <div className="sub">{linePlan.skip ? "この商材での向き不向き" : "リッチメニューと、送る文面そのもの"}</div>
+                </div>
+                <span className="rule" />
+              </div>
+              {linePlan.skip ? (
+                <div className="note"><i className="i">i</i><span>{linePlan.skip}</span></div>
+              ) : (
+                <>
+                  {linePlan.richMenu?.length > 0 && (
+                    <div className="rich measure">
+                      {linePlan.richMenu.map((m, i) => (
+                        <div className="cell" key={i}>
+                          <b>{m.label}</b>
+                          <small>{m.goes}</small>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {linePlan.steps?.length > 0 && (
+                    <div className="steps measure">
+                      {linePlan.steps.map((st, i) => (
+                        <div className="s" key={i}>
+                          <div className="h">
+                            <span className="n">{i + 1}</span>
+                            <div>
+                              <b>{st.title}</b>
+                              <small>{st.when}</small>
+                            </div>
+                          </div>
+                          <p>{st.body}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {linePlan.segments?.length > 0 && (
+                    <div className="tactic measure" style={{ marginTop: 12 }}>
+                      <div className="top"><b>出し分けの例</b></div>
+                      <ul>{linePlan.segments.map((x, k) => <li key={k}>{x}</li>)}</ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
 
           {tactics.schedule?.length > 0 && (
             <>

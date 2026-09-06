@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { newAnalysisId } from "@/lib/analysis";
+import type { AnalysisMode, BudgetBand } from "@/lib/types";
 import { processAnalysis } from "@/lib/worker";
 import { generateLp } from "@/lib/lp";
 import { hasAnthropic } from "@/lib/anthropic";
@@ -17,8 +18,15 @@ function assertKey() {
  * 分析を積む。アカウントが無ければ一時アカウント（匿名サインイン）を作って、
  * その持ち物として登録する。あとで本登録すると同じIDのまま引き継がれる。
  */
-export async function startAnalysis(input: { url?: string; text?: string }) {
+export async function startAnalysis(input: {
+  url?: string;
+  text?: string;
+  mode?: AnalysisMode;
+  budget?: BudgetBand | null;
+}) {
   assertKey();
+  const mode: AnalysisMode = input.mode === "meo" ? "meo" : "report";
+  if (mode === "meo" && !input.url) throw new Error("MEO分析にはサイトのURLが必要です");
   if (!input.url && !input.text) throw new Error("URL か 商品説明のどちらかを入れてください");
 
   const sb = await createClient();
@@ -38,6 +46,8 @@ export async function startAnalysis(input: { url?: string; text?: string }) {
     owner_id: user.id,
     url: input.url ?? null,
     input_text: input.text ?? null,
+    mode,
+    budget: input.budget ?? null,
   });
   if (error) throw new Error(`分析を登録できませんでした: ${error.message}`);
 

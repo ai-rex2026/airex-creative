@@ -7,8 +7,9 @@ import { findCompetitors, type CompetitorScan } from "./competitors";
 import { generateTactics, type TacticPlan } from "./tactics";
 import { finishAdOps, generateCampaign, opsTargets, type AdOps } from "./ad-ops";
 import { hasPlacesApi, scanMeo, type MeoScan } from "./meo";
+import { generateKeywords, generateLine, generateLpo, type KeywordPlan, type LinePlan, type LpoPlan } from "./deep";
 import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
-import type { BannerCopy, Diagnosis, MediaPlanItem, Summary } from "./types";
+import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 
 /** 本番と同じ見た目の短いID（英数20文字） */
@@ -38,6 +39,11 @@ export type Analysis = {
   tactics: TacticPlan | null;
   ad_ops: AdOps | null;
   meo: MeoScan | null;
+  lpo: LpoPlan | null;
+  keywords: KeywordPlan | null;
+  line_plan: LinePlan | null;
+  mode: AnalysisMode;
+  budget: BudgetBand | null;
   gsc: GscData | null;
   ga4: Ga4Data | null;
   created_at: string;
@@ -70,6 +76,10 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       // 失敗しても分析全体は止めない。取れなければ画面に理由を出す
       const meo = await scanMeo(a.site, a.url).catch(() => null);
       if (meo) return await save({ meo, step: "サイトを読んでいます", progress: 22 });
+    }
+    // MEO だけを見に来た人に、8分かかるレポート一式を作らせない
+    if (a.mode === "meo") {
+      return await save({ status: "done", step: "完了しました", progress: 100 });
     }
     if (!a.diagnosis) {
       await save({ status: "running", step: "サイトを読んでいます", progress: 15 });
@@ -115,7 +125,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       return await save({ competitors: comp, step: "広告手法を選んでいます", progress: 50 });
     }
     if (!a.media_plan) {
-      const plan = await generateMediaPlan(a.diagnosis, a.site);
+      const plan = await generateMediaPlan(a.diagnosis, a.site, a.budget);
       return await save({ media_plan: plan, step: "広告の運用設計を書いています", progress: 55 });
     }
     // 媒体1つ＝1工程。まとめて生成すると1リクエストの実行時間に収まらず、
@@ -143,9 +153,21 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const t = await generateTactics(a.diagnosis, a.site);
       return await save({ tactics: t, step: "訴求軸ごとにコピーを書いています", progress: 66 });
     }
+    if (!a.lpo) {
+      const lpo = await generateLpo(a.diagnosis, a.site);
+      return await save({ lpo, step: "キーワードを選んでいます", progress: 70 });
+    }
+    if (!a.keywords) {
+      const keywords = await generateKeywords(a.diagnosis, a.site, a.gsc, a.meo);
+      return await save({ keywords, step: "LINEの設計を書いています", progress: 74 });
+    }
+    if (!a.line_plan) {
+      const line_plan = await generateLine(a.diagnosis, a.site);
+      return await save({ line_plan, step: "訴求軸ごとにコピーを書いています", progress: 78 });
+    }
     if (!a.copies) {
       const copies = await generateCopies(a.diagnosis, 2);
-      return await save({ copies, step: "勝ち筋を採点しています", progress: 82 });
+      return await save({ copies, step: "勝ち筋を採点しています", progress: 84 });
     }
     if (!a.copies[0]?.score) {
       const scored = await scoreCopies(a.diagnosis, a.copies);

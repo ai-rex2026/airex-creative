@@ -70,6 +70,7 @@ export function SiteFooter() {
           アカウントをお持ちの方はログイン
         </Link>
         <div className="links">
+          <Link href="/company">会社概要</Link>
           <Link href="/contact">お問い合わせ</Link>
           <Link href="/terms">利用規約</Link>
           <Link href="/privacy">プライバシーポリシー</Link>

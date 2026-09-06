@@ -119,3 +119,32 @@ export type Summary = {
   personas: Persona[];
   firstSteps: FirstStep[];
 };
+
+/** 月間広告予算。金額を1点で聞くと嘘の精度が出るので幅で持つ */
+export type BudgetBand = "under50" | "b50to100" | "b100to500" | "over500";
+
+export const BUDGETS: { id: BudgetBand; label: string; min: number; max: number | null }[] = [
+  { id: "under50", label: "50万円未満 / 月", min: 20, max: 50 },
+  { id: "b50to100", label: "50万〜100万円 / 月", min: 50, max: 100 },
+  { id: "b100to500", label: "100万〜500万円 / 月", min: 100, max: 500 },
+  { id: "over500", label: "500万円以上 / 月", min: 500, max: null },
+];
+
+export function budgetOf(id: string | null | undefined) {
+  return BUDGETS.find((b) => b.id === id) ?? null;
+}
+
+/**
+ * 配分%を実額の幅に直す。
+ * 予算を幅で受けているので、出す金額も幅で出す。1点の金額に丸めると精度を偽ることになる。
+ */
+export function shareToYen(band: BudgetBand | null | undefined, share: number): string | null {
+  const b = budgetOf(band);
+  if (!b) return null;
+  const lo = Math.round((b.min * share) / 100);
+  if (b.max === null) return `月${lo}万円〜`;
+  const hi = Math.round((b.max * share) / 100);
+  return lo === hi ? `月${lo}万円` : `月${lo}〜${hi}万円`;
+}
+
+export type AnalysisMode = "report" | "meo";
