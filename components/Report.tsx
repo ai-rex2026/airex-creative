@@ -11,6 +11,9 @@ import type { MediaPlanItem } from "@/lib/types";
 import { INDUSTRY_LABEL } from "@/lib/types";
 import { Banner } from "./Banner";
 
+type Tab = "overview" | "strategy" | "creative";
+type Todo = { level: "high" | "mid"; text: string; tab: Tab; anchor: string };
+
 export function Report({
   d,
   copies,
@@ -36,6 +39,31 @@ export function Report({
   const [showAllCopies, setShowAllCopies] = useState(false);
   const [hideRed, setHideRed] = useState(false);
   const [zoom, setZoom] = useState<{ ci: number; sizeId: string } | null>(null);
+  const [tab, setTab] = useState<Tab>("overview");
+
+  /** 直すべきところ。散らばっている指摘を1か所に集めて、該当タブへ飛べるようにする */
+  const todos: Todo[] = [];
+  if (site) {
+    for (const h of site.headers.filter((x) => !x.pass)) {
+      todos.push({ level: "mid", text: `${h.label} が未設定`, tab: "overview", anchor: "sec-security" });
+    }
+    if (!site.https) todos.push({ level: "high", text: "HTTPS に対応していない", tab: "overview", anchor: "sec-security" });
+    if (!site.structuredData) todos.push({ level: "mid", text: "構造化データが無い（検索結果での見え方が弱くなる）", tab: "overview", anchor: "sec-seo" });
+    if (!site.sitemapXml) todos.push({ level: "mid", text: "sitemap.xml が無い", tab: "overview", anchor: "sec-seo" });
+    if (site.adTags.length === 0) todos.push({ level: "high", text: "広告タグが1つも入っていない（配信しても成果を計測できない）", tab: "overview", anchor: "sec-overview" });
+  }
+  if (seo && seo.score < 45) {
+    todos.push({ level: "mid", text: `SEO強度が ${seo.score}点（低権威）`, tab: "overview", anchor: "sec-seo" });
+  }
+  const redN = copies.filter((c) => c.guard?.level === "red").length;
+  if (redN > 0) {
+    todos.push({ level: "high", text: `コピー ${redN}案が法令で要修正（そのままでは出せません）`, tab: "creative", anchor: "sec-copies" });
+  }
+
+  function jump(t: Todo) {
+    setTab(t.tab);
+    setTimeout(() => document.getElementById(t.anchor)?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+  }
 
   const TOP_N = 3;
   const sorted = [...copies.entries()].sort((a, b) => (b[1].score ?? 0) - (a[1].score ?? 0));
@@ -90,18 +118,6 @@ export function Report({
     <div>
       {err && <div className="alert">{err}</div>}
 
-      <nav className="toc">
-        <a href="#sec-overview">サイト概要</a>
-        {site && <a href="#sec-security">セキュリティ</a>}
-        {seo && <a href="#sec-seo">SEO強度</a>}
-        <a href="#sec-strength">強み・買わない理由</a>
-        {plan && plan.length > 0 && <a href="#sec-plan">広告手法</a>}
-        <a href="#sec-angles">訴求軸</a>
-        <a href="#sec-copies">コピー・法令</a>
-        {!isGuest && <a href="#sec-banners">バナー</a>}
-        {!isGuest && <a href="#sec-lp">LP</a>}
-      </nav>
-
       <div className="rep-top">
         <a className="icon-btn" href="/analysis">←</a>
         <div className="right">
@@ -123,6 +139,34 @@ export function Report({
         <h2>{url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入力テキストから分析"}</h2>
       </div>
 
+      <div className="tabs">
+        <button className={tab === "overview" ? "on" : ""} onClick={() => setTab("overview")}>サイト概要</button>
+        <button className={tab === "strategy" ? "on" : ""} onClick={() => setTab("strategy")}>広告戦略</button>
+        <button className={tab === "creative" ? "on" : ""} onClick={() => setTab("creative")}>クリエイティブ</button>
+      </div>
+
+      {tab === "overview" && (
+        <div className="todos measure">
+          <div className="h">
+            直すべきところ
+            {todos.length > 0 && <span className="n">{todos.length}件</span>}
+          </div>
+          {todos.length === 0 ? (
+            <p className="ok">いまのところ、直すべき点は見つかりませんでした。</p>
+          ) : (
+            todos.map((t, i) => (
+              <button key={i} className="i" onClick={() => jump(t)}>
+                <span className={`mk ${t.level}`}>{t.level === "high" ? "要対応" : "確認"}</span>
+                {t.text}
+                <span className="go">見る →</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+
+      {tab === "overview" && (
+      <>
       <div className="sec-head">
         <span className="ic">◎</span>
         <div>
@@ -276,6 +320,11 @@ export function Report({
         </>
       )}
 
+      </>
+      )}
+
+      {tab === "strategy" && (
+      <>
       <div className="sec-head">
         <span className="ic">◆</span>
         <div>
@@ -362,6 +411,11 @@ export function Report({
         ))}
       </div>
 
+      </>
+      )}
+
+      {tab === "creative" && (
+      <>
       <div className="sec-head">
         <span className="ic">✎</span>
         <div>
@@ -542,6 +596,24 @@ export function Report({
           )}
         </section>
       )}
+      {isGuest && (
+        <div className="wall">
+          <div className="lock">🔒</div>
+          <h2>バナーとLPは会員登録で</h2>
+          <p>
+            分析は完了しています。会員登録（無料）すると、媒体サイズのバナー一式とリンク先LPの作成・
+            書き出しがご利用いただけます。
+          </p>
+          <p className="fine">※ 登録しても、いま実行した分析結果はそのまま引き継がれます。</p>
+          <a className="btn" href="/login?mode=signup">無料で会員登録して続きを見る</a>
+          <p className="alt">
+            すでにアカウントをお持ちですか？ <a href="/login">ログイン</a>
+          </p>
+        </div>
+      )}
+      </>
+      )}
+
       {zoom && (() => {
         const zs = SIZES.find((x) => x.id === zoom.sizeId)!;
         const zc = chosen[zoom.ci];
@@ -563,21 +635,6 @@ export function Report({
         );
       })()}
 
-      {isGuest && (
-        <div className="wall">
-          <div className="lock">🔒</div>
-          <h2>バナーとLPは会員登録で</h2>
-          <p>
-            分析は完了しています。会員登録（無料）すると、媒体サイズのバナー一式とリンク先LPの作成・
-            書き出しがご利用いただけます。
-          </p>
-          <p className="fine">※ 登録しても、いま実行した分析結果はそのまま引き継がれます。</p>
-          <a className="btn" href="/login?mode=signup">無料で会員登録して続きを見る</a>
-          <p className="alt">
-            すでにアカウントをお持ちですか？ <a href="/login">ログイン</a>
-          </p>
-        </div>
-      )}
     </div>
   );
 }
