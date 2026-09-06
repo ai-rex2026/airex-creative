@@ -221,7 +221,7 @@ const SOCIAL_HOSTS: { platform: string; re: RegExp }[] = [
   { platform: "Facebook", re: /facebook\.com\/([A-Za-z0-9.\-]+)/i },
   { platform: "TikTok", re: /tiktok\.com\/@([A-Za-z0-9._]+)/i },
   { platform: "YouTube", re: /youtube\.com\/(?:@|channel\/|c\/|user\/)([A-Za-z0-9._\-]+)/i },
-  { platform: "LINE", re: /(?:lin\.ee|line\.me)\/([A-Za-z0-9._~\-@%]+)/i },
+  { platform: "LINE", re: /lin\.ee\/([A-Za-z0-9._~\-]+)|line\.me\/(?:R\/ti\/p\/)?(@?[A-Za-z0-9._~\-]+)/i },
 ];
 
 /** サイトに実際に張られている公式SNSリンクだけを拾う。推測はしない */
@@ -234,7 +234,8 @@ function readSocial(html: string, host: string) {
       const hit = href.match(re);
       // share ボタンなど、自分のページを渡すだけのリンクは公式アカウントではない
       if (!hit || /\/(share|sharer|intent|home)\b/i.test(href)) continue;
-      if (!found.has(platform)) found.set(platform, { platform, url: href, handle: hit[1] });
+      const handle = hit.slice(1).find(Boolean) ?? "";
+      if (handle && !found.has(platform)) found.set(platform, { platform, url: href, handle });
     }
   }
   return [...found.values()];

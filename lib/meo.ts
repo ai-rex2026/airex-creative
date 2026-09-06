@@ -156,34 +156,58 @@ function grade(self: RawPlace, competitors: MeoPlace[]): MeoScan["breakdown"] {
   ];
 }
 
+
+/**
+ * 検索に使う店名の候補。
+ * 日本語サイトのタイトルは「説明｜店名」の並びが多く、先頭を取ると説明文を掴む。
+ * 逆の並びのサイトもあるので両端を候補に入れ、ドメイン一致で正解を選ばせる。
+ */
+function nameCandidates(site: SiteScan | null): string[] {
+  const out: string[] = [];
+  const push = (v: string | null | undefined) => {
+    const t = v?.trim();
+    if (t && t.length >= 2 && !out.includes(t)) out.push(t);
+  };
+  push(site?.bizName);
+  const parts = (site?.title ?? "").split(/[|｜\-–—:：]/).map((x) => x.trim()).filter(Boolean);
+  push(parts[parts.length - 1]);
+  push(parts[0]);
+  push(site?.title);
+  return out.slice(0, 3);
+}
+
 export async function scanMeo(site: SiteScan | null, url: string | null): Promise<MeoScan> {
   if (!hasPlacesApi()) return empty("Places API が未設定です");
   if (!url) return empty("URLがないため照合できません");
 
   const ourHost = host(url) || host(site?.finalUrl);
-  // JSON-LD の店名が最も確実。無ければ <title> の頭（記号より前）を使う
-  const name = site?.bizName || site?.title?.split(/[|｜\-–—]/)[0]?.trim() || "";
-  if (!name) return empty("店舗名を特定できませんでした");
+  const candidates = nameCandidates(site);
+  if (candidates.length === 0) return empty("店舗名を特定できませんでした");
 
-  const query = [name, site?.bizAddress ?? ""].filter(Boolean).join(" ");
-
-  let found: RawPlace[];
-  try {
-    found = await call("places:searchText", {
-      textQuery: query,
-      languageCode: "ja",
-      regionCode: "JP",
-      maxResultCount: 10,
-    });
-  } catch (e) {
-    return empty(e instanceof Error ? e.message : "Places API を呼べませんでした");
+  // 候補を順に試し、サイトのドメインが一致したものを自社とする。
+  // 同名の別店舗を掴まないための照合なので、一致しなければ採用しない。
+  let self: RawPlace | undefined;
+  let sawAny = false;
+  for (const name of candidates) {
+    const query = [name, site?.bizAddress ?? ""].filter(Boolean).join(" ");
+    let found: RawPlace[];
+    try {
+      found = await call("places:searchText", {
+        textQuery: query,
+        languageCode: "ja",
+        regionCode: "JP",
+        maxResultCount: 10,
+      });
+    } catch (e) {
+      return empty(e instanceof Error ? e.message : "Places API を呼べませんでした");
+    }
+    if (found.length) sawAny = true;
+    self = found.find((p) => host(p.websiteUri) === ourHost);
+    if (self) break;
   }
-
-  // サイトのドメインが一致するものだけを自社とみなす。同名の別店舗を掴まないため
-  const self = found.find((p) => host(p.websiteUri) === ourHost);
   if (!self) {
     return empty(
-      found.length
+      sawAny
         ? "Googleビジネスプロフィールは見つかりましたが、登録されているウェブサイトがこのサイトと一致しませんでした。プロフィール側のURLをご確認ください。"
         : "Googleビジネスプロフィールが見つかりませんでした。未登録の可能性があります。"
     );
