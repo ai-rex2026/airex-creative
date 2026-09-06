@@ -176,8 +176,8 @@ export async function generateCampaign(
 - groups は${search ? "2〜3個" : "1〜2個"}
 - keywords は${search ? "10〜15件" : "空配列にする（この媒体はキーワードで買う面ではない）"}
 - negatives は${search ? "「無料」「求人」「自分で」など、その商材で実際に無駄打ちになる語を5〜8件" : "空配列にする"}
-- headlines は12件。**全角15文字（半角30文字）以内**。文字数を必ず自分で数えること
-- descriptions は4件。**全角45文字（半角90文字）以内**
+- headlines は12件。**日本語15文字以内**（16文字以上は入稿できません）。書いたあと必ず数え直すこと
+- descriptions は4件。**日本語45文字以内**（46文字以上は入稿できません）。1文にまとめず短く切ること
 - 見出しは訴求を1つだけ入れる。1本に詰め込まない
 - settings は管理画面の設定項目名と値の対を6〜10件。**その媒体に実在する項目だけ**を書く
 - notes は「外し忘れると費用が漏れる設定」を2〜3件。一般論ではなく設定名で書く
@@ -205,20 +205,78 @@ ${site ? `サイト: ${site.title}` : ""}
 }
 
 /** 全媒体を設計し終えたあとの仕上げ。文字数を数え、原稿をガードレールに通す */
+
+/**
+ * 文字数超過の原稿を書き直させる。
+ * 生成AIは自分が書いた文字数を数えられないので、指示だけでは守られない。
+ * こちらで数えて、超えたものだけを長さを明示して直させ、直っていなければ採用しない。
+ */
+async function repairLengths(campaigns: Campaign[]): Promise<Campaign[]> {
+  type Slot = { ci: number; gi: number; kind: "headlines" | "descriptions"; i: number; limit: number };
+  const slots: Slot[] = [];
+  const items: { n: number; text: string; limit: number; now: number }[] = [];
+
+  campaigns.forEach((c, ci) =>
+    (c.groups ?? []).forEach((g, gi) => {
+      for (const [kind, limit] of [["headlines", 30], ["descriptions", 90]] as const) {
+        (g[kind] ?? []).forEach((t, i) => {
+          const w = adWidth(t);
+          if (w > limit) {
+            items.push({ n: slots.length, text: t, limit: limit / 2, now: Math.ceil(w / 2) });
+            slots.push({ ci, gi, kind, i, limit });
+          }
+        });
+      }
+    })
+  );
+  if (items.length === 0) return campaigns;
+
+  let fixed: { n: number; text: string }[] = [];
+  try {
+    const res = await askJson<{ items: { n: number; text: string }[] }>(
+      `広告原稿が入稿上限を超えています。意味を保ったまま短く書き直してください。
+
+守ること:
+- 各項目の limit は**全角の文字数**。その文字数以内に必ず収める
+- 削るときは修飾語・地名・保証などの補足から落とし、訴求の核は残す
+- 効果を断定する表現・最上級表現は足さない
+- n は変えずにそのまま返す`,
+      JSON.stringify({ items }) + '\n\n出力: {"items":[{"n":0,"text":""}]}',
+      { maxTokens: 4000 }
+    );
+    fixed = res.items ?? [];
+  } catch {
+    // 直せなくても元の原稿は残す。超過は overLength で画面に出る
+    return campaigns;
+  }
+
+  const out = structuredClone(campaigns);
+  for (const f of fixed) {
+    const slot = slots[f.n];
+    // 短くなっていなければ採用しない。直った体で上限超えを通すほうが害が大きい
+    if (!slot || typeof f.text !== "string" || adWidth(f.text) > slot.limit) continue;
+    const arr = out[slot.ci]?.groups?.[slot.gi]?.[slot.kind];
+    if (arr) arr[slot.i] = f.text;
+  }
+  return out;
+}
+
 export async function finishAdOps(
   campaigns: Campaign[],
   site: SiteScan | null,
   plan: MediaPlanItem[],
   industry: Diagnosis["industry"]
 ): Promise<AdOps> {
+  const repaired = await repairLengths(campaigns);
+
   // 生成した原稿は全部ガードレールに通す。ここを素通りさせると入稿事故になる
-  const texts = campaigns.flatMap((c) => (c.groups ?? []).flatMap((g) => [...(g.headlines ?? []), ...(g.descriptions ?? [])]));
+  const texts = repaired.flatMap((c) => (c.groups ?? []).flatMap((g) => [...(g.headlines ?? []), ...(g.descriptions ?? [])]));
   const guard = await checkGuard(texts, industry);
   return {
     done: true,
-    campaigns,
+    campaigns: repaired,
     tags: diagnoseTags(site, plan),
-    overLength: findOverLength(campaigns),
+    overLength: findOverLength(repaired),
     guard,
   };
 }
