@@ -401,3 +401,30 @@ table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sa
   .bar span,.hit-sev,.tag{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body{font-size:11pt}
 }
+
+/* ── レポート内の目次（章送り）── */
+.toc{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);margin:0 -24px 20px;padding:10px 24px;display:flex;gap:8px;
+  overflow-x:auto;scrollbar-width:none}
+.toc::-webkit-scrollbar{display:none}
+.toc a{flex:0 0 auto;border:1px solid var(--line);border-radius:999px;padding:6px 14px;
+  font-size:12.5px;color:var(--muted);text-decoration:none;white-space:nowrap}
+.toc a:hover{border-color:var(--gold);color:var(--head)}
+[id^="sec-"]{scroll-margin-top:70px}
+
+/* ── コピー一覧の絞り込み・折りたたみ ── */
+.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px;font-size:12.5px;color:var(--muted)}
+.filters .sw{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;
+  border-radius:999px;padding:6px 14px;cursor:pointer;color:var(--muted);font:inherit;font-size:12.5px}
+.filters .sw.on{border-color:var(--btn);background:var(--btn);color:#fff}
+.more{width:100%;margin-top:12px;border:1px dashed var(--line);background:#fff;border-radius:12px;
+  padding:14px;font:inherit;font-size:13px;color:var(--muted);cursor:pointer}
+.more:hover{border-color:var(--gold);color:var(--head)}
+
+/* ── バナーの拡大 ── */
+.thumb{cursor:zoom-in}
+.zoom{position:fixed;inset:0;z-index:100;background:rgba(20,19,17,.72);display:grid;place-items:center;padding:24px}
+.zoom .inner{background:#fff;border-radius:12px;padding:18px;max-height:92vh;overflow:auto}
+.zoom .cap{display:flex;align-items:center;gap:12px;margin-bottom:12px;font-size:12.5px;color:var(--muted)}
+.zoom .cap .x{margin-left:auto;border:1px solid var(--line);background:#fff;border-radius:8px;
+  padding:5px 12px;font:inherit;font-size:12px;cursor:pointer}

@@ -33,6 +33,15 @@ export function Report({
   const [lp, setLp] = useState<{ html: string; guard: GuardVerdict } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [showAllCopies, setShowAllCopies] = useState(false);
+  const [hideRed, setHideRed] = useState(false);
+  const [zoom, setZoom] = useState<{ ci: number; sizeId: string } | null>(null);
+
+  const TOP_N = 3;
+  const sorted = [...copies.entries()].sort((a, b) => (b[1].score ?? 0) - (a[1].score ?? 0));
+  const redCount = copies.filter((c) => c.guard?.level === "red").length;
+  const visible = hideRed ? sorted.filter(([, c]) => c.guard?.level !== "red") : sorted;
+  const shown = showAllCopies ? visible : visible.slice(0, TOP_N);
 
   const chosen = picked.map((i) => copies[i]).filter(Boolean);
   const chosenSizes = SIZES.filter((s) => sizes.includes(s.id));
@@ -81,6 +90,18 @@ export function Report({
     <div>
       {err && <div className="alert">{err}</div>}
 
+      <nav className="toc">
+        <a href="#sec-overview">サイト概要</a>
+        {site && <a href="#sec-security">セキュリティ</a>}
+        {seo && <a href="#sec-seo">SEO強度</a>}
+        <a href="#sec-strength">強み・買わない理由</a>
+        {plan && plan.length > 0 && <a href="#sec-plan">広告手法</a>}
+        <a href="#sec-angles">訴求軸</a>
+        <a href="#sec-copies">コピー・法令</a>
+        {!isGuest && <a href="#sec-banners">バナー</a>}
+        {!isGuest && <a href="#sec-lp">LP</a>}
+      </nav>
+
       <div className="rep-top">
         <a className="icon-btn" href="/analysis">←</a>
         <div className="right">
@@ -105,7 +126,7 @@ export function Report({
       <div className="sec-head">
         <span className="ic">◎</span>
         <div>
-          <h2>サイト概要</h2>
+          <h2 id="sec-overview">サイト概要</h2>
           <div className="sub">何を、誰に売っているか</div>
         </div>
         <span className="rule" />
@@ -171,7 +192,7 @@ export function Report({
           <div className="sec-head">
             <span className="ic">⛨</span>
             <div>
-              <h2>セキュリティチェック</h2>
+              <h2 id="sec-security">セキュリティチェック</h2>
               <div className="sub">セキュリティヘッダー検査結果</div>
             </div>
             <span className="rule" />
@@ -218,7 +239,7 @@ export function Report({
             <span className="ic">⛓</span>
             <div style={{ display: "flex", alignItems: "center" }}>
               <div>
-                <h2>ドメインパワー（SEO強度）</h2>
+                <h2 id="sec-seo">ドメインパワー（SEO強度）</h2>
                 <div className="sub">推定スコア</div>
               </div>
               <span className="ai">AI推定</span>
@@ -258,7 +279,7 @@ export function Report({
       <div className="sec-head">
         <span className="ic">◆</span>
         <div>
-          <h2>強みと、買わない理由</h2>
+          <h2 id="sec-strength">強みと、買わない理由</h2>
           <div className="sub">ここを潰すコピーが一番効く</div>
         </div>
         <span className="rule" />
@@ -281,7 +302,7 @@ export function Report({
           <div className="sec-head">
             <span className="ic">◈</span>
             <div>
-              <h2>広告手法一覧</h2>
+              <h2 id="sec-plan">広告手法一覧</h2>
               <div className="sub">サイト分析をもとに、使うべき媒体を優先順位付きで出しています</div>
             </div>
             <span className="rule" />
@@ -324,7 +345,7 @@ export function Report({
       <div className="sec-head">
         <span className="ic">↗</span>
         <div>
-          <h2>訴求軸</h2>
+          <h2 id="sec-angles">訴求軸</h2>
           <div className="sub">この切り口でコピーを作りました</div>
         </div>
         <span className="rule" />
@@ -344,16 +365,24 @@ export function Report({
       <div className="sec-head">
         <span className="ic">✎</span>
         <div>
-          <h2>コピーと法令チェック</h2>
+          <h2 id="sec-copies">コピーと法令チェック</h2>
           <div className="sub">生成と同時に景表法・薬機法を確認しています</div>
         </div>
         <span className="rule" />
       </div>
       <section>
+        <div className="filters measure">
+          <button className={`sw${hideRed ? " on" : ""}`} onClick={() => setHideRed((v) => !v)}>
+            {hideRed ? "✓ " : ""}要修正を隠す
+          </button>
+          <span>
+            {visible.length} / {copies.length} 案を表示中
+            {redCount > 0 && `（要修正 ${redCount}件）`}
+          </span>
+        </div>
+
         <div className="measure" style={{ display: "grid", gap: 12 }}>
-          {[...copies.entries()]
-            .sort((a, b) => (b[1].score ?? 0) - (a[1].score ?? 0))
-            .map(([i, c]) => (
+          {shown.map(([i, c]) => (
               <label key={i} className={`card copy-card${picked.includes(i) ? " sel" : ""}`} style={{ display: "block", cursor: "pointer" }}>
                 <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                   <input
@@ -410,7 +439,12 @@ export function Report({
                   </div>
                 </div>
               </label>
-            ))}
+          ))}
+          {!showAllCopies && visible.length > TOP_N && (
+            <button className="more" onClick={() => setShowAllCopies(true)}>
+              残り {visible.length - TOP_N} 案を表示する
+            </button>
+          )}
         </div>
         <div className="note">
           <i className="i">i</i>
@@ -423,7 +457,7 @@ export function Report({
           <div className="sec-head" style={{ marginTop: 0 }}>
             <span className="ic">▤</span>
             <div>
-              <h2>バナー書き出し</h2>
+              <h2 id="sec-banners">バナー書き出し</h2>
               <div className="sub">Meta・Google・Yahoo の各サイズを同時に出します</div>
             </div>
             <span className="rule" />
@@ -456,7 +490,12 @@ export function Report({
                     const scale = Math.min(230 / s.w, 290 / s.h);
                     return (
                       <div key={s.id}>
-                        <div className="thumb" style={{ width: s.w * scale, height: s.h * scale }}>
+                        <div
+                          className="thumb"
+                          style={{ width: s.w * scale, height: s.h * scale }}
+                          onClick={() => setZoom({ ci, sizeId: s.id })}
+                          title="クリックで拡大"
+                        >
                           <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
                             <Banner id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} />
                           </div>
@@ -479,7 +518,7 @@ export function Report({
           <div className="sec-head" style={{ marginTop: 0 }}>
             <span className="ic">▣</span>
             <div>
-              <h2>リンク先LP</h2>
+              <h2 id="sec-lp">リンク先LP</h2>
               <div className="sub">広告と同じ訴求軸で着地を作ります</div>
             </div>
             <span className="rule" />
@@ -503,6 +542,27 @@ export function Report({
           )}
         </section>
       )}
+      {zoom && (() => {
+        const zs = SIZES.find((x) => x.id === zoom.sizeId)!;
+        const zc = chosen[zoom.ci];
+        const zscale = Math.min(1, Math.min(760 / zs.w, (typeof window !== "undefined" ? window.innerHeight * 0.72 : 700) / zs.h));
+        return (
+          <div className="zoom" onClick={() => setZoom(null)}>
+            <div className="inner" onClick={(e) => e.stopPropagation()}>
+              <div className="cap">
+                {zs.media} {zs.w}×{zs.h}
+                <button className="x" onClick={() => setZoom(null)}>閉じる</button>
+              </div>
+              <div style={{ width: zs.w * zscale, height: zs.h * zscale, overflow: "hidden" }}>
+                <div style={{ transform: `scale(${zscale})`, transformOrigin: "top left" }}>
+                  <Banner id={`zoom-${zoom.ci}-${zs.id}`} copy={zc} brand={d.brand} size={zs} />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {isGuest && (
         <div className="wall">
           <div className="lock">🔒</div>
