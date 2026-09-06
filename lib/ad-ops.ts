@@ -65,7 +65,8 @@ export type AdOps = {
 export function diagnoseTags(site: SiteScan | null, plan: MediaPlanItem[]): MeasureTag[] {
   if (!site) return [];
   const has = (name: string) => site.adTags.includes(name) || site.tech.includes(name);
-  const gtm = site.tech.includes("Google Tag Manager");
+  // GTM のコンテナまで読めていれば「無い」と断定してよい。読めていないときだけ要確認にする
+  const gtm = site.tech.includes("Google Tag Manager") && !site.gtmRead;
   const ch = plan.map((p) => p.channel).join(" ");
 
   // 予算を割り当てた媒体のタグだけを必須にする。使わない媒体のタグは推奨止まり
@@ -111,7 +112,7 @@ export function diagnoseTags(site: SiteScan | null, plan: MediaPlanItem[]): Meas
   ];
 
   const tags: MeasureTag[] = rows.map((r) => {
-    if (r.detected) return { name: r.name, status: "導入済み", need: r.need, note: "サイトのHTMLで検出しました。" };
+    if (r.detected) return { name: r.name, status: "導入済み", need: r.need, note: site.gtmRead ? "サイトまたはGTMコンテナの中で検出しました。" : "サイトのHTMLで検出しました。" };
     // GTM は実行時にタグを差し込むため、HTML の静的な確認では未導入と言い切れない
     if (gtm)
       return {
@@ -123,12 +124,14 @@ export function diagnoseTags(site: SiteScan | null, plan: MediaPlanItem[]): Meas
     return { name: r.name, status: "未導入", need: r.need, note: r.howTo };
   });
 
-  if (gtm) {
+  if (site.tech.includes("Google Tag Manager")) {
     tags.unshift({
       name: "Google タグマネージャー",
       status: "導入済み",
       need: "推奨",
-      note: "サイトのHTMLで検出しました。以降のタグはGTMから一元管理できます。",
+      note: site.gtmRead
+        ? `コンテナ ${site.gtmId} の中身まで確認しました。以降の判定はコンテナの中身を含めています。`
+        : "検出しましたが、コンテナの中身を取得できませんでした。以降のタグは中身をご確認ください。",
     });
   }
   return tags;

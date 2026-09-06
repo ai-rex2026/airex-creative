@@ -24,6 +24,9 @@ export type SiteScan = {
   externalLinks: number;
   adTags: string[];
   tech: string[];
+  /** GTM コンテナID。中身まで読めたかどうかで、タグ診断の断定可否が変わる */
+  gtmId: string | null;
+  gtmRead: boolean;
   /** JSON-LD から拾えた事業所情報。MEO の照合に使う */
   bizName: string | null;
   bizAddress: string | null;
@@ -89,16 +92,27 @@ export async function scanSite(input: string): Promise<SiteScan> {
   const biz = readBusiness(html);
   const social = readSocial(html, host);
 
-  const adTags: string[] = [];
-  if (/connect\.facebook\.net|fbq\(/i.test(html)) adTags.push("Meta Pixel");
-  if (/googleadservices|gtag\('config',\s*'AW-/i.test(html)) adTags.push("Google 広告");
-  if (/analytics\.tiktok\.com/i.test(html)) adTags.push("TikTok Pixel");
-  if (/yjtag\.yahoo|s\.yjtag\.jp/i.test(html)) adTags.push("Yahoo! タグ");
-  if (/lineads|tr\.line\.me/i.test(html)) adTags.push("LINE Tag");
+  // GTM はタグを表示時に差し込むので HTML だけでは分からない。
+  // コンテナ自体は公開されているので中身を読んで判定する
+  const gtmId = html.match(/GTM-[A-Z0-9]{4,}/)?.[0] ?? null;
+  const gtmSrc = gtmId ? await fetchGtm(gtmId) : null;
+
+  // ページのHTMLは「その文字列がある＝そのタグを読み込んでいる」でよい。
+  // 一方 GTM コンテナには未設定のタグの送信先URLも最初から入っているため、
+  // ホスト名だけで判定すると誤検知する（例: googleadservices は常に含まれる）。
+  // コンテナ側は「実際に設定されたID」がある場合だけ検出する。
+  const TAGS: { name: string; inHtml: RegExp; inGtm: RegExp }[] = [
+    { name: "Meta Pixel", inHtml: /connect\.facebook\.net|fbq\(/i, inGtm: /facebook\.com\\?\/tr\?id=\d{6,}|fbq\(\s*["']init/i },
+    { name: "Google 広告", inHtml: /googleadservices|AW-\d{6,}/i, inGtm: /AW-\d{6,}/ },
+    { name: "TikTok Pixel", inHtml: /analytics\.tiktok\.com/i, inGtm: /ttq\.load\(|tiktok[^"']{0,20}pixel_code/i },
+    { name: "Yahoo! タグ", inHtml: /yjtag\.yahoo|s\.yjtag\.jp/i, inGtm: /yjtag\.jp\\?\/tag\/\?site=|yahoo_ss_retargeting/i },
+    { name: "LINE Tag", inHtml: /lineads|tr\.line\.me/i, inGtm: /tr\.line\.me\\?\/tag\.js|_lt\(\s*["']init/i },
+  ];
+  const adTags = TAGS.filter((t) => t.inHtml.test(html) || (gtmSrc ? t.inGtm.test(gtmSrc) : false)).map((t) => t.name);
 
   const tech: string[] = [];
-  if (/googletagmanager\.com\/gtm\.js|GTM-/i.test(html)) tech.push("Google Tag Manager");
-  if (/gtag\/js\?id=G-/i.test(html)) tech.push("Google Analytics 4");
+  if (gtmId) tech.push("Google Tag Manager");
+  if (/gtag\/js\?id=G-/i.test(html) || /["']G-[A-Z0-9]{6,}["']/.test(gtmSrc ?? "")) tech.push("Google Analytics 4");
   if (/wp-content|wp-includes/i.test(html)) tech.push("WordPress");
   if (/_next\/static/i.test(html)) tech.push("Next.js");
   if (/cdn\.shopify\.com/i.test(html)) tech.push("Shopify");
@@ -126,6 +140,8 @@ export async function scanSite(input: string): Promise<SiteScan> {
     externalLinks,
     adTags,
     tech,
+    gtmId,
+    gtmRead: gtmSrc !== null,
     bizName: biz.name,
     bizAddress: biz.address,
     bizPhone: biz.phone,
@@ -239,4 +255,18 @@ function readSocial(html: string, host: string) {
     }
   }
   return [...found.values()];
+}
+
+/** GTM の公開コンテナを取る。取れなければ null（＝タグの有無を断定しない） */
+async function fetchGtm(id: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://www.googletagmanager.com/gtm.js?id=${id}`, {
+      headers: { "user-agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
 }
