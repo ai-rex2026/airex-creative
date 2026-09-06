@@ -80,6 +80,8 @@ export async function scanSuggests(
 ): Promise<SuggestScan> {
   const rows: SuggestRow[] = [];
   const got: string[] = [];
+  // 地名を足した2本目は1本目と結果が重なる。同じ語を2回出さない
+  const seen = new Set<string>();
 
   for (const q of candidates(site, areas)) {
     if (got.length >= 2) break;
@@ -87,9 +89,13 @@ export async function scanSuggests(
       // 検索語そのものは対策対象ではない
       (x) => x.trim().toLowerCase() !== q.trim().toLowerCase()
     );
-    if (list.length === 0) continue; // 何も返らなかった語は画面に出さない
+    const fresh = list.filter((x) => !seen.has(x.trim().toLowerCase()));
+    if (fresh.length === 0) continue; // 新しい語が無い検索語は画面に出さない
     got.push(q);
-    for (const x of list.slice(0, 10)) rows.push({ keyword: q, suggestion: x, kind: classify(x, q) });
+    for (const x of fresh.slice(0, 10)) {
+      seen.add(x.trim().toLowerCase());
+      rows.push({ keyword: q, suggestion: x, kind: classify(x, q) });
+    }
   }
   return { rows, queried: got, fetchedAt: new Date().toISOString() };
 }
