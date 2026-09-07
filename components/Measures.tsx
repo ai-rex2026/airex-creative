@@ -156,7 +156,8 @@ export function Measures({
               </button>
               <div className="kk">
                 {m.kpis?.map((k) => <span className="chip" key={k}>{kpiName(k)}</span>)}
-                <span className="chip node">{m.node}</span>
+                {m.node && <span className="chip node">{m.node}</span>}
+                {m.flags && m.flags.length > 0 && <span className="chip law">法令の指摘 {m.flags.length}</span>}
               </div>
               {isOpen && (
                 <div className="bd">
@@ -164,6 +165,13 @@ export function Measures({
                   <div className="who"><b>担当</b>{m.owner}</div>
                   <ol>{m.steps?.map((s, i) => <li key={i}>{s}</li>)}</ol>
                   <div className="chk"><b>完了の判断</b>{m.done}</div>
+                  {m.flags?.map((f, i) => (
+                    <div className="mlaw" key={i}>
+                      <b>{f.law}「{f.text}」</b>
+                      <span>{f.reason}</span>
+                      <span className="fix">言い換え：{f.suggestion}</span>
+                    </div>
+                  ))}
                   <button className={`mk${isDone ? " on" : ""}`} onClick={() => markDone(m, !isDone)}>
                     {isDone ? "済みを取り消す" : "やった"}
                   </button>

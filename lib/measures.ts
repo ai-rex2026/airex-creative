@@ -2,6 +2,8 @@ import { askJson } from "./anthropic";
 import type { Diagnosis } from "./types";
 import type { SiteScan } from "./site-scan";
 import type { KpiTree } from "./kpi";
+import { checkGuard } from "./guardrail";
+import type { GuardHit, Industry } from "./types";
 import type { MeoScan } from "./meo";
 import type { PriceScan } from "./pricing";
 
@@ -35,6 +37,8 @@ export type Measure = {
   steps: string[];
   /** 完了したとどう判断するか */
   done: string;
+  /** 法令上の指摘。施策の文言も検査する */
+  flags?: { text: string; law: string; reason: string; suggestion: string }[];
 };
 
 export type MeasurePlan = { items: Measure[] };
@@ -44,7 +48,12 @@ const RULES = `守ること:
   （それらは別のチェックリストで扱う）
 - title は「何をするか」を動詞で。「〜の検討」「〜の強化」のような、やったか判断できない書き方は禁止
 - kpis には効くKPIのIDを入れる。複数に効くなら複数入れる
-- impactWhy は**渡された実測値を根拠に**書く。「一般的に効果が高い」は禁止
+- impactWhy は**渡された実測値を引用して**書く。次はすべて禁止
+  ・渡されていない数字（「CTRが20〜30%向上する」「平均◯%改善」など）
+  ・最上級と断定（「最も効果が高い」「必ず」「確実に」）
+  ・一般論（「一般的に効果が高い」「業界では常識」）
+  実測値が無い項目は、数字を出さずに**なぜそう考えるかを定性で**書く
+- node は下の「KPIツリーのノード」からそのままコピーして使う。自分で言葉を作らない
 - effort は すぐ / 数日 / 数週間 のいずれか
 - owner は実在する役割で。「サイト制作会社」「広告運用担当」「受付スタッフ」「店舗責任者」など
 - steps は3〜5手順。誰がどこで何をするかを書く。プロセス語（体制構築・最適化推進）は禁止
@@ -68,6 +77,32 @@ ${site ? `構造化データ: ${site.structuredData ? "有" : "無"} / 内部リ
 ${meo?.self ? `Googleマップ: 評価${meo.self.rating}（近隣平均${meo.avgRating}）レビュー${meo.self.reviews}件（近隣平均${meo.avgReviews}件・${meo.totalShops}店中${meo.reviewRank}位）` : ""}`;
 }
 
+/** ツリーに無いノード名は捨てる。紐づかない名前を出すと対応が取れなくなる */
+function fixNodes(items: Measure[], kpi: KpiTree): Measure[] {
+  const allowed = [...kpi.branches.map((b) => b.node), ...kpi.candidates.map((c) => c.node)].filter(Boolean);
+  return items.map((m) => ({
+    ...m,
+    node: allowed.find((a) => a === m.node) ?? allowed.find((a) => m.node?.includes(a) || a.includes(m.node ?? "")) ?? "",
+  }));
+}
+
+/** 施策の文言も法令チェックにかける。コピーだけ検査しても、施策名に残る */
+async function flag(items: Measure[], industry: Industry): Promise<Measure[]> {
+  const texts = items.flatMap((m) => [m.title, m.impactWhy, ...(m.steps ?? [])]);
+  let hits: GuardHit[] = [];
+  try {
+    hits = (await checkGuard(texts, industry)).hits.filter((h) => h.severity !== "low");
+  } catch {
+    return items; // 検査できなくても施策は返す
+  }
+  return items.map((m) => {
+    const own = hits.filter((h) => [m.title, m.impactWhy, ...(m.steps ?? [])].some((t) => t?.includes(h.text)));
+    return own.length
+      ? { ...m, flags: own.map((h) => ({ text: h.text, law: h.law, reason: h.reason, suggestion: h.suggestion })) }
+      : m;
+  });
+}
+
 export async function generateMeasures(
   d: Diagnosis,
   site: SiteScan | null,
@@ -75,7 +110,7 @@ export async function generateMeasures(
   meo: MeoScan | null,
   pricing: PriceScan | null
 ): Promise<MeasurePlan> {
-  return askJson<MeasurePlan>(
+  const res = await askJson<MeasurePlan>(
     `あなたは集客の実務者です。下のKPIに効く施策を設計します。
 
 ${RULES}
@@ -85,11 +120,16 @@ ${RULES}
 【追うKPI】
 ${kpi.candidates.map((c) => `- ${c.id}：${c.name}（${c.node}）／ ${c.trackable}`).join("\n")}
 
+【KPIツリーのノード】※ node にはこの中の語をそのまま使う
+${[...new Set([...kpi.branches.map((b) => b.node), ...kpi.candidates.map((c) => c.node)])].filter(Boolean).map((x) => `- ${x}`).join("\n")}
+
 出力:
 {"items":[{"id":"m1","title":"","kpis":["k1"],"node":"","impact":"大","impactWhy":"",
  "effort":"すぐ","owner":"","steps":[""],"done":""}]}`,
     { maxTokens: 6000 }
   );
+  const items = fixNodes(res.items ?? [], kpi);
+  return { items: await flag(items, d.industry) };
 }
 
 /**
@@ -105,7 +145,7 @@ export async function measuresForKpi(
   kpiName: string,
   existing: string[]
 ): Promise<MeasurePlan> {
-  return askJson<MeasurePlan>(
+  const res = await askJson<MeasurePlan>(
     `あなたは集客の実務者です。指定されたKPI1つに効く施策を設計します。
 
 ${RULES}
@@ -125,6 +165,7 @@ ${existing.length ? existing.map((x) => `- ${x}`).join("\n") : "（なし）"}
  "effort":"すぐ","owner":"","steps":[""],"done":""}]}`,
     { maxTokens: 3000 }
   );
+  return { items: await flag(res.items ?? [], d.industry) };
 }
 
 /**
