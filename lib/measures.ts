@@ -53,6 +53,8 @@ const RULES = `守ること:
   ・最上級と断定（「最も効果が高い」「必ず」「確実に」）
   ・一般論（「一般的に効果が高い」「業界では常識」）
   実測値が無い項目は、数字を出さずに**なぜそう考えるかを定性で**書く
+  ・渡された実測値に、根拠のない良し悪しの判断を付けない
+    （「内部リンク55本は多すぎる」など。多いか少ないかの基準を持っていない）
 - node は下の「KPIツリーのノード」からそのままコピーして使う。自分で言葉を作らない
 - effort は すぐ / 数日 / 数週間 のいずれか
 - owner は実在する役割で。「サイト制作会社」「広告運用担当」「受付スタッフ」「店舗責任者」など
@@ -79,7 +81,8 @@ ${meo?.self ? `Googleマップ: 評価${meo.self.rating}（近隣平均${meo.avg
 
 /** ツリーに無いノード名は捨てる。紐づかない名前を出すと対応が取れなくなる */
 function fixNodes(items: Measure[], kpi: KpiTree): Measure[] {
-  const allowed = [...kpi.branches.map((b) => b.node), ...kpi.candidates.map((c) => c.node)].filter(Boolean);
+  // 候補側の node は説明句になりがちなので、ツリーの段だけを許可する
+  const allowed = kpi.branches.map((b) => b.node).filter(Boolean);
   return items.map((m) => ({
     ...m,
     node: allowed.find((a) => a === m.node) ?? allowed.find((a) => m.node?.includes(a) || a.includes(m.node ?? "")) ?? "",
@@ -114,14 +117,16 @@ export async function generateMeasures(
     `あなたは集客の実務者です。下のKPIに効く施策を設計します。
 
 ${RULES}
-- items は6〜9件。KPIごとに偏らないよう散らす`,
+- items は6〜9件
+- **node を1つに集中させない。** 上のノードのうち少なくとも3つに散らす。
+  「問い合わせを増やす」だけでなく、来院率・単価・リピートを動かす施策も考える`,
     `${facts(d, site, meo, pricing)}
 
 【追うKPI】
 ${kpi.candidates.map((c) => `- ${c.id}：${c.name}（${c.node}）／ ${c.trackable}`).join("\n")}
 
 【KPIツリーのノード】※ node にはこの中の語をそのまま使う
-${[...new Set([...kpi.branches.map((b) => b.node), ...kpi.candidates.map((c) => c.node)])].filter(Boolean).map((x) => `- ${x}`).join("\n")}
+${kpi.branches.map((b) => `- ${b.node}（${b.formula}）`).join("\n")}
 
 出力:
 {"items":[{"id":"m1","title":"","kpis":["k1"],"node":"","impact":"大","impactWhy":"",
