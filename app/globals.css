@@ -734,8 +734,9 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
 .scorecard .tot{flex:0 0 auto;min-width:172px;border:1px solid var(--line);border-radius:12px;
   background:var(--dark);color:#fff;padding:16px 20px;display:grid;align-content:center;gap:3px}
 .scorecard .tot .lb{font-size:10.5px;letter-spacing:.12em;color:#B9B3A6;text-transform:uppercase}
+/* 濃色タイルの上なので色を明示する。継承だけだと共通の b 指定に負ける */
 .scorecard .tot b{font-family:var(--font-display),sans-serif;font-size:36px;line-height:1.05;
-  font-variant-numeric:tabular-nums}
+  font-variant-numeric:tabular-nums;color:#fff}
 .scorecard .tot b i{font-style:normal;font-size:13px;color:#A19B8E;margin-left:3px}
 .scorecard .tot .nt{font-size:10.5px;color:#A19B8E}
 .scorecard .cs{flex:1;min-width:260px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
