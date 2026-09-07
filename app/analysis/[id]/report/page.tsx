@@ -32,7 +32,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
 
   return (
     <Shell active="analysis">
-      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} site={a.site} seo={a.seo} plan={a.media_plan} summary={a.summary} competitors={a.competitors} tactics={a.tactics} adOps={a.ad_ops} meo={a.meo} lpo={a.lpo} keywords={a.keywords} linePlan={a.line_plan} suggests={a.suggests} outreach={a.outreach} budget={a.budget} id={a.id} gsc={a.gsc} ga4={a.ga4} />
+      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} site={a.site} seo={a.seo} plan={a.media_plan} summary={a.summary} competitors={a.competitors} tactics={a.tactics} adOps={a.ad_ops} meo={a.meo} lpo={a.lpo} keywords={a.keywords} linePlan={a.line_plan} suggests={a.suggests} outreach={a.outreach} pricing={a.pricing} margin={a.margin} budget={a.budget} id={a.id} gsc={a.gsc} ga4={a.ga4} />
     </Shell>
   );
 }

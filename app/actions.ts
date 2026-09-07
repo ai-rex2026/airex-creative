@@ -257,3 +257,15 @@ export async function loadEdits(id: string) {
     .limit(50);
   return data ?? [];
 }
+
+/** 粗利率。損益分岐CPAの計算に使う。断定できない数字なので画面で変えられるようにする */
+export async function setMargin(id: string, margin: number) {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+  const m = Math.min(Math.max(margin, 0.05), 0.95);
+  const { error } = await sb.from("analyses").update({ margin: m }).eq("id", id).eq("owner_id", user.id);
+  if (error) throw new Error("保存できませんでした");
+}

@@ -9,6 +9,7 @@ import { finishAdOps, generateCampaign, opsTargets, type AdOps } from "./ad-ops"
 import { hasPlacesApi, scanMeo, type MeoScan } from "./meo";
 import { generateKeywords, generateLine, generateLpo, type KeywordPlan, type LinePlan, type LpoPlan } from "./deep";
 import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } from "./outreach";
+import { scanPrices, type PriceScan } from "./pricing";
 import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
 import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
@@ -44,6 +45,8 @@ export type Analysis = {
   keywords: KeywordPlan | null;
   line_plan: LinePlan | null;
   suggests: SuggestScan | null;
+  pricing: PriceScan | null;
+  margin: number | null;
   outreach: OutreachPlan | null;
   mode: AnalysisMode;
   budget: BudgetBand | null;
@@ -116,6 +119,12 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
           progress: 34,
         });
       }
+    }
+    // 価格はサイトから実測する。広告費とCV数は公開情報に無いので取りに行かない
+    if (a.url && !a.pricing) {
+      const hints = [a.diagnosis.product, ...a.diagnosis.strengths, ...a.diagnosis.angles.map((x) => x.name)].join(" ");
+      const pricing = await scanPrices(a.url, hints).catch(() => null);
+      if (pricing) return await save({ pricing, step: "競合を調べています", progress: 48 });
     }
     if (!a.competitors) {
       // Web検索は1検索ごとに従量課金があるので、失敗しても分析全体は止めない

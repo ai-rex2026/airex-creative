@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
-import { replanForBudget, runLp, setBudget } from "@/app/actions";
+import { replanForBudget, runLp, setBudget, setMargin } from "@/app/actions";
 import { SIZES } from "@/lib/sizes";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
@@ -13,6 +13,7 @@ import { adWidth, type AdOps } from "@/lib/ad-ops";
 import type { MeoScan } from "@/lib/meo";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
 import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
+import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
 import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "@/lib/types";
@@ -40,6 +41,8 @@ export function Report({
   linePlan,
   suggests,
   outreach,
+  pricing,
+  margin: initialMargin,
   budget: initialBudget,
   id,
   gsc,
@@ -62,6 +65,8 @@ export function Report({
   linePlan: LinePlan | null;
   suggests: SuggestScan | null;
   outreach: OutreachPlan | null;
+  pricing: PriceScan | null;
+  margin: number | null;
   budget: BudgetBand | null;
   id: string;
   gsc: GscData | null;
@@ -78,6 +83,13 @@ export function Report({
   const [tab, setTab] = useState<Tab>("overview");
   const [budget, setBudgetState] = useState<BudgetBand | null>(initialBudget);
   const [replanning, setReplanning] = useState(false);
+  const [margin, setMarginState] = useState<number>(initialMargin ?? MARGIN[d.industry] ?? 0.4);
+
+  // 粗利率は断定できないので、押した瞬間に計算し直して裏で保存する
+  function pickMargin(m: number) {
+    setMarginState(m);
+    void setMargin(id, m).catch(() => {});
+  }
 
   // 予算は配分%を実額に直すだけなので、選んだ瞬間に画面へ反映して裏で保存する
   function pickBudget(b: BudgetBand | null) {
@@ -796,6 +808,74 @@ export function Report({
               </div>
             </>
           )}
+        </>
+      )}
+
+      {pricing?.main && (
+        <>
+          <div className="sec-head">
+            <span className="ic">¥</span>
+            <div>
+              <h2 id="sec-cpa">CPAはいくらまで出せるか</h2>
+              <div className="sub">サイトに載っている価格から計算しています</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          <div className="cpa measure">
+            <div className="be">
+              <small>損益分岐CPA</small>
+              <b>{breakEvenCpa(pricing.main.yen, margin).toLocaleString()}<i>円</i></b>
+              <span>1件あたりこれを超えると赤字です</span>
+            </div>
+            <div className="src">
+              <div className="r">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <b>{pricing.main.name}</b>
+                  <small>主力商材として採用した価格</small>
+                </div>
+                <span className="tag">{pricing.main.yen.toLocaleString()}円</span>
+              </div>
+              <div className="mg">
+                <span>粗利率</span>
+                <div className="opts">
+                  {[0.3, 0.4, 0.5, 0.6, 0.7, 0.8].map((m) => (
+                    <button key={m} className={Math.abs(margin - m) < 0.001 ? "on" : ""} onClick={() => pickMargin(m)}>
+                      {Math.round(m * 100)}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <details className="flags measure">
+            <summary>この数字の出どころ（掲載価格 {pricing.items.length}件）</summary>
+            <p className="note" style={{ marginTop: 0 }}>
+              <i className="i">i</i>
+              <span>
+                {pricing.reason}
+                {pricing.source && <> 取得元：<a href={pricing.source} target="_blank" rel="noreferrer noopener">{pricing.source.replace(/^https?:\/\//, "")}</a></>}
+              </span>
+            </p>
+            <div className="rows" style={{ margin: "12px 0 0" }}>
+              {pricing.items.slice(0, 12).map((x, i) => (
+                <div className="r" key={i}>
+                  <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 400 }}>{x.name}</b></div>
+                  <span className="tag">{x.yen.toLocaleString()}円</span>
+                </div>
+              ))}
+            </div>
+          </details>
+
+          <div className="note">
+            <i className="i">i</i>
+            <span>
+              粗利率は業種のめやすを初期値にしています。<b style={{ fontWeight: 600 }}>実際の粗利率に合わせて押し直してください。</b>
+              いまいくらで獲得できているか（実際のCPA）は、広告費とコンバージョン数が要るためこちらでは測れません。
+              Google Analytics 4 を連携すると、コンバージョン数から実測できます。
+            </span>
+          </div>
         </>
       )}
 
