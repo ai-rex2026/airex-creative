@@ -31,7 +31,7 @@ export default async function LoginPage({
         </div>
       </div>
       <div className="main">
-        <AuthForm callbackUrl={callbackUrl ?? "/"} initialMode={mode === "signup" ? "signup" : "signin"} initialError={error ?? null} />
+        <AuthForm callbackUrl={callbackUrl && callbackUrl !== "/" ? callbackUrl : "/analysis"} initialMode={mode === "signup" ? "signup" : "signin"} initialError={error ?? null} />
       </div>
     </div>
   );

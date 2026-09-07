@@ -695,3 +695,15 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
 .chat .ed.ok span{color:var(--text);font-weight:500}
 .chat .ed.ng{background:#FBF0EE;border-left:2px solid var(--ng)}
 .chat .ed.ng b{color:var(--ng)}
+
+/* ── 画面遷移中の表示 ───────────────────────── */
+.loading{display:flex;align-items:center;justify-content:center;gap:10px;
+  min-height:60vh;font-size:13px;color:var(--faint)}
+.loading .spin{width:15px;height:15px;border-radius:999px;border:2px solid var(--line);
+  border-top-color:var(--gold);animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.loading .spin{animation-duration:2s}}
+.navbar-progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:90;
+  background:linear-gradient(90deg,var(--gold) 0%,#E8C97A 50%,var(--gold) 100%);
+  transform-origin:left;animation:navbar-progress 1.4s ease-out forwards}
+@keyframes navbar-progress{0%{transform:scaleX(0)}60%{transform:scaleX(.7)}100%{transform:scaleX(.92)}}

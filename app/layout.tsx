@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { NavProgress } from "@/components/NavProgress";
 import { Poppins, Open_Sans, Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
 
@@ -26,7 +27,8 @@ export default function RootLayout({
       lang="ja"
       className={`${display.variable} ${body.variable} ${jp.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <NavProgress />{children}</body>
     </html>
   );
 }
