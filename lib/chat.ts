@@ -1,14 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { checkGuardDict } from "./guardrail";
+import { applyEdit, editables, type EditResult } from "./edits";
 import type { Analysis } from "./analysis";
 import type { GuardHit } from "./types";
 
 /**
- * レポートについての質問応答。
+ * レポートについての質問応答と、広告原稿の書き換え。
  *
- * この段階では**レポートを書き換えない**。読んで答えるだけ。
- * 書き換えを入れるときは、差し替え後の文言をガードレールに通し直す必要がある
- * （Docs/ai-chat-design.md）。
+ * 書き換えは edit_copy ツール経由でのみ行う。会話文に新しい原稿を書かせない。
+ * 差し替える前に必ずガードレールと文字数を通す（Docs/ai-chat-design.md）。
+ * 実測値は書き換え対象に含めない。
  */
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
@@ -86,22 +87,54 @@ export function buildContext(a: Analysis): string {
     lines.push(`\n# 総評\n${a.summary.overall} / 良い点: ${a.summary.best} / 課題: ${a.summary.worst}`);
   }
 
+  const ed = editables(a);
+  if (ed.length) {
+    lines.push(
+      `\n# 書き換えられる原稿（この番号で指定する）\n${ed
+        .map((e) => `[${e.id}] ${e.label}${e.limit ? `（上限${e.limit / 2}文字）` : ""}: ${e.text}`)
+        .join("\n")}`
+    );
+  }
+
   return lines.join("\n");
 }
 
 const SYSTEM = `あなたは AI-REX Studio のレポートについて答えるアシスタントです。
+質問に答えるほか、**広告原稿の書き換え**ができます。
 
-守ること:
+答えるときに守ること:
 - 渡されたレポートの内容だけを根拠に答える。書かれていないことは「レポートには含まれていません」と言う
 - 数値を作らない。レポートにある実測値だけを引用する。推測した数字は絶対に出さない
-- **広告のコピー案・見出し案・キャッチコピーは書かない**。
-  求められたら「コピーはレポートの『コピーと法令チェック』で法令検査を通したものを使ってください。
-  チャットで作った文言は検査を通っていません」と答える
 - 効果や結果を断定しない。「必ず」「確実に」「保証」は使わない
-- answers は日本語で、3〜5文程度。長くしない
-- レポートを書き換えることはできない。修正依頼には「この画面からは変更できません」と答える`;
+- 3〜5文程度。長くしない
 
-export type ChatAnswer = { text: string; flags: GuardHit[] };
+書き換えについて:
+- 書き換えたいときは edit_copy ツールを使う。会話文の中に新しい原稿を書くだけでは反映されない
+- 対象は「書き換えられる原稿」に載っている番号のものだけ。1回のツール呼び出しで1件
+- **実測値は書き換えられない**。サイトの検査結果、MEOのスコアと順位、Search Console と GA4 の数値、
+  検索サジェストの取得結果は、測って得たものなので変更できない。
+  頼まれたら「実測値なので変更できません」と答え、代わりにその数値を実際に良くする方法を答える
+- 書き換えた原稿は自動で法令チェックと文字数チェックにかかる。
+  通らなかった場合は理由が返るので、それを踏まえて言い換えを提案する
+- ツールを使わずに新しいコピーを会話文で書かない。検査を通っていない文言を渡すことになる`
+
+const TOOLS: Anthropic.Tool[] = [
+  {
+    name: "edit_copy",
+    description:
+      "レポート内の広告原稿を1件書き換える。実測値（スコア・順位・アクセス数・サジェスト）は書き換えられない。",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "書き換える原稿の番号（例: C1-1、A1-2-H3）" },
+        text: { type: "string", description: "新しい文言" },
+      },
+      required: ["id", "text"],
+    },
+  },
+];
+
+export type ChatAnswer = { text: string; flags: GuardHit[]; edits: EditResult[]; patch: Record<string, unknown> };
 
 export async function askAboutReport(
   a: Analysis,
@@ -109,23 +142,53 @@ export async function askAboutReport(
   question: string
 ): Promise<ChatAnswer> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const system = `${SYSTEM}\n\n---\n以下がレポートの内容です。\n\n${buildContext(a)}`;
 
-  const res = await client.messages.create(
-    {
-      model: MODEL,
-      max_tokens: 1200,
-      system: `${SYSTEM}\n\n---\n以下がレポートの内容です。\n\n${buildContext(a)}`,
-      // 直近のやり取りだけを渡す。全部渡すと入力が膨らみ続ける
-      messages: [...history.slice(-6), { role: "user" as const, content: question }],
-    },
-    { timeout: 60_000, maxRetries: 1 }
-  );
+  const msgs: Anthropic.MessageParam[] = [
+    ...history.slice(-6).map((h) => ({ role: h.role, content: h.content })),
+    { role: "user", content: question },
+  ];
 
-  const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+  const edits: EditResult[] = [];
+  let patch: Record<string, unknown> = {};
+  // 書き換えのたびにレポートが変わるので、その都度反映してから次を判断させる
+  let current: Analysis = a;
+  let text = "";
 
-  // 回答に法令上まずい語が混ざっていないか、辞書だけで確認する。
-  // AI を通すとチャット1往復ごとに費用がかかるので、無料の辞書で足切りする
+  for (let turn = 0; turn < 4; turn++) {
+    const res = await client.messages.create(
+      { model: MODEL, max_tokens: 1500, system, tools: TOOLS, messages: msgs },
+      { timeout: 60_000, maxRetries: 1 }
+    );
+
+    text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+    const calls = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    if (calls.length === 0) break;
+
+    msgs.push({ role: "assistant", content: res.content });
+    const results: Anthropic.ToolResultBlockParam[] = [];
+
+    for (const call of calls) {
+      const { id, text: next } = call.input as { id?: string; text?: string };
+      if (!id || typeof next !== "string") {
+        results.push({ type: "tool_result", tool_use_id: call.id, content: "番号と本文の両方が要ります", is_error: true });
+        continue;
+      }
+      const { result, patch: p } = await applyEdit(current, id, next);
+      edits.push(result);
+      if (result.ok) {
+        patch = { ...patch, ...p };
+        current = { ...current, ...p } as Analysis;
+        results.push({ type: "tool_result", tool_use_id: call.id, content: `書き換えました：「${result.before}」→「${result.after}」` });
+      } else {
+        results.push({ type: "tool_result", tool_use_id: call.id, content: `書き換えできません：${result.reason}`, is_error: true });
+      }
+    }
+    msgs.push({ role: "user", content: results });
+  }
+
+  // 会話文にまずい語が混ざっていないか、辞書だけで確認する。AI を使わないので無料
   const flags = a.diagnosis ? checkGuardDict([text], a.diagnosis.industry) : [];
 
-  return { text, flags };
+  return { text, flags, edits, patch };
 }

@@ -687,3 +687,11 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
 .chat .cf .btn{justify-self:end}
 .chat .cf small{font-size:11px;color:var(--faint);line-height:1.6}
 @media print{.chat-fab,.chat{display:none}}
+.chat .medits{display:grid;gap:8px;margin-top:10px}
+.chat .ed{font-size:11.5px;line-height:1.7;padding:9px 11px;border-radius:9px;display:grid;gap:3px}
+.chat .ed b{font-size:11px;font-weight:600}
+.chat .ed.ok{background:#F1F5F0;border-left:2px solid var(--ok)}
+.chat .ed.ok s{color:var(--faint)}
+.chat .ed.ok span{color:var(--text);font-weight:500}
+.chat .ed.ng{background:#FBF0EE;border-left:2px solid var(--ng)}
+.chat .ed.ng b{color:var(--ng)}

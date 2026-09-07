@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { newAnalysisId, type Analysis } from "@/lib/analysis";
@@ -166,14 +167,20 @@ export async function replanForBudget(id: string, budget: BudgetBand) {
   });
 }
 
-export type ChatMsg = { role: "user" | "assistant"; content: string; flags?: GuardHit[] | null };
+export type ChatEdit = { id: string; label?: string; before?: string; after?: string; reason?: string; ok: boolean };
+export type ChatMsg = {
+  role: "user" | "assistant";
+  content: string;
+  flags?: GuardHit[] | null;
+  edits?: ChatEdit[] | null;
+};
 
 /** これまでのやり取り。レポートを開いたときに読む */
 export async function loadChat(id: string): Promise<ChatMsg[]> {
   const sb = await createClient();
   const { data } = await sb
     .from("chat_messages")
-    .select("role, content, flags")
+    .select("role, content, flags, edits")
     .eq("analysis_id", id)
     .order("created_at", { ascending: true })
     .limit(60);
@@ -202,10 +209,51 @@ export async function sendChat(id: string, question: string): Promise<ChatMsg> {
   const history = (await loadChat(id)).map((m) => ({ role: m.role, content: m.content }));
   const ans = await askAboutReport(row as Analysis, history, q);
 
+  // 書き換えが起きていれば、レポート本体と履歴の両方を更新する
+  const applied = ans.edits.filter((e): e is Extract<typeof e, { ok: true }> => e.ok);
+  if (Object.keys(ans.patch).length > 0) {
+    await sb.from("analyses").update(ans.patch).eq("id", id).eq("owner_id", user.id);
+    await sb.from("report_edits").insert(
+      applied.map((e) => ({
+        analysis_id: id,
+        item_id: e.id,
+        label: e.label,
+        before_text: e.before,
+        after_text: e.after,
+      }))
+    );
+  }
+
+  const edits: ChatEdit[] = ans.edits.map((e) =>
+    e.ok
+      ? { ok: true, id: e.id, label: e.label, before: e.before, after: e.after }
+      : { ok: false, id: e.id, reason: e.reason }
+  );
+
   await sb.from("chat_messages").insert([
     { analysis_id: id, role: "user", content: q },
-    { analysis_id: id, role: "assistant", content: ans.text, flags: ans.flags.length ? ans.flags : null },
+    {
+      analysis_id: id,
+      role: "assistant",
+      content: ans.text,
+      flags: ans.flags.length ? ans.flags : null,
+      edits: edits.length ? edits : null,
+    },
   ]);
 
-  return { role: "assistant", content: ans.text, flags: ans.flags };
+  if (applied.length > 0) revalidatePath(`/analysis/${id}/report`);
+
+  return { role: "assistant", content: ans.text, flags: ans.flags, edits };
+}
+
+/** チャットで直した履歴。レポートに「AIチャットで修正」と出すために読む */
+export async function loadEdits(id: string) {
+  const sb = await createClient();
+  const { data } = await sb
+    .from("report_edits")
+    .select("item_id, label, before_text, after_text, created_at")
+    .eq("analysis_id", id)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  return data ?? [];
 }

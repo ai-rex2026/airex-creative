@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { loadChat, sendChat, type ChatMsg } from "@/app/actions";
 
 /**
  * レポートについて聞くパネル。右から出す。
- * この段階では読んで答えるだけで、レポートは書き換えない。
+ * 質問に答えるほか、広告原稿の書き換えもできる。
+ * 実測値は書き換え対象にしていない（Docs/ai-chat-design.md）。
  */
 
 const PRESETS = [
   "まず何から手を付けるべき？",
   "この予算配分にした理由は？",
-  "競合と比べて弱いのはどこ？",
-  "計測タグは何が足りない？",
+  "法令で引っかかった原稿を直して",
+  "見出しをもっと具体的に書き換えて",
 ];
 
 export function ReportChat({ id }: { id: string }) {
@@ -23,6 +25,7 @@ export function ReportChat({ id }: { id: string }) {
   const [err, setErr] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     if (!open || loaded) return;
@@ -44,6 +47,8 @@ export function ReportChat({ id }: { id: string }) {
     try {
       const a = await sendChat(id, question);
       setMsgs((m) => [...m, a]);
+      // 原稿を直したらレポート本体も変わっているので読み直す
+      if (a.edits?.some((e) => e.ok)) router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
       // 送れなかった質問は残さない。履歴と画面がずれる
@@ -70,8 +75,8 @@ export function ReportChat({ id }: { id: string }) {
 
           <div className="cb">
             <div className="m a">
-              このレポートの内容についてお答えします。<br />
-              レポートに書かれていることだけを根拠に答えます。
+              レポートについてお答えします。広告原稿の書き換えもできます。<br />
+              書き換えた原稿は法令チェックと文字数チェックを通ります。
             </div>
 
             {msgs.length === 0 && (
@@ -85,6 +90,24 @@ export function ReportChat({ id }: { id: string }) {
             {msgs.map((m, i) => (
               <div key={i} className={`m ${m.role === "user" ? "u" : "a"}`}>
                 {m.content}
+                {m.edits && m.edits.length > 0 && (
+                  <div className="medits">
+                    {m.edits.map((e, k) =>
+                      e.ok ? (
+                        <div className="ed ok" key={k}>
+                          <b>{e.label}</b>
+                          <s>{e.before}</s>
+                          <span>{e.after}</span>
+                        </div>
+                      ) : (
+                        <div className="ed ng" key={k}>
+                          <b>{e.id} は書き換えできませんでした</b>
+                          <span>{e.reason}</span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
                 {m.flags && m.flags.length > 0 && (
                   <div className="mflag">
                     この回答に法令上の注意語が含まれます（{m.flags.map((f) => `「${f.text}」`).join("・")}）。
@@ -103,7 +126,7 @@ export function ReportChat({ id }: { id: string }) {
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="質問を入力（例：まず何から手を付けるべき？）"
+              placeholder="質問・修正の指示を入力（例：この見出しを短くして）"
               rows={2}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) ask(text);
@@ -112,7 +135,7 @@ export function ReportChat({ id }: { id: string }) {
             <button className="btn" onClick={() => ask(text)} disabled={busy || !text.trim()}>
               送信
             </button>
-            <small>レポートの修正はこの画面からはできません。⌘+Enter でも送信できます。</small>
+            <small>広告原稿は書き換えられます。実測値（スコア・順位・アクセス数）は変更できません。⌘+Enter でも送信。</small>
           </div>
         </aside>
       )}
