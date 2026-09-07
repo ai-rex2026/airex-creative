@@ -726,3 +726,50 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
   background:var(--sunk);cursor:pointer;font-variant-numeric:tabular-nums}
 .cpa .opts button.on{background:var(--dark);color:#fff;border-color:var(--dark)}
 @media(max-width:640px){.cpa .be{min-width:100%}}
+
+/* ══ 分析ツールらしい数値表現 ═══════════════════
+   SimilarWeb や Ahrefs のように、指標は「小さいラベル → 大きい数字 →
+   位置づけ」の順で読ませる。桁を揃えるため数字は等幅にする。 */
+.scorecard{display:flex;gap:14px;flex-wrap:wrap;align-items:stretch;margin-top:18px}
+.scorecard .tot{flex:0 0 auto;min-width:172px;border:1px solid var(--line);border-radius:12px;
+  background:var(--dark);color:#fff;padding:16px 20px;display:grid;align-content:center;gap:3px}
+.scorecard .tot .lb{font-size:10.5px;letter-spacing:.12em;color:#B9B3A6;text-transform:uppercase}
+.scorecard .tot b{font-family:var(--font-display),sans-serif;font-size:36px;line-height:1.05;
+  font-variant-numeric:tabular-nums}
+.scorecard .tot b i{font-style:normal;font-size:13px;color:#A19B8E;margin-left:3px}
+.scorecard .tot .nt{font-size:10.5px;color:#A19B8E}
+.scorecard .cs{flex:1;min-width:260px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.scorecard .c{border:1px solid var(--line);border-radius:12px;background:#fff;padding:13px 15px;
+  display:grid;gap:5px;align-content:start}
+.scorecard .c .lb{font-size:10.5px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase}
+.scorecard .c b{font-family:var(--font-display),sans-serif;font-size:24px;line-height:1.1;
+  color:var(--head);font-variant-numeric:tabular-nums}
+.scorecard .c b i{font-style:normal;font-size:12px;color:var(--faint);margin-left:2px}
+.scorecard .c .tr{height:4px;border-radius:2px;background:var(--sunk);overflow:hidden}
+.scorecard .c .tr i{display:block;height:100%;border-radius:2px;background:var(--muted)}
+.scorecard .c.ok .tr i{background:var(--ok)}
+.scorecard .c.warn .tr i{background:var(--warn)}
+.scorecard .c.ng .tr i{background:var(--ng)}
+.scorecard .c .nt{font-size:10.5px;color:var(--faint);line-height:1.5}
+@media(max-width:640px){.scorecard .tot{min-width:100%}}
+
+/* 数字は桁を揃える */
+.kpi b,.meo .gauge b,.rubric .score,.cpa .be b,table.kw td.num,.plan .share,
+.rows .r .pill,.chip,.tag{font-variant-numeric:tabular-nums}
+
+/* 一覧は詰める。分析ツールは1画面に入る件数が価値になる */
+.rows .r{padding:11px 20px}
+.rows .r b{font-size:13px}
+.rows .rh{padding:12px 20px;font-size:12.5px;letter-spacing:.02em}
+
+/* 比較は数字だけでなく長さでも見せる */
+.cmpbar{flex:0 0 84px;height:5px;border-radius:3px;background:var(--sunk);overflow:hidden;
+  align-self:center;margin-left:4px}
+.cmpbar i{display:block;height:100%;background:var(--gold);border-radius:3px}
+.cmpbar.self i{background:var(--dark)}
+
+/* 見出しまわりを引き締める。情報密度を上げても読み筋が崩れないように */
+.sec-head{margin-top:34px}
+.sec-head h2{font-size:16.5px;letter-spacing:.01em}
+.sec-head .sub{font-size:11.5px}
+.sec-head .ic{font-size:12px}

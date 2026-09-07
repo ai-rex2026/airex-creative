@@ -159,6 +159,22 @@ export function Report({
     todos.push({ level: "high", text: `コピー ${redN}案が法令で要修正（そのままでは出せません）`, tab: "creative", anchor: "sec-copies" });
   }
 
+  /**
+   * 4領域のスコア。すべて実測済みの値から組む。
+   * 判定できない領域は出さない（0点として出すと、測っていないのに低評価に見える）
+   */
+  const cards: { key: string; label: string; got: number; max: number; note: string }[] = [];
+  if (site) cards.push({ key: "site", label: "サイト健全性", got: site.passed, max: site.total, note: "HTTPS・ヘッダー・構造化データ" });
+  if (meo?.self) cards.push({ key: "meo", label: "MEO", got: meo.score, max: 100, note: `近隣${meo.totalShops}店中 レビュー${meo.reviewRank}位` });
+  if (adOps?.done) {
+    const need = adOps.tags.filter((t) => t.need === "必須");
+    const ok = need.filter((t) => t.status === "導入済み").length;
+    cards.push({ key: "ads", label: "広告の準備", got: ok, max: need.length, note: `必須タグ ${ok}/${need.length} 導入済み` });
+  }
+  if (seo) cards.push({ key: "seo", label: "SEO強度", got: seo.score, max: 100, note: seo.label });
+  const pct = (c: { got: number; max: number }) => (c.max > 0 ? Math.round((c.got / c.max) * 100) : 0);
+  const total = cards.length ? Math.round(cards.reduce((n, c) => n + pct(c), 0) / cards.length) : null;
+
   /** その原稿に付いた法令の指摘。無ければ null */
   const flagOf = (t: string) => adOps?.flagged?.find((f) => f.text === t) ?? null;
 
@@ -240,6 +256,32 @@ export function Report({
         {url && <div className="u">{url}</div>}
         <h2>{url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入力テキストから分析"}</h2>
       </div>
+
+      {cards.length > 0 && (
+        <div className="scorecard">
+          {total !== null && (
+            <div className="tot">
+              <span className="lb">総合</span>
+              <b>{total}<i>/100</i></b>
+              <span className="nt">実測できた{cards.length}領域の平均</span>
+            </div>
+          )}
+          <div className="cs">
+            {cards.map((c) => {
+              const p = pct(c);
+              const tone = p >= 75 ? "ok" : p >= 50 ? "warn" : "ng";
+              return (
+                <div className={`c ${tone}`} key={c.key}>
+                  <span className="lb">{c.label}</span>
+                  <b>{c.got}<i>/{c.max}</i></b>
+                  <div className="tr"><i style={{ width: `${p}%` }} /></div>
+                  <span className="nt">{c.note}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="tabs">
         <button className={tab === "overview" ? "on" : ""} onClick={() => setTab("overview")}>サイト概要</button>
@@ -785,16 +827,26 @@ export function Report({
                 <details className="flags measure">
                   <summary>近隣の同業（{meo.competitors.length}店）</summary>
                   <div className="rows" style={{ margin: 0 }}>
-                    {meo.competitors.map((c, i) => (
-                      <div className="r" key={i}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <b>{c.name}</b>
-                          <small>{c.address}</small>
-                        </div>
-                        <span className="tag">★ {c.rating?.toFixed(1) ?? "—"}</span>
-                        <span className="tag">{c.reviews}件</span>
-                      </div>
-                    ))}
+                    {(() => {
+                      // 自社を含めた最大値で正規化する。順位だけでなく差の大きさを見せる
+                      const top = Math.max(meo.self?.reviews ?? 0, ...meo.competitors.map((c) => c.reviews), 1);
+                      return [{ name: meo.self!.name, address: "自社", rating: meo.self!.rating, reviews: meo.self!.reviews, me: true },
+                              ...meo.competitors.map((c) => ({ ...c, me: false }))]
+                        .sort((a, b) => b.reviews - a.reviews)
+                        .map((c, i) => (
+                          <div className="r" key={i}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <b style={{ fontWeight: c.me ? 700 : 400 }}>{c.name}</b>
+                              <small>{c.address}</small>
+                            </div>
+                            <span className="tag">★ {c.rating?.toFixed(1) ?? "—"}</span>
+                            <span className={`cmpbar${c.me ? " self" : ""}`}>
+                              <i style={{ width: `${Math.round((c.reviews / top) * 100)}%` }} />
+                            </span>
+                            <span className="tag">{c.reviews.toLocaleString()}</span>
+                          </div>
+                        ));
+                    })()}
                   </div>
                 </details>
               )}
