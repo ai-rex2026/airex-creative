@@ -10,6 +10,8 @@ import { hasPlacesApi, scanMeo, type MeoScan } from "./meo";
 import { generateKeywords, generateLine, generateLpo, type KeywordPlan, type LinePlan, type LpoPlan } from "./deep";
 import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } from "./outreach";
 import { scanPrices, type PriceScan } from "./pricing";
+import { generateKpi, type KpiTree } from "./kpi";
+import { generateMeasures, type Measure } from "./measures";
 import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
 import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
@@ -47,6 +49,12 @@ export type Analysis = {
   suggests: SuggestScan | null;
   pricing: PriceScan | null;
   margin: number | null;
+  kpi: KpiTree | null;
+  /** 選ばれたKPIのID。自由入力ぶんも id を振ってここに入る */
+  kpi_selected: { id: string; name: string; custom?: boolean }[] | null;
+  measures: Measure[] | null;
+  /** 済みにした施策のID */
+  measures_done: string[] | null;
   outreach: OutreachPlan | null;
   mode: AnalysisMode;
   budget: BudgetBand | null;
@@ -164,6 +172,15 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     if (!a.tactics) {
       const t = await generateTactics(a.diagnosis, a.site);
       return await save({ tactics: t, step: "訴求軸ごとにコピーを書いています", progress: 66 });
+    }
+    // 施策はKPIに効くものだけを出す。だからKPIの仮説を先に立てる
+    if (!a.kpi) {
+      const kpi = await generateKpi(a.diagnosis, a.site, a.pricing, a.meo, a.gsc, a.ga4);
+      return await save({ kpi, step: "施策を組み立てています", progress: 68 });
+    }
+    if (!a.measures) {
+      const plan = await generateMeasures(a.diagnosis, a.site, a.kpi, a.meo, a.pricing);
+      return await save({ measures: plan.items ?? [], step: "LP改善を書いています", progress: 71 });
     }
     if (!a.lpo) {
       const lpo = await generateLpo(a.diagnosis, a.site);

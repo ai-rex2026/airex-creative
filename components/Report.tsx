@@ -19,8 +19,12 @@ import type { MediaPlanItem, Summary } from "@/lib/types";
 import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "@/lib/types";
 import { Banner } from "./Banner";
 import { ReportChat } from "./ReportChat";
+import { Measures } from "./Measures";
+import { hygiene } from "@/lib/measures";
+import type { KpiTree } from "@/lib/kpi";
+import type { Measure } from "@/lib/measures";
 
-type Tab = "overview" | "strategy" | "creative";
+type Tab = "measures" | "overview" | "strategy" | "creative";
 type Todo = { level: "high" | "mid"; text: string; tab: Tab; anchor: string };
 
 export function Report({
@@ -43,6 +47,10 @@ export function Report({
   outreach,
   pricing,
   margin: initialMargin,
+  kpi,
+  measures,
+  kpiSelected,
+  measuresDone,
   budget: initialBudget,
   id,
   gsc,
@@ -67,6 +75,10 @@ export function Report({
   outreach: OutreachPlan | null;
   pricing: PriceScan | null;
   margin: number | null;
+  kpi: KpiTree | null;
+  measures: Measure[] | null;
+  kpiSelected: { id: string; name: string; custom?: boolean }[] | null;
+  measuresDone: string[] | null;
   budget: BudgetBand | null;
   id: string;
   gsc: GscData | null;
@@ -80,7 +92,7 @@ export function Report({
   const [showAllCopies, setShowAllCopies] = useState(false);
   const [hideRed, setHideRed] = useState(false);
   const [zoom, setZoom] = useState<{ ci: number; sizeId: string } | null>(null);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(kpi ? "measures" : "overview");
   const [budget, setBudgetState] = useState<BudgetBand | null>(initialBudget);
   const [replanning, setReplanning] = useState(false);
   const [margin, setMarginState] = useState<number>(initialMargin ?? MARGIN[d.industry] ?? 0.4);
@@ -284,10 +296,22 @@ export function Report({
       )}
 
       <div className="tabs">
-        <button className={tab === "overview" ? "on" : ""} onClick={() => setTab("overview")}>サイト概要</button>
+        {kpi && <button className={tab === "measures" ? "on" : ""} onClick={() => setTab("measures")}>施策</button>}
+        <button className={tab === "overview" ? "on" : ""} onClick={() => setTab("overview")}>分析データ</button>
         <button className={tab === "strategy" ? "on" : ""} onClick={() => setTab("strategy")}>広告戦略</button>
         <button className={tab === "creative" ? "on" : ""} onClick={() => setTab("creative")}>クリエイティブ</button>
       </div>
+
+      {tab === "measures" && kpi && (
+        <Measures
+          id={id}
+          kpi={kpi}
+          measures={measures ?? []}
+          selected={kpiSelected ?? []}
+          done={measuresDone ?? []}
+          hygiene={hygiene(site)}
+        />
+      )}
 
       {tab === "overview" && (
         <div className="todos measure">

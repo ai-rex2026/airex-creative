@@ -6,6 +6,7 @@ import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { newAnalysisId, type Analysis } from "@/lib/analysis";
 import { askAboutReport } from "@/lib/chat";
+import { measuresForKpi } from "@/lib/measures";
 import type { AnalysisMode, BudgetBand } from "@/lib/types";
 import { processAnalysis } from "@/lib/worker";
 import { generateLp } from "@/lib/lp";
@@ -268,4 +269,63 @@ export async function setMargin(id: string, margin: number) {
   const m = Math.min(Math.max(margin, 0.05), 0.95);
   const { error } = await sb.from("analyses").update({ margin: m }).eq("id", id).eq("owner_id", user.id);
   if (error) throw new Error("保存できませんでした");
+}
+
+/** 追うKPIを選ぶ。複数選べる */
+export async function selectKpis(id: string, selected: { id: string; name: string; custom?: boolean }[]) {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+  const { error } = await sb.from("analyses").update({ kpi_selected: selected }).eq("id", id).eq("owner_id", user.id);
+  if (error) throw new Error("保存できませんでした");
+}
+
+/**
+ * 自由入力で足したKPIについて施策を考えて追加する。
+ * 既存の施策は作り直さない。作り直すと済みの印が消えるため。
+ */
+export async function addKpiMeasures(id: string, kpiId: string, kpiName: string) {
+  assertKey();
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
+  const { data } = await sb.from("analyses").select("*").eq("id", id).eq("owner_id", user.id).single();
+  if (!data) throw new Error("分析が見つかりません");
+  const a = data as Analysis;
+  if (!a.diagnosis) throw new Error("分析が完了していません");
+
+  const existing = (a.measures ?? []).map((m) => m.title);
+  const plan = await measuresForKpi(a.diagnosis, a.site, a.meo, a.pricing, kpiId, kpiName, existing);
+  // IDは衝突しないよう採番し直す
+  const add = (plan.items ?? []).map((m, i) => ({ ...m, id: `${kpiId}-${Date.now()}-${i}`, kpis: [kpiId] }));
+
+  await sb
+    .from("analyses")
+    .update({ measures: [...(a.measures ?? []), ...add] })
+    .eq("id", id)
+    .eq("owner_id", user.id);
+
+  revalidatePath(`/analysis/${id}/report`);
+  return add;
+}
+
+/** 施策を済みにする／戻す */
+export async function toggleMeasure(id: string, measureId: string, done: boolean) {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
+  const { data } = await sb.from("analyses").select("measures_done").eq("id", id).eq("owner_id", user.id).single();
+  const cur: string[] = (data?.measures_done as string[]) ?? [];
+  const next = done ? [...new Set([...cur, measureId])] : cur.filter((x) => x !== measureId);
+  const { error } = await sb.from("analyses").update({ measures_done: next }).eq("id", id).eq("owner_id", user.id);
+  if (error) throw new Error("保存できませんでした");
+  return next;
 }

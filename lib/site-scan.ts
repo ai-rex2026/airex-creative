@@ -33,6 +33,8 @@ export type SiteScan = {
   bizPhone: string | null;
   /** サイトから辿れる公式SNS。実際に張られているリンクだけ */
   social: { platform: string; url: string; handle: string }[];
+  /** 申し込みの受け口。KPIツリーの「予約率」を考える土台になる */
+  conversions: { kind: string; detail: string; measurable: boolean }[];
   passed: number;
   total: number;
 };
@@ -91,6 +93,7 @@ export async function scanSite(input: string): Promise<SiteScan> {
   const structuredData = /application\/ld\+json/i.test(html);
   const biz = readBusiness(html);
   const social = readSocial(html, host);
+  const conversions = readConversions(html);
 
   // GTM はタグを表示時に差し込むので HTML だけでは分からない。
   // コンテナ自体は公開されているので中身を読んで判定する
@@ -146,6 +149,7 @@ export async function scanSite(input: string): Promise<SiteScan> {
     bizAddress: biz.address,
     bizPhone: biz.phone,
     social,
+    conversions,
     passed,
     total: 10,
   };
@@ -269,4 +273,38 @@ async function fetchGtm(id: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * 申し込みの受け口を探す。
+ *
+ * measurable は「広告のコンバージョンとして計測できるか」。
+ * 電話は発信そのものを計測できず、外部の予約サービスへ飛ぶと自サイトを離れる。
+ * ここが弱いサイトは、タグを入れても成果を測れない。
+ */
+function readConversions(html: string) {
+  const out: { kind: string; detail: string; measurable: boolean }[] = [];
+  const uniq = (re: RegExp) => [...new Set([...html.matchAll(re)].map((m) => m[1]))];
+
+  const forms = (html.match(/<form[\s>]/gi) ?? []).length;
+  if (forms > 0) out.push({ kind: "フォーム", detail: `${forms}件`, measurable: true });
+
+  const tel = uniq(/href="tel:([^"]+)"/gi);
+  if (tel.length) out.push({ kind: "電話", detail: tel.slice(0, 2).join(" / "), measurable: false });
+
+  const line = uniq(/href="(https?:\/\/(?:lin\.ee|line\.me)[^"]*)"/gi);
+  if (line.length) out.push({ kind: "LINE", detail: "友だち追加リンク", measurable: false });
+
+  const mail = uniq(/href="mailto:([^"?]+)"/gi);
+  if (mail.length) out.push({ kind: "メール", detail: mail[0], measurable: false });
+
+  // 外部の予約サービスへ飛ぶと自サイトを離れるため、こちらでは計測できない
+  const ext = uniq(/href="(https?:\/\/[^"]*(?:epark|airrsv|hotpepper|coubic|square|timerex|reserva|yoyaku)[^"]*)"/gi);
+  if (ext.length) out.push({ kind: "外部の予約サービス", detail: new URL(ext[0]).host, measurable: false });
+
+  const page = uniq(/href="(\/[^"]*(?:contact|reserve|yoyaku|counseling|inquiry)[^"]*)"/gi);
+  if (page.length && forms === 0) {
+    out.push({ kind: "問い合わせページ", detail: page[0], measurable: true });
+  }
+  return out;
 }
