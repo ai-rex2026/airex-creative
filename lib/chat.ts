@@ -118,6 +118,14 @@ const SYSTEM = `あなたは AI-REX Studio のレポートについて答える�
   通らなかった場合は理由が返るので、それを踏まえて言い換えを提案する
 - ツールを使わずに新しいコピーを会話文で書かない。検査を通っていない文言を渡すことになる`
 
+/** モデルが <answer> のような囲みを付けてくることがあるので落とす */
+function clean(raw: string) {
+  return raw
+    .replace(/^\s*<answer>\s*/i, "")
+    .replace(/\s*<\/answer>\s*$/i, "")
+    .trim();
+}
+
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "edit_copy",
@@ -161,7 +169,7 @@ export async function askAboutReport(
       { timeout: 60_000, maxRetries: 1 }
     );
 
-    text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+    text = clean(res.content.map((b) => (b.type === "text" ? b.text : "")).join(""));
     const calls = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (calls.length === 0) break;
 
