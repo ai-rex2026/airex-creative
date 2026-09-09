@@ -108,10 +108,11 @@ export function diagnoseTags(site: SiteScan | null, plan: MediaPlanItem[]): Meas
       howTo: "TikTok Business Center → [ピクセル管理] → [ピクセルを作成]。ViewContent・Contact イベントを設定してください。",
     },
     {
-      name: "LINE Tag",
+      // LINE広告は Yahoo!広告に統合済み。専用タグの新規設置は勧めない（lib/ad-platforms.ts）
+      name: "LINE Tag（旧仕様）",
       detected: has("LINE Tag"),
-      need: used(/LINE/i) ? "必須" : "推奨",
-      howTo: "LINE Ads → [タグ管理] → [LINE Tag を発行] し、全ページの <head> に設置してください。",
+      need: "推奨",
+      howTo: "LINE広告は Yahoo!広告に統合されています。新たに LINE Tag を設置する必要はなく、Yahoo!タグ（サイトジェネラルタグ）で計測してください。",
     },
   ];
 

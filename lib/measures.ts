@@ -6,6 +6,7 @@ import { checkGuard } from "./guardrail";
 import type { GuardHit, Industry } from "./types";
 import type { MeoScan } from "./meo";
 import type { PriceScan } from "./pricing";
+import { platformNotes } from "./ad-platforms";
 
 /**
  * 施策。KPIに効くものだけを出す。
@@ -76,7 +77,10 @@ ${pricing?.main ? `主力商材: ${pricing.main.name} ${pricing.main.yen.toLocal
 ${cv.every((c) => !c.measurable) && cv.length > 0 ? "※ 計測できる受け口が無いため、広告を出しても成果を数えられません" : ""}
 広告タグ: ${site?.adTags.join("・") || "なし"}
 ${site ? `構造化データ: ${site.structuredData ? "有" : "無"} / 内部リンク: ${site.internalLinks}` : ""}
-${meo?.self ? `Googleマップ: 評価${meo.self.rating}（近隣平均${meo.avgRating}）レビュー${meo.self.reviews}件（近隣平均${meo.avgReviews}件・${meo.totalShops}店中${meo.reviewRank}位）` : ""}`;
+${meo?.self ? `Googleマップ: 評価${meo.self.rating}（近隣平均${meo.avgRating}）レビュー${meo.self.reviews}件（近隣平均${meo.avgReviews}件・${meo.totalShops}店中${meo.reviewRank}位）` : ""}
+
+【媒体の事実】※ 自分の知識より、ここに書いてあることを優先する
+${platformNotes()}`;
 }
 
 /** ツリーに無いノード名は捨てる。紐づかない名前を出すと対応が取れなくなる */

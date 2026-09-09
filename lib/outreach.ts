@@ -2,6 +2,7 @@ import { askJson } from "./anthropic";
 import type { Diagnosis } from "./types";
 import type { SiteScan } from "./site-scan";
 import type { CompetitorScan } from "./competitors";
+import { platformNotes } from "./ad-platforms";
 
 /**
  * 検索サジェスト対策と外部施策。
@@ -143,11 +144,13 @@ export async function generateOutreach(
   （例：業種別ポータル、比較メディア、地域情報サイト、業界紙、プレスリリース配信）
   site は媒体名かカテゴリ名。実在が確かでないサービス名を書かない
   how は「誰がどう申し込むか」を1文で
-- affiliate は、この商材にアフィリエイトが向くかを先に判断する
-  向かない例：医療・士業など広告規制が厳しいもの、単価が低く報酬が出せないもの、
-  在庫や来店枠に限りがあるもの。向かないなら fit:false と理由を書き、asps は空にする
+- affiliate は、この商材にアフィリエイトが向くかを判断する
+  **業種を理由に「規制で禁止」と断定しない。** 規制がある業種でも実際に運用されている
+  ことがある。禁止かどうかは下の【媒体の事実】に書いてある場合だけそれに従う
+  fit:false にしてよいのは、単価が低く報酬を出せない／在庫や枠に限りがあり集客を
+  増やせない、といった**この商材固有の事情**があるときだけ
   向くなら日本で実在する ASP 名を2〜3件
-  caution には業種特有の規制（医療広告ガイドライン等）があれば書く。無ければ null
+  caution には運用上の留意点（掲載内容の管理責任など）を書く。無ければ null
 - suggestActions は3〜5件。**下に渡す実測のサジェストを踏まえて**書く。
   一般論（「ポジティブな情報を増やす」等）は書かない。どの語に何をするかを書く
 - prThemes は3〜4件。この商材の事実を使う。誇張しない
@@ -157,6 +160,9 @@ export async function generateOutreach(
 業種: ${d.industry}
 強み: ${d.strengths.join(" / ")}
 買わない理由: ${d.objections.join(" / ")}
+
+【媒体の事実】※ 自分の知識より、ここに書いてあることを優先する
+${platformNotes()}
 
 実測した検索サジェスト（${suggests.queried.join(" / ")}）:
 ${suggests.rows.length ? suggests.rows.map((r) => `- ${r.suggestion}（${r.kind}）`).join("\n") : "- 取得できませんでした"}
