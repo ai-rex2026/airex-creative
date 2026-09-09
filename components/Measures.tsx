@@ -5,6 +5,8 @@ import { makeRunbook, regenerateMeasures, selectKpis, toggleMeasure } from "@/ap
 import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
 import { Spinner } from "./Loading";
+import { CasePhotoFrame } from "./CasePhotoFrame";
+import { isCasePhoto } from "@/lib/case-photo";
 
 /**
  * KPIを決めてから施策を並べる画面。
@@ -213,6 +215,7 @@ export function Measures({
                   <div className="who"><b>担当</b>{m.owner}</div>
                   <ol>{m.steps?.map((s, i) => <li key={i}>{s}</li>)}</ol>
                   <div className="chk"><b>完了の判断</b>{m.done}</div>
+                  {isCasePhoto(`${m.title} ${m.impactWhy} ${(m.steps ?? []).join(" ")}`) && <CasePhotoFrame />}
                   {m.flags?.map((f, i) => (
                     <div className="mlaw" key={i}>
                       <b>{f.law}「{f.text}」</b>

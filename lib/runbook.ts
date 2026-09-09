@@ -1,6 +1,7 @@
 import { askJson } from "./anthropic";
 import { checkGuardDict } from "./guardrail";
 import { platformNotes } from "./ad-platforms";
+import { casePhotoRules, isCasePhoto } from "./case-photo";
 import type { Diagnosis, GuardHit } from "./types";
 import type { SiteScan } from "./site-scan";
 import type { PriceScan } from "./pricing";
@@ -40,6 +41,11 @@ export async function generateRunbook(
   pricing: PriceScan | null,
   meo: MeoScan | null
 ): Promise<Runbook> {
+  // 症例写真は要件が細かく、外すと違反物ができあがる。該当する施策のときだけ丸ごと渡す
+  const caseRules = isCasePhoto(`${measure.title} ${measure.impactWhy} ${(measure.steps ?? []).join(" ")}`)
+    ? `\n\n${casePhotoRules()}\n\nこの施策は症例写真に関わる。上の要件を prompt の中に必ず書き写し、\n写真そのものを生成させる指示は書かない。`
+    : "";
+
   const res = await askJson<Omit<Runbook, "flags" | "madeAt">>(
     `あなたは、AI に貼り付けて作業させるためのプロンプトを書く人です。
 渡された施策1件について、**そのまま AI に貼れば作業が進む**プロンプトを作ります。
@@ -66,7 +72,7 @@ prompt の書き方:
 requires は、実行に要るアカウントや権限を2〜4件。
 limits は「貼っただけでは終わらないこと」。無ければ null。
 **ブラウザを操作して管理画面にログインする作業は AI にはできない**ので、
-そこが要る施策では limits に必ず書く。`,
+そこが要る施策では limits に必ず書く。${caseRules}`,
     `対象サイト: ${site?.finalUrl ?? "（URLなし）"}
 商材: ${d.product}
 業種: ${d.industry}

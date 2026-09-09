@@ -10,6 +10,16 @@ import type { SiteScan } from "./site-scan";
 
 const ENDPOINT = "https://places.googleapis.com/v1";
 
+/** 拾う店舗数の上限。チェーンの多拠点を一覧で見たいので大きく取る */
+const MAX_STORES = 100;
+/**
+ * 近隣同業との比較まで行う店舗数の上限。
+ * 比較は店舗1つにつき Places API を1回使うので、回数と時間がそのまま増える。
+ */
+const MAX_COMPARE = 20;
+/** 走査全体の制限時間。ここを超えたら比較を打ち切って、取れたぶんで返す */
+const BUDGET_MS = 120_000;
+
 export function hasPlacesApi() {
   return !!process.env.GOOGLE_MAPS_API_KEY;
 }
@@ -33,6 +43,10 @@ export type MeoStore = {
   avgRating: number | null;
   avgReviews: number | null;
   score: number;
+  /** 満点。近隣比較が取れない店舗は競合比の項目を外すので満点が下がる */
+  scoreMax: number;
+  /** 近隣同業と比較できたか。できていない店舗の順位は出さない */
+  compared: boolean;
   breakdown: { label: string; got: number; max: number; note: string }[];
 };
 
@@ -49,6 +63,9 @@ export type MeoScan = {
   avgRating: number | null;
   avgReviews: number | null;
   score: number;
+  scoreMax: number;
+  /** 近隣比較まで取れた店舗数。全店舗ぶんは呼び出し回数と時間が足りない */
+  comparedCount: number;
   /** 点の内訳。何を測って何点にしたかを画面に出す */
   breakdown: { label: string; got: number; max: number; note: string }[];
   /** 特定できなかったときの理由 */
@@ -82,20 +99,40 @@ const FIELDS = [
   "places.nationalPhoneNumber",
 ].join(",");
 
-async function call(path: string, body: unknown): Promise<RawPlace[]> {
+async function call(path: string, body: unknown, withToken = false): Promise<{ places: RawPlace[]; next?: string }> {
   const res = await fetch(`${ENDPOINT}/${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "X-Goog-Api-Key": process.env.GOOGLE_MAPS_API_KEY!,
-      "X-Goog-FieldMask": FIELDS,
+      "X-Goog-FieldMask": withToken ? `${FIELDS},nextPageToken` : FIELDS,
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15000),
   });
   if (!res.ok) throw new Error(`Places API: ${res.status}`);
-  const j = (await res.json()) as { places?: RawPlace[] };
-  return j.places ?? [];
+  const j = (await res.json()) as { places?: RawPlace[]; nextPageToken?: string };
+  return { places: j.places ?? [], next: j.nextPageToken };
+}
+
+/**
+ * テキスト検索を最後のページまで辿る。
+ * 1ページ20件までなので、多拠点のチェーンは1回の呼び出しでは拾い切れない。
+ */
+async function searchAllPages(textQuery: string, pages: number): Promise<RawPlace[]> {
+  const out: RawPlace[] = [];
+  let token: string | undefined;
+  for (let i = 0; i < pages; i++) {
+    const r = await call(
+      "places:searchText",
+      { textQuery, languageCode: "ja", regionCode: "JP", pageSize: 20, ...(token ? { pageToken: token } : {}) },
+      true
+    );
+    out.push(...r.places);
+    if (!r.next) break;
+    token = r.next;
+  }
+  return out;
 }
 
 function toPlace(p: RawPlace): MeoPlace {
@@ -122,7 +159,7 @@ function empty(reason: string): MeoScan {
   return {
     stores: [],
     self: null, competitors: [], ratingRank: null, reviewRank: null, totalShops: 0,
-    avgRating: null, avgReviews: null, score: 0, breakdown: [], reason,
+    avgRating: null, avgReviews: null, score: 0, scoreMax: 0, comparedCount: 0, breakdown: [], reason,
     searchedAt: new Date().toISOString(),
   };
 }
@@ -131,16 +168,14 @@ function empty(reason: string): MeoScan {
  * 実測できる項目だけで100点満点を組む。
  * 写真枚数・投稿頻度は Places API では取れないので採点に入れない（取れないものを推測しない）。
  */
-function grade(self: RawPlace, competitors: MeoPlace[]): MeoScan["breakdown"] {
+function grade(self: RawPlace, competitors: MeoPlace[], compared: boolean): MeoScan["breakdown"] {
   const rating = self.rating ?? 0;
   const reviews = self.userRatingCount ?? 0;
   const med = competitors.length
     ? [...competitors].map((c) => c.reviews).sort((a, b) => a - b)[Math.floor(competitors.length / 2)]
     : 0;
 
-  const ratio = med > 0 ? Math.min(reviews / med, 1) : reviews > 0 ? 1 : 0;
-
-  return [
+  const rows: MeoScan["breakdown"] = [
     {
       label: "ビジネスプロフィールの登録",
       got: 20, max: 20,
@@ -152,14 +187,21 @@ function grade(self: RawPlace, competitors: MeoPlace[]): MeoScan["breakdown"] {
       max: 30,
       note: rating ? `星 ${rating.toFixed(1)}。星3.0を0点、星5.0を満点として換算しています。` : "評価がまだ付いていません。",
     },
-    {
+  ];
+
+  // 競合比は、比較相手が取れたときだけ採点する。
+  // 相手がいないのに満点を出すと、比較した店舗より高い点が付いて並べられなくなる。
+  if (compared && med > 0) {
+    const ratio = Math.min(reviews / med, 1);
+    rows.push({
       label: "レビュー数（競合の中央値比）",
       got: Math.round(ratio * 30),
       max: 30,
-      note: med > 0
-        ? `${reviews}件。近隣同業の中央値 ${med}件に対して ${Math.round(ratio * 100)}% です。`
-        : `${reviews}件。比較できる近隣同業が見つかりませんでした。`,
-    },
+      note: `${reviews}件。近隣同業の中央値 ${med}件に対して ${Math.round(ratio * 100)}% です。`,
+    });
+  }
+
+  rows.push(
     {
       label: "営業時間の登録",
       got: self.regularOpeningHours ? 10 : 0, max: 10,
@@ -169,8 +211,9 @@ function grade(self: RawPlace, competitors: MeoPlace[]): MeoScan["breakdown"] {
       label: "電話番号の登録",
       got: self.nationalPhoneNumber ? 10 : 0, max: 10,
       note: self.nationalPhoneNumber ? "登録されています。" : "未登録です。マップから直接電話できません。",
-    },
-  ];
+    }
+  );
+  return rows;
 }
 
 
@@ -197,28 +240,25 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
   if (!hasPlacesApi()) return empty("Places API が未設定です");
   if (!url) return empty("URLがないため照合できません");
 
+  const deadline = Date.now() + BUDGET_MS;
   const ourHost = host(url) || host(site?.finalUrl);
   const candidates = nameCandidates(site);
   if (candidates.length === 0) return empty("店舗名を特定できませんでした");
 
-  // 候補を順に試し、サイトのドメインが一致したものを自社とする。
-  // 同名の別店舗を掴まないための照合なので、一致しなければ採用しない。
-  // 多拠点のクライアントがあるので、一致したものは**すべて**拾う。
+  // サイトのドメインが一致したものだけを自社とする。同名の別店舗を掴まないための照合。
+  // 多拠点のクライアントがあるので、候補の呼び方をすべて試して一致したものは全部拾う。
   const mine = new Map<string, RawPlace>();
   let sawAny = false;
+  let apiError: string | null = null;
   for (const name of candidates) {
-    if (mine.size > 0) break;
+    if (mine.size >= MAX_STORES || Date.now() > deadline) break;
     const query = [name, site?.bizAddress ?? ""].filter(Boolean).join(" ");
     let found: RawPlace[];
     try {
-      found = await call("places:searchText", {
-        textQuery: query,
-        languageCode: "ja",
-        regionCode: "JP",
-        maxResultCount: 20,
-      });
+      found = await searchAllPages(query, 3);
     } catch (e) {
-      return empty(e instanceof Error ? e.message : "Places API を呼べませんでした");
+      apiError = e instanceof Error ? e.message : "Places API を呼べませんでした";
+      continue;
     }
     if (found.length) sawAny = true;
     for (const p of found) {
@@ -228,6 +268,7 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     }
   }
   if (mine.size === 0) {
+    if (apiError) return empty(apiError);
     return empty(
       sawAny
         ? "Googleビジネスプロフィールは見つかりましたが、登録されているウェブサイトがこのサイトと一致しませんでした。プロフィール側のURLをご確認ください。"
@@ -235,21 +276,29 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     );
   }
 
-  // 近隣の取得は店舗ごとに API を1回使うので、上限を置く
-  const selves = [...mine.values()].slice(0, 5);
+  // レビュー数の多い順に見る。比較まで回せる数に限りがあるので、
+  // 主要店舗から先に埋まるようにしておく
+  const selves = [...mine.values()]
+    .sort((a, b) => (b.userRatingCount ?? 0) - (a.userRatingCount ?? 0))
+    .slice(0, MAX_STORES);
   const stores: MeoStore[] = [];
+  let comparedCount = 0;
 
   for (const one of selves) {
+    const canCompare =
+      !!one.location && !!one.primaryType && comparedCount < MAX_COMPARE && Date.now() < deadline;
     let nearby: RawPlace[] = [];
-    if (one.location && one.primaryType && stores.length < 3) {
+    if (canCompare) {
       try {
-        nearby = await call("places:searchNearby", {
-          includedPrimaryTypes: [one.primaryType],
-          languageCode: "ja",
-          regionCode: "JP",
-          maxResultCount: 20,
-          locationRestriction: { circle: { center: one.location, radius: 3000 } },
-        });
+        nearby = (
+          await call("places:searchNearby", {
+            includedPrimaryTypes: [one.primaryType],
+            languageCode: "ja",
+            regionCode: "JP",
+            maxResultCount: 20,
+            locationRestriction: { circle: { center: one.location, radius: 3000 } },
+          })
+        ).places;
       } catch {
         // 近隣が取れなくても自社の数値は出せるので、そのまま進む
       }
@@ -260,32 +309,39 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
       .map(toPlace)
       .sort((a, b) => b.reviews - a.reviews)
       .slice(0, 10);
+    const compared = competitors.length > 0;
+    if (compared) comparedCount++;
 
     const me = toPlace(one);
     const all = [me, ...competitors];
     const rated = all.filter((p) => p.rating !== null);
     const isMe = (p: MeoPlace) => p.name === me.name && p.reviews === me.reviews;
-    const ratingRank = one.rating
-      ? [...rated].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)).findIndex(isMe) + 1
-      : null;
-    const reviewRank = [...all].sort((a, b) => b.reviews - a.reviews).findIndex(isMe) + 1;
+    const ratingRank =
+      compared && one.rating
+        ? [...rated].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)).findIndex(isMe) + 1
+        : null;
+    const reviewRank = compared ? [...all].sort((a, b) => b.reviews - a.reviews).findIndex(isMe) + 1 : null;
+    const breakdown = grade(one, competitors, compared);
 
     stores.push({
       self: me,
       competitors,
+      compared,
       ratingRank: ratingRank && ratingRank > 0 ? ratingRank : null,
-      reviewRank: reviewRank > 0 ? reviewRank : null,
-      totalShops: all.length,
-      avgRating: rated.length ? Number((rated.reduce((n, p) => n + (p.rating ?? 0), 0) / rated.length).toFixed(1)) : null,
+      reviewRank: reviewRank && reviewRank > 0 ? reviewRank : null,
+      totalShops: compared ? all.length : 0,
+      avgRating: compared && rated.length ? Number((rated.reduce((n, p) => n + (p.rating ?? 0), 0) / rated.length).toFixed(1)) : null,
       avgReviews: competitors.length ? Math.round(competitors.reduce((n, p) => n + p.reviews, 0) / competitors.length) : null,
-      score: grade(one, competitors).reduce((n, b) => n + b.got, 0),
-      breakdown: grade(one, competitors),
+      score: breakdown.reduce((n, b) => n + b.got, 0),
+      scoreMax: breakdown.reduce((n, b) => n + b.max, 0),
+      breakdown,
     });
   }
 
   const head = stores[0];
   return {
     stores,
+    comparedCount,
     self: head.self,
     competitors: head.competitors,
     ratingRank: head.ratingRank,
@@ -294,6 +350,7 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     avgRating: head.avgRating,
     avgReviews: head.avgReviews,
     score: head.score,
+    scoreMax: head.scoreMax,
     breakdown: head.breakdown,
     reason: null,
     searchedAt: new Date().toISOString(),

@@ -11,6 +11,7 @@ import type { CompetitorScan } from "@/lib/competitors";
 import type { TacticPlan } from "@/lib/tactics";
 import { adWidth, type AdOps } from "@/lib/ad-ops";
 import type { MeoScan } from "@/lib/meo";
+import { MeoStoreList, scorePct } from "./MeoStores";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
 import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
 import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
@@ -27,6 +28,7 @@ import type { Measure } from "@/lib/measures";
 
 type Tab = "inputs" | "measures" | "overview";
 type Todo = { level: "high" | "mid"; text: string; tab: Tab; anchor: string };
+
 
 export function Report({
   d,
@@ -188,7 +190,12 @@ export function Report({
       label: "MEO",
       got: meo.score,
       max: 100,
-      note: meo.totalShops > 1 ? `近隣${meo.totalShops}店中 レビュー${meo.reviewRank}位` : "近隣に比較できる同業が見つかりませんでした",
+      note:
+        meo.stores.length > 1
+          ? `${meo.stores.length}店舗を検出（下の一覧に店舗ごとの点数）`
+          : meo.totalShops > 1
+            ? `近隣${meo.totalShops}店中 レビュー${meo.reviewRank}位`
+            : "近隣に比較できる同業が見つかりませんでした",
     });
   if (adOps?.done) {
     const need = adOps.tags.filter((t) => t.need === "必須");
@@ -839,44 +846,14 @@ export function Report({
             </div>
           ) : (
             <>
-              {meo.stores.length > 1 && (
-                <>
-                  <div className="note">
-                    <i className="i">i</i>
-                    <span>
-                      同じサイトを登録している店舗が <b style={{ fontWeight: 600 }}>{meo.stores.length}件</b> 見つかりました。
-                      店舗ごとに評価とレビュー数が違うので、分けて出しています。
-                    </span>
-                  </div>
-                  <div className="stores measure">
-                    {meo.stores.map((st, i) => (
-                      <div className="s" key={i}>
-                        <div className="h">
-                          <b>{st.self.name}</b>
-                          <span className={`tag${st.score >= 75 ? " ok" : st.score >= 50 ? "" : " warn"}`}>{st.score} / 100</span>
-                        </div>
-                        <small>{st.self.address}</small>
-                        <div className="m">
-                          <span>★ {st.self.rating?.toFixed(1) ?? "—"}</span>
-                          <span>レビュー {st.self.reviews.toLocaleString()}件</span>
-                          <span>
-                            {st.totalShops > 1 && st.reviewRank
-                              ? `近隣${st.totalShops}店中 ${st.reviewRank}位`
-                              : "近隣に比較できる同業が見つかりませんでした"}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
+              <MeoStoreList meo={meo} />
 
               <div className="meo measure">
                 <div className="gauge">
                   <b>{meo.score}</b>
-                  <small>/ 100</small>
-                  <span className={meo.score >= 75 ? "ok" : meo.score >= 50 ? "warn" : "ng"}>
-                    {meo.score >= 75 ? "良好" : meo.score >= 50 ? "改善の余地あり" : "要対策"}
+                  <small>/ {meo.scoreMax || 100}</small>
+                  <span className={scorePct(meo.score, meo.scoreMax) >= 75 ? "ok" : scorePct(meo.score, meo.scoreMax) >= 50 ? "warn" : "ng"}>
+                    {scorePct(meo.score, meo.scoreMax) >= 75 ? "良好" : scorePct(meo.score, meo.scoreMax) >= 50 ? "改善の余地あり" : "要対策"}
                   </span>
                 </div>
                 <div className="kpis">

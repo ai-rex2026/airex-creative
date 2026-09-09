@@ -1,4 +1,5 @@
 import type { MeoScan } from "@/lib/meo";
+import { MeoStoreList, scorePct } from "./MeoStores";
 import type { SiteScan } from "@/lib/site-scan";
 
 /**
@@ -36,20 +37,24 @@ export function MeoReport({ meo, site, url }: { meo: MeoScan | null; site: SiteS
             <div>
               <h2 id="sec-meo">Googleマップでの位置づけ</h2>
               <div className="sub">
-                {meo.totalShops > 1
-                  ? `近隣3km・同じ業種の ${meo.totalShops} 店と比べています`
-                  : "近隣3kmに同じ業種の店が見つからず、比較はできていません"}
+                {meo.stores.length > 1
+                  ? `${meo.stores.length}店舗を検出。以下は最もレビューの多い店舗の数値です`
+                  : meo.totalShops > 1
+                    ? `近隣3km・同じ業種の ${meo.totalShops} 店と比べています`
+                    : "近隣3kmに同じ業種の店が見つからず、比較はできていません"}
               </div>
             </div>
             <span className="rule" />
           </div>
 
+          <MeoStoreList meo={meo} />
+
           <div className="meo measure">
             <div className="gauge">
               <b>{meo.score}</b>
-              <small>/ 100</small>
-              <span className={meo.score >= 75 ? "ok" : meo.score >= 50 ? "warn" : "ng"}>
-                {meo.score >= 75 ? "良好" : meo.score >= 50 ? "改善の余地あり" : "要対策"}
+              <small>/ {meo.scoreMax || 100}</small>
+              <span className={scorePct(meo.score, meo.scoreMax) >= 75 ? "ok" : scorePct(meo.score, meo.scoreMax) >= 50 ? "warn" : "ng"}>
+                {scorePct(meo.score, meo.scoreMax) >= 75 ? "良好" : scorePct(meo.score, meo.scoreMax) >= 50 ? "改善の余地あり" : "要対策"}
               </span>
             </div>
             <div className="kpis">
