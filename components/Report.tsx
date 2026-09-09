@@ -19,6 +19,7 @@ import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
 import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
 import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
 import type { SpeedScan } from "@/lib/pagespeed";
+import type { SocialScan } from "@/lib/social";
 import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "@/lib/types";
@@ -54,6 +55,7 @@ export function Report({
   outreach,
   pricing: initialPricing,
   speed,
+  social,
   margin: initialMargin,
   kpi,
   measures,
@@ -85,6 +87,7 @@ export function Report({
   outreach: OutreachPlan | null;
   pricing: PriceScan | null;
   speed: SpeedScan | null;
+  social: SocialScan | null;
   margin: number | null;
   kpi: KpiTree | null;
   measures: Measure[] | null;
@@ -348,6 +351,7 @@ export function Report({
           onMargin={pickMargin}
           extra={extraInputs}
           hasGoogle={!!(gsc || ga4)}
+          social={social}
         />
       )}
 
@@ -573,20 +577,40 @@ export function Report({
             <span className="ic">◍</span>
             <div>
               <h2 id="sec-social">公式SNSアカウント</h2>
-              <div className="sub">サイトから実際にリンクされているものだけを載せています</div>
+              <div className="sub">サイトからリンクされているアカウントを、実際に見に行って測っています</div>
             </div>
             <span className="rule" />
           </div>
           <div className="rows measure">
-            {site.social.map((x, i) => (
-              <div className="r" key={i}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <b>{x.platform}</b>
-                  <small>{x.handle}</small>
+            {site.social.map((x, i) => {
+              const m = social?.accounts.find((a) => a.url === x.url);
+              return (
+                <div className="r" key={i}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <b>{x.platform}</b>
+                    <small>{m?.title ?? x.handle}</small>
+                    {m?.reason && <small className="warn">{m.reason}</small>}
+                  </div>
+                  {m?.followers !== null && m?.followers !== undefined && (
+                    <span className="tag ok">フォロワー {m.followers.toLocaleString()}</span>
+                  )}
+                  {m?.posts !== null && m?.posts !== undefined && (
+                    <span className="tag">投稿 {m.posts.toLocaleString()}</span>
+                  )}
+                  <a className="tag" href={x.url} target="_blank" rel="noreferrer noopener">開く</a>
                 </div>
-                <a className="tag" href={x.url} target="_blank" rel="noreferrer noopener">開く</a>
-              </div>
-            ))}
+              );
+            })}
+          </div>
+          <div className="note">
+            <i className="i">i</i>
+            <span>
+              フォロワー数は公開ページから読み取れたものだけを出しています。
+              媒体がログインを求める場合は取得できません。
+              <b style={{ fontWeight: 600 }}>取れなかった数字は推測で埋めていません。</b>
+              取得できた数値は施策の生成にも渡していて、すでに運用しているSNSを
+              「新しく開設する」施策としては出しません。
+            </span>
           </div>
         </>
       )}

@@ -11,6 +11,7 @@ import { generateKeywords, generateLine, generateLpo, type KeywordPlan, type Lin
 import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } from "./outreach";
 import { scanPrices, type PriceScan } from "./pricing";
 import { scanSpeed, type SpeedScan } from "./pagespeed";
+import { scanSocial, type SocialScan } from "./social";
 import { generateKpi, type KpiTree } from "./kpi";
 import { generateMeasures, type Measure } from "./measures";
 import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
@@ -50,6 +51,7 @@ export type Analysis = {
   suggests: SuggestScan | null;
   pricing: PriceScan | null;
   speed: SpeedScan | null;
+  social: SocialScan | null;
   margin: number | null;
   kpi: KpiTree | null;
   /** 選ばれたKPIのID。自由入力ぶんも id を振ってここに入る */
@@ -100,6 +102,11 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       await save({ status: "running", step: "サイトの構成を調べています", progress: 8 });
       const site = await scanSite(a.url);
       return await save({ site, seo: estimateSeo(site), step: "サイトを読んでいます", progress: 18 });
+    }
+    // サイトから辿れた公式SNSを実際に見に行く。AIは使わないので速い
+    if (a.site && !a.social && (a.site.social ?? []).length > 0) {
+      const social = await scanSocial(a.site);
+      return await save({ social, step: "サイトを読んでいます", progress: 20 });
     }
     if (a.url && hasPlacesApi() && !a.meo) {
       // 失敗しても分析全体は止めない。取れなければ画面に理由を出す
@@ -194,7 +201,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       return await save({ kpi, step: "施策を組み立てています", progress: 68 });
     }
     if (!a.measures) {
-      const plan = await generateMeasures(a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? []);
+      const plan = await generateMeasures(a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social);
       return await save({ measures: plan.items ?? [], step: "LP改善を書いています", progress: 71 });
     }
     // 表示速度は実測できる。LP改善で「重い」と書く前にここで数字を取る

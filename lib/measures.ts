@@ -7,6 +7,7 @@ import type { GuardHit, Industry } from "./types";
 import type { MeoScan } from "./meo";
 import type { PriceScan } from "./pricing";
 import { platformNotes } from "./ad-platforms";
+import { socialFacts, type SocialScan } from "./social";
 import type { Runbook } from "./runbook";
 
 /**
@@ -72,9 +73,11 @@ function facts(
   meo: MeoScan | null,
   pricing: PriceScan | null,
   extra: { platform: string; url: string }[] = [],
-  doneTitles: string[] = []
+  doneTitles: string[] = [],
+  social: SocialScan | null = null
 ) {
   const cv = site?.conversions ?? [];
+  const sns = socialFacts(social);
   return `商材: ${d.product}
 ターゲット: ${d.audience}
 業種: ${d.industry}
@@ -95,6 +98,9 @@ ${extra.map((x) => `- ${x.platform}：${x.url}`).join("\n")}` : ""}
 ${doneTitles.length ? `
 【もう実施済みの施策】※ 同じ内容を再び出さない。続きが要るなら別の施策として書く
 ${doneTitles.map((t) => `- ${t}`).join("\n")}` : ""}
+${sns ? `
+【運用中の公式SNS】※ 実測。新規に開設する施策は出さない。今ある数値を動かす施策を書く
+${sns}` : ""}
 
 【媒体の事実】※ 自分の知識より、ここに書いてあることを優先する
 ${platformNotes()}`;
@@ -145,7 +151,8 @@ export async function generateMeasures(
   meo: MeoScan | null,
   pricing: PriceScan | null,
   extra: { platform: string; url: string }[] = [],
-  doneTitles: string[] = []
+  doneTitles: string[] = [],
+  social: SocialScan | null = null
 ): Promise<MeasurePlan> {
   const res = await askJson<MeasurePlan>(
     `あなたは集客の実務者です。下のKPIに効く施策を設計します。
@@ -154,7 +161,7 @@ ${RULES}
 - items は6〜9件
 - **node を1つに集中させない。** 上のノードのうち少なくとも3つに散らす。
   「問い合わせを増やす」だけでなく、来院率・単価・リピートを動かす施策も考える`,
-    `${facts(d, site, meo, pricing, extra, doneTitles)}
+    `${facts(d, site, meo, pricing, extra, doneTitles, social)}
 
 【追うKPI】
 ${kpi.candidates.map((c) => `- ${c.id}：${c.name}（${c.node}）／ ${c.trackable}`).join("\n")}

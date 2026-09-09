@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { addInput, replanForBudget } from "@/app/actions";
 import { BUDGETS, type BudgetBand } from "@/lib/types";
 import type { SiteScan } from "@/lib/site-scan";
+import type { SocialScan } from "@/lib/social";
 import { Spinner } from "./Loading";
 
 /**
@@ -25,6 +26,7 @@ export function Inputs({
   onMargin,
   extra,
   hasGoogle,
+  social,
 }: {
   id: string;
   url: string | null;
@@ -35,6 +37,7 @@ export function Inputs({
   onMargin: (m: number) => void;
   extra: { platform: string; url: string }[] | null;
   hasGoogle: boolean;
+  social: SocialScan | null;
 }) {
   const [list, setList] = useState(extra ?? []);
   const [platform, setPlatform] = useState(PLATFORMS[0]);
@@ -76,12 +79,20 @@ export function Inputs({
             <span className="tag ok">取得済み</span>
           </div>
         )}
-        {(site?.social ?? []).map((s, i) => (
-          <div className="r" key={i}>
-            <div style={{ flex: 1, minWidth: 0 }}><b>{s.platform}</b><small>{s.handle}</small></div>
-            <span className="tag ok">検出</span>
-          </div>
-        ))}
+        {(site?.social ?? []).map((s, i) => {
+          const m = social?.accounts.find((a) => a.url === s.url);
+          return (
+            <div className="r" key={i}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <b>{s.platform}</b>
+                <small>{m?.title ?? s.handle}</small>
+                {m?.reason && <small className="warn">{m.reason}</small>}
+              </div>
+              {m?.followers != null && <span className="tag ok">フォロワー {m.followers.toLocaleString()}</span>}
+              <span className="tag ok">{m?.readable ? "分析済み" : "検出"}</span>
+            </div>
+          );
+        })}
         {(site?.conversions ?? []).map((c, i) => (
           <div className="r" key={`cv${i}`}>
             <div style={{ flex: 1, minWidth: 0 }}>

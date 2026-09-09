@@ -398,7 +398,7 @@ export async function regenerateMeasures(id: string) {
     ],
   };
 
-  const plan = await generateMeasures(a.diagnosis, a.site, kpi, a.meo, a.pricing, a.extra_inputs ?? [], doneTitles);
+  const plan = await generateMeasures(a.diagnosis, a.site, kpi, a.meo, a.pricing, a.extra_inputs ?? [], doneTitles, a.social);
   const items = (plan.items ?? []).map((m, i) => ({ ...m, id: `m${Date.now()}-${i}` }));
 
   // 名前が一致するものは済みのまま引き継ぐ
