@@ -17,8 +17,24 @@ const MAX_STORES = 100;
  * 比較は店舗1つにつき Places API を1回使うので、回数と時間がそのまま増える。
  */
 const MAX_COMPARE = 20;
-/** 走査全体の制限時間。ここを超えたら比較を打ち切って、取れたぶんで返す */
+/** 走査全体の制限時間。ここを超えたら打ち切って、取れたぶんで返す */
 const BUDGET_MS = 120_000;
+/**
+ * 多拠点と分かったときだけ、都道府県で分けて検索を足す。
+ * テキスト検索は1クエリ最大60件で、全国チェーンはそこで頭打ちになる。
+ * （湘南美容クリニックで37件。都道府県を足さないとこれ以上増えない）
+ */
+const CHAIN_THRESHOLD = 10;
+const PREFECTURES = [
+  "北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県",
+  "茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県",
+  "新潟県","富山県","石川県","福井県","山梨県","長野県",
+  "岐阜県","静岡県","愛知県","三重県",
+  "滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県",
+  "鳥取県","島根県","岡山県","広島県","山口県",
+  "徳島県","香川県","愛媛県","高知県",
+  "福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県",
+];
 
 export function hasPlacesApi() {
   return !!process.env.GOOGLE_MAPS_API_KEY;
@@ -248,8 +264,10 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
   // サイトのドメインが一致したものだけを自社とする。同名の別店舗を掴まないための照合。
   // 多拠点のクライアントがあるので、候補の呼び方をすべて試して一致したものは全部拾う。
   const mine = new Map<string, RawPlace>();
+  const keyOf = (p: RawPlace) => p.formattedAddress ?? p.displayName?.text ?? String(mine.size);
   let sawAny = false;
   let apiError: string | null = null;
+  let matchedName: string | null = null;
   for (const name of candidates) {
     if (mine.size >= MAX_STORES || Date.now() > deadline) break;
     const query = [name, site?.bizAddress ?? ""].filter(Boolean).join(" ");
@@ -264,7 +282,23 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     for (const p of found) {
       if (host(p.websiteUri) !== ourHost) continue;
       // 同じ店舗が別クエリで重複しないよう、住所で束ねる
-      mine.set(p.formattedAddress ?? p.displayName?.text ?? String(mine.size), p);
+      mine.set(keyOf(p), p);
+      matchedName ??= name;
+    }
+  }
+
+  // 多拠点と分かったら、都道府県ごとに引き直して取りこぼしを拾う。
+  // 1店舗のクライアントでここまで呼ぶと呼び出しの無駄なので、件数で切り分ける。
+  if (matchedName && mine.size >= CHAIN_THRESHOLD && mine.size < MAX_STORES) {
+    for (const pref of PREFECTURES) {
+      if (mine.size >= MAX_STORES || Date.now() > deadline) break;
+      try {
+        for (const p of await searchAllPages(`${matchedName} ${pref}`, 1)) {
+          if (host(p.websiteUri) === ourHost) mine.set(keyOf(p), p);
+        }
+      } catch {
+        break; // 途中で落ちても、ここまでに拾えた店舗で返す
+      }
     }
   }
   if (mine.size === 0) {
