@@ -6,7 +6,7 @@ import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { newAnalysisId, type Analysis } from "@/lib/analysis";
 import { askAboutReport } from "@/lib/chat";
-import { measuresForKpi } from "@/lib/measures";
+import { generateMeasures, type Measure } from "@/lib/measures";
 import type { AnalysisMode, BudgetBand } from "@/lib/types";
 import { processAnalysis } from "@/lib/worker";
 import { generateLp } from "@/lib/lp";
@@ -283,10 +283,13 @@ export async function selectKpis(id: string, selected: { id: string; name: strin
 }
 
 /**
- * 自由入力で足したKPIについて施策を考えて追加する。
- * 既存の施策は作り直さない。作り直すと済みの印が消えるため。
+ * 施策を作り直す。
+ *
+ * KPI を足したら全体に跳ね返す（足したぶんだけ継ぎ足すと、既存の施策が
+ * 新しい KPI を踏まえていない状態のまま残る）。
+ * 済みにした印は施策名で照合して引き継ぎ、拾えなかったものは記録に残す。
  */
-export async function addKpiMeasures(id: string, kpiId: string, kpiName: string) {
+export async function regenerateMeasures(id: string) {
   assertKey();
   const sb = await createClient();
   const {
@@ -297,24 +300,49 @@ export async function addKpiMeasures(id: string, kpiId: string, kpiName: string)
   const { data } = await sb.from("analyses").select("*").eq("id", id).eq("owner_id", user.id).single();
   if (!data) throw new Error("分析が見つかりません");
   const a = data as Analysis;
-  if (!a.diagnosis) throw new Error("分析が完了していません");
+  if (!a.diagnosis || !a.kpi) throw new Error("分析が完了していません");
 
-  const existing = (a.measures ?? []).map((m) => m.title);
-  const plan = await measuresForKpi(a.diagnosis, a.site, a.meo, a.pricing, kpiId, kpiName, existing, a.extra_inputs ?? []);
-  // IDは衝突しないよう採番し直す
-  const add = (plan.items ?? []).map((m, i) => ({ ...m, id: `${kpiId}-${Date.now()}-${i}`, kpis: [kpiId] }));
+  // 済みにした施策の名前。引き継ぎと、再提案の抑止に使う
+  const doneIds = a.measures_done ?? [];
+  const doneTitles = (a.measures ?? []).filter((m) => doneIds.includes(m.id)).map((m) => m.title);
+
+  // 自由入力の KPI もツリーの候補として渡す
+  const custom = (a.kpi_selected ?? []).filter((k) => k.custom);
+  const kpi = {
+    ...a.kpi,
+    candidates: [
+      ...a.kpi.candidates,
+      ...custom.map((k) => ({
+        id: k.id,
+        name: k.name,
+        node: "",
+        why: "利用者が追加した指標",
+        trackable: "連携が必要です" as const,
+        how: "利用者の指定",
+      })),
+    ],
+  };
+
+  const plan = await generateMeasures(a.diagnosis, a.site, kpi, a.meo, a.pricing, a.extra_inputs ?? [], doneTitles);
+  const items = (plan.items ?? []).map((m, i) => ({ ...m, id: `m${Date.now()}-${i}` }));
+
+  // 名前が一致するものは済みのまま引き継ぐ
+  const carried = items.filter((m) => doneTitles.includes(m.title)).map((m) => m.id);
 
   await sb
     .from("analyses")
-    .update({ measures: [...(a.measures ?? []), ...add] })
+    .update({ measures: items, measures_done: carried })
     .eq("id", id)
     .eq("owner_id", user.id);
 
   revalidatePath(`/analysis/${id}/report`);
-  return add;
+  return { items, done: carried };
 }
 
-/** 施策を済みにする／戻す */
+/**
+ * 施策を済みにする／戻す。
+ * 済みにした時点で記録に残す。施策を作り直しても記録は消えない。
+ */
 export async function toggleMeasure(id: string, measureId: string, done: boolean) {
   const sb = await createClient();
   const {
@@ -322,10 +350,25 @@ export async function toggleMeasure(id: string, measureId: string, done: boolean
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
 
-  const { data } = await sb.from("analyses").select("measures_done").eq("id", id).eq("owner_id", user.id).single();
-  const cur: string[] = (data?.measures_done as string[]) ?? [];
+  const { data } = await sb
+    .from("analyses")
+    .select("measures, measures_done, measure_log")
+    .eq("id", id)
+    .eq("owner_id", user.id)
+    .single();
+  if (!data) throw new Error("分析が見つかりません");
+
+  const cur: string[] = (data.measures_done as string[]) ?? [];
   const next = done ? [...new Set([...cur, measureId])] : cur.filter((x) => x !== measureId);
-  const { error } = await sb.from("analyses").update({ measures_done: next }).eq("id", id).eq("owner_id", user.id);
+
+  const patch: Record<string, unknown> = { measures_done: next };
+  if (done) {
+    const m = ((data.measures as Measure[]) ?? []).find((x) => x.id === measureId);
+    const log = ((data.measure_log as { title: string; at: string }[]) ?? []).filter((x) => x.title !== m?.title);
+    if (m) patch.measure_log = [{ title: m.title, at: new Date().toISOString() }, ...log].slice(0, 200);
+  }
+
+  const { error } = await sb.from("analyses").update(patch).eq("id", id).eq("owner_id", user.id);
   if (error) throw new Error("保存できませんでした");
   return next;
 }

@@ -68,7 +68,8 @@ function facts(
   site: SiteScan | null,
   meo: MeoScan | null,
   pricing: PriceScan | null,
-  extra: { platform: string; url: string }[] = []
+  extra: { platform: string; url: string }[] = [],
+  doneTitles: string[] = []
 ) {
   const cv = site?.conversions ?? [];
   return `商材: ${d.product}
@@ -126,7 +127,8 @@ export async function generateMeasures(
   kpi: KpiTree,
   meo: MeoScan | null,
   pricing: PriceScan | null,
-  extra: { platform: string; url: string }[] = []
+  extra: { platform: string; url: string }[] = [],
+  doneTitles: string[] = []
 ): Promise<MeasurePlan> {
   const res = await askJson<MeasurePlan>(
     `あなたは集客の実務者です。下のKPIに効く施策を設計します。
@@ -135,7 +137,7 @@ ${RULES}
 - items は6〜9件
 - **node を1つに集中させない。** 上のノードのうち少なくとも3つに散らす。
   「問い合わせを増やす」だけでなく、来院率・単価・リピートを動かす施策も考える`,
-    `${facts(d, site, meo, pricing, extra)}
+    `${facts(d, site, meo, pricing, extra, doneTitles)}
 
 【追うKPI】
 ${kpi.candidates.map((c) => `- ${c.id}：${c.name}（${c.node}）／ ${c.trackable}`).join("\n")}

@@ -57,6 +57,8 @@ export type Analysis = {
   measures_done: string[] | null;
   /** サイトから辿れない材料。別ドメインのLP・非公開SNSなど */
   extra_inputs: { platform: string; url: string }[] | null;
+  /** 済みにした施策の記録。施策を作り直しても消えない */
+  measure_log: { title: string; at: string }[] | null;
   outreach: OutreachPlan | null;
   mode: AnalysisMode;
   budget: BudgetBand | null;

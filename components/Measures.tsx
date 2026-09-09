@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { addKpiMeasures, selectKpis, toggleMeasure } from "@/app/actions";
+import { regenerateMeasures, selectKpis, toggleMeasure } from "@/app/actions";
 import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
 
@@ -20,6 +20,7 @@ export function Measures({
   measures,
   selected,
   done,
+  log,
   hygiene,
 }: {
   id: string;
@@ -27,6 +28,7 @@ export function Measures({
   measures: Measure[];
   selected: Picked[];
   done: string[];
+  log: { title: string; at: string }[];
   hygiene: { label: string; how: string }[];
 }) {
   const [picked, setPicked] = useState<Picked[]>(
@@ -56,9 +58,11 @@ export function Measures({
     start(async () => {
       try {
         await selectKpis(id, next);
-        // 足したKPIについてだけ施策を考える。既存は作り直さない
-        const add = await addKpiMeasures(id, kid, name);
-        setList((m) => [...m, ...add]);
+        // KPI を足したら全体に跳ね返す。継ぎ足すと、既存の施策が新しい KPI を
+        // 踏まえていない状態のまま残る
+        const res = await regenerateMeasures(id);
+        setList(res.items);
+        setDoneIds(res.done);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
       }
@@ -127,7 +131,7 @@ export function Measures({
           onKeyDown={(e) => { if (e.key === "Enter") addCustom(); }}
         />
         <button className="btn" onClick={addCustom} disabled={busy || !custom.trim()}>
-          {busy ? "施策を考えています…" : "追加して施策を出す"}
+          {busy ? "施策を作り直しています…" : "追加して施策を作り直す"}
         </button>
       </div>
       {err && <div className="alert" style={{ marginTop: 10 }}>{err}</div>}
@@ -181,6 +185,27 @@ export function Measures({
           );
         })}
       </div>
+
+      {log.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">✓</span>
+            <div>
+              <h2 id="sec-log">実施した施策の記録</h2>
+              <div className="sub">施策を作り直しても、ここは消えません</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div className="rows measure">
+            {log.map((l, i) => (
+              <div className="r" key={i}>
+                <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 400 }}>{l.title}</b></div>
+                <span className="tag">{new Date(l.at).toLocaleDateString("ja-JP")}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {hygiene.length > 0 && (
         <>

@@ -53,6 +53,7 @@ export function Report({
   kpiSelected,
   measuresDone,
   extraInputs,
+  measureLog,
   budget: initialBudget,
   id,
   gsc,
@@ -82,6 +83,7 @@ export function Report({
   kpiSelected: { id: string; name: string; custom?: boolean }[] | null;
   measuresDone: string[] | null;
   extraInputs: { platform: string; url: string }[] | null;
+  measureLog: { title: string; at: string }[] | null;
   budget: BudgetBand | null;
   id: string;
   gsc: GscData | null;
@@ -325,6 +327,7 @@ export function Report({
           measures={measures ?? []}
           selected={kpiSelected ?? []}
           done={measuresDone ?? []}
+          log={measureLog ?? []}
           hygiene={hygiene(site)}
         />
       )}
