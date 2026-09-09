@@ -20,6 +20,26 @@ function assertKey() {
 }
 
 /**
+ * 入力された URL を整える。
+ *
+ * 「medicalbrows.jp」のようにスキーム無しで入れる人が多く、
+ * そのまま fetch すると「Failed to parse URL」で分析ごと落ちていた。
+ * 入力の癖をこちらで吸収する。
+ */
+function normalizeUrl(raw: string | undefined): string | undefined {
+  const v = raw?.trim();
+  if (!v) return undefined;
+  const withScheme = /^https?:\/\//i.test(v) ? v : `https://${v.replace(/^\/+/, "")}`;
+  try {
+    const u = new URL(withScheme);
+    if (!u.hostname.includes(".")) throw new Error("host");
+    return u.toString();
+  } catch {
+    throw new Error(`URLとして読めませんでした：${v}`);
+  }
+}
+
+/**
  * 分析を積む。アカウントが無ければ一時アカウント（匿名サインイン）を作って、
  * その持ち物として登録する。あとで本登録すると同じIDのまま引き継がれる。
  */
@@ -31,8 +51,9 @@ export async function startAnalysis(input: {
 }) {
   assertKey();
   const mode: AnalysisMode = input.mode === "meo" ? "meo" : "report";
-  if (mode === "meo" && !input.url) throw new Error("MEO分析にはサイトのURLが必要です");
-  if (!input.url && !input.text) throw new Error("URL か 商品説明のどちらかを入れてください");
+  const url = normalizeUrl(input.url);
+  if (mode === "meo" && !url) throw new Error("MEO分析にはサイトのURLが必要です");
+  if (!url && !input.text) throw new Error("URL か 商品説明のどちらかを入れてください");
 
   const sb = await createClient();
   let {
@@ -49,7 +70,7 @@ export async function startAnalysis(input: {
   const { error } = await sb.from("analyses").insert({
     id,
     owner_id: user.id,
-    url: input.url ?? null,
+    url: url ?? null,
     input_text: input.text ?? null,
     mode,
     budget: input.budget ?? null,
