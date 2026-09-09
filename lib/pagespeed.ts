@@ -128,7 +128,15 @@ async function run(url: string | null): Promise<SpeedScan> {
           : "PageSpeed Insights のAPIキーが未設定のため、共有枠で呼び出して上限に当たりました。Google Cloud で PageSpeed Insights API を有効にし、キーを PAGESPEED_API_KEY に設定すると安定して測定できます。"
       );
     }
-    if (!res.ok) return empty(`PageSpeed Insights を呼べませんでした（${j.error?.message ?? res.status}）`);
+    const msg = j.error?.message ?? "";
+    // 地図用のキーを流用すると、そのキーに PageSpeed Insights API が
+    // 許可されていない場合にここへ来る。何をすれば直るかまで書く
+    if (/are blocked|API_KEY_SERVICE_BLOCKED|has not been used|is disabled/i.test(msg)) {
+      return empty(
+        "PageSpeed Insights API がこのAPIキーで許可されていません。Google Cloud で PageSpeed Insights API を有効にし、専用のキーを環境変数 PAGESPEED_API_KEY に設定してください。"
+      );
+    }
+    if (!res.ok) return empty(`PageSpeed Insights を呼べませんでした（${msg || res.status}）`);
   } catch (e) {
     return empty(e instanceof Error ? `PageSpeed Insights を呼べませんでした（${e.message}）` : "PageSpeed Insights を呼べませんでした");
   }
