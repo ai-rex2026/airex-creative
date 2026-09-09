@@ -56,7 +56,7 @@ export function Waiting({ id, site, initial }: { id: string; site: string; initi
             onClick={() => {
               setBusy(true);
               retryAnalysis(id)
-                .then(() => setS((x) => ({ ...x, status: "queued", error: null })))
+                .then(() => setS((x) => ({ ...x, status: "queued", step: "順番待ちです", error: null })))
                 .catch((e) => setS((x) => ({ ...x, error: e instanceof Error ? e.message : String(e) })))
                 .finally(() => setBusy(false));
             }}
