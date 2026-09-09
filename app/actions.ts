@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { newAnalysisId, type Analysis } from "@/lib/analysis";
 import { askAboutReport } from "@/lib/chat";
 import { generateMeasures, type Measure } from "@/lib/measures";
+import { generateRunbook } from "@/lib/runbook";
 import type { AnalysisMode, BudgetBand } from "@/lib/types";
 import { processAnalysis } from "@/lib/worker";
 import { generateLp } from "@/lib/lp";
@@ -399,4 +400,32 @@ export async function addInput(id: string, platform: string, url: string) {
   if (error) throw new Error("保存できませんでした");
   revalidatePath(`/analysis/${id}/report`);
   return next;
+}
+
+/**
+ * 施策の実行プロンプトを作る。
+ * 全施策ぶんを先に作ると費用が積み上がるので、使うときに1件だけ作る。
+ */
+export async function makeRunbook(id: string, measureId: string) {
+  assertKey();
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
+  const { data } = await sb.from("analyses").select("*").eq("id", id).eq("owner_id", user.id).single();
+  if (!data) throw new Error("分析が見つかりません");
+  const a = data as Analysis;
+  if (!a.diagnosis) throw new Error("分析が完了していません");
+
+  const items = a.measures ?? [];
+  const target = items.find((m) => m.id === measureId);
+  if (!target) throw new Error("その施策は見つかりません");
+
+  const runbook = await generateRunbook(a.diagnosis, a.site, target, a.pricing, a.meo);
+  const next = items.map((m) => (m.id === measureId ? { ...m, runbook } : m));
+
+  await sb.from("analyses").update({ measures: next }).eq("id", id).eq("owner_id", user.id);
+  return runbook;
 }

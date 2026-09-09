@@ -7,6 +7,7 @@ import type { GuardHit, Industry } from "./types";
 import type { MeoScan } from "./meo";
 import type { PriceScan } from "./pricing";
 import { platformNotes } from "./ad-platforms";
+import type { Runbook } from "./runbook";
 
 /**
  * 施策。KPIに効くものだけを出す。
@@ -40,6 +41,8 @@ export type Measure = {
   done: string;
   /** 法令上の指摘。施策の文言も検査する */
   flags?: { text: string; law: string; reason: string; suggestion: string }[];
+  /** 実行用のプロンプト。使うときに作るので、最初は無い */
+  runbook?: Runbook;
 };
 
 export type MeasurePlan = { items: Measure[] };

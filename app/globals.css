@@ -838,3 +838,24 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
 .addin select{flex:0 0 auto}
 .addin input{flex:1;min-width:220px}
 .addin select:focus,.addin input:focus{border-color:var(--gold)}
+
+/* ── 実行プロンプト ─────────────────────────── */
+.mlist .rbmake{justify-self:start;font:inherit;font-size:12.5px;padding:8px 16px;border-radius:999px;
+  border:1px dashed var(--line-2, #D6D1C6);background:#fff;color:var(--gold-text);cursor:pointer}
+.mlist .rbmake:disabled{opacity:.5;cursor:default}
+.mlist .rb{border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden}
+.mlist .rb .rh{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
+.mlist .rb .rh b{margin:0;font-size:12.5px;color:var(--head);letter-spacing:0}
+.mlist .rb .kd{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+.mlist .rb .cp{margin-left:auto;font:inherit;font-size:11.5px;padding:5px 13px;border-radius:999px;
+  border:0;background:var(--dark);color:#fff;cursor:pointer}
+.mlist .rb pre{margin:0;padding:14px;font-family:var(--font-body),monospace;font-size:12px;
+  line-height:1.85;white-space:pre-wrap;word-break:break-word;color:var(--text);
+  max-height:340px;overflow-y:auto;background:var(--sunk)}
+.mlist .rb .req,.mlist .rb .lim{padding:11px 14px;border-top:1px solid var(--line);font-size:11.5px;
+  line-height:1.7;display:grid;gap:2px}
+.mlist .rb .req b,.mlist .rb .lim b{margin:0;font-size:10.5px;color:var(--faint)}
+.mlist .rb .lim{background:#FCF8EF}
+.mlist .rb .lim b{color:var(--warn)}
+.mlist .rb .lim.law{background:#FBF0EE}
+.mlist .rb .lim.law b{color:var(--ng)}

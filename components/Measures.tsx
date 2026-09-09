@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { regenerateMeasures, selectKpis, toggleMeasure } from "@/app/actions";
+import { makeRunbook, regenerateMeasures, selectKpis, toggleMeasure } from "@/app/actions";
 import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
 
@@ -40,6 +40,32 @@ export function Measures({
   const [custom, setCustom] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, start] = useTransition();
+  const [rbBusy, setRbBusy] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  /** 実行プロンプトは使うときに作る。全件先に作ると費用が積み上がる */
+  async function buildRunbook(mid: string) {
+    setRbBusy(mid);
+    setErr(null);
+    try {
+      const rb = await makeRunbook(id, mid);
+      setList((ms) => ms.map((m) => (m.id === mid ? { ...m, runbook: rb } : m)));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRbBusy(null);
+    }
+  }
+
+  async function copy(mid: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(mid);
+      setTimeout(() => setCopied(null), 1600);
+    } catch {
+      setErr("コピーできませんでした。手動で選択してください");
+    }
+  }
 
   function toggleKpi(c: Picked) {
     const next = picked.some((p) => p.id === c.id) ? picked.filter((p) => p.id !== c.id) : [...picked, c];
@@ -176,6 +202,44 @@ export function Measures({
                       <span className="fix">言い換え：{f.suggestion}</span>
                     </div>
                   ))}
+                  {m.runbook ? (
+                    <div className="rb">
+                      <div className="rh">
+                        <b>AIに貼って実行する</b>
+                        <span className="kd">{m.runbook.kind}</span>
+                        <button className="cp" onClick={() => copy(m.id, m.runbook!.prompt)}>
+                          {copied === m.id ? "コピーしました" : "コピー"}
+                        </button>
+                      </div>
+                      <pre>{m.runbook.prompt}</pre>
+                      {m.runbook.requires?.length > 0 && (
+                        <div className="req">
+                          <b>必要なもの</b>
+                          <span>{m.runbook.requires.join(" / ")}</span>
+                        </div>
+                      )}
+                      {m.runbook.limits && (
+                        <div className="lim">
+                          <b>貼っただけでは終わらないこと</b>
+                          <span>{m.runbook.limits}</span>
+                        </div>
+                      )}
+                      {m.runbook.flags && m.runbook.flags.length > 0 && (
+                        <div className="lim law">
+                          <b>プロンプトに含まれる注意語</b>
+                          <span>
+                            {m.runbook.flags.map((f) => `「${f.text}」`).join("・")}
+                            。貼り先で生成された文言は、こちらの法令チェックを通っていません。
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <button className="rbmake" disabled={rbBusy === m.id} onClick={() => buildRunbook(m.id)}>
+                      {rbBusy === m.id ? "作っています…" : "＋ AIに貼る実行プロンプトを作る"}
+                    </button>
+                  )}
+
                   <button className={`mk${isDone ? " on" : ""}`} onClick={() => markDone(m, !isDone)}>
                     {isDone ? "済みを取り消す" : "やった"}
                   </button>
