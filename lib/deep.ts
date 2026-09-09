@@ -1,7 +1,6 @@
 import { askJson } from "./anthropic";
 import type { Diagnosis } from "./types";
 import type { SiteScan } from "./site-scan";
-import type { SpeedScan } from "./pagespeed";
 import type { GscData } from "./google";
 import type { MeoScan } from "./meo";
 
@@ -18,7 +17,7 @@ export type LpoGroup = {
 };
 export type LpoPlan = { groups: LpoGroup[]; /** 生成に失敗したときの理由。章を空で出す代わりに事実を残す */ error?: string };
 
-export async function generateLpo(d: Diagnosis, site: SiteScan | null, speed: SpeedScan | null = null): Promise<LpoPlan> {
+export async function generateLpo(d: Diagnosis, site: SiteScan | null): Promise<LpoPlan> {
   // セキュリティと表示速度は実測があるので、AI に推測させずこちらで作る
   const measured: LpoGroup[] = [];
   if (site) {
@@ -31,16 +30,9 @@ export async function generateLpo(d: Diagnosis, site: SiteScan | null, speed: Sp
     if (items.length) measured.push({ area: "セキュリティ", items });
   }
 
-  // 表示速度は PageSpeed Insights の実測をそのまま項目にする。
-  // 短縮見込みが出ている改善だけを、数字付きで並べる
-  if (speed && (speed.opportunities.length > 0 || speed.score !== null)) {
-    const items = speed.opportunities.map(
-      (o) => `${o.title}（PageSpeed Insights の試算で ${(o.savingsMs / 1000).toFixed(1)}秒の短縮見込み）`
-    );
-    const slow = speed.field.filter((f) => f.rating && f.rating !== "良好");
-    for (const f of slow) items.unshift(`${f.label} が「${f.rating}」（実ユーザーの計測値 ${f.value}）。${f.note}`);
-    if (items.length) measured.push({ area: "表示速度", items });
-  }
+
+  // 表示速度は PageSpeed Insights の実測を、専用の章で数字ごと出す。
+  // 測定は返らないことがあるので工程の最後に回しており、ここでは持っていない。
 
   const res = await askJson<LpoPlan>(
     `あなたはランディングページ改善（LPO）の実務者です。広告の受け皿としてサイトを直す指摘を出します。

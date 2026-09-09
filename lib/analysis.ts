@@ -204,13 +204,8 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const plan = await generateMeasures(a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social);
       return await save({ measures: plan.items ?? [], step: "LP改善を書いています", progress: 71 });
     }
-    // 表示速度は実測できる。LP改善で「重い」と書く前にここで数字を取る
-    if (a.url && !a.speed) {
-      const speed = await scanSpeed(a.url);
-      return await save({ speed, step: "LP改善を書いています", progress: 72 });
-    }
     if (!a.lpo) {
-      const lpo = await generateLpo(a.diagnosis, a.site, a.speed).catch(failedChapter<LpoPlan>({ groups: [] }));
+      const lpo = await generateLpo(a.diagnosis, a.site).catch(failedChapter<LpoPlan>({ groups: [] }));
       return await save({ lpo, step: "キーワードを選んでいます", progress: 70 });
     }
     if (!a.keywords) {
@@ -256,6 +251,12 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     if (!a.copies[0]?.score) {
       const scored = await scoreCopies(a.diagnosis, a.copies);
       return await save({ copies: scored, step: "要約をまとめています", progress: 92 });
+    }
+    // 表示速度の実測は最後に回す。PSI は返らないことがあり、
+    // 途中に置くとレポート全体がそこで止まる
+    if (a.url && !a.speed) {
+      const speed = await scanSpeed(a.url);
+      return await save({ speed, step: "要約をまとめています", progress: 95 });
     }
     const summary = await generateSummary(a.diagnosis, a.site, a.seo, a.copies);
     return await save({ summary, status: "done", step: "完了しました", progress: 100 });

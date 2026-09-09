@@ -92,7 +92,21 @@ type PsiResponse = {
   error?: { message?: string };
 };
 
+/**
+ * 測定は必ず時間内に終わらせる。
+ * PSI は重いサイトだと返らないことがあり、そのまま待つと工程を保存できないまま
+ * 関数ごと切られて、同じところを何度もやり直すことになる。
+ */
 export async function scanSpeed(url: string | null): Promise<SpeedScan> {
+  return Promise.race([
+    run(url),
+    new Promise<SpeedScan>((r) =>
+      setTimeout(() => r(empty("PageSpeed Insights の応答が時間内に返りませんでした。時間をおくと測定できます。")), 50_000)
+    ),
+  ]);
+}
+
+async function run(url: string | null): Promise<SpeedScan> {
   if (!url) return empty("URLがないため測定できません");
 
   const key = process.env.PAGESPEED_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
@@ -103,7 +117,7 @@ export async function scanSpeed(url: string | null): Promise<SpeedScan> {
   try {
     // 計測そのものに時間がかかる。工程を保存できないまま関数ごと切られないよう上限を置く
     const res = await fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${q}`, {
-      signal: AbortSignal.timeout(70_000),
+      signal: AbortSignal.timeout(40_000),
     });
     j = (await res.json()) as PsiResponse;
     if (res.status === 429) {
