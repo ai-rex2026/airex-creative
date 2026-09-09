@@ -15,7 +15,7 @@ export type LpoGroup = {
   area: "ファーストビュー" | "CTA・フォーム" | "コンテンツの信頼性" | "表示速度" | "セキュリティ" | string;
   items: string[];
 };
-export type LpoPlan = { groups: LpoGroup[] };
+export type LpoPlan = { groups: LpoGroup[]; /** 生成に失敗したときの理由。章を空で出す代わりに事実を残す */ error?: string };
 
 export async function generateLpo(d: Diagnosis, site: SiteScan | null): Promise<LpoPlan> {
   // セキュリティと表示速度は実測があるので、AI に推測させずこちらで作る
@@ -77,6 +77,8 @@ export type KeywordPlan = {
   technical: string[];
   content: string[];
   meo: string[];
+  /** 生成に失敗したときの理由 */
+  error?: string;
 };
 
 export async function generateKeywords(
@@ -145,6 +147,8 @@ export type LinePlan = {
   richMenu: { label: string; goes: string }[];
   steps: { when: string; title: string; body: string }[];
   segments: string[];
+  /** 生成に失敗したときの理由 */
+  error?: string;
 };
 
 export async function generateLine(d: Diagnosis, site: SiteScan | null): Promise<LinePlan> {

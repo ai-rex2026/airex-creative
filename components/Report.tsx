@@ -1199,6 +1199,24 @@ export function Report({
             ))}
           </div>
 
+          {/* 作れなかった章は黙って消さない。無いのか、作れなかったのかで読み方が変わる */}
+          {(() => {
+            const broken = [
+              { name: "LP改善", err: lpo?.error },
+              { name: "キーワード", err: keywords?.error },
+              { name: "LINE", err: linePlan?.error },
+              { name: "検索サジェスト", err: suggests?.error },
+              { name: "外部施策", err: outreach?.error },
+            ].filter((x) => x.err);
+            if (broken.length === 0) return null;
+            return (
+              <div className="alert" style={{ marginTop: 14 }}>
+                次の章は作成できませんでした：{broken.map((x) => x.name).join("・")}。
+                （理由：{broken[0].err}）分析をやり直すと作り直せます。
+              </div>
+            );
+          })()}
+
           {lpo && lpo.groups.length > 0 && (
             <>
               <div className="sec-head">

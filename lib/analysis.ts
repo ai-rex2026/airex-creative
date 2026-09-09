@@ -72,6 +72,15 @@ export type Analysis = {
  * サーバーレスは1リクエストの実行時間に上限があるため、
  * 「全部やる」ではなく「1歩進めて返す」を繰り返す形にしている。
  */
+/**
+ * 章ひとつの生成が壊れても、レポート全体を落とさない。
+ * 1回のJSON崩れで8分ぶんの分析が丸ごと消えるのは割に合わない。
+ * 代わりに「この章は作れなかった」という事実を値の中に残して先へ進む。
+ */
+function failedChapter<T extends object>(empty: T) {
+  return (e: unknown): T => ({ ...empty, error: e instanceof Error ? e.message : String(e) });
+}
+
 export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
   const { data, error } = await sb.from("analyses").select("*").eq("id", id).single();
   if (error || !data) throw new Error("分析が見つかりません");
@@ -187,15 +196,19 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       return await save({ measures: plan.items ?? [], step: "LP改善を書いています", progress: 71 });
     }
     if (!a.lpo) {
-      const lpo = await generateLpo(a.diagnosis, a.site);
+      const lpo = await generateLpo(a.diagnosis, a.site).catch(failedChapter<LpoPlan>({ groups: [] }));
       return await save({ lpo, step: "キーワードを選んでいます", progress: 70 });
     }
     if (!a.keywords) {
-      const keywords = await generateKeywords(a.diagnosis, a.site, a.gsc, a.meo);
+      const keywords = await generateKeywords(a.diagnosis, a.site, a.gsc, a.meo).catch(
+        failedChapter<KeywordPlan>({ rows: [], hasRealData: false, technical: [], content: [], meo: [] })
+      );
       return await save({ keywords, step: "LINEの設計を書いています", progress: 74 });
     }
     if (!a.line_plan) {
-      const line_plan = await generateLine(a.diagnosis, a.site);
+      const line_plan = await generateLine(a.diagnosis, a.site).catch(
+        failedChapter<LinePlan>({ skip: null, richMenu: [], steps: [], segments: [] })
+      );
       return await save({ line_plan, step: "訴求軸ごとにコピーを書いています", progress: 78 });
     }
     // サジェストは Google の公開エンドポイントから実測する。AI は使わないので速い
@@ -206,11 +219,20 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const ward = addr.match(/[都道府県](.*?[市区町村])/)?.[1] ?? "";
       const town = addr.match(/[市区町村]([^\d\s]{2,6})/)?.[1]?.replace(/[東西南北]$/, "") ?? "";
       const areas = [town, ward].filter(Boolean);
-      const suggests = await scanSuggests(a.diagnosis, a.site, areas);
+      const suggests = await scanSuggests(a.diagnosis, a.site, areas).catch(
+        failedChapter<SuggestScan>({ rows: [], queried: [], fetchedAt: new Date().toISOString() })
+      );
       return await save({ suggests, step: "外部露出の施策を書いています", progress: 79 });
     }
     if (!a.outreach) {
-      const outreach = await generateOutreach(a.diagnosis, a.suggests, a.competitors);
+      const outreach = await generateOutreach(a.diagnosis, a.suggests, a.competitors).catch(
+        failedChapter<OutreachPlan>({
+          citations: [],
+          affiliate: { fit: false, reason: "生成できなかったため判断していません", asps: [], terms: "", caution: null },
+          suggestActions: [],
+          prThemes: [],
+        })
+      );
       return await save({ outreach, step: "訴求軸ごとにコピーを書いています", progress: 82 });
     }
     if (!a.copies) {

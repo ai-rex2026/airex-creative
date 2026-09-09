@@ -29,6 +29,8 @@ export type SuggestScan = {
   /** 取得できた検索語 */
   queried: string[];
   fetchedAt: string;
+  /** 取得に失敗したときの理由 */
+  error?: string;
 };
 
 /** Google の公開サジェスト。認証も課金も要らない */
@@ -127,6 +129,8 @@ export type OutreachPlan = {
   /** サジェストへの打ち手。実測した内容を踏まえて書かせる */
   suggestActions: string[];
   prThemes: string[];
+  /** 生成に失敗したときの理由 */
+  error?: string;
 };
 
 export async function generateOutreach(
