@@ -300,7 +300,7 @@ export async function addKpiMeasures(id: string, kpiId: string, kpiName: string)
   if (!a.diagnosis) throw new Error("分析が完了していません");
 
   const existing = (a.measures ?? []).map((m) => m.title);
-  const plan = await measuresForKpi(a.diagnosis, a.site, a.meo, a.pricing, kpiId, kpiName, existing);
+  const plan = await measuresForKpi(a.diagnosis, a.site, a.meo, a.pricing, kpiId, kpiName, existing, a.extra_inputs ?? []);
   // IDは衝突しないよう採番し直す
   const add = (plan.items ?? []).map((m, i) => ({ ...m, id: `${kpiId}-${Date.now()}-${i}`, kpis: [kpiId] }));
 
@@ -327,5 +327,33 @@ export async function toggleMeasure(id: string, measureId: string, done: boolean
   const next = done ? [...new Set([...cur, measureId])] : cur.filter((x) => x !== measureId);
   const { error } = await sb.from("analyses").update({ measures_done: next }).eq("id", id).eq("owner_id", user.id);
   if (error) throw new Error("保存できませんでした");
+  return next;
+}
+
+/**
+ * サイトから辿れない材料を足す。
+ * 別ドメインのLPや、リンクしていないSNSは自動では見つけられない。
+ * すでに実施している施策を重複して提案しないためにも要る。
+ */
+export async function addInput(id: string, platform: string, url: string) {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
+  const v = url.trim();
+  if (!v) throw new Error("URLかアカウント名を入れてください");
+  if (v.length > 300) throw new Error("入力が長すぎます");
+
+  const { data } = await sb.from("analyses").select("extra_inputs").eq("id", id).eq("owner_id", user.id).single();
+  if (!data) throw new Error("分析が見つかりません");
+  const cur = (data.extra_inputs as { platform: string; url: string }[]) ?? [];
+  if (cur.some((x) => x.url === v)) return cur;
+
+  const next = [...cur, { platform, url: v }];
+  const { error } = await sb.from("analyses").update({ extra_inputs: next }).eq("id", id).eq("owner_id", user.id);
+  if (error) throw new Error("保存できませんでした");
+  revalidatePath(`/analysis/${id}/report`);
   return next;
 }

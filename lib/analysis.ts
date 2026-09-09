@@ -55,6 +55,8 @@ export type Analysis = {
   measures: Measure[] | null;
   /** 済みにした施策のID */
   measures_done: string[] | null;
+  /** サイトから辿れない材料。別ドメインのLP・非公開SNSなど */
+  extra_inputs: { platform: string; url: string }[] | null;
   outreach: OutreachPlan | null;
   mode: AnalysisMode;
   budget: BudgetBand | null;
@@ -179,7 +181,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       return await save({ kpi, step: "施策を組み立てています", progress: 68 });
     }
     if (!a.measures) {
-      const plan = await generateMeasures(a.diagnosis, a.site, a.kpi, a.meo, a.pricing);
+      const plan = await generateMeasures(a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? []);
       return await save({ measures: plan.items ?? [], step: "LP改善を書いています", progress: 71 });
     }
     if (!a.lpo) {

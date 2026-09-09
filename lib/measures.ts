@@ -63,7 +63,13 @@ const RULES = `守ること:
 - done は「何を見たら完了と判断できるか」。数えられるものにする
 - 効果や結果を断定しない。「必ず」「保証」は使わない`;
 
-function facts(d: Diagnosis, site: SiteScan | null, meo: MeoScan | null, pricing: PriceScan | null) {
+function facts(
+  d: Diagnosis,
+  site: SiteScan | null,
+  meo: MeoScan | null,
+  pricing: PriceScan | null,
+  extra: { platform: string; url: string }[] = []
+) {
   const cv = site?.conversions ?? [];
   return `商材: ${d.product}
 ターゲット: ${d.audience}
@@ -78,6 +84,10 @@ ${cv.every((c) => !c.measurable) && cv.length > 0 ? "※ 計測できる受け�
 広告タグ: ${site?.adTags.join("・") || "なし"}
 ${site ? `構造化データ: ${site.structuredData ? "有" : "無"} / 内部リンク: ${site.internalLinks}` : ""}
 ${meo?.self ? `Googleマップ: 評価${meo.self.rating}（近隣平均${meo.avgRating}）レビュー${meo.self.reviews}件（近隣平均${meo.avgReviews}件・${meo.totalShops}店中${meo.reviewRank}位）` : ""}
+
+${extra.length ? `
+【すでに運用しているもの】※ これらを新規に作る施策は出さない
+${extra.map((x) => `- ${x.platform}：${x.url}`).join("\n")}` : ""}
 
 【媒体の事実】※ 自分の知識より、ここに書いてあることを優先する
 ${platformNotes()}`;
@@ -115,7 +125,8 @@ export async function generateMeasures(
   site: SiteScan | null,
   kpi: KpiTree,
   meo: MeoScan | null,
-  pricing: PriceScan | null
+  pricing: PriceScan | null,
+  extra: { platform: string; url: string }[] = []
 ): Promise<MeasurePlan> {
   const res = await askJson<MeasurePlan>(
     `あなたは集客の実務者です。下のKPIに効く施策を設計します。
@@ -124,7 +135,7 @@ ${RULES}
 - items は6〜9件
 - **node を1つに集中させない。** 上のノードのうち少なくとも3つに散らす。
   「問い合わせを増やす」だけでなく、来院率・単価・リピートを動かす施策も考える`,
-    `${facts(d, site, meo, pricing)}
+    `${facts(d, site, meo, pricing, extra)}
 
 【追うKPI】
 ${kpi.candidates.map((c) => `- ${c.id}：${c.name}（${c.node}）／ ${c.trackable}`).join("\n")}
@@ -152,7 +163,8 @@ export async function measuresForKpi(
   pricing: PriceScan | null,
   kpiId: string,
   kpiName: string,
-  existing: string[]
+  existing: string[],
+  extra: { platform: string; url: string }[] = []
 ): Promise<MeasurePlan> {
   const res = await askJson<MeasurePlan>(
     `あなたは集客の実務者です。指定されたKPI1つに効く施策を設計します。
@@ -161,7 +173,7 @@ ${RULES}
 - items は2〜4件。**このKPIに効くものだけ**
 - kpis には必ず "${kpiId}" を入れる
 - すでにある施策と重複するものは出さない`,
-    `${facts(d, site, meo, pricing)}
+    `${facts(d, site, meo, pricing, extra)}
 
 【追うKPI】
 ${kpiId}：${kpiName}

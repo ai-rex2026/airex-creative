@@ -20,11 +20,12 @@ import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "
 import { Banner } from "./Banner";
 import { ReportChat } from "./ReportChat";
 import { Measures } from "./Measures";
+import { Inputs } from "./Inputs";
 import { hygiene } from "@/lib/measures";
 import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
 
-type Tab = "measures" | "overview" | "strategy" | "creative";
+type Tab = "inputs" | "measures" | "overview";
 type Todo = { level: "high" | "mid"; text: string; tab: Tab; anchor: string };
 
 export function Report({
@@ -51,6 +52,7 @@ export function Report({
   measures,
   kpiSelected,
   measuresDone,
+  extraInputs,
   budget: initialBudget,
   id,
   gsc,
@@ -79,6 +81,7 @@ export function Report({
   measures: Measure[] | null;
   kpiSelected: { id: string; name: string; custom?: boolean }[] | null;
   measuresDone: string[] | null;
+  extraInputs: { platform: string; url: string }[] | null;
   budget: BudgetBand | null;
   id: string;
   gsc: GscData | null;
@@ -141,21 +144,21 @@ export function Report({
   if (adOps?.done) {
     // 必須なのに入っていないタグは、配信しても成果が測れないので最優先
     for (const t of adOps.tags.filter((x) => x.need === "必須" && x.status === "未導入")) {
-      todos.push({ level: "high", text: `${t.name} が未導入（この媒体に出しても成果を計測できません）`, tab: "strategy", anchor: "sec-adops" });
+      todos.push({ level: "high", text: `${t.name} が未導入（この媒体に出しても成果を計測できません）`, tab: "overview", anchor: "sec-adops" });
     }
     for (const t of adOps.tags.filter((x) => x.need === "必須" && x.status === "要確認")) {
-      todos.push({ level: "mid", text: `${t.name} の有無をGTMで確認する`, tab: "strategy", anchor: "sec-adops" });
+      todos.push({ level: "mid", text: `${t.name} の有無をGTMで確認する`, tab: "overview", anchor: "sec-adops" });
     }
     if (adOps.overLength.length > 0) {
-      todos.push({ level: "mid", text: `広告原稿 ${adOps.overLength.length}件が文字数超過（そのままでは入稿できません）`, tab: "strategy", anchor: "sec-adops" });
+      todos.push({ level: "mid", text: `広告原稿 ${adOps.overLength.length}件が文字数超過（そのままでは入稿できません）`, tab: "overview", anchor: "sec-adops" });
     }
   }
   if (meo?.self) {
     if (meo.reviewRank && meo.totalShops > 1 && meo.reviewRank > meo.totalShops / 2) {
-      todos.push({ level: "mid", text: `Googleのレビュー数が近隣${meo.totalShops}店中${meo.reviewRank}位（比較検討で不利になります）`, tab: "strategy", anchor: "sec-meo" });
+      todos.push({ level: "mid", text: `Googleのレビュー数が近隣${meo.totalShops}店中${meo.reviewRank}位（比較検討で不利になります）`, tab: "overview", anchor: "sec-meo" });
     }
     for (const b of meo.breakdown.filter((x) => x.got === 0 && x.max === 10)) {
-      todos.push({ level: "mid", text: `Googleビジネスプロフィールの${b.label}がない`, tab: "strategy", anchor: "sec-meo" });
+      todos.push({ level: "mid", text: `Googleビジネスプロフィールの${b.label}がない`, tab: "overview", anchor: "sec-meo" });
     }
   }
   const risky = suggests?.rows.filter((r) => r.kind === "注意") ?? [];
@@ -163,12 +166,12 @@ export function Report({
     todos.push({
       level: "mid",
       text: `検索サジェストに「${risky[0].suggestion}」が出ている（放置すると指名検索で不利になります）`,
-      tab: "strategy", anchor: "sec-suggest",
+      tab: "overview", anchor: "sec-suggest",
     });
   }
   const redN = copies.filter((c) => c.guard?.level === "red").length;
   if (redN > 0) {
-    todos.push({ level: "high", text: `コピー ${redN}案が法令で要修正（そのままでは出せません）`, tab: "creative", anchor: "sec-copies" });
+    todos.push({ level: "high", text: `コピー ${redN}案が法令で要修正（そのままでは出せません）`, tab: "overview", anchor: "sec-copies" });
   }
 
   /**
@@ -296,11 +299,24 @@ export function Report({
       )}
 
       <div className="tabs">
+        <button className={tab === "inputs" ? "on" : ""} onClick={() => setTab("inputs")}>入力</button>
         {kpi && <button className={tab === "measures" ? "on" : ""} onClick={() => setTab("measures")}>施策</button>}
         <button className={tab === "overview" ? "on" : ""} onClick={() => setTab("overview")}>分析データ</button>
-        <button className={tab === "strategy" ? "on" : ""} onClick={() => setTab("strategy")}>広告戦略</button>
-        <button className={tab === "creative" ? "on" : ""} onClick={() => setTab("creative")}>クリエイティブ</button>
       </div>
+
+      {tab === "inputs" && (
+        <Inputs
+          id={id}
+          url={url}
+          site={site}
+          budget={budget}
+          margin={margin}
+          onBudget={pickBudget}
+          onMargin={pickMargin}
+          extra={extraInputs}
+          hasGoogle={!!(gsc || ga4)}
+        />
+      )}
 
       {tab === "measures" && kpi && (
         <Measures
@@ -631,7 +647,7 @@ export function Report({
       </>
       )}
 
-      {tab === "strategy" && (
+      {tab === "overview" && (
       <>
       {competitors && (
         <>
@@ -1422,7 +1438,7 @@ export function Report({
       </>
       )}
 
-      {tab === "creative" && (
+      {tab === "overview" && (
       <>
       <div className="sec-head">
         <span className="ic">✎</span>
