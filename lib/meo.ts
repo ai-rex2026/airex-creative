@@ -252,6 +252,22 @@ function nameCandidates(site: SiteScan | null): string[] {
   return out.slice(0, 3);
 }
 
+/**
+ * 拾えた店舗名から屋号を取り出す。
+ * サイトのタイトルは説明句を含むので、そのまま都道府県検索に足すと
+ * 別の店ばかり返ってくる（「美容整形・美容外科 東京都」など）。
+ * 実際のビジネスプロフィール名の共通部分を使うほうが確実。
+ */
+function brandOf(names: string[]): string | null {
+  const list = names.filter(Boolean);
+  if (list.length === 0) return null;
+  if (list.length === 1) return list[0].slice(0, 12);
+  let n = 0;
+  while (n < list[0].length && list.every((x) => x[n] === list[0][n])) n++;
+  const prefix = list[0].slice(0, n).replace(/[\s　・|｜-]+$/, "");
+  return prefix.length >= 3 ? prefix : null;
+}
+
 export async function scanMeo(site: SiteScan | null, url: string | null): Promise<MeoScan> {
   if (!hasPlacesApi()) return empty("Places API が未設定です");
   if (!url) return empty("URLがないため照合できません");
@@ -289,11 +305,12 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
 
   // 多拠点と分かったら、都道府県ごとに引き直して取りこぼしを拾う。
   // 1店舗のクライアントでここまで呼ぶと呼び出しの無駄なので、件数で切り分ける。
-  if (matchedName && mine.size >= CHAIN_THRESHOLD && mine.size < MAX_STORES) {
+  const brand = brandOf([...mine.values()].map((p) => p.displayName?.text ?? "")) ?? matchedName;
+  if (brand && mine.size >= CHAIN_THRESHOLD && mine.size < MAX_STORES) {
     for (const pref of PREFECTURES) {
       if (mine.size >= MAX_STORES || Date.now() > deadline) break;
       try {
-        for (const p of await searchAllPages(`${matchedName} ${pref}`, 1)) {
+        for (const p of await searchAllPages(`${brand} ${pref}`, 1)) {
           if (host(p.websiteUri) === ourHost) mine.set(keyOf(p), p);
         }
       } catch {
