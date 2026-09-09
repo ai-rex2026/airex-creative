@@ -192,6 +192,12 @@ export function Report({
   const pct = (c: { got: number; max: number }) => (c.max > 0 ? Math.round((c.got / c.max) * 100) : 0);
   const total = cards.length ? Math.round(cards.reduce((n, c) => n + pct(c), 0) / cards.length) : null;
 
+  /**
+   * バナーに載せる「何屋か」。ブランド名だけでは何の広告か伝わらない。
+   * 商材の説明文から、記号より前の短い塊だけを取る（AIに書かせない）
+   */
+  const service = (d.product.split(/[。、（(]/)[0] ?? "").trim().slice(0, 14) || INDUSTRY_LABEL[d.industry];
+
   /** その原稿に付いた法令の指摘。無ければ null */
   const flagOf = (t: string) => adOps?.flagged?.find((f) => f.text === t) ?? null;
 
@@ -1578,7 +1584,7 @@ export function Report({
                           title="クリックで拡大"
                         >
                           <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
-                            <Banner id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} />
+                            <Banner service={service} id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} />
                           </div>
                         </div>
                         <button className="link" style={{ marginTop: 6 }} onClick={() => download(`bn-${ci}-${s.id}`, `${s.media}_${s.w}x${s.h}_${ci + 1}.png`)}>
@@ -1654,7 +1660,7 @@ export function Report({
               </div>
               <div style={{ width: zs.w * zscale, height: zs.h * zscale, overflow: "hidden" }}>
                 <div style={{ transform: `scale(${zscale})`, transformOrigin: "top left" }}>
-                  <Banner id={`zoom-${zoom.ci}-${zs.id}`} copy={zc} brand={d.brand} size={zs} />
+                  <Banner service={service} id={`zoom-${zoom.ci}-${zs.id}`} copy={zc} brand={d.brand} size={zs} />
                 </div>
               </div>
             </div>

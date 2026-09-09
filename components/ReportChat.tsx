@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadChat, sendChat, type ChatMsg } from "@/app/actions";
+import { Spinner } from "./Loading";
 
 /**
  * レポートについて聞くパネル。右から出す。
@@ -117,7 +118,7 @@ export function ReportChat({ id }: { id: string }) {
               </div>
             ))}
 
-            {busy && <div className="m a dim">考えています…</div>}
+            {busy && <div className="m a dim"><Spinner label="考えています" /></div>}
             {err && <div className="m err">{err}</div>}
             <div ref={bottom} />
           </div>

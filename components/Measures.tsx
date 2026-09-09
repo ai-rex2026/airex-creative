@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { makeRunbook, regenerateMeasures, selectKpis, toggleMeasure } from "@/app/actions";
 import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
+import { Spinner } from "./Loading";
 
 /**
  * KPIを決めてから施策を並べる画面。
@@ -157,7 +158,7 @@ export function Measures({
           onKeyDown={(e) => { if (e.key === "Enter") addCustom(); }}
         />
         <button className="btn" onClick={addCustom} disabled={busy || !custom.trim()}>
-          {busy ? "施策を作り直しています…" : "追加して施策を作り直す"}
+          {busy ? <Spinner label="施策を作り直しています" /> : "追加して施策を作り直す"}
         </button>
       </div>
       {err && <div className="alert" style={{ marginTop: 10 }}>{err}</div>}
@@ -236,7 +237,7 @@ export function Measures({
                     </div>
                   ) : (
                     <button className="rbmake" disabled={rbBusy === m.id} onClick={() => buildRunbook(m.id)}>
-                      {rbBusy === m.id ? "作っています…" : "＋ AIに貼る実行プロンプトを作る"}
+                      {rbBusy === m.id ? <Spinner label="実行プロンプトを作っています" /> : "＋ AIに貼る実行プロンプトを作る"}
                     </button>
                   )}
 

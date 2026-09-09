@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { addInput, replanForBudget } from "@/app/actions";
 import { BUDGETS, type BudgetBand } from "@/lib/types";
 import type { SiteScan } from "@/lib/site-scan";
+import { Spinner } from "./Loading";
 
 /**
  * 分析の材料を集める画面。
@@ -130,7 +131,7 @@ export function Inputs({
           onKeyDown={(e) => { if (e.key === "Enter") add(); }}
         />
         <button className="btn" onClick={add} disabled={busy || !value.trim()}>
-          {busy ? "追加しています…" : "追加"}
+          {busy ? <Spinner label="追加中" /> : "追加"}
         </button>
       </div>
       {err && <div className="alert" style={{ marginTop: 10 }}>{err}</div>}

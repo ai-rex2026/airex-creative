@@ -17,11 +17,14 @@ export function Banner({
   brand,
   size,
   id,
+  service,
 }: {
   copy: BannerCopy;
   brand: BrandProfile;
   size: SizePreset;
   id: string;
+  /** 何屋かを示す短い語。無いとブランド名だけになり、何の広告か伝わらない */
+  service?: string;
 }) {
   const { w, h } = size;
   const compact = Math.min(w, h) < 400; // 300x250 のような小枠
@@ -49,17 +52,23 @@ export function Banner({
     color: "#fff",
   };
 
+  // 右カラム（横長）と本文カラムの実寸。ここに収める
+  const rightW = landscape ? w * 0.38 - pad : w - pad * 2;
+  const ctaMax = compact ? 26 * u : 40 * u;
+  const ctaSize = fitOneLine(copy.cta, (landscape ? rightW : colW) - px2(compact ? 48 : 96, u), ctaMax);
+
   const cta = (
     <div
       style={{
         width: "fit-content",
+        maxWidth: "100%",
         background: "#fff",
         borderRadius: 999,
         padding: `${px(compact ? 10 : 18)} ${px(compact ? 24 : 48)}`,
         boxShadow: `0 ${px(6)} ${px(16)} rgba(0,0,0,.35)`,
       }}
     >
-      <b style={{ color: "#111", fontWeight: 900, fontSize: px(compact ? 26 : 40), whiteSpace: "nowrap" }}>
+      <b style={{ color: "#111", fontWeight: 900, fontSize: ctaSize, whiteSpace: "nowrap" }}>
         {copy.cta}
       </b>
     </div>
@@ -98,6 +107,26 @@ export function Banner({
           minWidth: 0,
         }}
       >
+        {/* 何屋かを最初に置く。ブランド名だけでは何の広告か伝わらない */}
+        {service && (
+          <div
+            style={{
+              width: "fit-content",
+              maxWidth: "100%",
+              border: `${px(2)} solid ${accent}`,
+              borderRadius: px(999),
+              padding: `${px(compact ? 4 : 7)} ${px(compact ? 12 : 20)}`,
+              color: accent,
+              fontWeight: 900,
+              fontSize: fitOneLine(service, colW * 0.9, compact ? 20 * u : 26 * u),
+              whiteSpace: "nowrap",
+              marginBottom: px(compact ? 6 : 12),
+            }}
+          >
+            {service}
+          </div>
+        )}
+
         {!compact && (
           <div style={{ lineHeight: 1, marginBottom: px(10) }}>
             <b style={{ display: "block", fontSize: px(40), fontWeight: 900 }}>{brand.name}</b>
@@ -123,7 +152,7 @@ export function Banner({
         </div>
 
         {copy.subhead && !compact && (
-          <div style={{ fontSize: hSize * 0.4, fontWeight: 900 }}>{copy.subhead}</div>
+          <div style={{ fontSize: fitSize(copy.subhead, colW, h * 0.12, hSize * 0.4, 1.35), fontWeight: 900 }}>{copy.subhead}</div>
         )}
 
         {(copy.ribbonTop || copy.ribbonBottom) && (
@@ -138,14 +167,14 @@ export function Banner({
           >
             <div style={{ transform: "skewX(6deg)" }}>
               {copy.ribbonTop && !compact && (
-                <div style={{ fontWeight: 900, color: "#111", fontSize: hSize * 0.3 }}>{copy.ribbonTop}</div>
+                <div style={{ fontWeight: 900, color: "#111", fontSize: fitOneLine(copy.ribbonTop ?? "", colW * 0.86, hSize * 0.3) }}>{copy.ribbonTop}</div>
               )}
               {copy.ribbonBottom && (
                 <div
                   style={{
                     fontWeight: 900,
                     color: "#c30d1e",
-                    fontSize: hSize * (compact ? 0.44 : 0.44),
+                    fontSize: fitOneLine(copy.ribbonBottom ?? "", colW * 0.86, hSize * 0.44),
                     marginTop: compact ? 0 : px(4),
                     borderBottom: `${px(6)} solid #c30d1e`,
                     display: "inline-block",
@@ -174,19 +203,46 @@ export function Banner({
             padding: `${px(40)} ${pad}px ${px(40)} 0`,
           }}
         >
-          <p style={{ fontWeight: 700, fontSize: px(26), lineHeight: 1.6 }}>{copy.body}</p>
+          <p style={{ fontWeight: 700, fontSize: fitSize(copy.body, rightW - pad, h * 0.42, 26 * u, 1.6), lineHeight: 1.6, margin: 0 }}>
+            {copy.body}
+          </p>
           {cta}
         </div>
       ) : (
         !compact && (
           <div style={{ background: "#000", padding: `${px(34)} ${pad}px ${px(42)}` }}>
-            <p style={{ fontWeight: 700, fontSize: px(32), lineHeight: 1.5 }}>{copy.body}</p>
+            <p style={{ fontWeight: 700, fontSize: fitSize(copy.body, w - pad * 2, h * 0.16, 32 * u, 1.5), lineHeight: 1.5, margin: 0 }}>{copy.body}</p>
             <div style={{ margin: `${px(24)} auto 0`, width: "fit-content" }}>{cta}</div>
           </div>
         )
       )}
     </div>
   );
+}
+
+/**
+ * 枠に収まる文字サイズを字数から逆算する。
+ * 日本語は1文字≒1em なので、1行に入る字数と行数から必要な高さが出る。
+ * これをやらないと、長い文言が枠から出て切れる（1200x628 で実際に起きた）。
+ */
+function fitSize(text: string, boxW: number, boxH: number, max: number, lh = 1.5) {
+  if (!text) return max;
+  for (let s = max; s > 8; s -= 1) {
+    const perLine = Math.max(Math.floor(boxW / s), 1);
+    const lines = Math.ceil(text.length / perLine);
+    if (lines * s * lh <= boxH) return s;
+  }
+  return 8;
+}
+
+/** 1行で見せたい文言を、枠幅に収める */
+function fitOneLine(text: string, boxW: number, max: number) {
+  if (!text) return max;
+  return Math.min(max, boxW / (text.length + 0.5));
+}
+
+function px2(n: number, u: number) {
+  return n * u;
 }
 
 function hexA(hex: string, a: number) {
