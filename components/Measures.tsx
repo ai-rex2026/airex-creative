@@ -37,6 +37,7 @@ export function Measures({
   );
   const [list, setList] = useState<Measure[]>(measures);
   const [doneIds, setDoneIds] = useState<string[]>(done);
+  const [logs, setLogs] = useState(log);
   const [open, setOpen] = useState<string | null>(null);
   const [custom, setCustom] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -105,10 +106,14 @@ export function Measures({
 
   function markDone(m: Measure, v: boolean) {
     const prev = doneIds;
+    const prevLogs = logs;
     setDoneIds(v ? [...new Set([...prev, m.id])] : prev.filter((x) => x !== m.id));
+    // 記録は押した場に出す。リロードするまで出ないと、押せたのか分からない
+    if (v) setLogs([{ title: m.title, at: new Date().toISOString() }, ...logs.filter((x) => x.title !== m.title)]);
     setErr(null);
     void toggleMeasure(id, m.id, v).catch((e) => {
       setDoneIds(prev);
+      setLogs(prevLogs);
       setErr(e instanceof Error ? e.message : "記録を保存できませんでした");
     });
   }
@@ -263,7 +268,7 @@ export function Measures({
         })}
       </div>
 
-      {log.length > 0 && (
+      {logs.length > 0 && (
         <>
           <div className="sec-head">
             <span className="ic">✓</span>
@@ -274,7 +279,7 @@ export function Measures({
             <span className="rule" />
           </div>
           <div className="rows measure">
-            {log.map((l, i) => (
+            {logs.map((l, i) => (
               <div className="r" key={i}>
                 <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 400 }}>{l.title}</b></div>
                 <span className="tag">{new Date(l.at).toLocaleDateString("ja-JP")}</span>
