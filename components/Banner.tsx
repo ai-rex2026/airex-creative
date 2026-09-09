@@ -80,11 +80,14 @@ export function Banner({
   id,
   service,
   facts = [],
+  image,
 }: {
   copy: BannerCopy;
   brand: BrandProfile;
   size: SizePreset;
   id: string;
+  /** サイトから拾った写真。同一オリジン経由で渡すこと（PNG書き出しが失敗するため） */
+  image?: string | null;
   /** 何屋かを示す短い語。無いとブランド名だけになり、何の広告か伝わらない */
   service?: string;
   /** 下部に並べる事実。実測から作る */
@@ -99,8 +102,13 @@ export function Banner({
   const accent = brand.accent || "#8B7355";
   const pad = compact ? 18 * u : 44 * u;
   // 小枠では側面パネルを出さない。文字が入らなくなる
-  const side = !compact && landscape;
-  const colW = (side ? w * 0.66 : w) - pad * 2;
+  const side = !compact && landscape && !image;
+  // 写真は文字と重ねない。重ねると日本語が読めなくなり、
+  // 読ませるために暗幕を敷くと「加工した写真」に見える
+  const photoSide = !!image && landscape;
+  const photoTop = !!image && !landscape;
+  const textW = photoSide ? w * 0.6 : w;
+  const colW = (side ? w * 0.66 : textW) - pad * 2;
 
   const maxChars = Math.max(copy.headline[0].length, copy.headline[1].length, 1);
   // 1文字1emで折り返さない上限。係数を1超にすると300x250で見出しが1文字だけ
@@ -111,7 +119,7 @@ export function Banner({
   const stage: CSSProperties = {
     position: "relative",
     display: "flex",
-    flexDirection: "row",
+    flexDirection: photoTop ? "column" : "row",
     width: w,
     height: h,
     overflow: "hidden",
@@ -139,8 +147,43 @@ export function Banner({
     </div>
   );
 
+  const photo = image ? (
+    <div
+      style={{
+        flex: photoTop ? `0 0 ${compact ? 38 : 42}%` : "0 0 40%",
+        position: "relative",
+        overflow: "hidden",
+        background: "#EFEBE4",
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={image}
+        alt=""
+        crossOrigin="anonymous"
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          bottom: 0,
+          background: accent,
+          color: "#fff",
+          fontWeight: 700,
+          fontSize: fitOneLine(brand.name, w * 0.34, compact ? 14 * u : 20 * u),
+          padding: `${px(compact ? 4 : 7)} ${px(compact ? 10 : 15)}`,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {brand.name}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div id={id} style={stage}>
+      {photoTop && photo}
       <div
         style={{
           flex: side ? "0 0 66%" : 1,
@@ -231,6 +274,8 @@ export function Banner({
 
         {!side && <div style={{ marginTop: px(compact ? 5 : 12) }}>{cta}</div>}
       </div>
+
+      {photoSide && photo}
 
       {side && (
         <div

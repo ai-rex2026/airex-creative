@@ -959,3 +959,23 @@ h2[id^="sec-"]{scroll-margin-top:64px}
 .speed .kpi i.warn{color:#9A7A2A}
 .speed .kpi i.ng{color:#B3423A}
 .r small.warn{color:#9A7A2A}
+
+/* ── 施策の作り直し ── */
+.sec-head .redo{flex:none;border:1px solid var(--line);background:#fff;border-radius:999px;
+  padding:7px 14px;font:inherit;font-size:12px;color:var(--muted);cursor:pointer}
+.sec-head .redo:hover:not(:disabled){border-color:var(--gold);color:var(--head)}
+.sec-head .redo:disabled{opacity:.7;cursor:default}
+
+/* ── バナーに載せる写真の選択 ── */
+.photopick{margin-top:16px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:14px}
+.photopick .ph{font-size:12.5px;font-weight:600;color:var(--head);display:flex;flex-wrap:wrap;
+  align-items:baseline;gap:10px}
+.photopick .ph small{font-weight:400;font-size:11px;color:var(--faint)}
+.photopick .opts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.photopick .opts button{width:84px;height:60px;padding:0;overflow:hidden;border:1px solid var(--line);
+  border-radius:8px;background:var(--bg);cursor:pointer;display:flex;align-items:center;
+  justify-content:center;font:inherit}
+.photopick .opts button img{width:100%;height:100%;object-fit:cover;display:block}
+.photopick .opts button .none{font-size:11.5px;color:var(--muted)}
+.photopick .opts button:hover{border-color:var(--gold)}
+.photopick .opts button.on{border-color:var(--btn);outline:2px solid var(--btn);outline-offset:-3px}

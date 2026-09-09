@@ -33,6 +33,8 @@ export type SiteScan = {
   bizPhone: string | null;
   /** サイトから辿れる公式SNS。実際に張られているリンクだけ */
   social: { platform: string; url: string; handle: string }[];
+  /** サイトに載っている画像。バナーに使う候補。院の実物なので生成画像より安全 */
+  images: string[];
   /** 申し込みの受け口。KPIツリーの「予約率」を考える土台になる */
   conversions: { kind: string; detail: string; measurable: boolean }[];
   passed: number;
@@ -103,6 +105,7 @@ export async function scanSite(input: string): Promise<SiteScan> {
   const structuredData = /application\/ld\+json/i.test(html);
   const biz = readBusiness(html);
   const social = readSocial(html, host);
+  const images = readImages(html, finalUrl);
   const conversions = readConversions(html);
 
   // GTM はタグを表示時に差し込むので HTML だけでは分からない。
@@ -143,6 +146,7 @@ export async function scanSite(input: string): Promise<SiteScan> {
   return {
     finalUrl,
     https,
+    images,
     title: html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim() ?? "",
     description: html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i)?.[1] ?? "",
     headers,
@@ -202,6 +206,44 @@ export function estimateSeo(s: SiteScan): SeoEstimate {
  * JSON-LD から店舗名・住所・電話を拾う。
  * MEO で「そのGoogleビジネスプロフィールが本当にこのサイトの店か」を照合するのに使う。
  */
+
+/**
+ * バナーに使えそうな画像を拾う。
+ *
+ * 生成画像を使うより、そのサイトが実際に載せている写真のほうが安全で、
+ * 見た人の記憶とも一致する。アイコン・ロゴ・計測用の1px画像は落とす。
+ */
+function readImages(html: string, base: string): string[] {
+  const out: string[] = [];
+  const push = (raw: string | undefined | null) => {
+    if (!raw || out.length >= 12) return;
+    const src = raw.split(/\s+/)[0]; // srcset は先頭の1本だけ見る
+    if (!src || /^data:/i.test(src)) return;
+    if (/sprite|icon|logo|favicon|spacer|blank|pixel|1x1|loading|arrow|btn_|badge/i.test(src)) return;
+    if (/\.svg(\?|$)/i.test(src)) return;
+    let abs: string;
+    try {
+      abs = new URL(src, base).toString();
+    } catch {
+      return;
+    }
+    if (!out.includes(abs)) out.push(abs);
+  };
+
+  // og:image は「そのページの代表画像」として運営者が選んだもの。最優先
+  push(html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]);
+
+  for (const m of html.matchAll(/<img\s[^>]*>/gi)) {
+    const tag = m[0];
+    // 小さいと分かっているものは落とす。指定が無いものは残す（多くは本文画像）
+    const w = Number(tag.match(/\swidth=["']?(\d+)/i)?.[1] ?? 0);
+    const h = Number(tag.match(/\sheight=["']?(\d+)/i)?.[1] ?? 0);
+    if ((w && w < 320) || (h && h < 200)) continue;
+    push(tag.match(/\ssrc=["']([^"']+)["']/i)?.[1] ?? tag.match(/\sdata-src=["']([^"']+)["']/i)?.[1] ?? tag.match(/\ssrcset=["']([^"']+)["']/i)?.[1]);
+  }
+  return out;
+}
+
 function readBusiness(html: string) {
   const out: { name: string | null; address: string | null; phone: string | null } = {
     name: null, address: null, phone: null,

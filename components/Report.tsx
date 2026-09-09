@@ -114,6 +114,9 @@ export function Report({
   const [margin, setMarginState] = useState<number>(initialMargin ?? MARGIN[d.industry] ?? 0.4);
   // 主力商材は押し替えられる。自動で拾った価格が実際の主力とずれることがある
   const [pricing, setPricing] = useState(initialPricing);
+  // バナーに載せる写真。サイトから拾ったものだけを使う（生成画像は使わない）
+  const [photo, setPhoto] = useState<string | null>(null);
+  const photoSrc = photo ? `/api/analysis/${id}/img?u=${encodeURIComponent(photo)}` : null;
 
   // 粗利率は断定できないので、押した瞬間に計算し直して裏で保存する
   function pickMargin(m: number) {
@@ -1700,6 +1703,26 @@ export function Report({
               </button>
             ))}
           </div>
+          {(site?.images?.length ?? 0) > 0 && (
+            <div className="photopick">
+              <div className="ph">
+                写真を載せる
+                <small>サイトに載っている写真から選びます。生成画像は使いません</small>
+              </div>
+              <div className="opts">
+                <button className={photo === null ? "on" : ""} onClick={() => setPhoto(null)}>
+                  <span className="none">文字のみ</span>
+                </button>
+                {(site?.images ?? []).slice(0, 10).map((u) => (
+                  <button key={u} className={photo === u ? "on" : ""} onClick={() => setPhoto(u)}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`/api/analysis/${id}/img?u=${encodeURIComponent(u)}`} alt="" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <p style={{ fontSize: 12.5, color: "var(--faint)", marginTop: 12 }}>
             選択 {chosen.length} 案 × {chosenSizes.length} サイズ ＝ {chosen.length * chosenSizes.length} 枚
           </p>
@@ -1723,7 +1746,7 @@ export function Report({
                           title="クリックで拡大"
                         >
                           <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
-                            <Banner service={service} facts={bannerFacts} id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} />
+                            <Banner service={service} facts={bannerFacts} id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} image={photoSrc} />
                           </div>
                         </div>
                         <button className="link" style={{ marginTop: 6 }} onClick={() => download(`bn-${ci}-${s.id}`, `${s.media}_${s.w}x${s.h}_${ci + 1}.png`)}>
@@ -1799,7 +1822,7 @@ export function Report({
               </div>
               <div style={{ width: zs.w * zscale, height: zs.h * zscale, overflow: "hidden" }}>
                 <div style={{ transform: `scale(${zscale})`, transformOrigin: "top left" }}>
-                  <Banner service={service} facts={bannerFacts} id={`zoom-${zoom.ci}-${zs.id}`} copy={zc} brand={d.brand} size={zs} />
+                  <Banner service={service} facts={bannerFacts} id={`zoom-${zoom.ci}-${zs.id}`} copy={zc} brand={d.brand} size={zs} image={photoSrc} />
                 </div>
               </div>
             </div>

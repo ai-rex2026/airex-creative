@@ -84,26 +84,36 @@ export function Measures({
     });
   }
 
-  function addCustom() {
-    const name = custom.trim();
-    if (!name || busy) return;
+  /**
+   * 施策を作り直す。
+   * KPI を足したら全体に跳ね返す（継ぎ足すと、既存の施策が
+   * 新しい KPI を踏まえていない状態のまま残る）。
+   * 1〜2分かかるので、押せたことと進んでいることを画面に出す。
+   */
+  function rebuild(next?: Picked[]) {
+    if (busy) return;
     setErr(null);
-    const kid = `c${Date.now()}`;
-    const next = [...picked, { id: kid, name, custom: true }];
-    setPicked(next);
-    setCustom("");
     start(async () => {
       try {
-        await selectKpis(id, next);
-        // KPI を足したら全体に跳ね返す。継ぎ足すと、既存の施策が新しい KPI を
-        // 踏まえていない状態のまま残る
+        if (next) await selectKpis(id, next);
         const res = await regenerateMeasures(id);
         setList(res.items);
         setDoneIds(res.done);
+        setOpen(null);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
       }
     });
+  }
+
+  function addCustom() {
+    const name = custom.trim();
+    if (!name || busy) return;
+    const kid = `c${Date.now()}`;
+    const next = [...picked, { id: kid, name, custom: true }];
+    setPicked(next);
+    setCustom("");
+    rebuild(next);
   }
 
   function markDone(m: Measure, v: boolean) {
@@ -121,6 +131,8 @@ export function Measures({
   }
 
   const shown = list.filter((m) => picked.length === 0 || m.kpis?.some((k) => picked.some((p) => p.id === k)));
+  // 選んだKPIのうち、効く施策が1件も無いもの
+  const missing = picked.filter((p) => !list.some((m) => m.kpis?.includes(p.id)));
   const kpiName = (k: string) => picked.find((p) => p.id === k)?.name ?? kpi.candidates.find((c) => c.id === k)?.name ?? k;
 
   return (
@@ -189,7 +201,32 @@ export function Measures({
           <div className="sub">選んだKPIに効くものだけを出しています。順位はつけていません</div>
         </div>
         <span className="rule" />
+        <button className="redo" onClick={() => rebuild()} disabled={busy}>
+          {busy ? <Spinner label="作り直しています" /> : "施策を作り直す"}
+        </button>
       </div>
+
+      {busy && (
+        <div className="note">
+          <i className="i">…</i>
+          <span>
+            いま施策を作り直しています。1〜2分かかります。
+            この画面を開いたままにしてください。終わると下の一覧が入れ替わります。
+          </span>
+        </div>
+      )}
+
+      {/* 足したKPIに効く施策が無い状態は、作り直しが通っていない。押し直せるようにする */}
+      {!busy && missing.length > 0 && (
+        <div className="note warn">
+          <i className="i">!</i>
+          <span>
+            <b style={{ fontWeight: 600 }}>{missing.map((p) => p.name).join("・")}</b>
+            に効く施策がまだありません。作り直しが途中で終わった可能性があります。
+            <button className="linkbtn" onClick={() => rebuild()}>いま作り直す</button>
+          </span>
+        </div>
+      )}
 
       <div className="mlist measure">
         {shown.length === 0 && <div className="note"><i className="i">i</i><span>KPIを選ぶと、そのKPIに効く施策が出ます。</span></div>}
