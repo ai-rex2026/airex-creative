@@ -9,6 +9,7 @@ import { askAboutReport } from "@/lib/chat";
 import { generateMeasures, type Measure } from "@/lib/measures";
 import { generateRunbook } from "@/lib/runbook";
 import type { AnalysisMode, BudgetBand } from "@/lib/types";
+import type { PriceScan } from "@/lib/pricing";
 import { processAnalysis } from "@/lib/worker";
 import { generateLp } from "@/lib/lp";
 import { hasAnthropic } from "@/lib/anthropic";
@@ -319,6 +320,31 @@ async function updateOwned(
     .select("id");
   if (error) throw new Error(label);
   if (!data || data.length === 0) throw new Error(`${label}（この分析を編集する権限がありません）`);
+}
+
+/**
+ * 損益分岐CPAの土台にする「主力商材」を選び直す。
+ * 自動で拾った価格が一番高いものになることがあり、そのままだと
+ * 出せるCPAを過大に見積もることになる。
+ */
+export async function setMainPrice(id: string, item: { name: string; yen: number } | null) {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
+  const { data } = await sb.from("analyses").select("pricing").eq("id", id).eq("owner_id", user.id).single();
+  if (!data?.pricing) throw new Error("価格の情報がありません");
+  const cur = data.pricing as PriceScan;
+
+  const next: PriceScan = item
+    ? { ...cur, main: { name: item.name, yen: Math.max(1, Math.round(item.yen)) }, reason: `${cur.reason ?? ""}（主力商材は利用者が選び直しました）` }
+    : { ...cur, main: cur.items[0] ?? null };
+
+  await updateOwned(sb, id, user.id, { pricing: next });
+  revalidatePath(`/analysis/${id}/report`);
+  return next;
 }
 
 /** 追うKPIを選ぶ。複数選べる */

@@ -1,3 +1,4 @@
+import { lengthIn, limitLabel, specFor, type AdSpec } from "./ad-specs";
 import { askJson } from "./anthropic";
 import { checkGuard } from "./guardrail";
 import type { Diagnosis, GuardVerdict, MediaPlanItem } from "./types";
@@ -57,7 +58,7 @@ export type AdOps = {
   campaigns: Campaign[];
   tags: MeasureTag[];
   /** 上限を超えた原稿。入稿前に直す必要がある */
-  overLength: { campaign: string; group: string; kind: "見出し" | "説明文"; text: string; width: number; limit: number }[];
+  overLength: { campaign: string; group: string; kind: string; text: string; width: number; limit: number; unit: string }[];
   guard: GuardVerdict;
   flagged: FlaggedText[];
 };
@@ -146,14 +147,20 @@ export function diagnoseTags(site: SiteScan | null, plan: MediaPlanItem[]): Meas
 function findOverLength(campaigns: Campaign[]) {
   const out: AdOps["overLength"] = [];
   for (const c of campaigns) {
+    const spec = specFor(c.channel ?? "");
+    const unit = spec.count === "半角換算" ? "全角文字" : "文字";
+    const div = spec.count === "半角換算" ? 2 : 1;
     for (const g of c.groups ?? []) {
-      for (const t of g.headlines ?? []) {
-        const w = adWidth(t);
-        if (w > 30) out.push({ campaign: c.name, group: g.name, kind: "見出し", text: t, width: w, limit: 30 });
-      }
-      for (const t of g.descriptions ?? []) {
-        const w = adWidth(t);
-        if (w > 90) out.push({ campaign: c.name, group: g.name, kind: "説明文", text: t, width: w, limit: 90 });
+      for (const [key, f] of [["headlines", spec.headline], ["descriptions", spec.description]] as const) {
+        for (const t of g[key] ?? []) {
+          const w = lengthIn(spec.count, t);
+          if (w > f.limit) {
+            out.push({
+              campaign: c.name, group: g.name, kind: f.field, text: t,
+              width: Math.ceil(w / div), limit: f.limit / div, unit,
+            });
+          }
+        }
       }
     }
   }
@@ -175,7 +182,12 @@ export async function generateCampaign(
   site: SiteScan | null,
   item: MediaPlanItem
 ): Promise<Campaign> {
-  const search = /検索|Google|Yahoo/i.test(item.channel) && !/P-?MAX|YouTube|ディスプレイ/i.test(item.channel);
+  const spec = specFor(item.channel);
+  const search = spec.keywords;
+  const hd = spec.headline;
+  const ds = spec.description;
+  const unit = spec.count === "半角換算" ? `全角${hd.limit / 2}文字以内（半角は2文字で1文字ぶん）` : `${hd.limit}文字以内`;
+  const dunit = spec.count === "半角換算" ? `全角${ds.limit / 2}文字以内` : `${ds.limit}文字以内`;
 
   return askJson<Campaign>(
     `あなたは広告運用者です。指定された媒体1つ分のキャンペーンを、管理画面にそのまま入稿できる粒度で設計します。
@@ -184,9 +196,10 @@ export async function generateCampaign(
 - groups は${search ? "2〜3個" : "1〜2個"}
 - keywords は${search ? "10〜15件" : "空配列にする（この媒体はキーワードで買う面ではない）"}
 - negatives は${search ? "「無料」「求人」「自分で」など、その商材で実際に無駄打ちになる語を5〜8件" : "空配列にする"}
-- headlines は12件。**日本語15文字以内**（16文字以上は入稿できません）。書いたあと必ず数え直すこと
-- descriptions は4件。**日本語45文字以内**（46文字以上は入稿できません）。1文にまとめず短く切ること
-- 見出しは訴求を1つだけ入れる。1本に詰め込まない
+- この媒体は「${spec.label}」。入稿枠は媒体ごとに違うので、以下をそのまま守ること
+- headlines は${hd.count}件。これは「${hd.field}」の枠で、**${unit}**。超えると入稿できません。書いたあと必ず数え直すこと
+- descriptions は${ds.count}件。これは「${ds.field}」の枠で、**${dunit}**。1文にまとめず短く切ること
+- ${hd.field}は訴求を1つだけ入れる。1本に詰め込まない
 - settings は管理画面の設定項目名と値の対を6〜10件。**その媒体に実在する項目だけ**を書く
 - notes は「外し忘れると費用が漏れる設定」を2〜3件。一般論ではなく設定名で書く
 - targeting は誰にどこで出すかを1〜2文で
@@ -220,23 +233,28 @@ ${site ? `サイト: ${site.title}` : ""}
  * こちらで数えて、超えたものだけを長さを明示して直させ、直っていなければ採用しない。
  */
 async function repairLengths(campaigns: Campaign[]): Promise<Campaign[]> {
-  type Slot = { ci: number; gi: number; kind: "headlines" | "descriptions"; i: number; limit: number };
+  type Slot = { ci: number; gi: number; kind: "headlines" | "descriptions"; i: number; limit: number; mode: "半角換算" | "文字数" };
   const slots: Slot[] = [];
-  const items: { n: number; text: string; limit: number; now: number }[] = [];
+  const items: { n: number; text: string; limit: number; now: number; unit: string; field: string }[] = [];
 
-  campaigns.forEach((c, ci) =>
+  campaigns.forEach((c, ci) => {
+    const spec = specFor(c.channel ?? "");
+    const div = spec.count === "半角換算" ? 2 : 1;
     (c.groups ?? []).forEach((g, gi) => {
-      for (const [kind, limit] of [["headlines", 30], ["descriptions", 90]] as const) {
+      for (const [kind, f] of [["headlines", spec.headline], ["descriptions", spec.description]] as const) {
         (g[kind] ?? []).forEach((t, i) => {
-          const w = adWidth(t);
-          if (w > limit) {
-            items.push({ n: slots.length, text: t, limit: limit / 2, now: Math.ceil(w / 2) });
-            slots.push({ ci, gi, kind, i, limit });
+          const w = lengthIn(spec.count, t);
+          if (w > f.limit) {
+            items.push({
+              n: slots.length, text: t, limit: f.limit / div, now: Math.ceil(w / div),
+              unit: div === 2 ? "全角文字" : "文字", field: `${spec.label} の${f.field}`,
+            });
+            slots.push({ ci, gi, kind, i, limit: f.limit, mode: spec.count });
           }
         });
       }
-    })
-  );
+    });
+  });
   if (items.length === 0) return campaigns;
 
   let fixed: { n: number; text: string }[] = [];
@@ -245,7 +263,8 @@ async function repairLengths(campaigns: Campaign[]): Promise<Campaign[]> {
       `広告原稿が入稿上限を超えています。意味を保ったまま短く書き直してください。
 
 守ること:
-- 各項目の limit は**全角の文字数**。その文字数以内に必ず収める
+- limit はその項目の unit で数えた上限。unit が「全角文字」なら半角2文字を1文字として数える
+- field はその原稿が入る媒体と枠。枠ごとに上限が違うので取り違えないこと
 - 削るときは修飾語・地名・保証などの補足から落とし、訴求の核は残す
 - 効果を断定する表現・最上級表現は足さない
 - n は変えずにそのまま返す`,
@@ -262,7 +281,7 @@ async function repairLengths(campaigns: Campaign[]): Promise<Campaign[]> {
   for (const f of fixed) {
     const slot = slots[f.n];
     // 短くなっていなければ採用しない。直った体で上限超えを通すほうが害が大きい
-    if (!slot || typeof f.text !== "string" || adWidth(f.text) > slot.limit) continue;
+    if (!slot || typeof f.text !== "string" || lengthIn(slot.mode, f.text) > slot.limit) continue;
     const arr = out[slot.ci]?.groups?.[slot.gi]?.[slot.kind];
     if (arr) arr[slot.i] = f.text;
   }

@@ -10,8 +10,11 @@ import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
 import type { CompetitorScan } from "@/lib/competitors";
 import type { TacticPlan } from "@/lib/tactics";
 import { adWidth, type AdOps } from "@/lib/ad-ops";
+import { lengthIn, limitLabel, specFor, type CountMode } from "@/lib/ad-specs";
 import type { MeoScan } from "@/lib/meo";
 import { MeoStoreList, scorePct } from "./MeoStores";
+import { Toc } from "./Toc";
+import { MainPrice } from "./MainPrice";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
 import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
 import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
@@ -48,7 +51,7 @@ export function Report({
   linePlan,
   suggests,
   outreach,
-  pricing,
+  pricing: initialPricing,
   margin: initialMargin,
   kpi,
   measures,
@@ -103,6 +106,8 @@ export function Report({
   const [budget, setBudgetState] = useState<BudgetBand | null>(initialBudget);
   const [replanning, setReplanning] = useState(false);
   const [margin, setMarginState] = useState<number>(initialMargin ?? MARGIN[d.industry] ?? 0.4);
+  // 主力商材は押し替えられる。自動で拾った価格が実際の主力とずれることがある
+  const [pricing, setPricing] = useState(initialPricing);
 
   // 粗利率は断定できないので、押した瞬間に計算し直して裏で保存する
   function pickMargin(m: number) {
@@ -354,6 +359,8 @@ export function Report({
           hygiene={hygiene(site)}
         />
       )}
+
+      {tab === "overview" && <Toc watch={tab} />}
 
       {tab === "overview" && (
         <div className="todos measure">
@@ -949,13 +956,7 @@ export function Report({
               <span>1件あたりこれを超えると赤字です</span>
             </div>
             <div className="src">
-              <div className="r">
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <b>{pricing.main.name}</b>
-                  <small>主力商材として採用した価格</small>
-                </div>
-                <span className="tag">{pricing.main.yen.toLocaleString()}円</span>
-              </div>
+              <MainPrice id={id} pricing={pricing} onChange={setPricing} />
               <div className="mg">
                 <span>粗利率</span>
                 <div className="opts">
@@ -1069,7 +1070,9 @@ export function Report({
                   </details>
                 )}
 
-                {c.groups?.map((g, gi) => (
+                {c.groups?.map((g, gi) => {
+                  const spec = specFor(c.channel ?? "");
+                  return (
                   <div className="adg" key={gi}>
                     <div className="h">
                       <span className="ic">◆</span>
@@ -1091,22 +1094,35 @@ export function Report({
                     )}
                     {g.headlines?.length > 0 && (
                       <details className="flags">
-                        <summary>見出し案（{g.headlines.length}件・全角15文字まで）</summary>
+                        <summary>
+                          {spec.headline.field}案（{g.headlines.length}件・{limitLabel(spec, "headline").split("・")[1]}）
+                        </summary>
                         <div className="lines">
-                          {g.headlines.map((t, i) => <AdLine key={i} text={t} limit={30} flag={flagOf(t)} />)}
+                          {g.headlines.map((t, i) => (
+                            <AdLine key={i} text={t} limit={spec.headline.limit} mode={spec.count} flag={flagOf(t)} />
+                          ))}
                         </div>
                       </details>
                     )}
                     {g.descriptions?.length > 0 && (
                       <details className="flags">
-                        <summary>説明文案（{g.descriptions.length}件・全角45文字まで）</summary>
+                        <summary>
+                          {spec.description.field}案（{g.descriptions.length}件・{limitLabel(spec, "description").split("・")[1]}）
+                        </summary>
                         <div className="lines">
-                          {g.descriptions.map((t, i) => <AdLine key={i} text={t} limit={90} flag={flagOf(t)} />)}
+                          {g.descriptions.map((t, i) => (
+                            <AdLine key={i} text={t} limit={spec.description.limit} mode={spec.count} flag={flagOf(t)} />
+                          ))}
                         </div>
                       </details>
                     )}
+                    <div className="specnote">
+                      入稿規定：{spec.label}／{limitLabel(spec, "headline")}／{limitLabel(spec, "description")}
+                      <small>出典：{spec.source}</small>
+                    </div>
                   </div>
-                ))}
+                  );
+                })}
 
                 {c.notes?.length > 0 && (
                   <ul className="notes">
@@ -1727,14 +1743,23 @@ function GuardTag({ g }: { g?: GuardVerdict }) {
 }
 
 /** 広告原稿1本。文字数と法令の指摘をその場に出す */
-function AdLine({ text, limit, flag }: { text: string; limit: number; flag: { law: string; reason: string; suggestion: string } | null }) {
-  const w = adWidth(text);
+function AdLine({
+  text, limit, mode, flag,
+}: {
+  text: string;
+  limit: number;
+  mode: CountMode;
+  flag: { law: string; reason: string; suggestion: string } | null;
+}) {
+  const w = lengthIn(mode, text);
   const over = w > limit;
+  // 全角換算の媒体は半角の数字で出すと運用者が読み替えることになるので、全角の数で出す
+  const div = mode === "半角換算" ? 2 : 1;
   return (
     <div className={`ln${over ? " over" : ""}${flag ? " flagged" : ""}`}>
       <div className="t">
         <span>{text}</span>
-        <small>{w}/{limit}</small>
+        <small>{Math.ceil(w / div)}/{limit / div}</small>
       </div>
       {flag && (
         <div className="why">
