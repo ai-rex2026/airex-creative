@@ -23,7 +23,23 @@ export type MeoPlace = {
   website: string | null;
 };
 
+/** 店舗1つ分の実測。複数拠点のクライアントがあるので配列で持つ */
+export type MeoStore = {
+  self: MeoPlace;
+  competitors: MeoPlace[];
+  ratingRank: number | null;
+  reviewRank: number | null;
+  totalShops: number;
+  avgRating: number | null;
+  avgReviews: number | null;
+  score: number;
+  breakdown: { label: string; got: number; max: number; note: string }[];
+};
+
 export type MeoScan = {
+  /** 見つかった全店舗。1店舗なら1件 */
+  stores: MeoStore[];
+  /** 以下は先頭の店舗。既存の画面と生成が参照しているので残す */
   self: MeoPlace | null;
   competitors: MeoPlace[];
   /** 自社を含めた順位。1始まり */
@@ -104,6 +120,7 @@ const host = (u: string | null | undefined) => {
 
 function empty(reason: string): MeoScan {
   return {
+    stores: [],
     self: null, competitors: [], ratingRank: null, reviewRank: null, totalShops: 0,
     avgRating: null, avgReviews: null, score: 0, breakdown: [], reason,
     searchedAt: new Date().toISOString(),
@@ -186,9 +203,11 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
 
   // 候補を順に試し、サイトのドメインが一致したものを自社とする。
   // 同名の別店舗を掴まないための照合なので、一致しなければ採用しない。
-  let self: RawPlace | undefined;
+  // 多拠点のクライアントがあるので、一致したものは**すべて**拾う。
+  const mine = new Map<string, RawPlace>();
   let sawAny = false;
   for (const name of candidates) {
+    if (mine.size > 0) break;
     const query = [name, site?.bizAddress ?? ""].filter(Boolean).join(" ");
     let found: RawPlace[];
     try {
@@ -196,16 +215,19 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
         textQuery: query,
         languageCode: "ja",
         regionCode: "JP",
-        maxResultCount: 10,
+        maxResultCount: 20,
       });
     } catch (e) {
       return empty(e instanceof Error ? e.message : "Places API を呼べませんでした");
     }
     if (found.length) sawAny = true;
-    self = found.find((p) => host(p.websiteUri) === ourHost);
-    if (self) break;
+    for (const p of found) {
+      if (host(p.websiteUri) !== ourHost) continue;
+      // 同じ店舗が別クエリで重複しないよう、住所で束ねる
+      mine.set(p.formattedAddress ?? p.displayName?.text ?? String(mine.size), p);
+    }
   }
-  if (!self) {
+  if (mine.size === 0) {
     return empty(
       sawAny
         ? "Googleビジネスプロフィールは見つかりましたが、登録されているウェブサイトがこのサイトと一致しませんでした。プロフィール側のURLをご確認ください。"
@@ -213,49 +235,66 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     );
   }
 
-  let nearby: RawPlace[] = [];
-  if (self.location && self.primaryType) {
-    try {
-      nearby = await call("places:searchNearby", {
-        includedPrimaryTypes: [self.primaryType],
-        languageCode: "ja",
-        regionCode: "JP",
-        maxResultCount: 20,
-        locationRestriction: {
-          circle: { center: self.location, radius: 3000 },
-        },
-      });
-    } catch {
-      // 近隣が取れなくても自社の数値は出せるので、そのまま進む
+  // 近隣の取得は店舗ごとに API を1回使うので、上限を置く
+  const selves = [...mine.values()].slice(0, 5);
+  const stores: MeoStore[] = [];
+
+  for (const one of selves) {
+    let nearby: RawPlace[] = [];
+    if (one.location && one.primaryType && stores.length < 3) {
+      try {
+        nearby = await call("places:searchNearby", {
+          includedPrimaryTypes: [one.primaryType],
+          languageCode: "ja",
+          regionCode: "JP",
+          maxResultCount: 20,
+          locationRestriction: { circle: { center: one.location, radius: 3000 } },
+        });
+      } catch {
+        // 近隣が取れなくても自社の数値は出せるので、そのまま進む
+      }
     }
+
+    const competitors = nearby
+      .filter((p) => host(p.websiteUri) !== ourHost && p.displayName?.text !== one.displayName?.text)
+      .map(toPlace)
+      .sort((a, b) => b.reviews - a.reviews)
+      .slice(0, 10);
+
+    const me = toPlace(one);
+    const all = [me, ...competitors];
+    const rated = all.filter((p) => p.rating !== null);
+    const isMe = (p: MeoPlace) => p.name === me.name && p.reviews === me.reviews;
+    const ratingRank = one.rating
+      ? [...rated].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)).findIndex(isMe) + 1
+      : null;
+    const reviewRank = [...all].sort((a, b) => b.reviews - a.reviews).findIndex(isMe) + 1;
+
+    stores.push({
+      self: me,
+      competitors,
+      ratingRank: ratingRank && ratingRank > 0 ? ratingRank : null,
+      reviewRank: reviewRank > 0 ? reviewRank : null,
+      totalShops: all.length,
+      avgRating: rated.length ? Number((rated.reduce((n, p) => n + (p.rating ?? 0), 0) / rated.length).toFixed(1)) : null,
+      avgReviews: competitors.length ? Math.round(competitors.reduce((n, p) => n + p.reviews, 0) / competitors.length) : null,
+      score: grade(one, competitors).reduce((n, b) => n + b.got, 0),
+      breakdown: grade(one, competitors),
+    });
   }
 
-  const competitors = nearby
-    .filter((p) => host(p.websiteUri) !== ourHost && p.displayName?.text !== self.displayName?.text)
-    .map(toPlace)
-    .sort((a, b) => b.reviews - a.reviews)
-    .slice(0, 10);
-
-  const all = [toPlace(self), ...competitors];
-  const rated = all.filter((p) => p.rating !== null);
-  const ratingRank = self.rating
-    ? [...rated].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)).findIndex((p) => p.website && host(p.website) === ourHost) + 1
-    : null;
-  const reviewRank =
-    [...all].sort((a, b) => b.reviews - a.reviews).findIndex((p) => p.website && host(p.website) === ourHost) + 1;
-
-  const breakdown = grade(self, competitors);
-
+  const head = stores[0];
   return {
-    self: toPlace(self),
-    competitors,
-    ratingRank: ratingRank && ratingRank > 0 ? ratingRank : null,
-    reviewRank: reviewRank > 0 ? reviewRank : null,
-    totalShops: all.length,
-    avgRating: rated.length ? Number((rated.reduce((n, p) => n + (p.rating ?? 0), 0) / rated.length).toFixed(1)) : null,
-    avgReviews: competitors.length ? Math.round(competitors.reduce((n, p) => n + p.reviews, 0) / competitors.length) : null,
-    score: breakdown.reduce((n, b) => n + b.got, 0),
-    breakdown,
+    stores,
+    self: head.self,
+    competitors: head.competitors,
+    ratingRank: head.ratingRank,
+    reviewRank: head.reviewRank,
+    totalShops: head.totalShops,
+    avgRating: head.avgRating,
+    avgReviews: head.avgReviews,
+    score: head.score,
+    breakdown: head.breakdown,
     reason: null,
     searchedAt: new Date().toISOString(),
   };

@@ -17,7 +17,7 @@ import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
 import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "@/lib/types";
-import { Banner } from "./Banner";
+import { Banner, pickFacts } from "./Banner";
 import { ReportChat } from "./ReportChat";
 import { Measures } from "./Measures";
 import { Inputs } from "./Inputs";
@@ -196,6 +196,9 @@ export function Report({
    * バナーに載せる「何屋か」。ブランド名だけでは何の広告か伝わらない。
    * 商材の説明文から、記号より前の短い塊だけを取る（AIに書かせない）
    */
+  /** バナー下部に並べる事実。強みから数字を機械的に抜く */
+  const bannerFacts = pickFacts(d.strengths);
+
   const service = (d.product.split(/[。、（(]/)[0] ?? "").trim().slice(0, 14) || INDUSTRY_LABEL[d.industry];
 
   /** その原稿に付いた法令の指摘。無ければ null */
@@ -829,6 +832,34 @@ export function Report({
             </div>
           ) : (
             <>
+              {meo.stores.length > 1 && (
+                <>
+                  <div className="note">
+                    <i className="i">i</i>
+                    <span>
+                      同じサイトを登録している店舗が <b style={{ fontWeight: 600 }}>{meo.stores.length}件</b> 見つかりました。
+                      店舗ごとに評価とレビュー数が違うので、分けて出しています。
+                    </span>
+                  </div>
+                  <div className="stores measure">
+                    {meo.stores.map((st, i) => (
+                      <div className="s" key={i}>
+                        <div className="h">
+                          <b>{st.self.name}</b>
+                          <span className={`tag${st.score >= 75 ? " ok" : st.score >= 50 ? "" : " warn"}`}>{st.score} / 100</span>
+                        </div>
+                        <small>{st.self.address}</small>
+                        <div className="m">
+                          <span>★ {st.self.rating?.toFixed(1) ?? "—"}</span>
+                          <span>レビュー {st.self.reviews.toLocaleString()}件</span>
+                          {st.reviewRank && <span>近隣{st.totalShops}店中 {st.reviewRank}位</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
               <div className="meo measure">
                 <div className="gauge">
                   <b>{meo.score}</b>
@@ -1584,7 +1615,7 @@ export function Report({
                           title="クリックで拡大"
                         >
                           <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
-                            <Banner service={service} id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} />
+                            <Banner service={service} facts={bannerFacts} id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} />
                           </div>
                         </div>
                         <button className="link" style={{ marginTop: 6 }} onClick={() => download(`bn-${ci}-${s.id}`, `${s.media}_${s.w}x${s.h}_${ci + 1}.png`)}>
@@ -1660,7 +1691,7 @@ export function Report({
               </div>
               <div style={{ width: zs.w * zscale, height: zs.h * zscale, overflow: "hidden" }}>
                 <div style={{ transform: `scale(${zscale})`, transformOrigin: "top left" }}>
-                  <Banner service={service} id={`zoom-${zoom.ci}-${zs.id}`} copy={zc} brand={d.brand} size={zs} />
+                  <Banner service={service} facts={bannerFacts} id={`zoom-${zoom.ci}-${zs.id}`} copy={zc} brand={d.brand} size={zs} />
                 </div>
               </div>
             </div>

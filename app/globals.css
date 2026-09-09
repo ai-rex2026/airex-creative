@@ -867,3 +867,12 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
 .inline-load{display:inline-flex;align-items:center;gap:8px}
 .inline-load .spin{width:12px;height:12px;border-radius:999px;border:2px solid currentColor;
   border-top-color:transparent;opacity:.7;animation:spin .7s linear infinite;flex:0 0 auto}
+
+/* ── MEO 複数店舗 ───────────────────────────── */
+.stores{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:14px}
+.stores .s{border:1px solid var(--line);border-radius:12px;background:#fff;padding:14px 16px;display:grid;gap:4px}
+.stores .s .h{display:flex;align-items:center;gap:10px}
+.stores .s .h b{flex:1;min-width:0;font-size:13.5px}
+.stores .s > small{font-size:11px;color:var(--faint);line-height:1.5}
+.stores .s .m{display:flex;gap:14px;flex-wrap:wrap;padding-top:6px;font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums}
