@@ -1240,6 +1240,13 @@ export function Report({
             );
           })()}
 
+          {speed && speed.score === null && speed.field.length === 0 && speed.reason && (
+            <div className="note warn">
+              <i className="i">!</i>
+              <span>表示速度を測定できませんでした。{speed.reason}</span>
+            </div>
+          )}
+
           {speed && (speed.score !== null || speed.field.length > 0) && (
             <>
               <div className="sec-head">

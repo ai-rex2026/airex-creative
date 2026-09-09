@@ -106,6 +106,14 @@ export async function scanSpeed(url: string | null): Promise<SpeedScan> {
       signal: AbortSignal.timeout(70_000),
     });
     j = (await res.json()) as PsiResponse;
+    if (res.status === 429) {
+      // キー無しの呼び出しは共有枠なので、すぐ上限に当たる
+      return empty(
+        key
+          ? "PageSpeed Insights の1日の上限に達しました。時間をおくと測定できます。"
+          : "PageSpeed Insights のAPIキーが未設定のため、共有枠で呼び出して上限に当たりました。Google Cloud で PageSpeed Insights API を有効にし、キーを PAGESPEED_API_KEY に設定すると安定して測定できます。"
+      );
+    }
     if (!res.ok) return empty(`PageSpeed Insights を呼べませんでした（${j.error?.message ?? res.status}）`);
   } catch (e) {
     return empty(e instanceof Error ? `PageSpeed Insights を呼べませんでした（${e.message}）` : "PageSpeed Insights を呼べませんでした");
