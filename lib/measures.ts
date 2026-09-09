@@ -92,12 +92,15 @@ ${meo?.self ? `Googleマップ: 評価${meo.self.rating}（近隣平均${meo.avg
 ${extra.length ? `
 【すでに運用しているもの】※ これらを新規に作る施策は出さない
 ${extra.map((x) => `- ${x.platform}：${x.url}`).join("\n")}` : ""}
+${doneTitles.length ? `
+【もう実施済みの施策】※ 同じ内容を再び出さない。続きが要るなら別の施策として書く
+${doneTitles.map((t) => `- ${t}`).join("\n")}` : ""}
 
 【媒体の事実】※ 自分の知識より、ここに書いてあることを優先する
 ${platformNotes()}`;
 }
 
-/** ツリーに無いノード名は捨てる。紐づかない名前を出すと対応が取れなくなる */
+/** どのKPIを動かす施策なのかを、必ず画面に出せる形にそろえる */
 function fixNodes(items: Measure[], kpi: KpiTree): Measure[] {
   // ツリーの段を第一候補にする。ただし候補KPIはツリーに無い指標を含むので
   // （売上ツリーに載らない「サイト訪問数」など）、そちらも許可する。

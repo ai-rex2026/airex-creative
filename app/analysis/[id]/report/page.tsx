@@ -7,6 +7,10 @@ import type { Analysis } from "@/lib/analysis";
 
 export const metadata = { title: "レポート｜AI-REX Studio" };
 
+// この画面から呼ぶサーバーアクション（施策の作り直し・実行プロンプトの生成）は
+// AI を2回叩くので、既定の実行時間では足りない
+export const maxDuration = 300;
+
 export default async function ReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const sb = await createClient();
