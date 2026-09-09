@@ -51,9 +51,14 @@ export async function startAnalysis(input: {
 }) {
   assertKey();
   const mode: AnalysisMode = input.mode === "meo" ? "meo" : "report";
-  const url = normalizeUrl(input.url);
-  if (mode === "meo" && !url) throw new Error("MEO分析にはサイトのURLが必要です");
-  if (!url && !input.text) throw new Error("URL か 商品説明のどちらかを入れてください");
+  let url: string | undefined;
+  try {
+    url = normalizeUrl(input.url);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "URLとして読めませんでした" };
+  }
+  if (mode === "meo" && !url) return { error: "MEO分析にはサイトのURLが必要です" };
+  if (!url && !input.text) return { error: "URL か 商品説明のどちらかを入れてください" };
 
   const sb = await createClient();
   let {
@@ -62,20 +67,32 @@ export async function startAnalysis(input: {
 
   if (!user) {
     const { data, error } = await sb.auth.signInAnonymously();
-    if (error || !data.user) throw new Error("一時アカウントを作成できませんでした");
+    if (error || !data.user) return { error: "一時アカウントを作成できませんでした" };
     user = data.user;
   }
 
   const id = newAnalysisId();
-  const { error } = await sb.from("analyses").insert({
+  const row = {
     id,
-    owner_id: user.id,
     url: url ?? null,
     input_text: input.text ?? null,
     mode,
     budget: input.budget ?? null,
-  });
-  if (error) throw new Error(`分析を登録できませんでした: ${error.message}`);
+  };
+
+  let { error } = await sb.from("analyses").insert({ ...row, owner_id: user.id });
+
+  // 前に作ったゲストのセッションが期限切れだと、画面上はログイン済みに見えるのに
+  // 書き込みだけ弾かれる。作り直して1回だけやり直す
+  if (error) {
+    const { data: re } = await sb.auth.signInAnonymously();
+    if (re?.user) {
+      user = re.user;
+      ({ error } = await sb.from("analyses").insert({ ...row, owner_id: re.user.id }));
+    }
+  }
+  // 本番では throw したエラー本文が伏せられて画面に出ないので、値で返す
+  if (error) return { error: `分析を登録できませんでした：${error.message}` };
 
   // 画面ではなくサーバー側で走らせる。ブラウザを閉じても止まらない
   after(async () => {

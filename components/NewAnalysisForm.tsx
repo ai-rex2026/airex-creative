@@ -16,11 +16,12 @@ export function NewAnalysisForm({ initialUrl }: { initialUrl: string }) {
     setErr(null);
     start(async () => {
       try {
-        await startAnalysis({
+        const res = await startAnalysis({
           url: url || undefined,
           text: mode === "meo" ? undefined : text || undefined,
           mode,
         });
+        if (res?.error) setErr(res.error);
       } catch (e) {
         const m = e instanceof Error ? e.message : String(e);
         if (!m.includes("NEXT_REDIRECT")) setErr(m);

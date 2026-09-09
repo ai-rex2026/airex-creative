@@ -15,7 +15,8 @@ export function Home() {
     setErr(null);
     start(async () => {
       try {
-        await startAnalysis({ url: url || undefined, text: text || undefined });
+        const res = await startAnalysis({ url: url || undefined, text: text || undefined });
+        if (res?.error) setErr(res.error);
       } catch (e) {
         // redirect() は例外で飛ぶので、本物のエラーだけ拾う
         const m = e instanceof Error ? e.message : String(e);
