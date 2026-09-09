@@ -18,6 +18,7 @@ import { MainPrice } from "./MainPrice";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
 import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
 import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
+import type { SpeedScan } from "@/lib/pagespeed";
 import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "@/lib/types";
@@ -52,6 +53,7 @@ export function Report({
   suggests,
   outreach,
   pricing: initialPricing,
+  speed,
   margin: initialMargin,
   kpi,
   measures,
@@ -82,6 +84,7 @@ export function Report({
   suggests: SuggestScan | null;
   outreach: OutreachPlan | null;
   pricing: PriceScan | null;
+  speed: SpeedScan | null;
   margin: number | null;
   kpi: KpiTree | null;
   measures: Measure[] | null;
@@ -1209,6 +1212,65 @@ export function Report({
               </div>
             );
           })()}
+
+          {speed && (speed.score !== null || speed.field.length > 0) && (
+            <>
+              <div className="sec-head">
+                <span className="ic">⚡</span>
+                <div>
+                  <h2 id="sec-speed">表示速度（実測）</h2>
+                  <div className="sub">PageSpeed Insights・モバイル。推測ではなく計測値です</div>
+                </div>
+                <span className="rule" />
+              </div>
+
+              <div className="speed measure">
+                {speed.score !== null && (
+                  <div className="gauge">
+                    <b>{speed.score}</b>
+                    <small>/ 100</small>
+                    <span className={speed.score >= 90 ? "ok" : speed.score >= 50 ? "warn" : "ng"}>
+                      {speed.score >= 90 ? "良好" : speed.score >= 50 ? "改善が必要" : "不良"}
+                    </span>
+                  </div>
+                )}
+                <div className="kpis">
+                  {(speed.field.length > 0 ? speed.field : speed.lab).map((m) => (
+                    <div className="kpi" key={m.id}>
+                      <b>{m.value}</b>
+                      <small>{m.label}</small>
+                      {m.rating && <i className={m.rating === "良好" ? "ok" : m.rating === "不良" ? "ng" : "warn"}>{m.rating}</i>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="note">
+                <i className="i">i</i>
+                <span>
+                  {speed.field.length > 0
+                    ? "上の数字は実際にこのサイトを見た人の計測値（Chrome ユーザーエクスペリエンスレポート）です。"
+                    : speed.reason}
+                  {speed.testedUrl && <> 測定URL：{speed.testedUrl.replace(/^https?:\/\//, "")}</>}
+                </span>
+              </div>
+
+              {speed.opportunities.length > 0 && (
+                <div className="rows measure">
+                  <div className="rh">短縮の見込みがある改善<small>PageSpeed Insights の試算</small></div>
+                  {speed.opportunities.map((o, i) => (
+                    <div className="r" key={i}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <b>{o.title}</b>
+                        <small>{o.detail}</small>
+                      </div>
+                      <span className="tag warn">−{(o.savingsMs / 1000).toFixed(1)}秒</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
 
           {lpo && lpo.groups.length > 0 && (
             <>

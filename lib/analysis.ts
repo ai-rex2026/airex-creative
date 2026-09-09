@@ -10,6 +10,7 @@ import { hasPlacesApi, scanMeo, type MeoScan } from "./meo";
 import { generateKeywords, generateLine, generateLpo, type KeywordPlan, type LinePlan, type LpoPlan } from "./deep";
 import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } from "./outreach";
 import { scanPrices, type PriceScan } from "./pricing";
+import { scanSpeed, type SpeedScan } from "./pagespeed";
 import { generateKpi, type KpiTree } from "./kpi";
 import { generateMeasures, type Measure } from "./measures";
 import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
@@ -48,6 +49,7 @@ export type Analysis = {
   line_plan: LinePlan | null;
   suggests: SuggestScan | null;
   pricing: PriceScan | null;
+  speed: SpeedScan | null;
   margin: number | null;
   kpi: KpiTree | null;
   /** 選ばれたKPIのID。自由入力ぶんも id を振ってここに入る */
@@ -195,8 +197,13 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const plan = await generateMeasures(a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? []);
       return await save({ measures: plan.items ?? [], step: "LP改善を書いています", progress: 71 });
     }
+    // 表示速度は実測できる。LP改善で「重い」と書く前にここで数字を取る
+    if (a.url && !a.speed) {
+      const speed = await scanSpeed(a.url);
+      return await save({ speed, step: "LP改善を書いています", progress: 72 });
+    }
     if (!a.lpo) {
-      const lpo = await generateLpo(a.diagnosis, a.site).catch(failedChapter<LpoPlan>({ groups: [] }));
+      const lpo = await generateLpo(a.diagnosis, a.site, a.speed).catch(failedChapter<LpoPlan>({ groups: [] }));
       return await save({ lpo, step: "キーワードを選んでいます", progress: 70 });
     }
     if (!a.keywords) {
