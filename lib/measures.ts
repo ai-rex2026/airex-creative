@@ -99,11 +99,22 @@ ${platformNotes()}`;
 
 /** ツリーに無いノード名は捨てる。紐づかない名前を出すと対応が取れなくなる */
 function fixNodes(items: Measure[], kpi: KpiTree): Measure[] {
-  // 候補側の node は説明句になりがちなので、ツリーの段だけを許可する
-  const allowed = kpi.branches.map((b) => b.node).filter(Boolean);
+  // ツリーの段を第一候補にする。ただし候補KPIはツリーに無い指標を含むので
+  // （売上ツリーに載らない「サイト訪問数」など）、そちらも許可する。
+  // 空欄で返すと施策がどのKPIの話か画面から消えるため、最後は
+  // その施策が効くKPIの名前で埋める。
+  const allowed = [
+    ...kpi.branches.map((b) => b.node),
+    ...kpi.candidates.flatMap((c) => [c.node, c.name]),
+  ].filter(Boolean);
+  const nameOf = (id: string) => kpi.candidates.find((c) => c.id === id)?.name ?? "";
   return items.map((m) => ({
     ...m,
-    node: allowed.find((a) => a === m.node) ?? allowed.find((a) => m.node?.includes(a) || a.includes(m.node ?? "")) ?? "",
+    node:
+      allowed.find((a) => a === m.node) ??
+      allowed.find((a) => (m.node ? m.node.includes(a) || a.includes(m.node) : false)) ??
+      nameOf(m.kpis?.[0] ?? "") ??
+      "",
   }));
 }
 

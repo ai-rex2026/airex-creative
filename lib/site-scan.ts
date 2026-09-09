@@ -56,6 +56,16 @@ export async function scanSite(input: string): Promise<SiteScan> {
     redirect: "follow",
     signal: AbortSignal.timeout(20000),
   });
+  // エラーページを本文として読むと、その後の分析が全部そのページの上に建つ。
+  // 「403 Forbidden」をタイトルとして商材を推定した実例があるので、ここで止める。
+  if (!res.ok) {
+    throw new Error(
+      `サイトを読み込めませんでした（HTTP ${res.status}）。` +
+        (res.status === 403 || res.status === 429
+          ? "サーバー側でアクセスが拒否されています。WAFやbot対策の設定をご確認ください。"
+          : "URLをご確認ください。")
+    );
+  }
   const html = await res.text();
   const finalUrl = res.url || input;
   const origin = new URL(finalUrl).origin;

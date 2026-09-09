@@ -182,7 +182,14 @@ export function Report({
    */
   const cards: { key: string; label: string; got: number; max: number; note: string }[] = [];
   if (site) cards.push({ key: "site", label: "サイト健全性", got: site.passed, max: site.total, note: "HTTPS・ヘッダー・構造化データ" });
-  if (meo?.self) cards.push({ key: "meo", label: "MEO", got: meo.score, max: 100, note: `近隣${meo.totalShops}店中 レビュー${meo.reviewRank}位` });
+  if (meo?.self)
+    cards.push({
+      key: "meo",
+      label: "MEO",
+      got: meo.score,
+      max: 100,
+      note: meo.totalShops > 1 ? `近隣${meo.totalShops}店中 レビュー${meo.reviewRank}位` : "近隣に比較できる同業が見つかりませんでした",
+    });
   if (adOps?.done) {
     const need = adOps.tags.filter((t) => t.need === "必須");
     const ok = need.filter((t) => t.status === "導入済み").length;
@@ -852,7 +859,11 @@ export function Report({
                         <div className="m">
                           <span>★ {st.self.rating?.toFixed(1) ?? "—"}</span>
                           <span>レビュー {st.self.reviews.toLocaleString()}件</span>
-                          {st.reviewRank && <span>近隣{st.totalShops}店中 {st.reviewRank}位</span>}
+                          <span>
+                            {st.totalShops > 1 && st.reviewRank
+                              ? `近隣${st.totalShops}店中 ${st.reviewRank}位`
+                              : "近隣に比較できる同業が見つかりませんでした"}
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -878,12 +889,12 @@ export function Report({
                     <small>レビュー数{meo.avgReviews !== null ? `（近隣平均 ${meo.avgReviews}）` : ""}</small>
                   </div>
                   <div className="kpi">
-                    <b>{meo.ratingRank ? `${meo.ratingRank}位` : "—"}</b>
-                    <small>評価の順位 / {meo.totalShops}店</small>
+                    <b>{meo.totalShops > 1 && meo.ratingRank ? `${meo.ratingRank}位` : "—"}</b>
+                    <small>{meo.totalShops > 1 ? `評価の順位 / ${meo.totalShops}店` : "比較できる近隣同業なし"}</small>
                   </div>
                   <div className="kpi">
-                    <b>{meo.reviewRank ? `${meo.reviewRank}位` : "—"}</b>
-                    <small>レビュー数の順位 / {meo.totalShops}店</small>
+                    <b>{meo.totalShops > 1 && meo.reviewRank ? `${meo.reviewRank}位` : "—"}</b>
+                    <small>{meo.totalShops > 1 ? `レビュー数の順位 / ${meo.totalShops}店` : "比較できる近隣同業なし"}</small>
                   </div>
                 </div>
               </div>

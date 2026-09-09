@@ -35,7 +35,11 @@ export function MeoReport({ meo, site, url }: { meo: MeoScan | null; site: SiteS
             <span className="ic">◉</span>
             <div>
               <h2 id="sec-meo">Googleマップでの位置づけ</h2>
-              <div className="sub">近隣3km・同じ業種の {meo.totalShops} 店と比べています</div>
+              <div className="sub">
+                {meo.totalShops > 1
+                  ? `近隣3km・同じ業種の ${meo.totalShops} 店と比べています`
+                  : "近隣3kmに同じ業種の店が見つからず、比較はできていません"}
+              </div>
             </div>
             <span className="rule" />
           </div>
@@ -58,12 +62,12 @@ export function MeoReport({ meo, site, url }: { meo: MeoScan | null; site: SiteS
                 <small>レビュー数{meo.avgReviews !== null ? `（近隣平均 ${meo.avgReviews}）` : ""}</small>
               </div>
               <div className="kpi">
-                <b>{meo.ratingRank ? `${meo.ratingRank}位` : "—"}</b>
-                <small>評価の順位 / {meo.totalShops}店</small>
+                <b>{meo.totalShops > 1 && meo.ratingRank ? `${meo.ratingRank}位` : "—"}</b>
+                <small>{meo.totalShops > 1 ? `評価の順位 / ${meo.totalShops}店` : "比較できる近隣同業なし"}</small>
               </div>
               <div className="kpi">
-                <b>{meo.reviewRank ? `${meo.reviewRank}位` : "—"}</b>
-                <small>レビュー数の順位 / {meo.totalShops}店</small>
+                <b>{meo.totalShops > 1 && meo.reviewRank ? `${meo.reviewRank}位` : "—"}</b>
+                <small>{meo.totalShops > 1 ? `レビュー数の順位 / ${meo.totalShops}店` : "比較できる近隣同業なし"}</small>
               </div>
             </div>
           </div>

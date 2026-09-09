@@ -38,6 +38,25 @@ export type BannerFact = { value: string; label: string };
  * 装飾ではなく事実で密度を出すのがこのデザインの肝なので、数字を優先する。
  * AI には書かせない（毎回表記が揺れるため）。
  */
+/**
+ * 最上級・No.1の表現。実測で裏が取れないので、バナーに出さない。
+ * 強みの文章には入り込むため、機械的に取り出す側で落とす（景表法）。
+ */
+const SUPERLATIVE = /No\.?1|ナンバーワン|日本一|国内一|世界一|最高|最大|最安|最多|最速|最先端|唯一|随一|トップクラス|TOPクラス|業界初|日本初|第一人者/i;
+
+/**
+ * 数字の前にある語から見出しを作る。
+ * 頭から8文字で切ると「削らないラミネー」のように語の途中で切れるので、
+ * 修飾を落として**末尾の名詞**を残す。
+ */
+function labelFor(before: string): string {
+  const words = before.replace(/[。、（）()｜|]/g, " ").trim().split(/\s+/).filter((w) => w && !SUPERLATIVE.test(w));
+  const t = words.pop() ?? "";
+  const tail = t.split("の").pop() ?? "";
+  const pick = tail.length >= 2 ? tail : t;
+  return pick.length <= 9 ? pick : pick.slice(-9);
+}
+
 export function pickFacts(strengths: string[], max = 3): BannerFact[] {
   const out: BannerFact[] = [];
   for (const s of strengths) {
@@ -45,8 +64,7 @@ export function pickFacts(strengths: string[], max = 3): BannerFact[] {
     const m = s.match(/(約?[0-9][0-9,]*\s*(?:万|億)?\s*(?:件|年|分|名|人|%|％|円|時間|日))/);
     if (m) {
       const value = m[1].replace(/\s+/g, "");
-      const label = (s.replace(m[1], " ").replace(/[。、（）()]/g, " ").trim().split(/\s+/)[0] ?? "").slice(0, 8);
-      out.push({ value, label });
+      out.push({ value, label: labelFor(s.slice(0, m.index ?? 0)) });
       continue;
     }
     const short = s.replace(/[。、].*$/, "").trim();
@@ -85,7 +103,9 @@ export function Banner({
   const colW = (side ? w * 0.66 : w) - pad * 2;
 
   const maxChars = Math.max(copy.headline[0].length, copy.headline[1].length, 1);
-  const hSize = Math.min(compact ? 40 * u : landscape ? 74 * u : 104 * u, (colW / maxChars) * 1.04);
+  // 1文字1emで折り返さない上限。係数を1超にすると300x250で見出しが1文字だけ
+  // 次行に落ちるので、字送りのぶんを見て1未満に留める
+  const hSize = Math.min(compact ? 34 * u : landscape ? 74 * u : 104 * u, (colW / maxChars) * 0.96);
   const shown = facts.slice(0, compact ? 2 : 3);
 
   const stage: CSSProperties = {
@@ -109,7 +129,7 @@ export function Banner({
         color: side ? accent : "#fff",
         fontWeight: 900,
         fontSize: fitOneLine(copy.cta, (side ? w * 0.34 : colW) - pad, compact ? 22 * u : 30 * u),
-        padding: `${px(compact ? 9 : 15)} ${px(compact ? 18 : 30)}`,
+        padding: `${px(compact ? 8 : 15)} ${px(compact ? 16 : 30)}`,
         borderRadius: px(3),
         whiteSpace: "nowrap",
         width: "fit-content",
@@ -128,8 +148,8 @@ export function Banner({
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
-          gap: px(compact ? 7 : 13),
-          padding: `${px(compact ? 16 : 34)} ${pad}px`,
+          gap: px(compact ? 5 : 13),
+          padding: `${px(compact ? 10 : 34)} ${pad}px`,
         }}
       >
         {service && (

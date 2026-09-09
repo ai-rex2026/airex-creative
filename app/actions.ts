@@ -130,8 +130,7 @@ export async function setBudget(id: string, budget: BudgetBand | null) {
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
 
-  const { error } = await sb.from("analyses").update({ budget }).eq("id", id).eq("owner_id", user.id);
-  if (error) throw new Error("予算を保存できませんでした");
+  await updateOwned(sb, id, user.id, { budget }, "予算を保存できませんでした");
 }
 
 /**
@@ -268,8 +267,29 @@ export async function setMargin(id: string, margin: number) {
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
   const m = Math.min(Math.max(margin, 0.05), 0.95);
-  const { error } = await sb.from("analyses").update({ margin: m }).eq("id", id).eq("owner_id", user.id);
-  if (error) throw new Error("保存できませんでした");
+  await updateOwned(sb, id, user.id, { margin: m });
+}
+
+/**
+ * 行を更新する。RLSで弾かれても Supabase はエラーを返さず0行更新で成功に見えるので、
+ * 更新できた行を数えて確かめる。ここを黙って通すと、画面は保存済みに見えるのに
+ * DBには何も入っていない状態になる。
+ */
+async function updateOwned(
+  sb: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+  ownerId: string,
+  patch: Record<string, unknown>,
+  label = "保存できませんでした"
+) {
+  const { data, error } = await sb
+    .from("analyses")
+    .update(patch)
+    .eq("id", id)
+    .eq("owner_id", ownerId)
+    .select("id");
+  if (error) throw new Error(label);
+  if (!data || data.length === 0) throw new Error(`${label}（この分析を編集する権限がありません）`);
 }
 
 /** 追うKPIを選ぶ。複数選べる */
@@ -279,8 +299,7 @@ export async function selectKpis(id: string, selected: { id: string; name: strin
     data: { user },
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
-  const { error } = await sb.from("analyses").update({ kpi_selected: selected }).eq("id", id).eq("owner_id", user.id);
-  if (error) throw new Error("保存できませんでした");
+  await updateOwned(sb, id, user.id, { kpi_selected: selected });
 }
 
 /**
@@ -330,11 +349,7 @@ export async function regenerateMeasures(id: string) {
   // 名前が一致するものは済みのまま引き継ぐ
   const carried = items.filter((m) => doneTitles.includes(m.title)).map((m) => m.id);
 
-  await sb
-    .from("analyses")
-    .update({ measures: items, measures_done: carried })
-    .eq("id", id)
-    .eq("owner_id", user.id);
+  await updateOwned(sb, id, user.id, { measures: items, measures_done: carried });
 
   revalidatePath(`/analysis/${id}/report`);
   return { items, done: carried };
@@ -369,8 +384,7 @@ export async function toggleMeasure(id: string, measureId: string, done: boolean
     if (m) patch.measure_log = [{ title: m.title, at: new Date().toISOString() }, ...log].slice(0, 200);
   }
 
-  const { error } = await sb.from("analyses").update(patch).eq("id", id).eq("owner_id", user.id);
-  if (error) throw new Error("保存できませんでした");
+  await updateOwned(sb, id, user.id, patch);
   return next;
 }
 
@@ -396,8 +410,7 @@ export async function addInput(id: string, platform: string, url: string) {
   if (cur.some((x) => x.url === v)) return cur;
 
   const next = [...cur, { platform, url: v }];
-  const { error } = await sb.from("analyses").update({ extra_inputs: next }).eq("id", id).eq("owner_id", user.id);
-  if (error) throw new Error("保存できませんでした");
+  await updateOwned(sb, id, user.id, { extra_inputs: next });
   revalidatePath(`/analysis/${id}/report`);
   return next;
 }
@@ -426,6 +439,6 @@ export async function makeRunbook(id: string, measureId: string) {
   const runbook = await generateRunbook(a.diagnosis, a.site, target, a.pricing, a.meo);
   const next = items.map((m) => (m.id === measureId ? { ...m, runbook } : m));
 
-  await sb.from("analyses").update({ measures: next }).eq("id", id).eq("owner_id", user.id);
+  await updateOwned(sb, id, user.id, { measures: next });
   return runbook;
 }

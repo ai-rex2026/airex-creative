@@ -68,10 +68,17 @@ export function Measures({
     }
   }
 
+  // 保存できなかったら画面を戻す。黙って握りつぶすと、押した本人は
+  // 保存されたと思ったまま次の画面に進んでしまう
   function toggleKpi(c: Picked) {
+    const prev = picked;
     const next = picked.some((p) => p.id === c.id) ? picked.filter((p) => p.id !== c.id) : [...picked, c];
     setPicked(next);
-    void selectKpis(id, next).catch(() => {});
+    setErr(null);
+    void selectKpis(id, next).catch((e) => {
+      setPicked(prev);
+      setErr(e instanceof Error ? e.message : "KPIを保存できませんでした");
+    });
   }
 
   function addCustom() {
@@ -97,8 +104,13 @@ export function Measures({
   }
 
   function markDone(m: Measure, v: boolean) {
-    setDoneIds((d) => (v ? [...new Set([...d, m.id])] : d.filter((x) => x !== m.id)));
-    void toggleMeasure(id, m.id, v).catch(() => {});
+    const prev = doneIds;
+    setDoneIds(v ? [...new Set([...prev, m.id])] : prev.filter((x) => x !== m.id));
+    setErr(null);
+    void toggleMeasure(id, m.id, v).catch((e) => {
+      setDoneIds(prev);
+      setErr(e instanceof Error ? e.message : "記録を保存できませんでした");
+    });
   }
 
   const shown = list.filter((m) => picked.length === 0 || m.kpis?.some((k) => picked.some((p) => p.id === k)));
