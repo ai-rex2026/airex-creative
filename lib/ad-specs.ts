@@ -64,7 +64,8 @@ export const AD_SPECS: AdSpec[] = [
   {
     id: "line",
     label: "LINE広告（Yahoo!広告 ディスプレイ運用型）",
-    match: /line|ライン/i,
+    // 「オンライン」が「ライン」に当たるので、英字の境界を見て LINE だけを拾う
+    match: /(^|[^A-Za-z])LINE([^A-Za-z]|$)|LINE広告/,
     count: "文字数",
     headline: { field: "タイトル", count: 5, limit: 20 },
     description: { field: "ディスクリプション", count: 5, limit: 75 },
@@ -82,6 +83,16 @@ export const AD_SPECS: AdSpec[] = [
     source: "要確認（鈴木さん）",
   },
   {
+    id: "yahoo-display",
+    label: "Yahoo!広告 ディスプレイ（運用型）",
+    match: /yahoo|ydn|yda/i,
+    count: "文字数",
+    headline: { field: "タイトル", count: 5, limit: 20 },
+    description: { field: "ディスクリプション", count: 5, limit: 75 },
+    keywords: false,
+    source: "要確認（鈴木さん）",
+  },
+  {
     id: "google-display",
     label: "Google ディスプレイ / デマンドジェネレーション",
     match: /google|ディスプレイ|gdn|p-?max|youtube|demand/i,
@@ -93,8 +104,16 @@ export const AD_SPECS: AdSpec[] = [
   },
 ];
 
-/** 引き当てられない媒体は検索広告の規定に寄せる。最も厳しいので入稿で弾かれにくい */
-export const DEFAULT_SPEC = AD_SPECS[0];
+/**
+ * 引き当てられない媒体は検索広告の規定に寄せる。最も厳しいので入稿で弾かれにくい。
+ * ただし「その媒体の規定として確かめたもの」ではないので、出典でそう伝える。
+ */
+const DEFAULT_SPEC: AdSpec = {
+  ...AD_SPECS[0],
+  id: "unknown",
+  label: "規定を確認できていない媒体",
+  source: "この媒体の規定は辞書にありません。最も厳しい検索広告の規定を当てています。要確認",
+};
 
 export function specFor(channel: string): AdSpec {
   return AD_SPECS.find((s) => s.match.test(channel)) ?? DEFAULT_SPEC;
