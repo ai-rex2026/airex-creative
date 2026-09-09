@@ -1,20 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { retryAnalysis } from "@/app/actions";
 
 type State = { status: string; step: string; progress: number; error: string | null };
 
 /** 進捗はサーバー側のワーカーが進める。ここは状態を見に行くだけ */
 export function Waiting({ id, site, initial }: { id: string; site: string; initial: State }) {
   const [s, setS] = useState<State>(initial);
+  const [busy, setBusy] = useState(false);
   const router = useRouter();
-  const started = useRef(false);
 
+  // 監視は status を見て張り直す。やり直したあとにまた進捗を追えるようにするため
   useEffect(() => {
-    if (s.status === "done" || s.status === "failed" || started.current) return;
-    started.current = true;
+    if (s.status === "done" || s.status === "failed") return;
     const timer = setInterval(async () => {
       const res = await fetch(`/api/analysis/${id}/status`, { cache: "no-store" });
       if (!res.ok) return;
@@ -28,7 +29,7 @@ export function Waiting({ id, site, initial }: { id: string; site: string; initi
     }, 3000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, s.status]);
 
   const failed = s.status === "failed";
 
@@ -40,14 +41,30 @@ export function Waiting({ id, site, initial }: { id: string; site: string; initi
       <p>
         {failed
           ? s.error ?? "もう一度お試しください。"
-          : "AIがサイトを分析しています。全体でおよそ1〜2分かかります。この画面を閉じても分析は続き、分析一覧からいつでも開き直せます。"}
+          : "AIがサイトを分析しています。全体でおよそ5〜10分かかります。この画面を閉じても分析は続き、分析一覧からいつでも開き直せます。"}
       </p>
       <div style={{ maxWidth: 380, margin: "22px auto 0" }}>
         <div className="bar"><span style={{ width: `${Math.max(6, s.progress)}%` }} /></div>
         <p style={{ marginTop: 10, fontSize: 12.5, color: "var(--muted)" }}>{s.step}</p>
       </div>
-      <p style={{ marginTop: 24 }}>
-        <Link className="btn" href="/analysis">分析一覧に戻る</Link>
+      <p style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "center" }}>
+        {/* 失敗したときに戻るしかないと、そこで詰む。途中から続けられるようにする */}
+        {failed && (
+          <button
+            className="btn"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              retryAnalysis(id)
+                .then(() => setS((x) => ({ ...x, status: "queued", error: null })))
+                .catch((e) => setS((x) => ({ ...x, error: e instanceof Error ? e.message : String(e) })))
+                .finally(() => setBusy(false));
+            }}
+          >
+            {busy ? "やり直しています…" : "続きからやり直す"}
+          </button>
+        )}
+        <Link className="btn ghost" href="/analysis">分析一覧に戻る</Link>
       </p>
     </div>
   );

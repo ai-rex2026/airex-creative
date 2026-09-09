@@ -67,6 +67,35 @@ export async function startAnalysis(input: {
   redirect(`/analysis/${id}/waiting`);
 }
 
+/**
+ * 失敗した分析をやり直す。
+ * 途中まで保存できている工程はそのまま使い、止まったところから続ける。
+ * 失敗のたびに最初からやり直すと、費用も待ち時間も二重にかかる。
+ */
+export async function retryAnalysis(id: string) {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
+  const { data, error } = await sb
+    .from("analyses")
+    .update({ status: "queued", step: "順番待ちです", error: null })
+    .eq("id", id)
+    .eq("owner_id", user.id)
+    .select("id");
+  if (error || !data || data.length === 0) throw new Error("やり直せませんでした");
+
+  after(async () => {
+    try {
+      await processAnalysis(id);
+    } catch {
+      // 取りこぼしは cron のワーカーが拾う
+    }
+  });
+}
+
 /** 本登録。匿名のまま作った分析は uid が変わらないのでそのまま引き継がれる */
 export async function signUp(email: string, password: string) {
   const sb = await createClient();

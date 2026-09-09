@@ -10,7 +10,9 @@ import type { GuardHit, GuardVerdict, Industry } from "./types";
 type Rule = { pattern: RegExp; reason: string; law: string; suggestion: string };
 
 const COMMON: Rule[] = [
-  { pattern: /日本[一初]|世界一|No\.?\s?1|ナンバーワン|最高|最安|業界初/g,
+  // 「トップクラス」「随一」は最上級ではないと誤解されやすいが、
+  // 優位性の主張である以上、裏づけが要る点は No.1 と同じ
+  { pattern: /日本[一初]|国内[一初]|世界一|No\.?\s?1|ナンバーワン|最高|最安|最多|最速|業界初|トップクラス|TOPクラス|随一|唯一/g,
     reason: "最上級・No.1表示は客観的な調査結果の併記が要る", law: "景表法(優良誤認)",
     suggestion: "「〇〇調べ／2026年3月時点」など出典と時点を併記するか、表現を落とす" },
   { pattern: /必ず|絶対|100%|確実に|誰でも|保証します/g,
