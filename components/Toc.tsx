@@ -33,13 +33,13 @@ export function Toc({ watch }: { watch: unknown }) {
   const now = items.find((x) => x.id === active) ?? items[0];
 
   return (
-    <nav className={`toc${open ? " open" : ""}`}>
-      <button className="tocnow" onClick={() => setOpen(!open)} aria-expanded={open}>
+    <nav className={`rtoc${open ? " open" : ""}`}>
+      <button className="rtocnow" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className="lb">目次</span>
         <span className="cur">{now.label}</span>
         <span className="ar">{open ? "閉じる" : `全${items.length}章`}</span>
       </button>
-      <div className="toclist">
+      <div className="rtoclist">
         {items.map((x) => (
           <a
             key={x.id}

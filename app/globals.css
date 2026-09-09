@@ -910,22 +910,22 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
 
 /* ── 分析データの目次 ──
    章が条件付きで出るので、一覧は描画後の見出しから作る */
-.toc{position:sticky;top:0;z-index:30;margin:0 auto 6px;max-width:1240px;
+.rtoc{display:block;position:sticky;top:0;z-index:30;margin:0 auto 6px;max-width:1240px;
   background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);
   border-bottom:1px solid var(--line)}
-.tocnow{display:flex;align-items:center;gap:12px;width:100%;background:none;border:0;
+.rtocnow{display:flex;align-items:center;gap:12px;width:100%;background:none;border:0;
   padding:10px 4px;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer;text-align:left}
-.tocnow .lb{font-size:11px;font-weight:600;color:var(--faint);letter-spacing:.06em;flex:none}
-.tocnow .cur{flex:1;min-width:0;color:var(--head);font-weight:600;overflow:hidden;
+.rtocnow .lb{font-size:11px;font-weight:600;color:var(--faint);letter-spacing:.06em;flex:none}
+.rtocnow .cur{flex:1;min-width:0;color:var(--head);font-weight:600;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
-.tocnow .ar{flex:none;font-size:11.5px;color:var(--faint)}
-.toclist{display:none;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px;
+.rtocnow .ar{flex:none;font-size:11.5px;color:var(--faint)}
+.rtoclist{display:none;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px;
   padding:4px 0 12px}
-.toc.open .toclist{display:grid}
-.toclist a{padding:7px 10px;border-radius:8px;font-size:12.5px;color:var(--muted);
+.rtoc.open .rtoclist{display:grid}
+.rtoclist a{padding:7px 10px;border-radius:8px;font-size:12.5px;color:var(--muted);
   text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.toclist a:hover{background:#fff;color:var(--head)}
-.toclist a.on{background:#fff;color:var(--head);font-weight:600}
+.rtoclist a:hover{background:#fff;color:var(--head)}
+.rtoclist a.on{background:#fff;color:var(--head);font-weight:600}
 h2[id^="sec-"]{scroll-margin-top:64px}
 /* 入稿規定の注記 */
 .specnote{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);
