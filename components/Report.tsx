@@ -15,6 +15,7 @@ import type { MeoScan } from "@/lib/meo";
 import { MeoStoreList, scorePct } from "./MeoStores";
 import { Toc } from "./Toc";
 import { MainPrice } from "./MainPrice";
+import { BANNER_CASE_WARNING, looksLikeCasePhoto } from "@/lib/case-photo";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
 import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
 import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
@@ -1716,16 +1717,25 @@ export function Report({
                 写真を載せる
                 <small>サイトに載っている写真から選びます。生成画像は使いません</small>
               </div>
+              {(d.industry === "medical" || d.industry === "beauty") && (
+                <div className="note warn" style={{ marginTop: 10 }}>
+                  <i className="i">!</i>
+                  <span>{BANNER_CASE_WARNING}</span>
+                </div>
+              )}
               <div className="opts">
                 <button className={photo === null ? "on" : ""} onClick={() => setPhoto(null)}>
                   <span className="none">文字のみ</span>
                 </button>
-                {(site?.images ?? []).slice(0, 10).map((u) => (
-                  <button key={u} className={photo === u ? "on" : ""} onClick={() => setPhoto(u)}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={`/api/analysis/${id}/img?u=${encodeURIComponent(u)}`} alt="" />
-                  </button>
-                ))}
+                {(site?.images ?? [])
+                  .filter((u) => !looksLikeCasePhoto(u))
+                  .slice(0, 10)
+                  .map((u) => (
+                    <button key={u} className={photo === u ? "on" : ""} onClick={() => setPhoto(u)}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={`/api/analysis/${id}/img?u=${encodeURIComponent(u)}`} alt="" />
+                    </button>
+                  ))}
               </div>
             </div>
           )}

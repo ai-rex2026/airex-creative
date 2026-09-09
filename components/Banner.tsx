@@ -107,14 +107,20 @@ export function Banner({
   // 読ませるために暗幕を敷くと「加工した写真」に見える
   const photoSide = !!image && landscape;
   const photoTop = !!image && !landscape;
+  // 写真が縦を食うので、文字に残る高さから見出しの上限を決める。
+  // 幅だけで決めると、小さい枠で文字が枠外にはみ出す
+  const photoShare = compact ? 0.34 : 0.42;
+  const textH = photoTop ? h * (1 - photoShare) : h;
   const textW = photoSide ? w * 0.6 : w;
   const colW = (side ? w * 0.66 : textW) - pad * 2;
 
   const maxChars = Math.max(copy.headline[0].length, copy.headline[1].length, 1);
   // 1文字1emで折り返さない上限。係数を1超にすると300x250で見出しが1文字だけ
   // 次行に落ちるので、字送りのぶんを見て1未満に留める
-  const hSize = Math.min(compact ? 34 * u : landscape ? 74 * u : 104 * u, (colW / maxChars) * 0.96);
-  const shown = facts.slice(0, compact ? 2 : 3);
+  const hMax = compact ? (image ? 21 : 34) * u : landscape ? 74 * u : (image ? 82 : 104) * u;
+  const hSize = Math.min(hMax, (colW / maxChars) * 0.96, textH * (compact ? 0.2 : 0.19));
+  // 小さい枠に写真を入れると、事実の行まで置く高さが残らない
+  const shown = compact && image ? [] : facts.slice(0, compact ? 2 : 3);
 
   const stage: CSSProperties = {
     position: "relative",
@@ -150,7 +156,7 @@ export function Banner({
   const photo = image ? (
     <div
       style={{
-        flex: photoTop ? `0 0 ${compact ? 38 : 42}%` : "0 0 40%",
+        flex: photoTop ? `0 0 ${photoShare * 100}%` : "0 0 40%",
         position: "relative",
         overflow: "hidden",
         background: "#EFEBE4",
@@ -188,11 +194,13 @@ export function Banner({
         style={{
           flex: side ? "0 0 66%" : 1,
           minWidth: 0,
+          minHeight: 0,
+          overflow: "hidden",
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
-          gap: px(compact ? 5 : 13),
-          padding: `${px(compact ? 10 : 34)} ${pad}px`,
+          gap: px(compact ? (image ? 3 : 5) : 13),
+          padding: `${px(compact ? (image ? 8 : 10) : 34)} ${pad}px`,
         }}
       >
         {service && (
