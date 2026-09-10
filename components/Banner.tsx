@@ -81,6 +81,8 @@ export function Banner({
   service,
   facts = [],
   image,
+  imageFit = "cover",
+  imageFocus = { x: 50, y: 50 },
 }: {
   copy: BannerCopy;
   brand: BrandProfile;
@@ -88,6 +90,14 @@ export function Banner({
   id: string;
   /** サイトから拾った写真。同一オリジン経由で渡すこと（PNG書き出しが失敗するため） */
   image?: string | null;
+  /**
+   * 写真の見せ方。
+   * cover は枠いっぱいに切り抜く（位置を動かして、文字入りの部分を外せる）。
+   * contain は切らずに全体を入れる。文字入りの画像で見切れを避けたいときに使う。
+   */
+  imageFit?: "cover" | "contain";
+  /** cover のときの表示位置。CSS の object-position と同じ 0〜100 */
+  imageFocus?: { x: number; y: number };
   /** 何屋かを示す短い語。無いとブランド名だけになり、何の広告か伝わらない */
   service?: string;
   /** 下部に並べる事実。実測から作る */
@@ -167,7 +177,13 @@ export function Banner({
         src={image}
         alt=""
         crossOrigin="anonymous"
-        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: imageFit,
+          objectPosition: `${imageFocus.x}% ${imageFocus.y}%`,
+          display: "block",
+        }}
       />
       <div
         style={{

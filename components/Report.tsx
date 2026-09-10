@@ -117,6 +117,9 @@ export function Report({
   const [pricing, setPricing] = useState(initialPricing);
   // バナーに載せる写真。サイトから拾ったものだけを使う（生成画像は使わない）
   const [photo, setPhoto] = useState<string | null>(null);
+  // 文字入りの画像は切り抜くと見切れるので、切り方と位置を選べるようにする
+  const [photoFit, setPhotoFit] = useState<"cover" | "contain">("cover");
+  const [photoFocus, setPhotoFocus] = useState({ x: 50, y: 50 });
   const photoSrc = photo ? `/api/analysis/${id}/img?u=${encodeURIComponent(photo)}` : null;
 
   // 粗利率は断定できないので、押した瞬間に計算し直して裏で保存する
@@ -1750,6 +1753,40 @@ export function Report({
                     </button>
                   ))}
               </div>
+
+              {photo && (
+                <div className="crop">
+                  <div className="row">
+                    <span>写真の入れ方</span>
+                    <button className={photoFit === "cover" ? "on" : ""} onClick={() => setPhotoFit("cover")}>
+                      切り抜く
+                    </button>
+                    <button className={photoFit === "contain" ? "on" : ""} onClick={() => setPhotoFit("contain")}>
+                      全体を入れる
+                    </button>
+                  </div>
+                  {photoFit === "cover" ? (
+                    <div className="row">
+                      <span>見せる位置</span>
+                      <div className="grid9">
+                        {[0, 50, 100].map((y) =>
+                          [0, 50, 100].map((x) => (
+                            <button
+                              key={`${x}-${y}`}
+                              className={photoFocus.x === x && photoFocus.y === y ? "on" : ""}
+                              onClick={() => setPhotoFocus({ x, y })}
+                              aria-label={`位置 ${x} ${y}`}
+                            />
+                          ))
+                        )}
+                      </div>
+                      <small>文字が入っている側を外すように選んでください。</small>
+                    </div>
+                  ) : (
+                    <small>切らずに全体を入れます。余白が出ますが、画像内の文字は欠けません。</small>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1776,7 +1813,7 @@ export function Report({
                           title="クリックで拡大"
                         >
                           <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
-                            <Banner service={service} facts={bannerFacts} id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} image={photoSrc} />
+                            <Banner service={service} facts={bannerFacts} id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} image={photoSrc} imageFit={photoFit} imageFocus={photoFocus} />
                           </div>
                         </div>
                         <button className="link" style={{ marginTop: 6 }} onClick={() => download(`bn-${ci}-${s.id}`, `${s.media}_${s.w}x${s.h}_${ci + 1}.png`)}>
@@ -1852,7 +1889,7 @@ export function Report({
               </div>
               <div style={{ width: zs.w * zscale, height: zs.h * zscale, overflow: "hidden" }}>
                 <div style={{ transform: `scale(${zscale})`, transformOrigin: "top left" }}>
-                  <Banner service={service} facts={bannerFacts} id={`zoom-${zoom.ci}-${zs.id}`} copy={zc} brand={d.brand} size={zs} image={photoSrc} />
+                  <Banner service={service} facts={bannerFacts} id={`zoom-${zoom.ci}-${zs.id}`} copy={zc} brand={d.brand} size={zs} image={photoSrc} imageFit={photoFit} imageFocus={photoFocus} />
                 </div>
               </div>
             </div>
