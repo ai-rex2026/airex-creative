@@ -48,7 +48,7 @@ export async function generateKpi(
   const cv = site?.conversions ?? [];
   const measurable = cv.filter((c) => c.measurable);
 
-  return askJson<KpiTree>(
+  const res = await askJson<KpiTree>(
     `あなたは事業のKPI設計をする人です。サイトから読み取れる事実だけを使って、
 この事業が追うべきKPIの仮説を立てます。
 
@@ -58,6 +58,11 @@ export async function generateKpi(
   note には、その段について**渡された実測値がある場合だけ**その数字を書く。無ければ空文字
 - candidates はちょうど3件。**この事業で本当に主指標になりうるもの**を選ぶ
   「PV数」「直帰率」のような、事業の成果と距離があるものは選ばない
+- **3件とも「実測できます」か「連携が必要です」のものにする。**
+  追えない指標を候補に出しても、翌月から報告できないので選べない。
+  事業として重要でも、このツールで追えないものは候補から外し、
+  代わりに「その指標に効く、追える指標」を選ぶ
+  （例：来店数が追えないなら、電話タップ数や予約フォーム到達数）
   node には branches で使った node の語を**そのまま**入れる。
   「〜の分子」「〜の構成要素」のような説明句にしない
 - trackable は3つのいずれか。判断基準は下のとおり
@@ -86,4 +91,14 @@ ${ga4?.sessions ? `GA4: 連携済み（セッション${ga4.sessions}）` : "GA4
  "candidates":[{"id":"k1","name":"","node":"","why":"","trackable":"","how":""}]}`,
     { maxTokens: 3000 }
   );
+  return { ...res, candidates: preferTrackable(res.candidates ?? []) };
+}
+
+/**
+ * 追えない候補が混ざったら、追えるものだけ残す。
+ * 全部追えない場合だけ、そのまま出す（何も出さないより、追えないと明示するほうがよい）。
+ */
+function preferTrackable(list: KpiCandidate[]): KpiCandidate[] {
+  const ok = list.filter((c) => c.trackable !== "追えません");
+  return ok.length > 0 ? ok : list;
 }

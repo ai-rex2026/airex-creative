@@ -26,6 +26,8 @@ export type AdGroup = {
   negatives: string[];
   headlines: string[];
   descriptions: string[];
+  /** 媒体固有の3つ目の枠。Yahoo!ディスプレイの「長い見出し」など */
+  longHeadlines?: string[];
 };
 
 export type Campaign = {
@@ -151,7 +153,12 @@ function findOverLength(campaigns: Campaign[]) {
     const unit = spec.count === "半角換算" ? "全角文字" : "文字";
     const div = spec.count === "半角換算" ? 2 : 1;
     for (const g of c.groups ?? []) {
-      for (const [key, f] of [["headlines", spec.headline], ["descriptions", spec.description]] as const) {
+      const fields = [
+        ["headlines", spec.headline] as const,
+        ["descriptions", spec.description] as const,
+        ...(spec.long ? [["longHeadlines", spec.long] as const] : []),
+      ];
+      for (const [key, f] of fields) {
         for (const t of g[key] ?? []) {
           const w = lengthIn(spec.count, t);
           if (w > f.limit) {
@@ -199,6 +206,7 @@ export async function generateCampaign(
 - この媒体は「${spec.label}」。入稿枠は媒体ごとに違うので、以下をそのまま守ること
 - headlines は${hd.count}件。これは「${hd.field}」の枠で、**${unit}**。超えると入稿できません。書いたあと必ず数え直すこと
 - descriptions は${ds.count}件。これは「${ds.field}」の枠で、**${dunit}**。1文にまとめず短く切ること
+${spec.long ? `- longHeadlines は${spec.long.count}件。これは「${spec.long.field}」の枠で、**${spec.count === "半角換算" ? `全角${spec.long.limit / 2}文字以内` : `${spec.long.limit}文字以内`}**` : "- longHeadlines は空配列にする（この媒体にその枠は無い）"}
 - ${hd.field}は訴求を1つだけ入れる。1本に詰め込まない
 - settings は管理画面の設定項目名と値の対を6〜10件。**その媒体に実在する項目だけ**を書く
 - notes は「外し忘れると費用が漏れる設定」を2〜3件。一般論ではなく設定名で書く
@@ -219,7 +227,7 @@ ${site ? `サイト: ${site.title}` : ""}
 {"name":"","channel":"${item.channel}","bidStrategy":"",
  "settings":[{"label":"","value":""}],
  "groups":[{"name":"","targeting":"","keywords":[""],"negatives":[""],
-            "headlines":[""],"descriptions":[""]}],
+            "headlines":[""],"descriptions":[""],"longHeadlines":[""]}],
  "notes":[""]}`,
     { maxTokens: 6000 }
   );
@@ -233,7 +241,7 @@ ${site ? `サイト: ${site.title}` : ""}
  * こちらで数えて、超えたものだけを長さを明示して直させ、直っていなければ採用しない。
  */
 async function repairLengths(campaigns: Campaign[]): Promise<Campaign[]> {
-  type Slot = { ci: number; gi: number; kind: "headlines" | "descriptions"; i: number; limit: number; mode: "半角換算" | "文字数" };
+  type Slot = { ci: number; gi: number; kind: "headlines" | "descriptions" | "longHeadlines"; i: number; limit: number; mode: "半角換算" | "文字数" };
   const slots: Slot[] = [];
   const items: { n: number; text: string; limit: number; now: number; unit: string; field: string }[] = [];
 
@@ -241,7 +249,12 @@ async function repairLengths(campaigns: Campaign[]): Promise<Campaign[]> {
     const spec = specFor(c.channel ?? "");
     const div = spec.count === "半角換算" ? 2 : 1;
     (c.groups ?? []).forEach((g, gi) => {
-      for (const [kind, f] of [["headlines", spec.headline], ["descriptions", spec.description]] as const) {
+      const fields = [
+        ["headlines", spec.headline] as const,
+        ["descriptions", spec.description] as const,
+        ...(spec.long ? [["longHeadlines", spec.long] as const] : []),
+      ];
+      for (const [kind, f] of fields) {
         (g[kind] ?? []).forEach((t, i) => {
           const w = lengthIn(spec.count, t);
           if (w > f.limit) {
@@ -297,7 +310,9 @@ export async function finishAdOps(
   const repaired = await repairLengths(campaigns);
 
   // 生成した原稿は全部ガードレールに通す。ここを素通りさせると入稿事故になる
-  const texts = repaired.flatMap((c) => (c.groups ?? []).flatMap((g) => [...(g.headlines ?? []), ...(g.descriptions ?? [])]));
+  const texts = repaired.flatMap((c) =>
+    (c.groups ?? []).flatMap((g) => [...(g.headlines ?? []), ...(g.descriptions ?? []), ...(g.longHeadlines ?? [])])
+  );
   const guard = await checkGuard(texts, industry);
   // 指摘語を含む原稿を特定して紐付ける。まとめて件数だけ出しても直せない
   const flagged: FlaggedText[] = [];

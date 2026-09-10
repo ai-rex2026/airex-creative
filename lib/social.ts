@@ -68,6 +68,11 @@ async function readOne(a: { platform: string; url: string; handle: string }): Pr
   const base: SocialAccount = {
     ...a, readable: false, followers: null, posts: null, title: null, bio: null, reason: null,
   };
+
+  // LINE公式アカウントは友だち数を公開しないので、取りに行くだけ無駄になる
+  if (/line/i.test(a.platform)) {
+    return { ...base, reason: "LINE公式アカウントは友だち数を公開していないため、検出のみです" };
+  }
   let html: string;
   try {
     const res = await fetch(a.url, {
@@ -101,7 +106,8 @@ async function readOne(a: { platform: string; url: string; handle: string }): Pr
 
   return {
     ...base,
-    readable: true,
+    // 数値が取れて初めて「分析できた」と言える。ページが開けただけでは検出と同じ
+    readable: followers !== null || posts !== null || !!(yt && toNum(yt) !== null),
     followers: followers ?? (yt ? toNum(yt) : null),
     posts,
     title: title ?? null,

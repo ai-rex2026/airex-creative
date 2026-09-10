@@ -11,7 +11,8 @@ import { useEffect, useState } from "react";
 export function Toc({ watch }: { watch: unknown }) {
   const [items, setItems] = useState<{ id: string; label: string }[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  // 章が多いので、最初から開いておく（閉じていると一覧があることに気づかない）
+  const [open, setOpen] = useState(true);
 
   useEffect(() => {
     const heads = Array.from(document.querySelectorAll<HTMLElement>('h2[id^="sec-"]'));
@@ -45,7 +46,7 @@ export function Toc({ watch }: { watch: unknown }) {
             key={x.id}
             href={`#${x.id}`}
             className={x.id === active ? "on" : ""}
-            onClick={() => setOpen(false)}
+
           >
             {x.label}
           </a>

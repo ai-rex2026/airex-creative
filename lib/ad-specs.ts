@@ -23,6 +23,8 @@ export type AdSpec = {
   headline: { field: string; count: number; limit: number };
   /** 説明にあたる枠。Meta はメインテキストをここに当てる */
   description: { field: string; count: number; limit: number };
+  /** 媒体固有の3つ目の枠。Yahoo!ディスプレイの「長い見出し」など */
+  long?: { field: string; count: number; limit: number };
   /** キーワードで買う面か */
   keywords: boolean;
   source: string;
@@ -76,21 +78,22 @@ export const AD_SPECS: AdSpec[] = [
     id: "tiktok",
     label: "TikTok広告",
     match: /tiktok|ティックトック/i,
-    count: "文字数",
-    headline: { field: "テキスト", count: 5, limit: 40 },
-    description: { field: "テキスト", count: 3, limit: 100 },
+    count: "半角換算",
+    headline: { field: "ブランド名", count: 1, limit: 40 },
+    description: { field: "広告テキスト", count: 1, limit: 100 },
     keywords: false,
-    source: "要確認（鈴木さん）",
+    source: "運用者（鈴木）提供・2026-09。ブランド名は全角20文字、広告テキストは全角50文字",
   },
   {
     id: "yahoo-display",
-    label: "Yahoo!広告 ディスプレイ（運用型）",
+    label: "Yahoo!ディスプレイ広告（YDA）",
     match: /yahoo|ydn|yda/i,
     count: "文字数",
-    headline: { field: "タイトル", count: 5, limit: 20 },
-    description: { field: "ディスクリプション", count: 5, limit: 75 },
+    headline: { field: "見出し", count: 5, limit: 30 },
+    description: { field: "説明文", count: 5, limit: 90 },
+    long: { field: "長い見出し", count: 5, limit: 90 },
     keywords: false,
-    source: "要確認（鈴木さん）",
+    source: "運用者（鈴木）提供・2026-09",
   },
   {
     id: "google-display",
@@ -127,8 +130,9 @@ export function lengthIn(mode: CountMode, s: string) {
 }
 
 /** 画面とプロンプトに出す上限の言い方 */
-export function limitLabel(spec: AdSpec, kind: "headline" | "description") {
+export function limitLabel(spec: AdSpec, kind: "headline" | "description" | "long") {
   const f = spec[kind];
+  if (!f) return "";
   return spec.count === "半角換算"
     ? `${f.field}：${f.count}件・全角${f.limit / 2}文字以内`
     : `${f.field}：${f.count}件・${f.limit}文字以内`;

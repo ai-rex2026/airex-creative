@@ -1147,8 +1147,21 @@ export function Report({
                         </div>
                       </details>
                     )}
+                    {spec.long && (g.longHeadlines?.length ?? 0) > 0 && (
+                      <details className="flags">
+                        <summary>
+                          {spec.long.field}案（{g.longHeadlines!.length}件・{limitLabel(spec, "long").split("・")[1]}）
+                        </summary>
+                        <div className="lines">
+                          {g.longHeadlines!.map((t, i) => (
+                            <AdLine key={i} text={t} limit={spec.long!.limit} mode={spec.count} flag={flagOf(t)} />
+                          ))}
+                        </div>
+                      </details>
+                    )}
                     <div className="specnote">
                       入稿規定：{spec.label}／{limitLabel(spec, "headline")}／{limitLabel(spec, "description")}
+                      {spec.long && <>／{limitLabel(spec, "long")}</>}
                       <small>出典：{spec.source}</small>
                     </div>
                   </div>
