@@ -21,6 +21,7 @@ import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
 import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
 import type { SpeedScan } from "@/lib/pagespeed";
 import type { SocialScan } from "@/lib/social";
+import type { ImageScan } from "@/lib/image-check";
 import type { Ga4Data, GscData } from "@/lib/google";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "@/lib/types";
@@ -57,6 +58,7 @@ export function Report({
   pricing: initialPricing,
   speed,
   social,
+  imageScan,
   margin: initialMargin,
   kpi,
   measures,
@@ -89,6 +91,7 @@ export function Report({
   pricing: PriceScan | null;
   speed: SpeedScan | null;
   social: SocialScan | null;
+  imageScan: ImageScan | null;
   margin: number | null;
   kpi: KpiTree | null;
   measures: Measure[] | null;
@@ -120,6 +123,7 @@ export function Report({
   // 文字入りの画像は切り抜くと見切れるので、切り方と位置を選べるようにする
   const [photoFit, setPhotoFit] = useState<"cover" | "contain">("cover");
   const [photoFocus, setPhotoFocus] = useState({ x: 50, y: 50 });
+  const [showTexted, setShowTexted] = useState(false);
   const photoSrc = photo ? `/api/analysis/${id}/img?u=${encodeURIComponent(photo)}` : null;
 
   // 粗利率は断定できないので、押した瞬間に計算し直して裏で保存する
@@ -1750,6 +1754,7 @@ export function Report({
                 </button>
                 {(site?.images ?? [])
                   .filter((u) => !looksLikeCasePhoto(u))
+                  .filter((u) => showTexted || !imageScan?.items.find((x) => x.url === u)?.hasText)
                   .slice(0, 10)
                   .map((u) => (
                     <button key={u} className={photo === u ? "on" : ""} onClick={() => setPhoto(u)}>
@@ -1758,6 +1763,19 @@ export function Report({
                     </button>
                   ))}
               </div>
+
+              {(imageScan?.items.filter((x) => x.hasText).length ?? 0) > 0 && (
+                <div className="note" style={{ marginTop: 10 }}>
+                  <i className="i">i</i>
+                  <span>
+                    文字が焼き込まれている写真 <b style={{ fontWeight: 600 }}>{imageScan!.items.filter((x) => x.hasText).length}枚</b> を候補から外しています。
+                    切り抜くと文字が途中で切れるためです。
+                    <button className="linkbtn" onClick={() => setShowTexted(!showTexted)}>
+                      {showTexted ? "また隠す" : "それも表示する"}
+                    </button>
+                  </span>
+                </div>
+              )}
 
               {photo && (
                 <div className="crop">
@@ -1771,22 +1789,30 @@ export function Report({
                     </button>
                   </div>
                   {photoFit === "cover" ? (
-                    <div className="row">
-                      <span>見せる位置</span>
-                      <div className="grid9">
-                        {[0, 50, 100].map((y) =>
-                          [0, 50, 100].map((x) => (
-                            <button
-                              key={`${x}-${y}`}
-                              className={photoFocus.x === x && photoFocus.y === y ? "on" : ""}
-                              onClick={() => setPhotoFocus({ x, y })}
-                              aria-label={`位置 ${x} ${y}`}
-                            />
-                          ))
-                        )}
+                    <>
+                      <div className="row">
+                        <span>横の位置</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={photoFocus.x}
+                          onChange={(e) => setPhotoFocus((f) => ({ ...f, x: Number(e.target.value) }))}
+                        />
+                        <small>{photoFocus.x}%</small>
                       </div>
-                      <small>文字が入っている側を外すように選んでください。</small>
-                    </div>
+                      <div className="row">
+                        <span>縦の位置</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={photoFocus.y}
+                          onChange={(e) => setPhotoFocus((f) => ({ ...f, y: Number(e.target.value) }))}
+                        />
+                        <small>{photoFocus.y}%</small>
+                      </div>
+                    </>
                   ) : (
                     <small>切らずに全体を入れます。余白が出ますが、画像内の文字は欠けません。</small>
                   )}

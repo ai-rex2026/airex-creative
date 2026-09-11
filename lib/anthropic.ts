@@ -87,3 +87,48 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
     }
   }
 }
+
+/**
+ * 画像を見せて JSON を返させる。
+ * 画像は base64 で渡す（外部URLのままだと、取得できないことがある）。
+ */
+export async function askJsonWithImages<T>(
+  system: string,
+  user: string,
+  images: { media: string; base64: string }[],
+  opts: AskOpts = {}
+): Promise<T> {
+  const model = opts.model ?? MODEL_FAST;
+  const res = await client().messages.create(
+    {
+      model,
+      max_tokens: opts.maxTokens ?? 1500,
+      system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。",
+      messages: [
+        {
+          role: "user",
+          content: [
+            ...images.map((im, i) => [
+              { type: "text" as const, text: `画像 ${i}` },
+              {
+                type: "image" as const,
+                source: { type: "base64" as const, media_type: im.media as "image/png", data: im.base64 },
+              },
+            ]).flat(),
+            { type: "text" as const, text: user },
+          ],
+        },
+      ],
+    },
+    { timeout: opts.timeoutMs ?? 90_000, maxRetries: 1 }
+  );
+  opts.meter?.({ model, input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens });
+  const raw = stripFence(res.content.map((b) => (b.type === "text" ? b.text : "")).join(""));
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    const m = raw.match(/[[{][\s\S]*[\]}]/);
+    if (m) return JSON.parse(m[0]) as T;
+    throw new Error("AIの応答をJSONとして読めませんでした");
+  }
+}

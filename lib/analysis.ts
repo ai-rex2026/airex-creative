@@ -12,6 +12,7 @@ import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } f
 import { scanPrices, type PriceScan } from "./pricing";
 import { scanSpeed, type SpeedScan } from "./pagespeed";
 import { scanSocial, type SocialScan } from "./social";
+import { checkImages, type ImageScan } from "./image-check";
 import { generateKpi, type KpiTree } from "./kpi";
 import { generateMeasures, type Measure } from "./measures";
 import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
@@ -52,6 +53,7 @@ export type Analysis = {
   pricing: PriceScan | null;
   speed: SpeedScan | null;
   social: SocialScan | null;
+  image_scan: ImageScan | null;
   margin: number | null;
   kpi: KpiTree | null;
   /** 選ばれたKPIのID。自由入力ぶんも id を振ってここに入る */
@@ -251,6 +253,12 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     if (!a.copies[0]?.score) {
       const scored = await scoreCopies(a.diagnosis, a.copies);
       return await save({ copies: scored, step: "要約をまとめています", progress: 92 });
+    }
+    // バナーに使える写真かを見る。文字が焼き込まれた画像は切り抜くと切れるので、
+    // 候補から外すために先に判定しておく
+    if (!a.image_scan && (a.site?.images ?? []).length > 0) {
+      const image_scan = await checkImages(a.site!.images).catch(() => ({ items: [], checkedAt: new Date().toISOString() }));
+      return await save({ image_scan, step: "要約をまとめています", progress: 94 });
     }
     // 表示速度の実測は最後に回す。PSI は返らないことがあり、
     // 途中に置くとレポート全体がそこで止まる
