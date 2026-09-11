@@ -80,6 +80,8 @@ type PsiAudit = {
   title?: string;
   displayValue?: string;
   description?: string;
+  /** 0〜1。合格している項目も短縮見込みを返すので、これで弾く */
+  score?: number | null;
   details?: { overallSavingsMs?: number };
 };
 type PsiResponse = {
@@ -110,7 +112,8 @@ async function run(url: string | null): Promise<SpeedScan> {
   if (!url) return empty("URLがないため測定できません");
 
   const key = process.env.PAGESPEED_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
-  const q = new URLSearchParams({ url, strategy: "mobile", category: "performance" });
+  // locale を渡さないと改善項目の見出しが英語で返る
+  const q = new URLSearchParams({ url, strategy: "mobile", category: "performance", locale: "ja" });
   if (key) q.set("key", key);
 
   let j: PsiResponse;
@@ -170,7 +173,10 @@ async function run(url: string | null): Promise<SpeedScan> {
   const opportunities = OPPORTUNITY_IDS.map((id) => {
     const a = audits[id];
     const savings = a?.details?.overallSavingsMs ?? 0;
-    return savings >= 100 && a?.title
+    // 合格している項目は「改善」ではない。短縮見込みだけ見ると
+    // 「サーバーの応答時間は短い」まで改善案として並んでしまう
+    const passing = typeof a?.score === "number" && a.score >= 0.9;
+    return savings >= 100 && a?.title && !passing
       ? { title: a.title, savingsMs: Math.round(savings), detail: (a.description ?? "").replace(/\s*\[[^\]]*\]\([^)]*\)/g, "") }
       : null;
   })
