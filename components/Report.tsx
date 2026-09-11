@@ -598,12 +598,16 @@ export function Report({
                     <small>{m?.title ?? x.handle}</small>
                     {m?.reason && <small className="warn">{m.reason}</small>}
                   </div>
-                  {m?.followers !== null && m?.followers !== undefined && (
-                    <span className="tag ok">フォロワー {m.followers.toLocaleString()}</span>
+                  {m?.followers != null && (
+                    <span className="tag ok">
+                      {/youtube/i.test(x.platform) ? "登録者" : "フォロワー"} {m.followers.toLocaleString()}
+                    </span>
                   )}
-                  {m?.posts !== null && m?.posts !== undefined && (
-                    <span className="tag">投稿 {m.posts.toLocaleString()}</span>
+                  {m?.posts != null && (
+                    <span className="tag">{/youtube/i.test(x.platform) ? "動画" : "投稿"} {m.posts.toLocaleString()}</span>
                   )}
+                  {m?.views != null && <span className="tag">再生 {m.views.toLocaleString()}</span>}
+                  {m?.via && <span className="tag">{m.via}</span>}
                   <a className="tag" href={x.url} target="_blank" rel="noreferrer noopener">開く</a>
                 </div>
               );
@@ -612,7 +616,8 @@ export function Report({
           <div className="note">
             <i className="i">i</i>
             <span>
-              フォロワー数は公開ページから読み取れたものだけを出しています。
+              YouTube は公式APIから取得しています（相手のアカウントとの連携は不要です）。
+              それ以外は公開ページから読み取れたものだけを出しています。
               媒体がログインを求める場合は取得できません。
               <b style={{ fontWeight: 600 }}>取れなかった数字は推測で埋めていません。</b>
               取得できた数値は施策の生成にも渡していて、すでに運用しているSNSを

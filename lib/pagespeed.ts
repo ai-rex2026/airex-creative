@@ -9,6 +9,15 @@
  * データがまだ足りない」と書き、その場の計測値だけを出す（無い数字は作らない）。
  */
 
+/**
+ * 計測の待ち時間。
+ * 重いページは1分を超えることがある（ib-clinic.jp で40秒では足りなかった）。
+ * この工程は最後に置いてあるので、長く待ってもレポート本体には影響しない。
+ * 関数の実行上限（300秒）とワーカーの持ち時間（240秒）の内側に収める。
+ */
+const FETCH_MS = 110_000;
+const OUTER_MS = 120_000;
+
 export type SpeedRating = "良好" | "改善が必要" | "不良";
 
 export type SpeedMetric = {
@@ -103,7 +112,10 @@ export async function scanSpeed(url: string | null): Promise<SpeedScan> {
   return Promise.race([
     run(url),
     new Promise<SpeedScan>((r) =>
-      setTimeout(() => r(empty("PageSpeed Insights の応答が時間内に返りませんでした。時間をおくと測定できます。")), 50_000)
+      setTimeout(
+        () => r(empty("PageSpeed Insights の応答が時間内に返りませんでした。重いページでは測定に時間がかかります。もう一度お試しください。")),
+        OUTER_MS
+      )
     ),
   ]);
 }
@@ -120,7 +132,7 @@ async function run(url: string | null): Promise<SpeedScan> {
   try {
     // 計測そのものに時間がかかる。工程を保存できないまま関数ごと切られないよう上限を置く
     const res = await fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${q}`, {
-      signal: AbortSignal.timeout(40_000),
+      signal: AbortSignal.timeout(FETCH_MS),
     });
     j = (await res.json()) as PsiResponse;
     if (res.status === 429) {

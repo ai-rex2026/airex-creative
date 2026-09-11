@@ -88,7 +88,11 @@ export function Inputs({
                 <small>{m?.title ?? s.handle}</small>
                 {m?.reason && <small className="warn">{m.reason}</small>}
               </div>
-              {m?.followers != null && <span className="tag ok">フォロワー {m.followers.toLocaleString()}</span>}
+              {m?.followers != null && (
+                <span className="tag ok">
+                  {/youtube/i.test(s.platform) ? "登録者" : "フォロワー"} {m.followers.toLocaleString()}
+                </span>
+              )}
               <span className={`tag${m?.readable ? " ok" : ""}`}>{m?.readable ? "分析済み" : "検出"}</span>
             </div>
           );

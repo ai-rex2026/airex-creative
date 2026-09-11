@@ -20,6 +20,10 @@ export type SocialAccount = {
   /** プロフィール文など、読めた手がかり */
   title: string | null;
   bio: string | null;
+  /** 総再生回数など、媒体固有の実測。取れたものだけ入れる */
+  views: number | null;
+  /** 何で測ったか。公式APIか、公開ページかを画面に出す */
+  via: "公式API" | "公開ページ" | null;
   /** 読めなかった理由 */
   reason: string | null;
 };
@@ -64,10 +68,84 @@ function fromDescription(desc: string): { followers: number | null; posts: numbe
   return { followers: f ? toNum(f) : null, posts: p ? toNum(p) : null };
 }
 
+
+/**
+ * YouTube は公式APIで公開情報が取れる。
+ * 相手のアカウントと連携しなくても、APIキーだけで
+ * 登録者数・動画数・総再生回数が読める（一般ユーザーが見られる範囲）。
+ */
+function youtubeKey() {
+  return process.env.YOUTUBE_API_KEY || process.env.PAGESPEED_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+}
+
+/** チャンネルURLから、APIに渡せる識別子を取り出す */
+function youtubeTarget(url: string): { param: string; value: string } | null {
+  let path: string;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    return null;
+  }
+  const handle = path.match(/^\/@([^/]+)/)?.[1];
+  if (handle) return { param: "forHandle", value: `@${handle}` };
+  const id = path.match(/^\/channel\/([^/]+)/)?.[1];
+  if (id) return { param: "id", value: id };
+  const user = path.match(/^\/(?:user|c)\/([^/]+)/)?.[1];
+  if (user) return { param: "forUsername", value: user };
+  return null;
+}
+
+type YtResponse = {
+  items?: { snippet?: { title?: string; description?: string }; statistics?: Record<string, string> }[];
+  error?: { message?: string };
+};
+
+async function readYouTube(a: { platform: string; url: string; handle: string }, base: SocialAccount): Promise<SocialAccount> {
+  const key = youtubeKey();
+  const target = youtubeTarget(a.url);
+  if (!key) return { ...base, reason: "YouTube Data API のキーが未設定のため取得していません" };
+  if (!target) return { ...base, reason: "チャンネルの識別子をURLから取り出せませんでした" };
+
+  const q = new URLSearchParams({ part: "snippet,statistics", key, [target.param]: target.value });
+  let j: YtResponse;
+  try {
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?${q}`, {
+      signal: AbortSignal.timeout(12_000),
+    });
+    j = (await res.json()) as YtResponse;
+    if (!res.ok) return { ...base, reason: `YouTube Data API を呼べませんでした（${j.error?.message ?? res.status}）` };
+  } catch {
+    return { ...base, reason: "YouTube Data API に接続できませんでした" };
+  }
+
+  const it = j.items?.[0];
+  if (!it) return { ...base, reason: "このチャンネルが YouTube Data API で見つかりませんでした" };
+
+  const st = it.statistics ?? {};
+  const n = (v: string | undefined) => (v !== undefined && /^\d+$/.test(v) ? Number(v) : null);
+  const subs = n(st.subscriberCount);
+
+  return {
+    ...base,
+    readable: subs !== null || n(st.videoCount) !== null,
+    followers: subs,
+    posts: n(st.videoCount),
+    views: n(st.viewCount),
+    via: "公式API",
+    title: it.snippet?.title ?? null,
+    bio: it.snippet?.description?.slice(0, 160) ?? null,
+    // 登録者数を非公開にしているチャンネルは API でも返ってこない
+    reason: subs === null ? "このチャンネルは登録者数を非公開にしています" : null,
+  };
+}
+
 async function readOne(a: { platform: string; url: string; handle: string }): Promise<SocialAccount> {
   const base: SocialAccount = {
-    ...a, readable: false, followers: null, posts: null, title: null, bio: null, reason: null,
+    ...a, readable: false, followers: null, posts: null, views: null, via: null, title: null, bio: null, reason: null,
   };
+
+  // YouTube だけは公式APIで正規に取れる
+  if (/youtube/i.test(a.platform)) return readYouTube(a, base);
 
   // LINE公式アカウントは友だち数を公開しないので、取りに行くだけ無駄になる
   if (/line/i.test(a.platform)) {
@@ -97,22 +175,17 @@ async function readOne(a: { platform: string; url: string; handle: string }): Pr
   }
 
   const { followers, posts } = fromDescription(desc ?? "");
-  // YouTube はページ内のJSONに登録者数が入る
-  const yt = /youtube/i.test(a.platform)
-    ? html.match(/"subscriberCountText":\{"simpleText":"([^"]+?)\s*(?:人の)?(?:チャンネル登録者|subscribers)/i)?.[1] ??
-      html.match(/([\d.,]+\s*[万億KkMm]?)\s*(?:人のチャンネル登録者|subscribers)/i)?.[1] ??
-      null
-    : null;
 
   return {
     ...base,
     // 数値が取れて初めて「分析できた」と言える。ページが開けただけでは検出と同じ
-    readable: followers !== null || posts !== null || !!(yt && toNum(yt) !== null),
-    followers: followers ?? (yt ? toNum(yt) : null),
+    readable: followers !== null || posts !== null,
+    followers,
     posts,
+    via: "公開ページ",
     title: title ?? null,
     bio: desc ? desc.slice(0, 160) : null,
-    reason: followers === null && !yt ? "ページは読めましたが、フォロワー数は公開情報から取得できませんでした" : null,
+    reason: followers === null ? "ページは読めましたが、フォロワー数は公開情報から取得できませんでした" : null,
   };
 }
 
