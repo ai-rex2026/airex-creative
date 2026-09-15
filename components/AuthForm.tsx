@@ -26,6 +26,10 @@ export function AuthForm({
   /**
    * ゲスト（匿名）のままなら linkIdentity で今のアカウントに Google を紐づける。
    * そうしないと別ユーザーが出来てしまい、いま作った分析が見えなくなる。
+   *
+   * 現在は OAuth 同意画面が未公開（テスト中）のため、ボタンは下で無効化して
+   * 呼び出さないようにしている。公開後にボタンの disabled / onClick を戻せば
+   * このまま使える。
    */
   async function google() {
     setErr(null);
@@ -41,6 +45,7 @@ export function AuthForm({
 
     if (res.error) setErr(res.error.message);
   }
+  void google;
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,9 +71,17 @@ export function AuthForm({
       </p>
 
       <div className="card" style={{ paddingBottom: 20 }}>
-        <button type="button" className="btn ghost" style={{ width: "100%", justifyContent: "center" }} onClick={google}>
+        <button
+          type="button"
+          className="btn ghost"
+          style={{ width: "100%", justifyContent: "center", opacity: 0.5, cursor: "not-allowed" }}
+          onClick={(e) => e.preventDefault()}
+          disabled
+          aria-disabled="true"
+          title="Google ログインは準備中です"
+        >
           <GoogleMark />
-          Google で{signup ? "登録" : "ログイン"}
+          Google で{signup ? "登録" : "ログイン"}（準備中）
         </button>
         <div className="or"><span>または</span></div>
       </div>
