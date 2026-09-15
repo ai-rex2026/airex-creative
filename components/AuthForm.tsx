@@ -14,14 +14,36 @@ export function AuthForm({
   initialMode: "signin" | "signup";
   initialError?: string | null;
 }) {
-  const [mode, setMode] = useState(initialMode);
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot">(initialMode);
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [err, setErr] = useState<string | null>(initialError ?? null);
+  const [resetSent, setResetSent] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
 
   const signup = mode === "signup";
+  const forgot = mode === "forgot";
+
+  /** 「パスワードを忘れた」から入力されたメール宛にリセットリンクを送る */
+  function sendReset(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    if (!email) {
+      setErr("メールアドレスを入力してください");
+      return;
+    }
+    start(async () => {
+      const sb = createClient();
+      const redirectTo = `${location.origin}/auth/callback?next=${encodeURIComponent("/reset-password")}`;
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
+      if (error) {
+        setErr(error.message);
+        return;
+      }
+      setResetSent(true);
+    });
+  }
 
   /**
    * ゲスト（匿名）のままなら linkIdentity で今のアカウントに Google を紐づける。
@@ -61,6 +83,40 @@ export function AuthForm({
     });
   }
 
+  if (forgot) {
+    return (
+      <div className="inner">
+        <h2>パスワード再設定</h2>
+        <p className="sub">
+          {resetSent
+            ? "再設定用のメールを送信しました。メール内のリンクから新しいパスワードを設定してください。"
+            : "登録済みのメールアドレスを入力してください。再設定用のリンクをお送りします。"}
+        </p>
+
+        {!resetSent && (
+          <form className="card" style={{ marginTop: 18 }} onSubmit={sendReset}>
+            <label htmlFor="reset-email">メールアドレス</label>
+            <input id="reset-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="example@email.com" autoComplete="email" required />
+
+            {err && <p style={{ color: "var(--ng)", fontSize: 12.5, marginTop: 12 }}>{err}</p>}
+
+            <button className="btn" type="submit" disabled={pending}>
+              {pending ? "送信中…" : "再設定メールを送る"}
+            </button>
+          </form>
+        )}
+
+        <p className="foot">
+          <button className="link" style={{ fontWeight: 600, color: "var(--head)" }}
+            onClick={() => { setMode("signin"); setErr(null); setResetSent(false); }}>
+            ログインに戻る
+          </button>
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="inner">
       <h2>{signup ? "アカウント作成" : "ログイン"}</h2>
@@ -93,7 +149,11 @@ export function AuthForm({
 
         <label htmlFor="pw">
           パスワード
-          {!signup && <a href="#">パスワードを忘れた</a>}
+          {!signup && (
+            <button type="button" className="link" onClick={() => { setMode("forgot"); setErr(null); setResetSent(false); }}>
+              パスワードを忘れた
+            </button>
+          )}
         </label>
         <input id="pw" type="password" value={pw} onChange={(e) => setPw(e.target.value)}
           placeholder="••••••••" autoComplete={signup ? "new-password" : "current-password"} minLength={8} required />

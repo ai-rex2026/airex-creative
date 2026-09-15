@@ -82,8 +82,8 @@ export async function startAnalysis(input: {
 
   let { error } = await sb.from("analyses").insert({ ...row, owner_id: user.id });
 
-  // 前に作ったゲストのセッションが期限切れだと、画面上はログイン済みに見えるのに
-  // 書き込みだけぎる。作り直して1回だけやり直す
+  // 前に作ったゲストのセッションが期限切れだと、画面おはログイン済みに見えるのに
+  // 書き込みだけ弾かれる。作り直して1回だけやり直す
   if (error) {
     const { data: re } = await sb.auth.signInAnonymously();
     if (re?.user) {
@@ -159,6 +159,17 @@ export async function signIn(email: string, password: string): Promise<{ error?:
   const sb = await createClient();
   const { error } = await sb.auth.signInWithPassword({ email, password });
   if (error) return { error: "メールアドレスかパスワードが違います" };
+  return {};
+}
+
+/**
+ * 「パスワードを忘れた」からのリンクで戻ってきたセッション（/auth/callback で
+ * すでに確立済み）に対して、新しいパスワードを設定する。
+ */
+export async function updatePassword(password: string): Promise<{ error?: string }> {
+  const sb = await createClient();
+  const { error } = await sb.auth.updateUser({ password });
+  if (error) return { error: error.message };
   return {};
 }
 
@@ -345,7 +356,7 @@ export async function setMargin(id: string, margin: number) {
 
 /**
  * 行を更新する。RLSで弾かれても Supabase はエラーを返さず0行更新で成功に見えるので、
- * 更新できた行を数えて確かめる。ここを黙って通すと、画面は保存済みに見えるのに
+ * 更新できた行を数えて叐かる。ここを黙って通すと、画面は保存済みに見えるのに
  * DBには何も入っていない状態になる。
  */
 async function updateOwned(
@@ -489,7 +500,7 @@ export async function toggleMeasure(id: string, measureId: string, done: boolean
 /**
  * サイトから辿れない材料を足す。
  * 別ドメインのLPや、リンクしていないSNSは自動では見つけられない。
- * すでに実施している施策を重複して提案しないためにも要る。
+ * すでに実施している対策を重複して提案しないたもにも要る。
  */
 export async function addInput(id: string, platform: string, url: string) {
   const sb = await createClient();
@@ -500,7 +511,7 @@ export async function addInput(id: string, platform: string, url: string) {
 
   const v = url.trim();
   if (!v) throw new Error("URLかアカウント名を入れてください");
-  if (v.length > 300) throw new Error("入力が長すぎます");
+  if (v.length > 300) throw new Error("入力が長すぎみす");
 
   const { data } = await sb.from("analyses").select("extra_inputs").eq("id", id).eq("owner_id", user.id).single();
   if (!data) throw new Error("分析が見つかりません");
@@ -515,7 +526,7 @@ export async function addInput(id: string, platform: string, url: string) {
 
 /**
  * 施策の実行プロンプトを作る。
- * 全施策ぶんを先に作ると費用が積み上がるので、使うときに1件だけ作る。
+ * 全施策ぶを先に作ると費用が積み上がるので、使うときに1件だけ作る。
  */
 export async function makeRunbook(id: string, measureId: string) {
   assertKey();
