@@ -46,14 +46,13 @@ export function AuthForm({
     e.preventDefault();
     setErr(null);
     start(async () => {
-      try {
-        if (signup) await signUp(email, pw);
-        else await signIn(email, pw);
-        router.replace(callbackUrl);
-        router.refresh();
-      } catch (e2) {
-        setErr(e2 instanceof Error ? e2.message : String(e2));
+      const res = signup ? await signUp(email, pw) : await signIn(email, pw);
+      if (res?.error) {
+        setErr(res.error);
+        return;
       }
+      router.replace(callbackUrl);
+      router.refresh();
     });
   }
 

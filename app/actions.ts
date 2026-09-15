@@ -83,7 +83,7 @@ export async function startAnalysis(input: {
   let { error } = await sb.from("analyses").insert({ ...row, owner_id: user.id });
 
   // 前に作ったゲストのセッションが期限切れだと、画面上はログイン済みに見えるのに
-  // 書き込みだけ弾かれる。作り直して1回だけやり直す
+  // 書き込みだけぎる。作り直して1回だけやり直す
   if (error) {
     const { data: re } = await sb.auth.signInAnonymously();
     if (re?.user) {
@@ -135,8 +135,11 @@ export async function retryAnalysis(id: string) {
   });
 }
 
-/** 本登録。匿名のまま作った分析は uid が変わらないのでそのまま引き継がれる */
-export async function signUp(email: string, password: string) {
+/**
+ * 本登録。匿名のまま作った分析は uid が変わらないのでそのまま引き継がれる。
+ * 本番では throw したエラー本文が伏せられて画面に出ないので、値で返す（signIn も同様）。
+ */
+export async function signUp(email: string, password: string): Promise<{ error?: string }> {
   const sb = await createClient();
   const {
     data: { user },
@@ -144,17 +147,19 @@ export async function signUp(email: string, password: string) {
 
   if (user?.is_anonymous) {
     const { error } = await sb.auth.updateUser({ email, password });
-    if (error) throw new Error(error.message);
-    return;
+    if (error) return { error: error.message };
+    return {};
   }
   const { error } = await sb.auth.signUp({ email, password });
-  if (error) throw new Error(error.message);
+  if (error) return { error: error.message };
+  return {};
 }
 
-export async function signIn(email: string, password: string) {
+export async function signIn(email: string, password: string): Promise<{ error?: string }> {
   const sb = await createClient();
   const { error } = await sb.auth.signInWithPassword({ email, password });
-  if (error) throw new Error("メールアドレスかパスワードが違います");
+  if (error) return { error: "メールアドレスかパスワードが違います" };
+  return {};
 }
 
 /** Google 連携の状態。設定画面で出す */
