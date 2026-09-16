@@ -224,7 +224,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     }
     // サジェストは Google の公開エンドポイントから実測する。AI は使わないので速い
     if (!a.suggests) {
-      // 地名は MEO の実測住所から、町名まで細かいとサジェストが返らないので、
+      // 地名は MEO の実測住所から、町名まで細かい。町名まで細かいとサジェストが返らないので、
       // 「渋谷区」と方角を落とした町名（恵比寿西→恵比寿）の両方を候補にする
       const addr = a.meo?.self?.address ?? "";
       const ward = addr.match(/[都道府県](.*?[市区町村])/)?.[1] ?? "";
