@@ -16,6 +16,7 @@ import { MeoStoreList, scorePct } from "./MeoStores";
 import { Toc } from "./Toc";
 import { MainPrice } from "./MainPrice";
 import { BANNER_CASE_WARNING, looksLikeCasePhoto } from "@/lib/case-photo";
+import { cropImageToDataUrl } from "@/lib/crop-image";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
 import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
 import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
@@ -123,7 +124,37 @@ export function Report({
   const [photoFit, setPhotoFit] = useState<"cover" | "contain">("cover");
   const [photoFocus, setPhotoFocus] = useState({ x: 50, y: 50 });
   const [showTexted, setShowTexted] = useState(false);
-  const photoSrc = photo ? `/api/analysis/${id}/img?u=${encodeURIComponent(photo)}` : null;
+  // 文字入り画像を選んだとき、文字を含まない領域だけを切り出した結果（data URL）
+  const [croppedSrc, setCroppedSrc] = useState<string | null>(null);
+  const [cropBusy, setCropBusy] = useState(false);
+  const [cropError, setCropError] = useState<string | null>(null);
+  const photoSrc = croppedSrc ?? (photo ? `/api/analysis/${id}/img?u=${encodeURIComponent(photo)}` : null);
+
+  /**
+   * 写真候補を選ぶ。文字が写り込んでいても safeCrop（文字を含まない領域）が
+   * 取れている画像なら、選んだ瞬間にその領域だけを切り出して使う。
+   * こうすると、表示位置をどう動かしても文字が入り込まないことを保証できる
+   * （position をずらして避けるやり方は、文字が広く入った画像では成立しないため）
+   */
+  async function pickPhoto(u: string) {
+    setPhoto(u);
+    setCropError(null);
+    const info = imageScan?.items.find((x) => x.url === u);
+    if (info?.hasText && info.safeCrop) {
+      setCropBusy(true);
+      try {
+        const src = `/api/analysis/${id}/img?u=${encodeURIComponent(u)}`;
+        setCroppedSrc(await cropImageToDataUrl(src, info.safeCrop));
+      } catch {
+        setCroppedSrc(null);
+        setCropError("この写真の自動トリミングに失敗しました。お手数ですが他の写真をお選びください。");
+      } finally {
+        setCropBusy(false);
+      }
+    } else {
+      setCroppedSrc(null);
+    }
+  }
 
   // 粗利率は断定できないので、押した瞬間に計算し直して裏で保存する
   function pickMargin(m: number) {
@@ -1667,33 +1698,97 @@ export function Report({
                 </div>
               )}
               <div className="opts">
-                <button className={photo === null ? "on" : ""} onClick={() => setPhoto(null)}>
+                <button
+                  className={photo === null ? "on" : ""}
+                  onClick={() => {
+                    setPhoto(null);
+                    setCroppedSrc(null);
+                    setCropError(null);
+                  }}
+                >
                   <span className="none">文字のみ</span>
                 </button>
                 {(site?.images ?? [])
                   .filter((u) => !looksLikeCasePhoto(u))
-                  .filter((u) => showTexted || !imageScan?.items.find((x) => x.url === u)?.hasText)
+                  .filter((u) => {
+                    const info = imageScan?.items.find((x) => x.url === u);
+                    if (!info?.hasText) return true;
+                    if (info.safeCrop) return true; // 自動トリミングで使えるので候補に残す
+                    return showTexted; // 除外対象。手動で「それも表示する」を選んだときだけ
+                  })
                   .slice(0, 10)
-                  .map((u) => (
-                    <button key={u} className={photo === u ? "on" : ""} onClick={() => setPhoto(u)}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={`/api/analysis/${id}/img?u=${encodeURIComponent(u)}`} alt="" />
-                    </button>
-                  ))}
+                  .map((u) => {
+                    const info = imageScan?.items.find((x) => x.url === u);
+                    const autoCrop = !!(info?.hasText && info.safeCrop);
+                    return (
+                      <button
+                        key={u}
+                        className={photo === u ? "on" : ""}
+                        style={{ position: "relative" }}
+                        disabled={cropBusy && photo === u}
+                        onClick={() => void pickPhoto(u)}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/api/analysis/${id}/img?u=${encodeURIComponent(u)}`} alt="" />
+                        {autoCrop && (
+                          <span
+                            style={{
+                              position: "absolute",
+                              left: 4,
+                              bottom: 4,
+                              background: "rgba(0,0,0,.65)",
+                              color: "#fff",
+                              fontSize: 10,
+                              lineHeight: 1,
+                              padding: "3px 6px",
+                              borderRadius: 3,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {cropBusy && photo === u ? "処理中…" : "自動トリミング"}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
               </div>
 
-              {(imageScan?.items.filter((x) => x.hasText).length ?? 0) > 0 && (
-                <div className="note" style={{ marginTop: 10 }}>
-                  <i className="i">i</i>
-                  <span>
-                    文字が焼き込まれている写真 <b style={{ fontWeight: 600 }}>{imageScan!.items.filter((x) => x.hasText).length}枚</b> を候補から外しています。
-                    切り抜くと文字が途中で切れるためです。
-                    <button className="linkbtn" onClick={() => setShowTexted(!showTexted)}>
-                      {showTexted ? "また隠す" : "それも表示する"}
-                    </button>
-                  </span>
+              {cropError && (
+                <div className="note warn" style={{ marginTop: 10 }}>
+                  <i className="i">!</i>
+                  <span>{cropError}</span>
                 </div>
               )}
+
+              {(() => {
+                const withText = imageScan?.items.filter((x) => x.hasText) ?? [];
+                const autoCrop = withText.filter((x) => x.safeCrop);
+                const excluded = withText.filter((x) => !x.safeCrop);
+                if (withText.length === 0) return null;
+                return (
+                  <div className="note" style={{ marginTop: 10 }}>
+                    <i className="i">i</i>
+                    <span>
+                      {autoCrop.length > 0 && (
+                        <>
+                          文字が写り込んだ写真のうち <b style={{ fontWeight: 600 }}>{autoCrop.length}枚</b> は、
+                          文字を含まない部分だけを自動的に切り出して候補に含めています（サムネイルの「自動トリミング」表示）。
+                          <br />
+                        </>
+                      )}
+                      {excluded.length > 0 && (
+                        <>
+                          文字を含まない部分が十分に取れない写真 <b style={{ fontWeight: 600 }}>{excluded.length}枚</b> は候補から外しています。
+                          切り抜くと文字が途中で切れるためです。
+                          <button className="linkbtn" onClick={() => setShowTexted(!showTexted)}>
+                            {showTexted ? "また隠す" : "それも表示する"}
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                );
+              })()}
 
               {photo && (
                 <div className="crop">
