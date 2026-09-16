@@ -41,7 +41,7 @@ export function Waiting({ id, site, initial }: { id: string; site: string; initi
       <p>
         {failed
           ? s.error ?? "もう一度お試しください。"
-          : "AIがサイトを分析しています。全体でおよそ5〜10分かかります。この画面を閉じても分析は続き、分析一覧からいつでも開き直せます。"}
+          : "AIがサイトを分析しています。サイトの規模によりますが、全体でおよそ20〜40分かかります（混み合う時間帯や大きなサイトでは1時間ほどかかることもあります）。この画面を閉じても分析は続き、分析一覧からいつでも開き直せます。"}
       </p>
       <div style={{ maxWidth: 380, margin: "22px auto 0" }}>
         <div className="bar"><span style={{ width: `${Math.max(6, s.progress)}%` }} /></div>
