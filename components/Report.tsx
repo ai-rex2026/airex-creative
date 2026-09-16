@@ -34,7 +34,6 @@ import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
 
 type Tab = "inputs" | "measures" | "overview";
-type Todo = { level: "high" | "mid"; text: string; tab: Tab; anchor: string };
 
 
 export function Report({
@@ -144,62 +143,6 @@ export function Report({
     ? (plan ?? []).filter((m) => Math.round((band.min * m.share) / 100) < 10)
     : [];
 
-  /** 直すべきところ。散らばっている指摘を1か所に集めて、該当タブへ飛べるようにする */
-  const todos: Todo[] = [];
-  if (site) {
-    for (const h of site.headers.filter((x) => !x.pass)) {
-      todos.push({ level: "mid", text: `${h.label} が未設定`, tab: "overview", anchor: "sec-security" });
-    }
-    if (!site.https) todos.push({ level: "high", text: "HTTPS に対応していない", tab: "overview", anchor: "sec-security" });
-    if (!site.structuredData) todos.push({ level: "mid", text: "構造化データが無い（検索結果での見え方が弱くなる）", tab: "overview", anchor: "sec-seo" });
-    if (!site.sitemapXml) todos.push({ level: "mid", text: "sitemap.xml が無い", tab: "overview", anchor: "sec-seo" });
-    if (site.adTags.length === 0) {
-      // GTM が入っていると広告タグは実行時に差し込まれるため、HTMLだけでは「無い」と断定できない。
-      // 断定できないものを「要対応」で出すと、事実と違う指摘になる。
-      const viaGtm = site.tech.includes("Google Tag Manager");
-      todos.push(
-        viaGtm
-          ? { level: "mid", text: "広告タグをHTMLから確認できない（GTM経由の可能性あり。GTMの中身を要確認）", tab: "overview", anchor: "sec-overview" }
-          : { level: "high", text: "広告タグが1つも入っていない（配信しても成果を計測できない）", tab: "overview", anchor: "sec-overview" }
-      );
-    }
-  }
-  if (seo && seo.score < 45) {
-    todos.push({ level: "mid", text: `SEO強度が ${seo.score}点（低権威）`, tab: "overview", anchor: "sec-seo" });
-  }
-  if (adOps?.done) {
-    // 必須なのに入っていないタグは、配信しても成果が測れないので最優先
-    for (const t of adOps.tags.filter((x) => x.need === "必須" && x.status === "未導入")) {
-      todos.push({ level: "high", text: `${t.name} が未導入（この媒体に出しても成果を計測できません）`, tab: "overview", anchor: "sec-adops" });
-    }
-    for (const t of adOps.tags.filter((x) => x.need === "必須" && x.status === "要確認")) {
-      todos.push({ level: "mid", text: `${t.name} の有無をGTMで確認する`, tab: "overview", anchor: "sec-adops" });
-    }
-    if (adOps.overLength.length > 0) {
-      todos.push({ level: "mid", text: `広告原稿 ${adOps.overLength.length}件が文字数超過（そのままでは入稿できません）`, tab: "overview", anchor: "sec-adops" });
-    }
-  }
-  if (meo?.self) {
-    if (meo.reviewRank && meo.totalShops > 1 && meo.reviewRank > meo.totalShops / 2) {
-      todos.push({ level: "mid", text: `Googleのレビュー数が近隣${meo.totalShops}店中${meo.reviewRank}位（比較検討で不利になります）`, tab: "overview", anchor: "sec-meo" });
-    }
-    for (const b of meo.breakdown.filter((x) => x.got === 0 && x.max === 10)) {
-      todos.push({ level: "mid", text: `Googleビジネスプロフィールの${b.label}がない`, tab: "overview", anchor: "sec-meo" });
-    }
-  }
-  const risky = suggests?.rows.filter((r) => r.kind === "注意") ?? [];
-  if (risky.length > 0) {
-    todos.push({
-      level: "mid",
-      text: `検索サジェストに「${risky[0].suggestion}」が出ている（放置すると指名検索で不利になります）`,
-      tab: "overview", anchor: "sec-suggest",
-    });
-  }
-  const redN = copies.filter((c) => c.guard?.level === "red").length;
-  if (redN > 0) {
-    todos.push({ level: "high", text: `コピー ${redN}案が法令で要修正（そのままでは出せません）`, tab: "overview", anchor: "sec-copies" });
-  }
-
   /**
    * 4領域のスコア。すべて実測済みの値から組む。
    * 判定できない領域は出さない（0点として出すと、測っていないのに低評価に見える）
@@ -239,11 +182,6 @@ export function Report({
 
   /** その原稿に付いた法令の指摘。無ければ null */
   const flagOf = (t: string) => adOps?.flagged?.find((f) => f.text === t) ?? null;
-
-  function jump(t: Todo) {
-    setTab(t.tab);
-    setTimeout(() => document.getElementById(t.anchor)?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
-  }
 
   const TOP_N = 3;
   const sorted = [...copies.entries()].sort((a, b) => (b[1].score ?? 0) - (a[1].score ?? 0));
@@ -379,26 +317,6 @@ export function Report({
       )}
 
       {tab === "overview" && <Toc watch={tab} />}
-
-      {tab === "overview" && (
-        <div className="todos measure">
-          <div className="h">
-            直すべきところ
-            {todos.length > 0 && <span className="n">{todos.length}件</span>}
-          </div>
-          {todos.length === 0 ? (
-            <p className="ok">いまのところ、直すべき点は見つかりませんでした。</p>
-          ) : (
-            todos.map((t, i) => (
-              <button key={i} className="i" onClick={() => jump(t)}>
-                <span className={`mk ${t.level}`}>{t.level === "high" ? "要対応" : "確認"}</span>
-                {t.text}
-                <span className="go">見る →</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
 
       {tab === "overview" && (
       <>
