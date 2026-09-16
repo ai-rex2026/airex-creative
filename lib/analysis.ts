@@ -61,7 +61,7 @@ export type Analysis = {
   measures: Measure[] | null;
   /** 済みにした施策のID */
   measures_done: string[] | null;
-  /** サイトから辿れない材料。別ドメインほLP・非公開SNSなど */
+  /** サイトから辿れない材料。別ドメインのLP・非公開SNSなど */
   extra_inputs: { platform: string; url: string }[] | null;
   /** 済みにした施策の記録。施策を作り直しても消えない */
   measure_log: { title: string; at: string }[] | null;
@@ -105,7 +105,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const site = await scanSite(a.url);
       return await save({ site, seo: estimateSeo(site), step: "サイトを読んでいます", progress: 18 });
     }
-    // サイトから辿れた公式SNSを実際に見に行く、X（Grok経由）だけは数十秒かかることがある
+    // サイトから辿れた公式SNSを実際に見に行く。X（Grok経由）だけは数十秒かかることがある
     if (a.site && !a.social && (a.site.social ?? []).length > 0) {
       const social = await scanSocial(a.site);
       return await save({ social, step: "サイトを読んでいます", progress: 20 });
@@ -254,7 +254,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const scored = await scoreCopies(a.diagnosis, a.copies);
       return await save({ copies: scored, step: "要約をまとめています", progress: 92 });
     }
-    // バナーに佽える写真かを見る。文字が焼き込まれた画像は切り抜くと切れるので、
+    // バナーに使える写真かを見る。文字が焼き込まれた画像は切り抜くと切れるので、
     // 候補から外すために先に判定しておく
     if (!a.image_scan && (a.site?.images ?? []).length > 0) {
       const image_scan = await checkImages(a.site!.images).catch(() => ({ items: [], checkedAt: new Date().toISOString() }));
