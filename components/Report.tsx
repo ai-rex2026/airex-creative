@@ -269,4 +269,319 @@ export function Report({
   const shown = showAllCopies ? visible : visible.slice(0, TOP_N);
 
   const chosen = picked.map((i) => copies[i]).filter(Boolean);
-  const chosenSizes = SIZES.filter((s) => sizes.in
+  const chosenSizes = SIZES.filter((s) => sizes.includes(s.id));
+
+  async function guarded(label: string, fn: () => Promise<void>) {
+    setBusy(label);
+    setErr(null);
+    try {
+      await fn();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function download(nodeId: string, name: string) {
+    const node = document.getElementById(nodeId);
+    if (!node) return;
+    const dataUrl = await toPng(node, { pixelRatio: 1, cacheBust: true });
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = name;
+    a.click();
+  }
+
+  async function downloadZip() {
+    const zip = new JSZip();
+    for (const [ci] of chosen.entries()) {
+      for (const s of chosenSizes) {
+        const node = document.getElementById(`bn-${ci}-${s.id}`);
+        if (!node) continue;
+        const dataUrl = await toPng(node, { pixelRatio: 1, cacheBust: true });
+        zip.file(`${s.media}/${s.w}x${s.h}_${ci + 1}.png`, dataUrl.split(",")[1], { base64: true });
+      }
+    }
+    if (lp) zip.file("lp/index.html", lp.html);
+    const blob = await zip.generateAsync({ type: "blob" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "airex-creative.zip";
+    a.click();
+  }
+
+  return (
+    <div>
+      {err && <div className="alert">{err}</div>}
+
+      <div className="rep-top">
+        <a className="icon-btn" href="/analysis">←</a>
+        <div className="right">
+          <button
+            className="icon-btn"
+            onClick={() => {
+              // 畳んだ指摘が閉じたまま印刷されると中身が落ちるので、先に全部開く
+              document.querySelectorAll("details.flags").forEach((d) => ((d as HTMLDetailsElement).open = true));
+              window.print();
+            }}
+          >
+            ⤓ PDF出力
+          </button>
+        </div>
+      </div>
+
+      <div className="rep-hero">
+        {url && <div className="u">{url}</div>}
+        <h2>{url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入力テキストから分析"}</h2>
+      </div>
+
+      {cards.length > 0 && (
+        <div className="scorecard">
+          {total !== null && (
+            <div className="tot">
+              <span className="lb">総合</span>
+              <b>{total}<i>/100</i></b>
+              <span className="nt">実測できた{cards.length}領域の平均</span>
+            </div>
+          )}
+          <div className="cs">
+            {cards.map((c) => {
+              const p = pct(c);
+              const tone = p >= 75 ? "ok" : p >= 50 ? "warn" : "ng";
+              return (
+                <div className={`c ${tone}`} key={c.key}>
+                  <span className="lb">{c.label}</span>
+                  <b>{c.got}<i>/{c.max}</i></b>
+                  <div className="tr"><i style={{ width: `${p}%` }} /></div>
+                  <span className="nt">{c.note}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="tabs">
+        <button className={tab === "inputs" ? "on" : ""} onClick={() => setTab("inputs")}>入力</button>
+        {kpi && <button className={tab === "measures" ? "on" : ""} onClick={() => setTab("measures")}>施策</button>}
+        <button className={tab === "overview" ? "on" : ""} onClick={() => setTab("overview")}>分析データ</button>
+      </div>
+
+      {tab === "inputs" && (
+        <Inputs
+          id={id}
+          url={url}
+          site={site}
+          budget={budget}
+          margin={margin}
+          onBudget={pickBudget}
+          onMargin={pickMargin}
+          extra={extraInputs}
+          hasGoogle={!!(gsc || ga4)}
+          social={social}
+        />
+      )}
+
+      {tab === "measures" && kpi && (
+        <Measures
+          id={id}
+          kpi={kpi}
+          measures={measures ?? []}
+          selected={kpiSelected ?? []}
+          done={measuresDone ?? []}
+          log={measureLog ?? []}
+          hygiene={hygiene(site)}
+        />
+      )}
+
+      {tab === "overview" && <Toc watch={tab} />}
+
+      {tab === "overview" && (
+      <>
+      {((gsc && gsc.queries.length > 0) || (ga4 && ga4.sessions > 0)) && (
+        <>
+          <div className="sec-head" style={{ marginTop: 0 }}>
+            <span className="ic">⇄</span>
+            <div>
+              <h2 id="sec-linked">連携データ</h2>
+              <div className="sub">Search Console / GA4 の実データです（推定ではありません）</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          <div className="linked measure">
+            {gsc && gsc.queries.length > 0 && (
+              <div className="k">
+                <div className="h">Search Console<span className="live">実データ</span></div>
+                <div className="b">
+                  <div className="big">
+                    <div><b>{gsc.totals.clicks.toLocaleString()}</b><small>クリック（28日）</small></div>
+                    <div><b>{gsc.totals.impressions.toLocaleString()}</b><small>表示回数</small></div>
+                    <div><b>{gsc.totals.position}</b><small>平均掲載順位</small></div>
+                  </div>
+                  <table>
+                    <thead><tr><th>検索語</th><th style={{ textAlign: "right" }}>クリック</th><th style={{ textAlign: "right" }}>順位</th></tr></thead>
+                    <tbody>
+                      {gsc.queries.slice(0, 6).map((q) => (
+                        <tr key={q.query}>
+                          <td>{q.query}</td>
+                          <td className="n">{q.clicks}</td>
+                          <td className="n">{q.position}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {ga4 && ga4.sessions > 0 && (
+              <div className="k">
+                <div className="h">Google Analytics 4<span className="live">実データ</span></div>
+                <div className="b">
+                  <div className="big">
+                    <div><b>{ga4.sessions.toLocaleString()}</b><small>セッション（28日）</small></div>
+                    <div><b>{ga4.users.toLocaleString()}</b><small>ユーザー</small></div>
+                  </div>
+                  <table>
+                    <thead><tr><th>流入チャネル</th><th style={{ textAlign: "right" }}>セッション</th></tr></thead>
+                    <tbody>
+                      {ga4.channels.slice(0, 6).map((c) => (
+                        <tr key={c.name}><td>{c.name}</td><td className="n">{c.sessions.toLocaleString()}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {summary && summary.firstSteps?.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">①</span>
+            <div>
+              <h2 id="sec-first">まずやること3つ</h2>
+              <div className="sub">優先度の高い順に、今週から始めら备るものです</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div className="steps3 measure">
+            {summary.firstSteps.map((f, i) => (
+              <div className="step3" key={i}>
+                <span className="n">{i + 1}</span>
+                <div className="b">
+                  <p className="act">{f.action}</p>
+                  <dl>
+                    <dt>期限</dt><dd>{f.due}</dd>
+                    <dt>完了条件</dt><dd className="done">{f.done}</dd>
+                  </dl>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {summary && summary.personas?.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">☺</span>
+            <div>
+              <h2 id="sec-persona">お客様像</h2>
+              <div className="sub">この人たちに向けてコピーを書いています</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div className="grid2 measure">
+            {summary.personas.map((p, i) => (
+              <div className="persona" key={i}>
+                <b>{p.name}</b>
+                <dl>
+                  <dt>どんな人</dt><dd>{p.who}</dd>
+                  <dt>困りごと</dt><dd>{p.pain}</dd>
+                  <dt>動く瞬間</dt><dd>{p.trigger}</dd>
+                </dl>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="sec-head">
+        <span className="ic">◎</span>
+        <div>
+          <h2 id="sec-overview">サイト概要</h2>
+          <div className="sub">何を、誰に売っているか</div>
+        </div>
+        <span className="rule" />
+      </div>
+
+      <div className="card measure">
+        <div className="label">商材</div>
+        <p style={{ fontSize: 14, marginTop: 4 }}>{d.product}</p>
+        <div className="label" style={{ marginTop: 16 }}>ターゲット</div>
+        <p style={{ fontSize: 14, marginTop: 4 }}>{d.audience}</p>
+        <div className="chips">
+          <span className="chip-s">業種 {INDUSTRY_LABEL[d.industry]}</span>
+          <span className="chip-s">
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: d.brand.accent, display: "inline-block" }} />
+            ブランド色 {d.brand.accent}
+          </span>
+          <span className="chip-s">訴求軸 {d.angles.length}本</span>
+          <span className="chip-s">コピー {copies.length}案</span>
+        </div>
+      </div>
+
+      {site && (
+        <>
+          <div className="chips">
+            <span className="chip-s">{site.https ? "HTTPS 対応済み" : "HTTPS 未対応"}</span>
+            <span className="chip-s">robots.txt {site.robotsTxt ? "有り" : "無し"}</span>
+            <span className="chip-s">sitemap.xml {site.sitemapXml ? "有り" : "無し"}</span>
+            <span className="chip-s">構造化データ {site.structuredData ? "有り" : "無し"}</span>
+            <span className="chip-s">内部リンク {site.internalLinks} / 外部リンク {site.externalLinks}</span>
+          </div>
+
+          <div className="label" style={{ marginTop: 18 }}>検出された広告タグ</div>
+          <div className="chips">
+            {site.adTags.length > 0 ? (
+              site.adTags.map((t) => (
+                <span key={t} className="chip-s" style={{ background: "#FBEDE9", borderColor: "#EFD3CA", color: "var(--ng)" }}>{t}</span>
+              ))
+            ) : (
+              <span className="chip-s">
+                {site.tech.includes("Google Tag Manager")
+                  ? "HTMLからは検出できず（GTM経由の可能性あり）"
+                  : "検出できず"}
+              </span>
+            )}
+          </div>
+
+          {site.tech.length > 0 && (
+            <>
+              <div className="label" style={{ marginTop: 14 }}>使用技術</div>
+              <div className="chips">
+                {site.tech.map((t) => <span key={t} className="chip-s">{t}</span>)}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      <div className="stat-row" style={{ marginTop: 14 }}>
+        <div><b>{d.strengths.length}</b><small>強み</small></div>
+        <div><b>{d.objections.length}</b><small>買わない理由</small></div>
+        <div><b>{d.angles.length}</b><small>訴求軸</small></div>
+        <div><b>{copies.filter((c) => c.guard?.level === "green").length}/{copies.length}</b><small>法令チェック通過</small></div>
+      </div>
+
+      {site && site.social.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">�M</span>
+            <div>
+              <h2 id="sec-social">公式SNSアカウン�
