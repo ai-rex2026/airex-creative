@@ -4,7 +4,7 @@ import { askJsonWithImages } from "./anthropic";
  * バナーに使える写真かどうかを見る。
  *
  * 文字が焼き込まれた画像を切り抜くと、その文字が途中で切れる。
- * 位置を動かして避けるやり方は、文字が広く入っている画像では成り立たない
+ * 位置を動かして避けるやり方は、文字が広く入っている画像では成立しない
  * （表示位置をどこにずらしても、枠のどこかに文字がかかってしまうため）。
  *
  * そこで、文字ありと判定した画像については「文字を一切含まない矩形領域」が
@@ -15,7 +15,7 @@ import { askJsonWithImages } from "./anthropic";
  * 候補から外す（位置調整では逃げられないケース）。
  *
  * 判定は画像を見ないとできないので、1回だけ AI に見せる。
- * 分析1件につき1回の呼び出しで、候補すべてをまとめて見る。
+ * 分材1件につ1回の呼び出しで、候補すべてをまとめて見る。
  */
 
 export type SafeCrop = { x0: number; y0: number; x1: number; y1: number };
@@ -27,7 +27,7 @@ export type ImageCheck = {
   /** 人物の顔が写っているか。医療・美容では扱いに注意が要る */
   hasFace: boolean;
   /**
-   * hasText のとき、文字を一切含まない矩形領域（画像に対する 0〜100 の%座標）。
+   * hasText のとき、文字を一切含まない矩形領域（画像に対する 0～100 の%座標）。
    * 十分な大きさの領域が無ければ null。hasText が false のときは常に null
    */
   safeCrop: SafeCrop | null;
@@ -43,20 +43,37 @@ const MAX = 12;
 /** 1枚あたりの上限。大きすぎる画像は送らない */
 const MAX_BYTES = 3_500_000;
 
+/**
+ * 画像を取得する。ホットリンク対策で Referer を見るサイトがあるため、
+ * 画像の置き場（オリジン）を Referer に付けて送る。それでも失敗したら
+ * Referer 無しでもう一度だけ試す（逆に Referer を嗌うサイトもあるため）
+ */
 async function fetchImage(url: string): Promise<{ media: string; base64: string } | null> {
-  try {
-    const res = await fetch(url, {
-      headers: { "user-agent": "Mozilla/5.0", accept: "image/*" },
-      signal: AbortSignal.timeout(10_000),
-    });
+  const attempt = async (withReferer: boolean) => {
+    const headers: Record<string, string> = { "user-agent": "Mozilla/5.0", accept: "image/*" };
+    if (withReferer) {
+      try {
+        headers.referer = new URL(url).origin + "/";
+      } catch {
+        // URL が壊れているなら referer 無しの試行に任せる
+      }
+    }
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) });
     const media = res.headers.get("content-type")?.split(";")[0] ?? "";
     // Claude が受け取れる形式だけ。webp は受け取れないので対象外にする
     if (!res.ok || !/^image\/(png|jpeg|gif|webp)$/.test(media)) return null;
     const buf = await res.arrayBuffer();
     if (buf.byteLength > MAX_BYTES) return null;
     return { media, base64: Buffer.from(buf).toString("base64") };
+  };
+  try {
+    return (await attempt(true)) ?? (await attempt(false));
   } catch {
-    return null;
+    try {
+      return await attempt(false);
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -83,9 +100,9 @@ hasText は、画像の中に**読める文字が焼き込まれているか**�
 　ロゴの中の社名、キャッチコピー、価格表示、Before/After の文字なども文字に含める。
 　文字があるとバナーで切り抜いたときに途中で切れるので、そのままでは使えません。
 
-　見落としが起きやすいのは、画像の隅や端に小さく貼られた価格タグ・キャンペーンバッジ・
+　見落としが起きやすいのは、画像の隔や端に小さく貼られた価格タグ・キャンペーンバッジ・
 　割引シール・「◯◯円〜」のような料金表記です。写真の主役（人物・施術の様子・機材など）に
-　注意が向きがちですが、必ず四隅と上下左右の端まで確認してください。小さく写っていても、
+　注意が向きがちですが、必ず四隔と上下左右の端まで確認してください。小さく写っていても、
 　拡大すれば読める文字であれば hasText は true です。読めるかどうか自信が持てない場合も、
 　「文字なし」と断定せず true 側に倒してください（見逃して文字入りのままバナーに
 　使われる方が、安全側に判定して候補から外れるより悪影響が大きいため）。
@@ -109,7 +126,9 @@ note は、その画像がバナーに向くか向かないかを15文字以内�
 出力: {"items":[{"index":0,"hasText":false,"hasFace":false,"safeCrop":null,"note":""}]}
 safeCrop の例（文字が上部1/3にある場合）: {"x0":0,"y0":34,"x1":100,"y1":100}`,
       usable.map((x) => x.im),
-      { maxTokens: 2000 }
+      // 最大12枚ぶんの判定をまとめて出させるため、項目数が多いと2000では
+      // 出力が途中で切れてJSONとして読めなくなることがあった
+      { maxTokens: 3200 }
     );
   } catch {
     return { items: [], checkedAt: new Date().toISOString() };
@@ -120,7 +139,7 @@ safeCrop の例（文字が上部1/3にある場合）: {"x0":0,"y0":34,"x1":100
     const src = usable[r.index];
     if (!src) continue;
     const c = r.safeCrop;
-    // 壊れた座標（幅/高さが40%未満、範囲外、順序逆転）は使わない。判定ミスで
+    // 壊れた座標（幅/高さい40%未満、範囲外、順序逆転）は使わない。判定ミスで
     // 文字入りのまま切り出されるより、除外側に倒すほうが安全
     const validCrop =
       !!c &&

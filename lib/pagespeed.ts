@@ -15,8 +15,8 @@
  * この工程は最後に置いてあるので、長く待ってもレポート本体には影響しない。
  * 関数の実行上限（300秒）とワーカーの持ち時間（240秒）の内側に収める。
  */
-const FETCH_MS = 110_000;
-const OUTER_MS = 120_000;
+const FETCH_MS = 90_000;
+const OUTER_MS = 200_000;
 
 export type SpeedRating = "良好" | "改善が必要" | "不良";
 
@@ -32,7 +32,7 @@ export type SpeedMetric = {
 
 export type SpeedScan = {
   strategy: "mobile";
-  /** その場の計測スコア。0〜100 */
+  /** その場の計測スコア。0～100 */
   score: number | null;
   /** 実ユーザーの計測値。少ないサイトでは空になる */
   field: SpeedMetric[];
@@ -89,7 +89,7 @@ type PsiAudit = {
   title?: string;
   displayValue?: string;
   description?: string;
-  /** 0〜1。合格している項目も短縮見込みを返すので、これで弾く */
+  /** 0～1。合格している項目も短縮見込みを返すので、これで弾く */
   score?: number | null;
   details?: { overallSavingsMs?: number };
 };
@@ -120,11 +120,17 @@ export async function scanSpeed(url: string | null): Promise<SpeedScan> {
   ]);
 }
 
-async function run(url: string | null): Promise<SpeedScan> {
-  if (!url) return empty("URLがないため測定できません");
+type PsiCallResult =
+  | { ok: true; j: PsiResponse }
+  | { ok: false; retryable: boolean; message: string };
 
-  const key = process.env.PAGESPEED_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
-  // locale を渡さないと改善項目の見出しが英語で返る
+/**
+ * PSI/Lighthouse は「Something went wrong」のような、対象サイト側とは無関係な
+ * 一時的なエラーを返すことがある（Googleのクロール環境側の瞬断など）。
+ * そのようなエラーだけを再試行対象にする。APIキーやクォータの問題は
+ * 何度呼んでも直らないので、再試行しても無駄なだけでなく待ち時間を無駄に伸ばす
+ */
+async function callPsi(url: string, key: string | undefined): Promise<PsiCallResult> {
   const q = new URLSearchParams({ url, strategy: "mobile", category: "performance", locale: "ja" });
   if (key) q.set("key", key);
 
@@ -137,29 +143,54 @@ async function run(url: string | null): Promise<SpeedScan> {
     j = (await res.json()) as PsiResponse;
     if (res.status === 429) {
       // キー無しの呼び出しは共有枠なので、すぐ上限に当たる
-      return empty(
-        key
+      return {
+        ok: false,
+        retryable: false,
+        message: key
           ? "PageSpeed Insights の1日の上限に達しました。時間をおくと測定できます。"
-          : "PageSpeed Insights のAPIキーが未設定のため、共有枠で呼び出して上限に当たりました。Google Cloud で PageSpeed Insights API を有効にし、キーを PAGESPEED_API_KEY に設定すると安定して測定できます。"
-      );
+          : "PageSpeed Insights のAPIキーが未設定のため、共有枠で呼び出して上限に当たりました。Google Cloud で PageSpeed Insights API を有効にし、キーを PAGESPEED_API_KEY に設定すると安定して測定できます。",
+      };
     }
     const msg = j.error?.message ?? "";
     // 地図用のキーを流用すると、そのキーに PageSpeed Insights API が
     // 許可されていない場合にここへ来る。何をすれば直るかまで書く
     if (/are blocked|API_KEY_SERVICE_BLOCKED|has not been used|is disabled/i.test(msg)) {
-      return empty(
-        "PageSpeed Insights API がこのAPIキーで許可されていません。Google Cloud で PageSpeed Insights API を有効にし、専用のキーを環境変数 PAGESPEED_API_KEY に設定してください。"
-      );
+      return {
+        ok: false,
+        retryable: false,
+        message: "PageSpeed Insights API がこのAPIキーで許可されていません。Google Cloud で PageSpeed Insights API を有効にし、専用のキーを環境変数 PAGESPEED_API_KEY に設定してください。",
+      };
     }
-    if (!res.ok) return empty(`PageSpeed Insights を呼べませんでした（${msg || res.status}）`);
+    if (!res.ok) return { ok: false, retryable: true, message: `PageSpeed Insights を呼べませんでした（${msg || res.status}）` };
   } catch (e) {
     // AbortSignal.timeout() が発火すると TimeoutError になる。英語の内部メッセージを
     // そのまま出さず、重いサイトでは起こりうる旨と再試行を促す文にする
     if (e instanceof Error && e.name === "TimeoutError") {
-      return empty("表示速度の測定が時間内に終わりませんでした。読み込みが重いサイトでは起こることがあります。もう一度お試しください。");
+      return { ok: false, retryable: true, message: "表示速度の測定が時間内に終わりませんでした。読み込みが重いサイトでは起こることがあります。もう一度お試しください。" };
     }
-    return empty(e instanceof Error ? `PageSpeed Insights を呼べませんでした（${e.message}）` : "PageSpeed Insights を呼べませんでした");
+    return {
+      ok: false,
+      retryable: true,
+      message: e instanceof Error ? `PageSpeed Insights を呼べませんでした（${e.message}）` : "PageSpeed Insights を呼べませんでした",
+    };
   }
+
+  return { ok: true, j };
+}
+
+async function run(url: string | null): Promise<SpeedScan> {
+  if (!url) return empty("URLがないため測定できません");
+
+  const key = process.env.PAGESPEED_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+
+  let result = await callPsi(url, key);
+  if (!result.ok && result.retryable) {
+    // Google 側の瞬断が疑われる失敗だけ、少し間を置いてもう一度だけ試す
+    await new Promise((r) => setTimeout(r, 4_000));
+    result = await callPsi(url, key);
+  }
+  if (!result.ok) return empty(result.message);
+  const j = result.j;
 
   const field: SpeedMetric[] = [];
   for (const [id, m] of Object.entries(j.loadingExperience?.metrics ?? {})) {

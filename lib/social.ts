@@ -189,13 +189,20 @@ async function readX(a: { platform: string; url: string; handle: string }, base:
   if (!key) return { ...base, reason: "xAI(Grok)のAPIキーが未設定のため取得していません" };
   if (!a.handle) return { ...base, reason: "アカウントのハンドルをURLから取り出せませんでした" };
 
-  const prompt = `Xのアカウント「@${a.handle}」のプロフィールを実際に確認し、次を答えてください。
+  const prompt = `x_search ツールで、検索クエリに「${a.handle}」を使い、Xのアカウント「@${a.handle}」に絞ってポストを検索してください
+（allowed_x_handles で対象は既にこのアカウント1件に絞ってあります）。クエリを工夫しても結果が
+0件のときは、クエリを「${a.handle} profile」や表示名らしき語に変えてもう一度試してください。
+
+取得できたポストやプロフィール情報から、次を答えてください。
 - フォロワー数（プロフィールに表示されている実数。推測や概算は禁止）
 - 投稿数（表示されている実数）
 - 表示名
 - プロフィール文（bio、100文字以内）
 
-アカウントが見つからない・凍結／鍵アカウントである・数値が読み取れない場合は found を false にしてください。
+found を false にするのは、複数のクエリを試してもこのアカウントの投稿が1件も見つからない・
+アカウントが凍結／鍵アカウントである場合だけにしてください。投稿は見つかったが
+フォロワー数など一部の数値だけ読み取れない場合は found を true にして、わかる項目だけ埋めてください
+（他の項目は null で構いません）。
 似た名前の別アカウントの数値と混同しないでください。
 
 JSONのみで回答してください（前置き・コードフェンス無し）:
@@ -310,7 +317,7 @@ async function readOne(a: { platform: string; url: string; handle: string }): Pr
 
 export async function scanSocial(site: SiteScan | null): Promise<SocialScan> {
   const list = (site?.social ?? []).slice(0, 8);
-  // 媒体ごとに独立しているので並行で取る。1件が遅くても全体は止めない
+  // 媒体ごとに独立しているので並行で取る。1件が遅くても全体は止まらない
   const accounts = await Promise.all(list.map(readOne));
   return { accounts, fetchedAt: new Date().toISOString() };
 }
