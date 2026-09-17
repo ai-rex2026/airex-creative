@@ -317,7 +317,7 @@ async function readOne(a: { platform: string; url: string; handle: string }): Pr
 
 export async function scanSocial(site: SiteScan | null): Promise<SocialScan> {
   const list = (site?.social ?? []).slice(0, 8);
-  // 媒体ごとに独立しているので並行で取る。1件が遅くても全体は止まらない
+  // 媒体ごとに独立しているので並行で取る。1件が遅くても全体は止めない
   const accounts = await Promise.all(list.map(readOne));
   return { accounts, fetchedAt: new Date().toISOString() };
 }
