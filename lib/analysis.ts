@@ -19,7 +19,7 @@ import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData 
 import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 
-/** 本番と同じ見た目の短いID(英数20文字) */
+/** 本番と同じ見た目の短いID（英数20文字） */
 export function newAnalysisId() {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const buf = new Uint8Array(20);
@@ -105,7 +105,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const site = await scanSite(a.url);
       return await save({ site, seo: estimateSeo(site), step: "サイトを読んでいます", progress: 18 });
     }
-    // サイトから辿れた公式SNSを実際に見に行く。X(Grok経由)だけは数十秒かかることがある
+    // サイトから辿れた公式SNSを実際に見に行く。X（Grok経由）だけは数十秒かかることがある
     if (a.site && !a.social && (a.site.social ?? []).length > 0) {
       const social = await scanSocial(a.site);
       return await save({ social, step: "サイトを読んでいます", progress: 20 });
@@ -164,7 +164,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       try {
         comp = await findCompetitors(a.diagnosis, a.url);
       } catch {
-        // 取れなければ空のまま進む(画面には「取得できず」と出す)
+        // 取れなければ空のまま進む（画面には「取得できず」と出す）
       }
       return await save({ competitors: comp, step: "広告手法を選んでいます", progress: 50 });
     }
@@ -172,7 +172,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const plan = await generateMediaPlan(a.diagnosis, a.site, a.budget);
       return await save({ media_plan: plan, step: "広告の運用設計を書いています", progress: 55 });
     }
-    // 媒体1つ=1工程。まとめて生成すると1リクエストの実行時間に収まらず、
+    // 媒体1つ＝1工程。まとめて生成すると1リクエストの実行時間に収まらず、
     // 何も保存されないまま再試行を繰り返して進捗が止まる
     if (!a.ad_ops?.done) {
       const targets = opsTargets(a.media_plan);
@@ -186,7 +186,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
         };
         return await save({
           ad_ops: ops,
-          step: `広告の運用設計を書いています(${built.length + 1}/${targets.length})`,
+          step: `広告の運用設計を書いています（${built.length + 1}/${targets.length}）`,
           progress: 55 + Math.round((5 * (built.length + 1)) / targets.length),
         });
       }
@@ -225,7 +225,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     // サジェストは Google の公開エンドポイントから実測する。AI は使わないので速い
     if (!a.suggests) {
       // 地名は MEO の実測住所から。町名まで細かいとサジェストが返らないので、
-      // 「渋谷区」と方角を落とした町名(恵比寿西→恵比寿)の両方を候補にする
+      // 「渋谷区」と方角を落とした町名（恵比寿西→恵比寿）の両方を候補にする
       const addr = a.meo?.self?.address ?? "";
       const ward = addr.match(/[都道府県](.*?[市区町村])/)?.[1] ?? "";
       const town = addr.match(/[市区町村]([^\d\s]{2,6})/)?.[1]?.replace(/[東西南北]$/, "") ?? "";
