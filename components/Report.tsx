@@ -1832,7 +1832,7 @@ export function Report({
                 const withText = imageScan?.items.filter((x) => x.hasText) ?? [];
                 const autoCrop = withText.filter((x) => x.safeCrop);
                 const excluded = withText.filter((x) => !x.safeCrop);
-                // AIの文字チェックに回らなかった画像（判定件数の上限などで対象外になったもの）。
+                // AIの文字チェックに回らなかった画像(判定件数の上限などで対象外になったもの)。
                 // 「文字なし」と決めつけて候補に出すと文字入りのまま使われかねないので、
                 // 除外枚数として別に数えて、同じ「それも表示する」の裏に回す
                 const checkedUrls = new Set((imageScan?.items ?? []).map((x) => x.url));
