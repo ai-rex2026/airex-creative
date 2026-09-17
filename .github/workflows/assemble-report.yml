@@ -1,0 +1,34 @@
+name: assemble-report
+
+on:
+  push:
+    paths:
+      - '.buildtmp/rpt/part_07.b64'
+
+permissions:
+  contents: write
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Assemble Report.tsx from base64 chunks
+        run: |
+          set -e
+          cat .buildtmp/rpt/part_*.b64 | tr -d '\n' | base64 -d > components/Report.tsx
+          wc -c components/Report.tsx
+          rm -rf .buildtmp/rpt
+
+      - name: Commit and push
+        run: |
+          set -e
+          git config user.name "assemble-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: assemble Report.tsx from chunks (automated)" || echo "no changes to commit"
+          git push origin HEAD:main
