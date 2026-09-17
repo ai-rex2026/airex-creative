@@ -32,7 +32,7 @@ export type SpeedMetric = {
 
 export type SpeedScan = {
   strategy: "mobile";
-  /** その場の計測スコア。0～100 */
+  /** その場の計測スコア。0〜100 */
   score: number | null;
   /** 実ユーザーの計測値。少ないサイトでは空になる */
   field: SpeedMetric[];
@@ -89,7 +89,7 @@ type PsiAudit = {
   title?: string;
   displayValue?: string;
   description?: string;
-  /** 0～1。合格している項目も短縮見込みを返すので、これで弾く */
+  /** 0〜1。合格している項目も短縮見込みを返すので、これで弾く */
   score?: number | null;
   details?: { overallSavingsMs?: number };
 };
