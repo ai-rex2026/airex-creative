@@ -19,7 +19,7 @@ import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData 
 import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 
-/** 本番と同じ見た目の短いID（英数20��m);
+/** 本番と同じ見た目の短いID(英数20文字) */
 export function newAnalysisId() {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const buf = new Uint8Array(20);
@@ -56,7 +56,7 @@ export type Analysis = {
   image_scan: ImageScan | null;
   margin: number | null;
   kpi: KpiTree | null;
-  /** 選��のKPIのID。自由入力ぶん id を振ってここに入る */
+  /** 選ばれたKPIのID。自由入力ぶんも id を振ってここに入る */
   kpi_selected: { id: string; name: string; custom?: boolean }[] | null;
   measures: Measure[] | null;
   /** 済みにした施策のID */
@@ -105,7 +105,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const site = await scanSite(a.url);
       return await save({ site, seo: estimateSeo(site), step: "サイトを読んでいます", progress: 18 });
     }
-    // サイトから辿れた公式SNSを実際に見に行く。X（Grok経由）だけは数十秒かかることがある
+    // サイトから辿れた公式SNSを実際に見に行く。X(Grok経由)だけは数十秒かかることがある
     if (a.site && !a.social && (a.site.social ?? []).length > 0) {
       const social = await scanSocial(a.site);
       return await save({ social, step: "サイトを読んでいます", progress: 20 });
@@ -164,7 +164,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       try {
         comp = await findCompetitors(a.diagnosis, a.url);
       } catch {
-        // 取れなければ空のまま進む（画面には「取得できず」と出す）
+        // 取れなければ空のまま進む(画面には「取得できず」と出す)
       }
       return await save({ competitors: comp, step: "広告手法を選んでいます", progress: 50 });
     }
@@ -172,7 +172,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const plan = await generateMediaPlan(a.diagnosis, a.site, a.budget);
       return await save({ media_plan: plan, step: "広告の運用設計を書いています", progress: 55 });
     }
-    // 媒体1つ＝1工程。まとめて生成すると1リクエストの実行時間に収まらず、
+    // 媒体1つ=1工程。まとめて生成すると1リクエストの実行時間に収まらず、
     // 何も保存されないまま再試行を繰り返して進捗が止まる
     if (!a.ad_ops?.done) {
       const targets = opsTargets(a.media_plan);
@@ -186,7 +186,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
         };
         return await save({
           ad_ops: ops,
-          step: `広告の運用設計を書いています（${built.length + 1}/${targets.length}）`,
+          step: `広告の運用設計を書いています(${built.length + 1}/${targets.length})`,
           progress: 55 + Math.round((5 * (built.length + 1)) / targets.length),
         });
       }
@@ -224,8 +224,8 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     }
     // サジェストは Google の公開エンドポイントから実測する。AI は使わないので速い
     if (!a.suggests) {
-      // 地名は MEO の実詭住所から。町名まで細かいとサジェストが返らないので、
-      // 「渋谷区」と方角を落とした町名（恵比寿西→恵比寿）の両方を候補にする
+      // 地名は MEO の実測住所から。町名まで細かいとサジェストが返らないので、
+      // 「渋谷区」と方角を落とした町名(恵比寿西→恵比寿)の両方を候補にする
       const addr = a.meo?.self?.address ?? "";
       const ward = addr.match(/[都道府県](.*?[市区町村])/)?.[1] ?? "";
       const town = addr.match(/[市区町村]([^\d\s]{2,6})/)?.[1]?.replace(/[東西南北]$/, "") ?? "";
@@ -254,19 +254,25 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const scored = await scoreCopies(a.diagnosis, a.copies);
       return await save({ copies: scored, step: "要約をまとめています", progress: 92 });
     }
-    // バナーに使える写真かを見る。文字が焼き込まれた画像は切り抜くと切り止ふふよかH
-�Y�
-XK�[XY�W���[�	��
-K��]O˚[XY�\����JK�[���
-H�ۜ�[XY�W���[�H]�Z]�X��[XY�\�K��]HK�[XY�\�K��]�
-
-
-HO�
-�][\Έ�K�X��Y]��]�]J
-K��T����[��
-HJJN�]\��]�Z]�]�J�[XY�W���[��\��)�y�!8स�o��j8�x�i��a8�o��fH���ܙ\�ΈMJNB���:(j9�.�`'�n���k�k���+8�k�� 9o�8�j�f��fx� ��H8�k�/�8�x�j��a8�d��j8�c8�`�ࢸ� B���:`%9.+x�j��k��c��j8��8��x��8��9aj9/d��c8�gx�d��i��h��o��Y�
-K�\�	��XK��YY
-H�ۜ��YYH]�Z]��[��YY
-K�\�
-N�]\��]�Z]�]�J��YY�\��)�y�!8स�o��j8�x�i��a8�o��fH���ܙ\�ΈMHJNB��ۜ��[[X\�HH]�Z]�[�\�]T�[[X\�JK�XYۛ��\�K��]KK��[�K���Y\�N�]\��]�Z]�]�J��[[X\�K�]\Έ�ۙH��\��k�9.���e��o��e��gȋ��ܙ\�ΈLJNH�]�
-JH�]\��]�Z]�]�J�]\Έ��Z[Y���\��i,y�e��e��o��e��gȋ�\��܎�H[��[��[و\��܈�K�Y\��Y�H���[��JK�JNB�B
+    // バナーに使える写真かを見る。文字が焼き込まれた画像は切り抜くと切れるので、
+    // 候補から外すために先に判定しておく
+    if (!a.image_scan && (a.site?.images ?? []).length > 0) {
+      const image_scan = await checkImages(a.site!.images).catch(() => ({ items: [], checkedAt: new Date().toISOString() }));
+      return await save({ image_scan, step: "要約をまとめています", progress: 94 });
+    }
+    // 表示速度の実測は最後に回す。PSI は返らないことがあり、
+    // 途中に置くとレポート全体がそこで止まる
+    if (a.url && !a.speed) {
+      const speed = await scanSpeed(a.url);
+      return await save({ speed, step: "要約をまとめています", progress: 95 });
+    }
+    const summary = await generateSummary(a.diagnosis, a.site, a.seo, a.copies);
+    return await save({ summary, status: "done", step: "完了しました", progress: 100 });
+  } catch (e) {
+    return await save({
+      status: "failed",
+      step: "失敗しました",
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
