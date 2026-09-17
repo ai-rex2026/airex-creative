@@ -1712,7 +1712,10 @@ export function Report({
                   .filter((u) => !looksLikeCasePhoto(u))
                   .filter((u) => {
                     const info = imageScan?.items.find((x) => x.url === u);
-                    if (!info?.hasText) return true;
+                    // 判定結果が無い（AIの文字チェックに回らなかった等）場合、文字なしと
+                    // 決めつけない。安全側に倒し、除外側と同じ「それも表示する」に回す
+                    if (!info) return showTexted;
+                    if (!info.hasText) return true;
                     if (info.safeCrop) return true; // 自動トリミングで使えるので候補に残す
                     return showTexted; // 除外対象。手動で「それも表示する」を選んだときだけ
                   })
@@ -1764,7 +1767,15 @@ export function Report({
                 const withText = imageScan?.items.filter((x) => x.hasText) ?? [];
                 const autoCrop = withText.filter((x) => x.safeCrop);
                 const excluded = withText.filter((x) => !x.safeCrop);
-                if (withText.length === 0) return null;
+                // AIの文字チェックに回らなかった画像（判定件数の上限などで対象外になったもの）。
+                // 「文字なし」と決めつけて候補に出すと文字入りのまま使われかねないので、
+                // 除外枚数として別に数えて、同じ「それも表示する」の裏に回す
+                const checkedUrls = new Set((imageScan?.items ?? []).map((x) => x.url));
+                const unverified = (site?.images ?? [])
+                  .filter((u) => !looksLikeCasePhoto(u))
+                  .filter((u) => !checkedUrls.has(u));
+                const hiddenCount = excluded.length + unverified.length;
+                if (autoCrop.length === 0 && hiddenCount === 0) return null;
                 return (
                   <div className="note" style={{ marginTop: 10 }}>
                     <i className="i">i</i>
@@ -1776,10 +1787,21 @@ export function Report({
                           <br />
                         </>
                       )}
-                      {excluded.length > 0 && (
+                      {hiddenCount > 0 && (
                         <>
-                          文字を含まない部分が十分に取れない写真 <b style={{ fontWeight: 600 }}>{excluded.length}枚</b> は候補から外しています。
-                          切り抜くと文字が途中で切れるためです。
+                          {excluded.length > 0 && (
+                            <>
+                              文字を含まない部分が十分に取れない写真 <b style={{ fontWeight: 600 }}>{excluded.length}枚</b> は候補から外しています。
+                              切り抜くと文字が途中で切れるためです。
+                            </>
+                          )}
+                          {unverified.length > 0 && (
+                            <>
+                              {excluded.length > 0 && " "}
+                              文字が入っているか確認できなかった写真 <b style={{ fontWeight: 600 }}>{unverified.length}枚</b> も、
+                              念のため候補から外しています。
+                            </>
+                          )}
                           <button className="linkbtn" onClick={() => setShowTexted(!showTexted)}>
                             {showTexted ? "また隠す" : "それも表示する"}
                           </button>
