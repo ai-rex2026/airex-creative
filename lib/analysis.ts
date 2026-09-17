@@ -19,7 +19,7 @@ import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData 
 import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 
-/** æœ¬ç•ªã¨åŒã˜è¦‹ãŸç›®ã®çŸ­ã„IDï¼ˆè‹±æ•°20æ–‡å­—ï¼‰ */
+/** æœ¬ç•ªã¨åŒã˜è¦‹ãŸç›®ã®çŸ­ã„IDï¼ˆè‹±æ•°20æ–å¥m);
 export function newAnalysisId() {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const buf = new Uint8Array(20);
@@ -56,7 +56,7 @@ export type Analysis = {
   image_scan: ImageScan | null;
   margin: number | null;
   kpi: KpiTree | null;
-  /** é¸ã°ã‚ŒãŸKPIã®IDã€‚è‡ªç”±å…¥åŠ›ã¶ã‚“ã‚‚ id ã‚’æŒ¯ã£ã¦ã“ã“ã«å…¥ã‚‹ */
+  /** é¸àìã®KPIã®IDã€‚è‡ªç”±å…¥åŠ›ã¶ã‚“ id ã‚’æŒ¯ã£ã¦ã“ã“ã«å…¥ã‚‹ */
   kpi_selected: { id: string; name: string; custom?: boolean }[] | null;
   measures: Measure[] | null;
   /** æ¸ˆã¿ã«ã—ãŸæ–½ç­–ã®ID */
@@ -224,7 +224,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     }
     // ã‚µã‚¸ã‚§ã‚¹ãƒˆã¯ Google ã®å…¬é–‹ã‚¨ãƒ³ãƒ‰ãƒã‚¤ãƒ³ãƒˆã‹ã‚‰å®Ÿæ¸¬ã™ã‚‹ã€‚AI ã¯ä½¿ã‚ãªã„ã®ã§é€Ÿã„
     if (!a.suggests) {
-      // åœ°åã¯ MEO ã®å®Ÿæ¸¬ä½æ‰€ã‹ã‚‰ã€ç”ºåã¾ã§ç´°ã‹ã„ã€‚ç”ºåã¾ã§ç´°ã‹ã„ã¨ã‚µã‚¸ã‚§ã‚¹ãƒˆãŒè¿”ã‚‰ãªã„ã®ã§ã€
+      // åœ°åã¯ MEO ã®å®Ÿè©­ä½æ‰€ã‹ã‚‰ã€‚ç”ºåã¾ã§ç´°ã‹ã„ã¨ã‚µã‚¸ã‚§ã‚¹ãƒˆãŒè¿”ã‚‰ãªã„ã®ã§ã€
       // ã€Œæ¸‹è°·åŒºã€ã¨æ–¹è§’ã‚’è½ã¨ã—ãŸç”ºåï¼ˆæµæ¯”å¯¿è¥¿â†’æµæ¯”å¯¿ï¼‰ã®ä¸¡æ–¹ã‚’å€™è£œã«ã™ã‚‹
       const addr = a.meo?.self?.address ?? "";
       const ward = addr.match(/[éƒ½é“åºœçœŒ](.*?[å¸‚åŒºç”ºæ‘])/)?.[1] ?? "";
@@ -254,25 +254,19 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const scored = await scoreCopies(a.diagnosis, a.copies);
       return await save({ copies: scored, step: "è¦ç´„ã‚’ã¾ã¨ã‚ã¦ã„ã¾ã™", progress: 92 });
     }
-    // ãƒãƒŠãƒ¼ã«ä½¿ãˆã‚‹å†™çœŸã‹ã‚’è¦‹ã‚‹ã€‚æ–‡å­—ãŒç„¼ãè¾¼ã¾ã‚ŒãŸç”»åƒã¯åˆ‡ã‚ŠæŠœãã¨åˆ‡ã‚Œã‚‹ã®ã§ã€
-    // å€™è£œã‹ã‚‰å¤–ã™ãŸã‚ã«å…ˆã«åˆ¤å®šã—ã¦ãŠã
-    if (!a.image_scan && (a.site?.images ?? []).length > 0) {
-      const image_scan = await checkImages(a.site!.images).catch(() => ({ items: [], checkedAt: new Date().toISOString() }));
-      return await save({ image_scan, step: "è¦ç´„ã‚’ã¾ã¨ã‚ã¦ã„ã¾ã™", progress: 94 });
-    }
-    // è¡¨ç¤ºé€Ÿåº¦ã®å®Ÿæ¸¬ã¯æœ€å¾Œã«å›ã™ã€‚PSI ã¯è¿”ã‚‰ãªã„ã“ã¨ãŒã‚ã‚Šã€
-    // é€”ä¸­ã«ç½®ãã¨ãƒ¬ãƒãƒ¼ãƒˆå…¨ä½“ãŒãã“ã§æ­¢ã¾ã‚‹
-    if (a.url && !a.speed) {
-      const speed = await scanSpeed(a.url);
-      return await save({ speed, step: "è¦ç´„ã‚’ã¾ã¨ã‚ã¦ã„ã¾ã™", progress: 95 });
-    }
-    const summary = await generateSummary(a.diagnosis, a.site, a.seo, a.copies);
-    return await save({ summary, status: "done", step: "å®Œäº†ã—ã¾ã—ãŸ", progress: 100 });
-  } catch (e) {
-    return await save({
-      status: "failed",
-      step: "å¤±æ•—ã—ã¾ã—ãŸ",
-      error: e instanceof Error ? e.message : String(e),
-    });
-  }
-}
+    // ãƒãƒŠãƒ¼ã«ä½¿ãˆã‚‹å†™çœŸã‹ã‚’è¦‹ã‚‹ã€‚æ–‡å­—ãŒç„¼ãè¾¼ã¾ã‚ŒãŸç”»åƒã¯åˆ‡ã‚ŠæŠœãã¨åˆ‡ã‚Šæ­¢ãµãµã‚ˆã‹H
+‹ÂˆYˆ
+XKš[XYÙWÜØØ[ˆ	‰ˆ
+KœÚ]OËš[XYÙ\ÈÏÈ×JK›[™İˆ
+HÂˆÛÛœİ[XYÙWÜØØ[ˆH]ØZ]ÚXÚÒ[XYÙ\ÊKœÚ]HKš[XYÙ\ÊK˜Ø]Ú
+
+
+HOˆ
+È][\Îˆ×KÚXÚÙY]ˆ™]È]J
+KÒTÓÔİš[™Ê
+HJJNÂˆ™]\›ˆ]ØZ]Ø]™JÈ[XYÙWÜØØ[‹İ\ˆº) yí!8à¤¸ào¸àj8à xài¸àa8ào¸àfH‹›ÙÜ™\ÜÎˆMJNÂˆBˆËÈ:(j9é.º`'ùn©¸àk¹k§ù®+8àkù§ 9o£8àjùfç¸àfxà ”ÒH8àkú/å8à¢xàj¸àa8àdøàj8àc8à`¸à¢¸à BˆËÈ:`%9.+xàjùïk¸àcøàj8àë8àçxàï8àâ9aj9/døàc8àgxàdøàiù«h¸ào¸à¢ÂˆYˆ
+K\›	‰ˆXKœÜYY
+HÂˆÛÛœİÜYYH]ØZ]ØØ[”ÜYY
+K\›
+NÂˆ™]\›ˆ]ØZ]Ø]™JÈÜYYİ\ˆº) yí!8à¤¸ào¸àj8à xài¸àa8ào¸àfH‹›ÙÜ™\ÜÎˆMHJNÂˆBˆÛÛœİİ[[X\HH]ØZ]Ù[™\˜]Tİ[[X\JK™XYÛ›ÜÚ\ËKœÚ]KKœÙ[ËK˜ÛÜY\ÊNÂˆ™]\›ˆ]ØZ]Ø]™JÈİ[[X\Kİ]\Îˆ™Û™H‹İ\ˆ¹k£9.¡¸àeøào¸àeøàgÈ‹›ÙÜ™\ÜÎˆLJNÂˆHØ]Ú
+JHÂˆ™]\›ˆ]ØZ]Ø]™JÂˆİ]\Îˆ™˜Z[Y‹ˆİ\ˆ¹i,y¥eøàeøào¸àeøàgÈ‹ˆ\œ›ÜˆH[œİ[˜Ù[Ùˆ\œ›ÜˆÈK›Y\ÜØYÙHˆİš[™ÊJKˆJNÂˆBŸB
