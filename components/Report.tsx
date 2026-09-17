@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
 import { replanForBudget, runLp, setBudget, setMargin } from "@/app/actions";
-import { SIZES } from "@/lib/sizes";
+import { SIZES, type SizePreset } from "@/lib/sizes";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
 import type { CompetitorScan } from "@/lib/competitors";
@@ -36,6 +36,24 @@ import type { Measure } from "@/lib/measures";
 
 type Tab = "inputs" | "measures" | "overview";
 
+/**
+ * 「切り抜く」表示のとき、横・縦どちらの位置スライダーが実際に効くかを判定する。
+ * Banner.tsx の枠サイズ計算（photoTop/photoSide・photoShare）をここでも再現し、
+ * object-fit: cover ではみ出す軸（＝動かして意味がある軸）だけを true にする。
+ * どちらもはみ出さない場合や、四捨五入で誤差が出る場合を考え、1px未満は「効かない」扱いにする
+ */
+function coverAxisEffect(size: SizePreset, natural: { w: number; h: number }): { x: boolean; y: boolean } {
+  const compact = Math.min(size.w, size.h) < 400;
+  const landscape = size.w / size.h > 1.6;
+  const photoTop = !landscape;
+  const photoShare = compact ? 0.34 : 0.42;
+  const boxW = photoTop ? size.w : size.w * 0.4;
+  const boxH = photoTop ? size.h * photoShare : size.h;
+  const scale = Math.max(boxW / natural.w, boxH / natural.h);
+  const excessX = natural.w * scale - boxW;
+  const excessY = natural.h * scale - boxH;
+  return { x: excessX > 1, y: excessY > 1 };
+}
 
 export function Report({
   d,
@@ -129,6 +147,28 @@ export function Report({
   const [cropBusy, setCropBusy] = useState(false);
   const [cropError, setCropError] = useState<string | null>(null);
   const photoSrc = croppedSrc ?? (photo ? `/api/analysis/${id}/img?u=${encodeURIComponent(photo)}` : null);
+  // 位置スライダーが実際に効くかは、写真の縦横比と枠の縦横比の組み合わせで決まる
+  // （object-fit: cover の性質上、はみ出さない軸は動かしても変化しない）。
+  // 判定には元画像の実サイズが要るので、選ばれた瞬間に読み込んでおく
+  const [photoNatural, setPhotoNatural] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    if (!photoSrc) {
+      setPhotoNatural(null);
+      return;
+    }
+    let cancelled = false;
+    const img = new window.Image();
+    img.onload = () => {
+      if (!cancelled) setPhotoNatural({ w: img.naturalWidth, h: img.naturalHeight });
+    };
+    img.onerror = () => {
+      if (!cancelled) setPhotoNatural(null);
+    };
+    img.src = photoSrc;
+    return () => {
+      cancelled = true;
+    };
+  }, [photoSrc]);
 
   /**
    * 写真候補を選ぶ。文字が写り込んでいても safeCrop（文字を含まない領域）が
@@ -1824,30 +1864,54 @@ export function Report({
                     </button>
                   </div>
                   {photoFit === "cover" ? (
-                    <>
-                      <div className="row">
-                        <span>横の位置</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={photoFocus.x}
-                          onChange={(e) => setPhotoFocus((f) => ({ ...f, x: Number(e.target.value) }))}
-                        />
-                        <small>{photoFocus.x}%</small>
-                      </div>
-                      <div className="row">
-                        <span>縦の位置</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={photoFocus.y}
-                          onChange={(e) => setPhotoFocus((f) => ({ ...f, y: Number(e.target.value) }))}
-                        />
-                        <small>{photoFocus.y}%</small>
-                      </div>
-                    </>
+                    (() => {
+                      // 写真の縦横比とバナー枠の縦横比の組み合わせ次第で、横・縦どちらかの
+                      // スライダーがそのサイズには効かないことがある（cover の性質上、
+                      // はみ出さない軸は動かしても変化しない）。選択中のサイズごとに
+                      // 判定し、効かないサイズがあれば各スライダーの下に明示する
+                      const per = photoNatural
+                        ? chosenSizes.map((s) => ({ s, e: coverAxisEffect(s, photoNatural) }))
+                        : [];
+                      const xDead = per.filter((p) => !p.e.x).map((p) => p.s);
+                      const yDead = per.filter((p) => !p.e.y).map((p) => p.s);
+                      const label = (s: SizePreset) => `${s.media} ${s.w}×${s.h}`;
+                      return (
+                        <>
+                          <div className="row">
+                            <span>横の位置</span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              value={photoFocus.x}
+                              onChange={(e) => setPhotoFocus((f) => ({ ...f, x: Number(e.target.value) }))}
+                            />
+                            <small>{photoFocus.x}%</small>
+                          </div>
+                          {xDead.length > 0 && (
+                            <small className="hint" style={{ display: "block", marginTop: -4 }}>
+                              {xDead.map(label).join("・")}ではこの写真だと変化しません（このサイズの枠は縦方向にしかはみ出さないため）
+                            </small>
+                          )}
+                          <div className="row">
+                            <span>縦の位置</span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              value={photoFocus.y}
+                              onChange={(e) => setPhotoFocus((f) => ({ ...f, y: Number(e.target.value) }))}
+                            />
+                            <small>{photoFocus.y}%</small>
+                          </div>
+                          {yDead.length > 0 && (
+                            <small className="hint" style={{ display: "block", marginTop: -4 }}>
+                              {yDead.map(label).join("・")}ではこの写真だと変化しません（このサイズの枠は横方向にしかはみ出さないため）
+                            </small>
+                          )}
+                        </>
+                      );
+                    })()
                   ) : (
                     <small>切らずに全体を入れます。余白が出ますが、画像内の文字は欠けません。</small>
                   )}
