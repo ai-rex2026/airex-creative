@@ -99,36 +99,59 @@ export async function askJsonWithImages<T>(
   opts: AskOpts = {}
 ): Promise<T> {
   const model = opts.model ?? MODEL_FAST;
-  const res = await client().messages.create(
-    {
-      model,
-      max_tokens: opts.maxTokens ?? 1500,
-      system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。",
-      messages: [
-        {
-          role: "user",
-          content: [
-            ...images.map((im, i) => [
-              { type: "text" as const, text: `画像 ${i}` },
-              {
-                type: "image" as const,
-                source: { type: "base64" as const, media_type: im.media as "image/png", data: im.base64 },
-              },
-            ]).flat(),
-            { type: "text" as const, text: user },
-          ],
-        },
-      ],
-    },
-    { timeout: opts.timeoutMs ?? 90_000, maxRetries: 1 }
-  );
-  opts.meter?.({ model, input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens });
-  const raw = stripFence(res.content.map((b) => (b.type === "text" ? b.text : "")).join(""));
+
+  const call = async (maxTokens: number, extraSystem: string) => {
+    const res = await client().messages.create(
+      {
+        model,
+        max_tokens: maxTokens,
+        system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。" + extraSystem,
+        messages: [
+          {
+            role: "user",
+            content: [
+              ...images.map((im, i) => [
+                { type: "text" as const, text: `画像 ${i}` },
+                {
+                  type: "image" as const,
+                  source: { type: "base64" as const, media_type: im.media as "image/png", data: im.base64 },
+                },
+              ]).flat(),
+              { type: "text" as const, text: user },
+            ],
+          },
+        ],
+      },
+      { timeout: opts.timeoutMs ?? 90_000, maxRetries: 1 }
+    );
+    opts.meter?.({ model, input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens });
+    return { text: stripFence(res.content.map((b) => (b.type === "text" ? b.text : "")).join("")), stop: res.stop_reason };
+  };
+
+  const parse = (cleaned: string): T => {
+    try {
+      return JSON.parse(cleaned) as T;
+    } catch {
+      const m = cleaned.match(/[[{][\s\S]*[\]}]/);
+      if (!m) throw new Error("no-json");
+      return JSON.parse(m[0]) as T;
+    }
+  };
+
+  const maxTokens = opts.maxTokens ?? 1500;
+  const first = await call(maxTokens, "");
   try {
-    return JSON.parse(raw) as T;
+    return parse(first.text);
   } catch {
-    const m = raw.match(/[[{][\s\S]*[\]}]/);
-    if (m) return JSON.parse(m[0]) as T;
-    throw new Error("AIの応答をJSONとして読めませんでした");
+    // 画像枚数が多いと出力が途中で切れてJSONとして読めないことがある。
+    // 1回壊れただけで判定全体（＝写真の候補すべて）を失わないよう、枠を広げて一度だけ再試行する
+    const truncated = first.stop === "max_tokens";
+    const retry = await call(
+      truncated ? Math.min(Math.round(maxTokens * 1.5), 6000) : maxTokens,
+      truncated
+        ? "\n前回の出力は途中で切れた。各項目の note を短くしてでも、必ず閉じ括弧まで出力すること。"
+        : "\n前回の出力は JSON として読めなかった。構文を厳密に守り、JSON だけを出力すること。"
+    );
+    return parse(retry.text);
   }
 }
