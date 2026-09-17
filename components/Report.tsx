@@ -259,7 +259,7 @@ export function Report({
    * 候補画像が1枚もあるのに判定結果が0件なら、個別の画像が未判定なのではなく
    * チェック自体が動かなかったとみなす。この場合に「未判定は安全側で除外」を適用すると
    * 写真が一枚も出せなくなるため、下の候補フィルターで判定を丸ごとスキップする
-  */
+   */
   const checkUnavailable = (site?.images?.length ?? 0) > 0 && (imageScan?.items.length ?? 0) === 0;
 
   const TOP_N = 3;
@@ -321,7 +321,7 @@ export function Report({
           <button
             className="icon-btn"
             onClick={() => {
-              // 畳んだ指摘が閉じたまま印刷されると不身ぎ落ちるので、先に全部開く
+              // 畳んだ指摘が閉じたまま印刷されると中身が落ちるので、先に全部開く
               document.querySelectorAll("details.flags").forEach((d) => ((d as HTMLDetailsElement).open = true));
               window.print();
             }}
@@ -333,7 +333,7 @@ export function Report({
 
       <div className="rep-hero">
         {url && <div className="u">{url}</div>}
-        <h2>{url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入劻テキストから分析"}</h2>
+        <h2>{url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入力テキストから分析"}</h2>
       </div>
 
       {cards.length > 0 && (
@@ -342,7 +342,7 @@ export function Report({
             <div className="tot">
               <span className="lb">総合</span>
               <b>{total}<i>/100</i></b>
-              <span className="nt">実�/すれた{cards.length}領域の平均</span>
+              <span className="nt">実測できた{cards.length}領域の平均</span>
             </div>
           )}
           <div className="cs">
@@ -363,8 +363,8 @@ export function Report({
       )}
 
       <div className="tabs">
-        <button className={tab === "inputs" ? "on" : ""} onClick={() => setTab("inputs")}>入劼</button>
-        {kpi && <button className={tab === "measures" ? "on" : ""} onClick={() => setTab("measures")}>施筶</button>}
+        <button className={tab === "inputs" ? "on" : ""} onClick={() => setTab("inputs")}>入力</button>
+        {kpi && <button className={tab === "measures" ? "on" : ""} onClick={() => setTab("measures")}>施策</button>}
         <button className={tab === "overview" ? "on" : ""} onClick={() => setTab("overview")}>分析データ</button>
       </div>
 
@@ -404,7 +404,7 @@ export function Report({
           <div className="sec-head" style={{ marginTop: 0 }}>
             <span className="ic">⇄</span>
             <div>
-              <h2 id="sec-linked">迓惴データ</h2>
+              <h2 id="sec-linked">連携データ</h2>
               <div className="sub">Search Console / GA4 の実データです（推定ではありません）</div>
             </div>
             <span className="rule" />
@@ -462,10 +462,10 @@ export function Report({
       {summary && summary.firstSteps?.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">�</span>
+            <span className="ic">①</span>
             <div>
-              <h2 id="sec-first">徟あやること3つ</h2>
-              <div className="sub">優先度の高い順に、今週から始めら备るものです</div>
+              <h2 id="sec-first">まずやること3つ</h2>
+              <div className="sub">優先度の高い順に、今週から始められるものです</div>
             </div>
             <span className="rule" />
           </div>
@@ -489,7 +489,7 @@ export function Report({
       {summary && summary.personas?.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">�</span>
+            <span className="ic">☺</span>
             <div>
               <h2 id="sec-persona">お客様像</h2>
               <div className="sub">この人たちに向けてコピーを書いています</div>
@@ -582,9 +582,10 @@ export function Report({
       {site && site.social.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">�M</span>
+            <span className="ic">◍</span>
             <div>
-              <h2 id="sec-social">公式SNSアカウン�トを実際に見て実際に行って測っています</div>
+              <h2 id="sec-social">公式SNSアカウント</h2>
+              <div className="sub">サイトからリンクされているアカウントを、実際に見に行って測っています</div>
             </div>
             <span className="rule" />
           </div>
@@ -616,12 +617,12 @@ export function Report({
           <div className="note">
             <i className="i">i</i>
             <span>
-              YouTube は公式APIから取得しています（相手のアカウントとの連掺は不要です）。
-              それ以外は公開ドーザでは衄ジれたものだけを出していません
+              YouTube は公式APIから取得しています（相手のアカウントとの連携は不要です）。
+              それ以外は公開ページから読み取れたものだけを出しています。
               媒体がログインを求める場合は取得できません。
-              <b style={{ fontWeight: 600 }}>取れなかった数字は推測で埅めていません</b>
-              取得できた数値は施筶の生成にも渡していて、すでに運用しているホを
-              「新しく開設する」施筶としては出しません。
+              <b style={{ fontWeight: 600 }}>取れなかった数字は推測で埋めていません。</b>
+              取得できた数値は施策の生成にも渡していて、すでに運用しているSNSを
+              「新しく開設する」施策としては出しません。
             </span>
           </div>
         </>
@@ -630,9 +631,9 @@ export function Report({
       {site && (
         <>
           <div className="sec-head">
-            <span className="ic">㛨</span>
+            <span className="ic">⛨</span>
             <div>
-              <h2 id="sec-security">セキュリティヘッダー</h2>
+              <h2 id="sec-security">セキュリティチェック</h2>
               <div className="sub">セキュリティヘッダー検査結果</div>
             </div>
             <span className="rule" />
@@ -648,7 +649,7 @@ export function Report({
             </div>
             <div className="body">
               <div className="bar"><span style={{ width: `${(site.passed / site.total) * 100}%` }} /></div>
-              <p>HTTPS・セキュリティヘッダ・・robots.txt・sitemap.xml・秨造化データの設定状況を実際に取得して誯べました。</p>
+              <p>HTTPS・セキュリティヘッダー・robots.txt・sitemap.xml・構造化データの設定状況を実際に取得して調べました。</p>
             </div>
           </div>
 
@@ -664,7 +665,7 @@ export function Report({
                     <code style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginTop: 4, wordBreak: "break-all" }}>
                       {h.value.slice(0, 120)}
                     </code>
-              )}
+                  )}
                 </div>
                 <span className={`pill ${h.pass ? "ok" : "ng"}`}>{h.pass ? "通過" : "要対応"}</span>
               </div>
@@ -679,7 +680,7 @@ export function Report({
             <span className="ic">⛓</span>
             <div style={{ display: "flex", alignItems: "center" }}>
               <div>
-                <h2 id="sec-seo">ネメインパーク（SEO強度）</h2>
+                <h2 id="sec-seo">ドメインパワー（SEO強度）</h2>
                 <div className="sub">推定スコア</div>
               </div>
               <span className="ai">AI推定</span>
@@ -709,50 +710,1395 @@ export function Report({
           <div className="note">
             <i className="i">i</i>
             <span>
-              サコアは、その場で取得した指標（HTTPS・�cx��87���8��8����x�8��8��������������`(9c%������8�����a�z`�8�������B�8�h8�dx�b��ya��e��g���[O^���۝�ZY���_O���9k��`)؏��i��fx� �(����������l8�j9c��i���x��x�8����l8�k�i%�`�8�����8���c9o�z)�x�j��g��yc�o���e��i��a8�o��f���� ����[����]���ς�
-_B��ς�
-_B���X�OOH�ݙ\��Y]Ȉ	��
-������\]]ܜ�	��
-���]��\�Ә[YOH��X�ZXY��[O^��X\��[���_O���[��\�Ә[YOH�Xȏ���O��[���]����YH��X�X��\�����d"8�x�8��9��:/ �����]��\�Ә[YOH��X���k��f���j��'9�(��e��i�� y."�/cx�j�a��i��a8�g��x�8��8�i��fO�]����]����[��\�Ә[YOH��[H�ς��]�������\]]ܜ˚][\˛[��OOH�
-�]��\�Ә[YOH��\�YX\�\�H����[O^���۝�^�N�LˍK��܎���\�K[]]Y
-H�_O��9�'9�(��d9��8हc�o���i��cx�o��f����i��e��g�� �a�yb!���8�fx���j9c�ࢹ��8�e��o��fx� ������]���
-H�
-���]��\�Ә[YOH�������\YX\�\�H���]��\�Ә[YOH�����9."�/cx�j�a��i��a8�g��x�8����[��\�Ә[YOH�[����'9�(�*���&����\]]ܜ˚�^]�ܙ˚��[����_O��[����]������\]]ܜ˚][\˛X\
+              スコアは、その場で取得できた指標（HTTPS・ヘッダー・サイトマップ・構造化データ・内部リンク）
+              だけから出した<b style={{ fontWeight: 600 }}>推定値</b>です。被リンク数と参照ドメイン数は外部データが必要なため取得していません。
+            </span>
+          </div>
+        </>
+      )}
 
-�JHO�
-�]��\�Ә[YOH����^O^�_O���[��\�Ә[YOH��ȏ��˜�[��O��[���]��\�Ә[YOH��������˛�[Y_O؏���[��\�Ә[YOH�H���˝\�O��[����[��\�Ә[YOH�����˛��_O��[����]����[��\�Ә[YOH��ȏ��˚�^]�ܙO��[����]���
-J_B��]���]��\�Ә[YOH���HYX\�\�H���H�\�Ә[YOH�H��O�O���[���ۙ]�]J��\]]ܜ˜�X\��Y]
-K����[T��[����KR��_y�`��x�k��'9�(��d9��8�i��fx� ��:h!�/cx�k��'9�(��fx��h-9�`8�������*�����`��'��i�i"x��ࢸ�o��fx� ����[O^���۝�ZY���_O�**�ec��l8�:hg�//9n���k�c�o���e��i��j��a8�hx�d��j8� �؏����[����]���ς�
-_B�ς�
-_B��]��\�Ә[YOH��X�ZXY����[��\�Ә[YOH�Xȏ�����[���]����YH��X�\��[����o-��o��j8� z,�����j��a9�!��,O����]��\�Ә[YOH��X����d��d�ह�l8�fx����8��8�c9. 9�j�b�x�c��]����]����[��\�Ә[YOH��[H�ς��]���]��\�Ә[YOH�����YX\�\�H���]��\�Ә[YOH����o-��o��]�������[��˛X\
+      </>
+      )}
 
-JHO�
-�]��\�Ә[YOH����^O^�_O��[��\�Ә[YOH����[O^����܎���\�K[��H�_O��$���[����[O^���۝�ZY��_O��O؏��]���
-J_B��]���]��\�Ә[YOH�����YX\�\�H���]��\�Ә[YOH����,�����j��a9�!��,O�]�����ؚ�X�[ۜ˛X\
+      {tab === "overview" && (
+      <>
+      {competitors && (
+        <>
+          <div className="sec-head" style={{ marginTop: 0 }}>
+            <span className="ic">⊕</span>
+            <div>
+              <h2 id="sec-comp">競合サイト比較</h2>
+              <div className="sub">実際に検索して、上位に出ていたサイトです</div>
+            </div>
+            <span className="rule" />
+          </div>
 
-JHO�
-�]��\�Ә[YOH����^O^�_O��[��\�Ә[YOH����[O^����܎���\�K[��H�_O��%O��[����[O^���۝�ZY��_O��O؏��]���
-J_B��]�����[�	��[��[���	��
-���]��\�Ә[YOH��X�ZXY����[��\�Ә[YOH�Xȏ�����[���]����YH��X�\[���n��db��b���y. :)������]��\�Ә[YOH��X����x�8��9b!���8स࠸�j8�j�� y/o��a��nx�cyj��/d�हa*�ab:h!�/cy.�8�cx�i�a��e��i��a8�o��fO�]����]����[��\�Ә[YOH��[H�ς��]����]��\�Ә[YOH��Y�]YX\�\�H��[O^��X\��[���M�_O��]��\�Ә[YOH�����":e��n��db�.�9���[��.���#���[���]���]��\�Ә[YOH������ЕQ�U˛X\
+          {competitors.items.length === 0 ? (
+            <div className="card measure">
+              <p style={{ fontSize: 13.5, color: "var(--muted)" }}>
+                検索結果を取得できませんでした。再分析すると取り直します。
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="rows comp measure">
+                <div className="rh">
+                  上位に出ていたサイト
+                  <span className="hint">検索語：{competitors.keywords.join(" / ")}</span>
+                </div>
+                {competitors.items.map((c, i) => (
+                  <div className="r" key={i}>
+                    <span className="rk">{c.rank}</span>
+                    <div className="b">
+                      <b>{c.name}</b>
+                      <span className="u">{c.url}</span>
+                      <span className="n">{c.note}</span>
+                    </div>
+                    <span className="kw">{c.keyword}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="note measure">
+                <i className="i">i</i>
+                <span>
+                  {new Date(competitors.searchedAt).toLocaleString("ja-JP")}時点の検索結果です。
+                  順位は検索する場所・端末・時期で変わります。
+                  <b style={{ fontWeight: 600 }}>訪問数や類似度は取得していないため出していません。</b>
+                </span>
+              </div>
+            </>
+          )}
+        </>
+      )}
 
-�HO�
-��]ۈ�^O^؋�YH�\�Ә[YO^؝Y�]OOH��Y��ۈ����Hې�X��^�
-HO�X�НY�]
-�Y�]OOH��Y��[���Y
-_O��؋�X�[B�؝]ۏ��
-J_B��]�����؝Y�]���acyb!�xहk��hcx�j���8�e��i��a8�o��fx� �࠸�a�. 9n����8�fx�j:)��fi8�i��cx�o��fx� �����`n8�m��j8� zacyb!�x�c9j��/d��e8�j8�k�k��hcx�j�i"x��ࢸ�o��fx� ��`��j8�b��y/eyn���i�࠹i"x�b8�x�8�o��fx� ��B�����]�����[��[���	���[�	��
-�]��\�Ә[YOH���H�\����[O^��X\��[���L�_O��H�\�Ә[YOH�H��O�O���[���8�d��k�.�9���h8�j��[O^���۝�ZY���_O��[��X\
+      <div className="sec-head">
+        <span className="ic">◆</span>
+        <div>
+          <h2 id="sec-strength">強みと、買わない理由</h2>
+          <div className="sub">ここを潰すコピーが一番効く</div>
+        </div>
+        <span className="rule" />
+      </div>
+      <div className="rows measure">
+        <div className="rh">強み</div>
+        {d.strengths.map((t, i) => (
+          <div className="r" key={i}><span className="st" style={{ color: "var(--ok)" }}>✓</span><b style={{ fontWeight: 400 }}>{t}</b></div>
+        ))}
+      </div>
+      <div className="rows measure">
+        <div className="rh">買わない理由</div>
+        {d.objections.map((t, i) => (
+          <div className="r" key={i}><span className="st" style={{ color: "var(--ng)" }}>✕</span><b style={{ fontWeight: 400 }}>{t}</b></div>
+        ))}
+      </div>
 
-JHO�K��[��[
-K���[����Ȋ_O؏�8�c�9�"L9.!�a��ह."�f�ࢸ�o��fx� �.�9��ऺ%�8�c�n���d����j8� x�jx�k�j��/d��`������8���c9��8�o��x�f�"k��e�����e�हb)9��x�i��cx�o��f���� ���]ۂ��\�Ә[YOH�[�؝���\�X�Y^ܙ\[��[��B�ې�X��^�
-HO��]�\[��[���YJN��Y�\[��ܐ�Y�]
-Y�[��Y
-K��]�
+      {plan && plan.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">◈</span>
+            <div>
+              <h2 id="sec-plan">広告手法一覧</h2>
+              <div className="sub">サイト分析をもとに、使うべき媒体を優先順位付きで出しています</div>
+            </div>
+            <span className="rule" />
+          </div>
 
+          <div className="budget measure" style={{ marginTop: 16 }}>
+            <div className="bh">月間広告予算<span>任意</span></div>
+            <div className="bb">
+              {BUDGETS.map((b) => (
+                <button key={b.id} className={budget === b.id ? "on" : ""} onClick={() => pickBudget(budget === b.id ? null : b.id)}>
+                  {b.label}
+                </button>
+              ))}
+            </div>
+            <p>
+              {budget
+                ? "配分%を実額に直しています。もう一度押すと解除できます。"
+                : "選ぶと、配分%が媒体ごとの実額に変わります。あとから何度でも変えられます。"}
+            </p>
+          </div>
 
-HO��]�\[��[���[�JJN_B���ܙ\[��[����/g8ࢹ��8�e��i��a8�o��fx�)�����d��k�.�9���i�j��/d�����$8ह/g8ࢹ��8�fH�B�؝]ۏ���X[��"9n��db�`b��*:*+z*"8࠹/g8ࢹ��8�fx�g��x� y�l9b!��b��b�ࢸ�o��f{�"O��X[����[����]���
-_B��]��\�Ә[YOH�[�YX\�\�H����[��X\
+          {thin.length > 0 && band && (
+            <div className="note warn" style={{ marginTop: 12 }}>
+              <i className="i">!</i>
+              <span>
+                この予算だと <b style={{ fontWeight: 600 }}>{thin.map((m) => m.channel).join("・")}</b> が
+                月10万円を下回ります。予算を薄く広げると、どの媒体もデータが溜まらず良し悪しを判断できません。
+                <button
+                  className="linkbtn"
+                  disabled={replanning}
+                  onClick={() => {
+                    setReplanning(true);
+                    void replanForBudget(id, band.id).catch(() => setReplanning(false));
+                  }}
+                >
+                  {replanning ? "作り直しています…" : "この予算で媒体構成を作り直す"}
+                </button>
+                <small>（広告運用設計も作り直すため、数分かかります）</small>
+              </span>
+            </div>
+          )}
 
-KJHO�
-�]��\�Ә[YOH���^O^�K��[��[
-�_O��]��\�Ә[YOH������[��\�Ә[YOH�Xȏ�����[������K��[��[O؏���[��\�Ә[YOH��\�H���K��\�_IO��[�����\�U�Y[��Y�]K��\�JH	���[��\�Ә[YOH�Y[�����\�U�Y[��Y�]K��\�J_O��[��B��[��\�Ә[YO^���K��[ܚ]HOOH�� 9a*�ab����H����XO��K��[ܚ]_O��[����]���]��\�Ә[YOH���H���]��\�Ә[YOH��\����[��[O^���Y�	�K��\�_IX_HϏ�]���
+          <div className="plan measure">
+            {plan.map((m, i) => (
+              <div className="p" key={m.channel + i}>
+                <div className="top">
+                  <span className="ic">◎</span>
+                  <b>{m.channel}</b>
+                  <span className="share">{m.share}%</span>
+                  {shareToYen(budget, m.share) && <span className="yen">{shareToYen(budget, m.share)}</span>}
+                  <span className={`pr${m.priority === "最優先" ? " top1" : ""}`}>{m.priority}</span>
+                </div>
+                <div className="body">
+                  <div className="bar"><span style={{ width: `${m.share}%` }} /></div>
+                  <p>{m.reason}</p>
+                  {(m.cpa || m.cvr || m.ctr) && (
+                    <div className="kpis" style={{ marginTop: 14 }}>
+                      <div className="kpi"><b>{m.cpa ?? "—"}</b><small>CPA 目安</small></div>
+                      <div className="kpi"><b>{m.cvr ?? "—"}</b><small>CVR 目安</small></div>
+                      <div className="kpi"><b>{m.ctr ?? "—"}</b><small>CTR 目安</small></div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="note">
+            <i className="i">i</i>
+            <span>
+              CPA・CVR・CTR は業界平均をもとにした<b style={{ fontWeight: 600 }}>目安</b>です。実績を保証するものではありません。
+              予算配分も、実際の運用結果を見ながら調整する前提の初期値です。
+            </span>
+          </div>
+        </>
+      )}
+
+      {meo && (
+        <>
+          <div className="sec-head">
+            <span className="ic">◉</span>
+            <div>
+              <h2 id="sec-meo">MEO（Googleマップ対策）</h2>
+              <div className="sub">Googleマップの実データで、近隣の同業と比べています</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          {!meo.self ? (
+            <div className="note">
+              <i className="i">i</i>
+              <span>{meo.reason}</span>
+            </div>
+          ) : (
+            <>
+              <MeoStoreList meo={meo} />
+
+              <div className="meo measure">
+                <div className="gauge">
+                  <b>{meo.score}</b>
+                  <small>/ {meo.scoreMax || 100}</small>
+                  <span className={scorePct(meo.score, meo.scoreMax) >= 75 ? "ok" : scorePct(meo.score, meo.scoreMax) >= 50 ? "warn" : "ng"}>
+                    {scorePct(meo.score, meo.scoreMax) >= 75 ? "良好" : scorePct(meo.score, meo.scoreMax) >= 50 ? "改善の余地あり" : "要対策"}
+                  </span>
+                </div>
+                <div className="kpis">
+                  <div className="kpi">
+                    <b>{meo.self.rating?.toFixed(1) ?? "—"}</b>
+                    <small>評価{meo.avgRating !== null ? `（近隣平均 ${meo.avgRating}）` : ""}</small>
+                  </div>
+                  <div className="kpi">
+                    <b>{meo.self.reviews}</b>
+                    <small>レビュー数{meo.avgReviews !== null ? `（近隣平均 ${meo.avgReviews}）` : ""}</small>
+                  </div>
+                  <div className="kpi">
+                    <b>{meo.totalShops > 1 && meo.ratingRank ? `${meo.ratingRank}位` : "—"}</b>
+                    <small>{meo.totalShops > 1 ? `評価の順位 / ${meo.totalShops}店` : "比較できる近隣同業なし"}</small>
+                  </div>
+                  <div className="kpi">
+                    <b>{meo.totalShops > 1 && meo.reviewRank ? `${meo.reviewRank}位` : "—"}</b>
+                    <small>{meo.totalShops > 1 ? `レビュー数の順位 / ${meo.totalShops}店` : "比較できる近隣同業なし"}</small>
+                  </div>
+                </div>
+              </div>
+
+              <details className="flags measure">
+                <summary>点数の内訳（何を測ったか）</summary>
+                <div className="rows" style={{ margin: 0 }}>
+                  {meo.breakdown.map((b, i) => (
+                    <div className="r" key={i}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <b>{b.label}</b>
+                        <small>{b.note}</small>
+                      </div>
+                      <span className={`tag${b.got === 0 ? " warn" : ""}`}>{b.got} / {b.max}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+
+              {meo.competitors.length > 0 && (
+                <details className="flags measure">
+                  <summary>近隣の同業（{meo.competitors.length}店）</summary>
+                  <div className="rows" style={{ margin: 0 }}>
+                    {(() => {
+                      // 自社を含めた最大値で正規化する。順位だけでなく差の大きさを見せる
+                      const top = Math.max(meo.self?.reviews ?? 0, ...meo.competitors.map((c) => c.reviews), 1);
+                      return [{ name: meo.self!.name, address: "自社", rating: meo.self!.rating, reviews: meo.self!.reviews, me: true },
+                              ...meo.competitors.map((c) => ({ ...c, me: false }))]
+                        .sort((a, b) => b.reviews - a.reviews)
+                        .map((c, i) => (
+                          <div className="r" key={i}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <b style={{ fontWeight: c.me ? 700 : 400 }}>{c.name}</b>
+                              <small>{c.address}</small>
+                            </div>
+                            <span className="tag">★ {c.rating?.toFixed(1) ?? "—"}</span>
+                            <span className={`cmpbar${c.me ? " self" : ""}`}>
+                              <i style={{ width: `${Math.round((c.reviews / top) * 100)}%` }} />
+                            </span>
+                            <span className="tag">{c.reviews.toLocaleString()}</span>
+                          </div>
+                        ));
+                    })()}
+                  </div>
+                </details>
+              )}
+
+              <div className="note">
+                <i className="i">i</i>
+                <span>
+                  写真の枚数や投稿頻度は Google の公開データでは取得できないため、点数に入れていません。
+                  上の点数は<b style={{ fontWeight: 600 }}>実際に取得できた項目だけ</b>で計算しています。
+                </span>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {pricing?.main && (
+        <>
+          <div className="sec-head">
+            <span className="ic">¥</span>
+            <div>
+              <h2 id="sec-cpa">CPAはいくらまで出せるか</h2>
+              <div className="sub">サイトに載っている価格から計算しています</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          <div className="cpa measure">
+            <div className="be">
+              <small>損益分岐CPA</small>
+              <b>{breakEvenCpa(pricing.main.yen, margin).toLocaleString()}<i>円</i></b>
+              <span>1件あたりこれを超えると赤字です</span>
+            </div>
+            <div className="src">
+              <MainPrice id={id} pricing={pricing} onChange={setPricing} />
+              <div className="mg">
+                <span>粗利率</span>
+                <div className="opts">
+                  {[0.3, 0.4, 0.5, 0.6, 0.7, 0.8].map((m) => (
+                    <button key={m} className={Math.abs(margin - m) < 0.001 ? "on" : ""} onClick={() => pickMargin(m)}>
+                      {Math.round(m * 100)}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <details className="flags measure">
+            <summary>この数字の出どころ（掲載価格 {pricing.items.length}件）</summary>
+            <p className="note" style={{ marginTop: 0 }}>
+              <i className="i">i</i>
+              <span>
+                {pricing.reason}
+                {pricing.source && <> 取得元：<a href={pricing.source} target="_blank" rel="noreferrer noopener">{pricing.source.replace(/^https?:\/\//, "")}</a></>}
+              </span>
+            </p>
+            <div className="rows" style={{ margin: "12px 0 0" }}>
+              {pricing.items.slice(0, 12).map((x, i) => (
+                <div className="r" key={i}>
+                  <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 400 }}>{x.name}</b></div>
+                  <span className="tag">{x.yen.toLocaleString()}円</span>
+                </div>
+              ))}
+            </div>
+          </details>
+
+          <div className="note">
+            <i className="i">i</i>
+            <span>
+              粗利率は業種のめやすを初期値にしています。<b style={{ fontWeight: 600 }}>実際の粗利率に合わせて押し直してください。</b>
+              いまいくらで獲得できているか（実際のCPA）は、広告費とコンバージョン数が要るためこちらでは測れません。
+              Google Analytics 4 を連携すると、コンバージョン数から実測できます。
+            </span>
+          </div>
+        </>
+      )}
+
+      {adOps?.done && adOps.campaigns.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">▣</span>
+            <div>
+              <h2 id="sec-adops">広告運用設計</h2>
+              <div className="sub">管理画面にそのまま入稿できる粒度で出しています</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          {adOps.tags.length > 0 && (
+            <>
+              <div className="rows measure">
+                <div className="rh">計測タグの導入状況<small>サイトを実際に読んで判定しています</small></div>
+                {adOps.tags.map((t, i) => (
+                  <div className="r" key={i}>
+                    <span className="st" style={{ color: t.status === "導入済み" ? "var(--ok)" : t.status === "要確認" ? "var(--warn)" : "var(--ng)" }}>
+                      {t.status === "導入済み" ? "✓" : t.status === "要確認" ? "?" : "✕"}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <b>{t.name}</b>
+                      <small>{t.note}</small>
+                    </div>
+                    <span className={`tag${t.need === "必須" && t.status === "未導入" ? " warn" : ""}`}>{t.need}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="note">
+                <i className="i">i</i>
+                <span>
+                  「要確認」は<b style={{ fontWeight: 600 }}>未導入という意味ではありません</b>。
+                  Google タグマネージャーはタグを表示時に差し込むため、HTMLを読むだけでは有無を判定できません。GTMの管理画面でご確認ください。
+                </span>
+              </div>
+            </>
+          )}
+
+          {adOps.overLength.length > 0 && (
+            <div className="note warn" style={{ marginTop: 14 }}>
+              <i className="i">!</i>
+              <span>
+                <b style={{ fontWeight: 600 }}>{adOps.overLength.length}件</b>の原稿が文字数の上限を超えています。該当箇所は赤で表示しています。
+              </span>
+            </div>
+          )}
+
+          <div className="ops measure">
+            {adOps.campaigns.map((c, ci) => (
+              <div className="cmp" key={ci}>
+                <div className="top">
+                  <b>{c.name}</b>
+                  <span className="tag">{c.channel}</span>
+                </div>
+                {c.bidStrategy && <p className="bid">入札戦略：{c.bidStrategy}</p>}
+
+                {c.settings?.length > 0 && (
+                  <details className="flags">
+                    <summary>ターゲティング設定（{c.settings.length}項目）</summary>
+                    <div className="rows" style={{ margin: 0 }}>
+                      {c.settings.map((st, i) => (
+                        <div className="r" key={i}>
+                          <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 400 }}>{st.label}</b></div>
+                          <span className="tag">{st.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+
+                {c.groups?.map((g, gi) => {
+                  const spec = specFor(c.channel ?? "");
+                  return (
+                  <div className="adg" key={gi}>
+                    <div className="h">
+                      <span className="ic">◆</span>
+                      <b>{g.name}</b>
+                    </div>
+                    {g.targeting && <p>{g.targeting}</p>}
+
+                    {g.keywords?.length > 0 && (
+                      <details className="flags">
+                        <summary>キーワード（{g.keywords.length}件）</summary>
+                        <div className="chips">{g.keywords.map((k, i) => <span className="chip" key={i}>{k}</span>)}</div>
+                      </details>
+                    )}
+                    {g.negatives?.length > 0 && (
+                      <details className="flags">
+                        <summary>除外キーワード（{g.negatives.length}件）</summary>
+                        <div className="chips">{g.negatives.map((k, i) => <span className="chip ng" key={i}>{k}</span>)}</div>
+                      </details>
+                    )}
+                    {g.headlines?.length > 0 && (
+                      <details className="flags">
+                        <summary>
+                          {spec.headline.field}案（{g.headlines.length}件・{limitLabel(spec, "headline").split("・")[1]}）
+                        </summary>
+                        <div className="lines">
+                          {g.headlines.map((t, i) => (
+                            <AdLine key={i} text={t} limit={spec.headline.limit} mode={spec.count} flag={flagOf(t)} />
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                    {g.descriptions?.length > 0 && (
+                      <details className="flags">
+                        <summary>
+                          {spec.description.field}案（{g.descriptions.length}件・{limitLabel(spec, "description").split("・")[1]}）
+                        </summary>
+                        <div className="lines">
+                          {g.descriptions.map((t, i) => (
+                            <AdLine key={i} text={t} limit={spec.description.limit} mode={spec.count} flag={flagOf(t)} />
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                    {spec.long && (g.longHeadlines?.length ?? 0) > 0 && (
+                      <details className="flags">
+                        <summary>
+                          {spec.long.field}案（{g.longHeadlines!.length}件・{limitLabel(spec, "long").split("・")[1]}）
+                        </summary>
+                        <div className="lines">
+                          {g.longHeadlines!.map((t, i) => (
+                            <AdLine key={i} text={t} limit={spec.long!.limit} mode={spec.count} flag={flagOf(t)} />
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                    <div className="specnote">
+                      入稿規定：{spec.label}／{limitLabel(spec, "headline")}／{limitLabel(spec, "description")}
+                      {spec.long && <>／{limitLabel(spec, "long")}</>}
+                      <small>出典：{spec.source}</small>
+                    </div>
+                  </div>
+                  );
+                })}
+
+                {c.notes?.length > 0 && (
+                  <ul className="notes">
+                    {c.notes.map((n, i) => <li key={i}>{n}</li>)}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {adOps.guard && adOps.guard.hits?.length > 0 && (
+            <div className="note warn" style={{ marginTop: 16 }}>
+              <i className="i">!</i>
+              <span>
+                <b style={{ fontWeight: 600 }}>{adOps.flagged.length}本</b>の原稿に法令上の指摘があります
+                （{adOps.guard.hits.slice(0, 3).map((h) => `「${h.text}」`).join("・")}
+                {adOps.guard.hits.length > 3 ? " ほか" : ""}）。
+                該当する原稿には理由と言い換え案を付けています。入稿前に直してください。
+              </span>
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="sec-head">
+        <span className="ic">↗</span>
+        <div>
+          <h2 id="sec-angles">訴求軸</h2>
+          <div className="sub">この切り口でコピーを作りました</div>
+        </div>
+        <span className="rule" />
+      </div>
+      <div style={{ display: "grid", gap: 10 }}>
+        {d.angles.map((a, i) => (
+          <div key={a.id} className="card" style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: 18 }}>
+            <span className="tag score" style={{ flex: "0 0 auto" }}>{i + 1}</span>
+            <div>
+              <b style={{ fontSize: 14.5 }}>{a.name}</b>
+              <span style={{ display: "block", fontSize: 12.5, color: "var(--muted)", marginTop: 4 }}>{a.why}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {tactics && tactics.items?.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">◇</span>
+            <div>
+              <h2 id="sec-tactics">広告以外の施策</h2>
+              <div className="sub">出稿と並行してやると効くもの</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div className="measure" style={{ display: "grid", gap: 12 }}>
+            {tactics.items.map((t, i) => (
+              <div className="tactic" key={i}>
+                <div className="top">
+                  <b>{t.area}</b>
+                  {t.kpi && <span className="kpi">見る数字：{t.kpi}</span>}
+                </div>
+                <p>{t.summary}</p>
+                <ul>
+                  {t.actions?.map((a, k) => <li key={k}>{a}</li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          {/* 作れなかった章は黙って消さない。無いのか、作れなかったのかで読み方が変わる */}
+          {(() => {
+            const broken = [
+              { name: "LP改善", err: lpo?.error },
+              { name: "キーワード", err: keywords?.error },
+              { name: "LINE", err: linePlan?.error },
+              { name: "検索サジェスト", err: suggests?.error },
+              { name: "外部施策", err: outreach?.error },
+            ].filter((x) => x.err);
+            if (broken.length === 0) return null;
+            return (
+              <div className="alert" style={{ marginTop: 14 }}>
+                次の章は作成できませんでした：{broken.map((x) => x.name).join("・")}。
+                （理由：{broken[0].err}）分析をやり直すと作り直せます。
+              </div>
+            );
+          })()}
+
+          {speed && speed.score === null && speed.field.length === 0 && speed.reason && (
+            <div className="note warn">
+              <i className="i">!</i>
+              <span>表示速度を測定できませんでした。{speed.reason}</span>
+            </div>
+          )}
+
+          {speed && (speed.score !== null || speed.field.length > 0) && (
+            <>
+              <div className="sec-head">
+                <span className="ic">⚡</span>
+                <div>
+                  <h2 id="sec-speed">表示速度（実測）</h2>
+                  <div className="sub">PageSpeed Insights・モバイル。推測ではなく計測値です</div>
+                </div>
+                <span className="rule" />
+              </div>
+
+              <div className="speed measure">
+                {speed.score !== null && (
+                  <div className="gauge">
+                    <b>{speed.score}</b>
+                    <small>/ 100</small>
+                    <span className={speed.score >= 90 ? "ok" : speed.score >= 50 ? "warn" : "ng"}>
+                      {speed.score >= 90 ? "良好" : speed.score >= 50 ? "改善が必要" : "不良"}
+                    </span>
+                  </div>
+                )}
+                <div className="kpis">
+                  {(speed.field.length > 0 ? speed.field : speed.lab).map((m) => (
+                    <div className="kpi" key={m.id}>
+                      <b>{m.value}</b>
+                      <small>{m.label}</small>
+                      {m.rating && <i className={m.rating === "良好" ? "ok" : m.rating === "不良" ? "ng" : "warn"}>{m.rating}</i>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="note">
+                <i className="i">i</i>
+                <span>
+                  {speed.field.length > 0
+                    ? "上の数字は実際にこのサイトを見た人の計測値（Chrome ユーザーエクスペリエンスレポート）です。"
+                    : speed.reason}
+                  {speed.testedUrl && <> 測定URL：{speed.testedUrl.replace(/^https?:\/\//, "")}</>}
+                </span>
+              </div>
+
+              {speed.opportunities.length > 0 && (
+                <div className="rows measure">
+                  <div className="rh">短縮の見込みがある改善<small>PageSpeed Insights の試算</small></div>
+                  {speed.opportunities.map((o, i) => (
+                    <div className="r" key={i}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <b>{o.title}</b>
+                        <small>{o.detail}</small>
+                      </div>
+                      <span className="tag warn">−{(o.savingsMs / 1000).toFixed(1)}秒</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {lpo && lpo.groups.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">▤</span>
+                <div>
+                  <h2 id="sec-lpo">LP改善（受け皿の直し方）</h2>
+                  <div className="sub">広告を出す前に直すと、同じ予算で獲得数が変わります</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="measure" style={{ display: "grid", gap: 12 }}>
+                {lpo.groups.map((g, i) => (
+                  <div className="tactic" key={i}>
+                    <div className="top"><b>{g.area}</b></div>
+                    <ul>{g.items?.map((x, k) => <li key={k}>{x}</li>)}</ul>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {keywords && keywords.rows.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">⌕</span>
+                <div>
+                  <h2 id="sec-kw">対策キーワード</h2>
+                  <div className="sub">検索広告とSEOの両方で使う語です</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="kwwrap measure">
+                <table className="kw">
+                  <thead>
+                    <tr>
+                      <th>キーワード</th><th>種別</th><th>難易度</th><th>優先度</th>
+                      <th>表示回数</th><th>掲載順位</th><th>やること</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {keywords.rows.map((r, i) => (
+                      <tr key={i}>
+                        <td><b>{r.keyword}</b></td>
+                        <td><span className="tag">{r.kind}</span></td>
+                        <td>{r.difficulty}</td>
+                        <td>{r.priority}</td>
+                        <td className="num">{r.impressions !== null ? r.impressions.toLocaleString() : "—"}</td>
+                        <td className="num">{r.position !== null ? `${r.position}位` : "—"}</td>
+                        <td className="act">{r.action}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="note">
+                <i className="i">i</i>
+                <span>
+                  {keywords.hasRealData
+                    ? "表示回数・掲載順位は Search Console の直近28日の実測です。連携前の語は「—」にしています。"
+                    : "月間検索数は推測して載せていません。Search Console を連携すると、実際に検索されている語の表示回数と掲載順位が入ります。"}
+                </span>
+              </div>
+
+              {(keywords.technical.length > 0 || keywords.content.length > 0 || keywords.meo.length > 0) && (
+                <div className="measure" style={{ display: "grid", gap: 12, marginTop: 16 }}>
+                  {[
+                    { t: "テクニカルSEO", v: keywords.technical },
+                    { t: "コンテンツSEO", v: keywords.content },
+                    { t: "MEO（Googleマップ）", v: keywords.meo },
+                  ].filter((x) => x.v.length > 0).map((x, i) => (
+                    <div className="tactic" key={i}>
+                      <div className="top"><b>{x.t}</b></div>
+                      <ul>{x.v.map((y, k) => <li key={k}>{y}</li>)}</ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {linePlan && (
+            <>
+              <div className="sec-head">
+                <span className="ic">◒</span>
+                <div>
+                  <h2 id="sec-line">LINE公式アカウント</h2>
+                  <div className="sub">{linePlan.skip ? "この商材での向き不向き" : "リッチメニューと、送る文面そのもの"}</div>
+                </div>
+                <span className="rule" />
+              </div>
+              {linePlan.skip ? (
+                <div className="note"><i className="i">i</i><span>{linePlan.skip}</span></div>
+              ) : (
+                <>
+                  {linePlan.richMenu?.length > 0 && (
+                    <div className="rich measure">
+                      {linePlan.richMenu.map((m, i) => (
+                        <div className="cell" key={i}>
+                          <b>{m.label}</b>
+                          <small>{m.goes}</small>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {linePlan.steps?.length > 0 && (
+                    <div className="steps measure">
+                      {linePlan.steps.map((st, i) => (
+                        <div className="s" key={i}>
+                          <div className="h">
+                            <span className="n">{i + 1}</span>
+                            <div>
+                              <b>{st.title}</b>
+                              <small>{st.when}</small>
+                            </div>
+                          </div>
+                          <p>{st.body}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {linePlan.segments?.length > 0 && (
+                    <div className="tactic measure" style={{ marginTop: 12 }}>
+                      <div className="top"><b>出し分けの例</b></div>
+                      <ul>{linePlan.segments.map((x, k) => <li key={k}>{x}</li>)}</ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          {suggests && suggests.rows.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">⌕</span>
+                <div>
+                  <h2 id="sec-suggest">検索サジェスト</h2>
+                  <div className="sub">いま実際に出ているサジェストです（Googleから取得）</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="sg measure">
+                {suggests.queried.map((q) => (
+                  <div className="q" key={q}>
+                    <div className="qh">「{q}」で検索したとき</div>
+                    <div className="chips">
+                      {suggests.rows.filter((r) => r.keyword === q).map((r, i) => (
+                        <span
+                          className={`chip${r.kind === "注意" ? " ng" : r.kind === "誘導先に注意" ? " warn" : r.kind === "同名の別物" ? " dim" : ""}`}
+                          key={i}
+                          title={r.kind}
+                        >
+                          {r.suggestion}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="note">
+                <i className="i">i</i>
+                <span>
+                  赤は放置すると不利になる語、黄は第三者サイトへ流れる語（口コミ・比較など）です。
+                  黄は必ずしも悪くありませんが、遷移先の内容を自社で制御できません。
+                  グレーは同名の別施設・別サービスのサジェストで、指名検索で埋もれている状態を示します。
+                </span>
+              </div>
+              {outreach && outreach.suggestActions?.length > 0 && (
+                <div className="tactic measure" style={{ marginTop: 12 }}>
+                  <div className="top"><b>この状態に対してやること</b></div>
+                  <ul>{outreach.suggestActions.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                </div>
+              )}
+            </>
+          )}
+
+          {outreach && (
+            <>
+              <div className="sec-head">
+                <span className="ic">↗</span>
+                <div>
+                  <h2 id="sec-outreach">外部施策（自社サイトの外でやること）</h2>
+                  <div className="sub">掲載・アフィリエイト・PR</div>
+                </div>
+                <span className="rule" />
+              </div>
+
+              {outreach.citations?.length > 0 && (
+                <div className="rows measure">
+                  <div className="rh">掲載を狙う先</div>
+                  {outreach.citations.map((c, i) => (
+                    <div className="r" key={i}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <b>{c.site}</b>
+                        <small>{c.why}</small>
+                        <small style={{ color: "var(--text)" }}>{c.how}</small>
+                      </div>
+                      <span className="tag">{c.kind}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {outreach.affiliate && (
+                <div className="tactic measure" style={{ marginTop: 12 }}>
+                  <div className="top">
+                    <b>アフィリエイト</b>
+                    <span className={`tag${outreach.affiliate.fit ? "" : " warn"}`}>
+                      {outreach.affiliate.fit ? "向いています" : "向きません"}
+                    </span>
+                  </div>
+                  <p>{outreach.affiliate.reason}</p>
+                  {outreach.affiliate.fit && (
+                    <>
+                      {outreach.affiliate.asps?.length > 0 && (
+                        <div className="chips" style={{ paddingTop: 8 }}>
+                          {outreach.affiliate.asps.map((a, i) => <span className="chip" key={i}>{a}</span>)}
+                        </div>
+                      )}
+                      {outreach.affiliate.terms && <p style={{ marginTop: 10 }}>{outreach.affiliate.terms}</p>}
+                    </>
+                  )}
+                  {outreach.affiliate.caution && (
+                    <div className="note warn" style={{ marginTop: 10 }}>
+                      <i className="i">!</i>
+                      <span>{outreach.affiliate.caution}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {outreach.prThemes?.length > 0 && (
+                <div className="tactic measure" style={{ marginTop: 12 }}>
+                  <div className="top"><b>PRで出せる話</b></div>
+                  <ul>{outreach.prThemes.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                </div>
+              )}
+            </>
+          )}
+
+          {tactics.schedule?.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">▤</span>
+                <div>
+                  <h2 id="sec-sched">実行スケジュール</h2>
+                  <div className="sub">どの順で手を付けるか</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="sched">
+                {tactics.schedule.map((p, i) => (
+                  <div className="p" key={i}>
+                    <div className="h">
+                      <b>{p.phase}</b>
+                      <small>{p.period}</small>
+                    </div>
+                    <ul>{p.items?.map((x, k) => <li key={k}>{x}</li>)}</ul>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {tactics.risks?.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">⚠</span>
+                <div>
+                  <h2 id="sec-risk">リスクと注意点</h2>
+                  <div className="sub">先に潰しておくもの</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="rows measure">
+                {tactics.risks.map((r, i) => (
+                  <div className="r" key={i}>
+                    <span className="st" style={{ color: "var(--warn)" }}>!</span>
+                    <b style={{ fontWeight: 400 }}>{r}</b>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      </>
+      )}
+
+      {tab === "overview" && (
+      <>
+      <div className="sec-head">
+        <span className="ic">✎</span>
+        <div>
+          <h2 id="sec-copies">コピーと法令チェック</h2>
+          <div className="sub">生成と同時に景表法・薬機法を確認しています</div>
+        </div>
+        <span className="rule" />
+      </div>
+      <section>
+        <div className="filters measure">
+          <button className={`sw${hideRed ? " on" : ""}`} onClick={() => setHideRed((v) => !v)}>
+            {hideRed ? "✓ " : ""}要修正を隠す
+          </button>
+          <span>
+            {visible.length} / {copies.length} 案を表示中
+            {redCount > 0 && `（要修正 ${redCount}件）`}
+          </span>
+        </div>
+
+        <div className="measure" style={{ display: "grid", gap: 12 }}>
+          {shown.map(([i, c]) => (
+              <label key={i} className={`card copy-card${picked.includes(i) ? " sel" : ""}`} style={{ display: "block", cursor: "pointer" }}>
+                <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                  <input
+                    type="checkbox"
+                    checked={picked.includes(i)}
+                    onChange={(e) => setPicked((p) => (e.target.checked ? [...p, i] : p.filter((x) => x !== i)))}
+                    style={{ marginTop: 8 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                      <GuardTag g={c.guard} />
+                      {typeof c.score === "number" && <span className="tag score">勝ち筋 {c.score}</span>}
+                    </div>
+
+                    <div className="hl">{c.headline.join("")}</div>
+                    <p className="body">{c.body}</p>
+
+                    <div className="meta">
+                      {c.ribbonTop && <span className="m"><em>条件</em>{c.ribbonTop}</span>}
+                      {c.ribbonBottom && <span className="m"><em>強調</em>{c.ribbonBottom}</span>}
+                      <span className="m"><em>CTA</em>{c.cta}</span>
+                    </div>
+
+                    {c.scoreReason && <p className="why">{c.scoreReason}</p>}
+
+                    {c.guard && c.guard.hits.length > 0 && (
+                      <details className="flags">
+                        <summary onClick={(e) => e.stopPropagation()}>
+                          法令の指摘 {c.guard.hits.length}件
+                          {c.guard.hits.some((h) => h.severity === "high") && (
+                            <span className="hit-sev high">要修正 {c.guard.hits.filter((h) => h.severity === "high").length}</span>
+                          )}
+                        </summary>
+                        {c.guard.hits.map((h, k) => (
+                          <div key={k} className={`flag ${h.severity ?? "medium"}`}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span className={`hit-sev ${h.severity ?? "medium"}`}>
+                                {h.severity === "high" ? "要修正" : h.severity === "low" ? "参考" : "要確認"}
+                              </span>
+                              <span className="q">「{h.text}」</span>
+                            </div>
+                            <dl>
+                              <dt>根拠</dt>
+                              <dd>{h.law}</dd>
+                              <dt>なぜ</dt>
+                              <dd>{h.reason}</dd>
+                              <dt>言い換え</dt>
+                              <dd className="fix">{h.suggestion}</dd>
+                            </dl>
+                          </div>
+                        ))}
+                      </details>
+                    )}
+                  </div>
+                </div>
+              </label>
+          ))}
+          {!showAllCopies && visible.length > TOP_N && (
+            <button className="more" onClick={() => setShowAllCopies(true)}>
+              残り {visible.length - TOP_N} 案を表示する
+            </button>
+          )}
+        </div>
+        <div className="note">
+          <i className="i">i</i>
+          <span>勝ち筋スコアは案どうしの相対的な順位づけで、クリック率の予測値ではありません。数字より、その下の理由を読んで選んでください。</span>
+        </div>
+      </section>
+
+      {!isGuest && chosen.length > 0 && (
+        <section className="block">
+          <div className="sec-head" style={{ marginTop: 0 }}>
+            <span className="ic">▤</span>
+            <div>
+              <h2 id="sec-banners">バナー書き出し</h2>
+              <div className="sub">Meta・Google・Yahoo の各サイズを同時に出します</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {SIZES.map((s) => (
+              <button
+                key={s.id}
+                className={`tag${sizes.includes(s.id) ? " on" : ""}`}
+                style={{ cursor: "pointer" }}
+                onClick={() => setSizes((v) => (v.includes(s.id) ? v.filter((x) => x !== s.id) : [...v, s.id]))}
+              >
+                {s.media} {s.w}×{s.h}
+              </button>
+            ))}
+          </div>
+          {(site?.images?.length ?? 0) > 0 && (
+            <div className="photopick">
+              <div className="ph">
+                写真を載せる
+                <small>サイトに載っている写真から選びます。生成画像は使いません</small>
+              </div>
+              {(d.industry === "medical" || d.industry === "beauty") && (
+                <div className="note warn" style={{ marginTop: 10 }}>
+                  <i className="i">!</i>
+                  <span>{BANNER_CASE_WARNING}</span>
+                </div>
+              )}
+              <div className="opts">
+                <button
+                  className={photo === null ? "on" : ""}
+                  onClick={() => {
+                    setPhoto(null);
+                    setCroppedSrc(null);
+                    setCropError(null);
+                  }}
+                >
+                  <span className="none">文字のみ</span>
+                </button>
+                {(site?.images ?? [])
+                  .filter((u) => !looksLikeCasePhoto(u))
+                  .filter((u) => {
+                    // 文字チェック自体が丸ごと失敗した（AI呼び出しエラー・全画像の取得失敗など）
+                    // 場合、判定結果が1件も無いのに全候補が「未判定」扱いになり、写真が
+                    // 一枚も表示されなくなってしまう。判定が丸ごと無い時は安全側に倒さず、
+                    // 未判定のまま全部を候補に出す（目視で選んでもらう）
+                    if (checkUnavailable) return true;
+                    const info = imageScan?.items.find((x) => x.url === u);
+                    // 判定結果が無い（AIの文字チェックに回らなかった等）場合、文字なしと
+                    // 決めつけない。安全側に倒し、除外側と同じ「それも表示する」に回す
+                    if (!info) return showTexted;
+                    if (!info.hasText) return true;
+                    if (info.safeCrop) return true; // 自動トリミングで使えるので候補に残す
+                    return showTexted; // 除外対象。手動で「それも表示する」を選んだときだけ
+                  })
+                  .slice(0, 10)
+                  .map((u) => {
+                    const info = imageScan?.items.find((x) => x.url === u);
+                    const autoCrop = !!(info?.hasText && info.safeCrop);
+                    return (
+                      <button
+                        key={u}
+                        className={photo === u ? "on" : ""}
+                        style={{ position: "relative" }}
+                        disabled={cropBusy && photo === u}
+                        onClick={() => void pickPhoto(u)}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/api/analysis/${id}/img?u=${encodeURIComponent(u)}`} alt="" />
+                        {autoCrop && (
+                          <span
+                            style={{
+                              position: "absolute",
+                              left: 4,
+                              bottom: 4,
+                              background: "rgba(0,0,0,.65)",
+                              color: "#fff",
+                              fontSize: 10,
+                              lineHeight: 1,
+                              padding: "3px 6px",
+                              borderRadius: 3,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {cropBusy && photo === u ? "処理中…" : "自動トリミング"}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+              </div>
+
+              {cropError && (
+                <div className="note warn" style={{ marginTop: 10 }}>
+                  <i className="i">!</i>
+                  <span>{cropError}</span>
+                </div>
+              )}
+
+              {checkUnavailable && (
+                <div className="note warn" style={{ marginTop: 10 }}>
+                  <i className="i">!</i>
+                  <span>
+                    写真に文字が写り込んでいないかの自動チェックが実行できませんでした。
+                    そのため今回はすべての写真を未判定のまま候補に表示しています。
+                    価格表記やキャッチコピーなどの文字が写っている写真を選ぶと、切り抜いたときに
+                    文字が途中で切れることがあるため、選ぶ前にご自身でご確認ください。
+                  </span>
+                </div>
+              )}
+
+              {!checkUnavailable && (() => {
+                const withText = imageScan?.items.filter((x) => x.hasText) ?? [];
+                const autoCrop = withText.filter((x) => x.safeCrop);
+                const excluded = withText.filter((x) => !x.safeCrop);
+                // AIの文字チェックに回らなかった画像（判定件数の上限などで対象外になったもの）。
+                // 「文字なし」と決めつけて候補に出すと文字入りのまま使われかねないので、
+                // 除外枚数として別に数えて、同じ「それも表示する」の裏に回す
+                const checkedUrls = new Set((imageScan?.items ?? []).map((x) => x.url));
+                const unverified = (site?.images ?? [])
+                  .filter((u) => !looksLikeCasePhoto(u))
+                  .filter((u) => !checkedUrls.has(u));
+                const hiddenCount = excluded.length + unverified.length;
+                if (autoCrop.length === 0 && hiddenCount === 0) return null;
+                return (
+                  <div className="note" style={{ marginTop: 10 }}>
+                    <i className="i">i</i>
+                    <span>
+                      {autoCrop.length > 0 && (
+                        <>
+                          文字が写り込んだ写真のうち <b style={{ fontWeight: 600 }}>{autoCrop.length}枚</b> は、
+                          文字を含まない部分だけを自動的に切り出して候補に含めています（サムネイルの「自動トリミング」表示）。
+                          <br />
+                        </>
+                      )}
+                      {hiddenCount > 0 && (
+                        <>
+                          {excluded.length > 0 && (
+                            <>
+                              文字を含まない部分が十分に取れない写真 <b style={{ fontWeight: 600 }}>{excluded.length}枚</b> は候補から外しています。
+                              切り抜くと文字が途中で切れるためです。
+                            </>
+                          )}
+                          {unverified.length > 0 && (
+                            <>
+                              {excluded.length > 0 && " "}
+                              文字が入っているか確認できなかった写真 <b style={{ fontWeight: 600 }}>{unverified.length}枚</b> も、
+                              念のため候補から外しています。
+                            </>
+                          )}
+                          <button className="linkbtn" onClick={() => setShowTexted(!showTexted)}>
+                            {showTexted ? "また隠す" : "それも表示する"}
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {photo && (
+                <div className="crop">
+                  <div className="row">
+                    <span>写真の入れ方</span>
+                    <button className={photoFit === "cover" ? "on" : ""} onClick={() => setPhotoFit("cover")}>
+                      切り抜く
+                    </button>
+                    <button className={photoFit === "contain" ? "on" : ""} onClick={() => setPhotoFit("contain")}>
+                      全体を入れる
+                    </button>
+                  </div>
+                  {photoFit === "cover" ? (
+                    (() => {
+                      // 写真の縦横比とバナー枠の縦横比の組み合わせ次第で、横・縦どちらかの
+                      // スライダーがそのサイズには効かないことがある（cover の性質上、
+                      // はみ出さない軸は動かしても変化しない）。選択中のサイズごとに
+                      // 判定し、効かないサイズがあれば各スライダーの下に明示する
+                      const per = photoNatural
+                        ? chosenSizes.map((s) => ({ s, e: coverAxisEffect(s, photoNatural) }))
+                        : [];
+                      const xDead = per.filter((p) => !p.e.x).map((p) => p.s);
+                      const yDead = per.filter((p) => !p.e.y).map((p) => p.s);
+                      const label = (s: SizePreset) => `${s.media} ${s.w}×${s.h}`;
+                      return (
+                        <>
+                          <div className="row">
+                            <span>横の位置</span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              value={photoFocus.x}
+                              onChange={(e) => setPhotoFocus((f) => ({ ...f, x: Number(e.target.value) }))}
+                            />
+                            <small>{photoFocus.x}%</small>
+                          </div>
+                          {xDead.length > 0 && (
+                            <small className="hint" style={{ display: "block", marginTop: -4 }}>
+                              {xDead.map(label).join("・")}ではこの写真だと変化しません（このサイズの枠は縦方向にしかはみ出さないため）
+                            </small>
+                          )}
+                          <div className="row">
+                            <span>縦の位置</span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              value={photoFocus.y}
+                              onChange={(e) => setPhotoFocus((f) => ({ ...f, y: Number(e.target.value) }))}
+                            />
+                            <small>{photoFocus.y}%</small>
+                          </div>
+                          {yDead.length > 0 && (
+                            <small className="hint" style={{ display: "block", marginTop: -4 }}>
+                              {yDead.map(label).join("・")}ではこの写真だと変化しません（このサイズの枠は横方向にしかはみ出さないため）
+                            </small>
+                          )}
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <small>切らずに全体を入れます。余白が出ますが、画像内の文字は欠けません。</small>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <p style={{ fontSize: 12.5, color: "var(--faint)", marginTop: 12 }}>
+            選択 {chosen.length} 案 × {chosenSizes.length} サイズ ＝ {chosen.length * chosenSizes.length} 枚
+          </p>
+          <button className="btn" style={{ marginTop: 14 }} onClick={() => guarded("zip", downloadZip)} disabled={!!busy}>
+            {busy === "zip" ? "書き出し中…" : "全部まとめてZIPで保存"}<span className="arw">↓</span>
+          </button>
+
+          <div style={{ marginTop: 26, display: "grid", gap: 30 }}>
+            {chosen.map((c, ci) => (
+              <div key={ci}>
+                <p className="eyebrow">{c.headline.join("")}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginTop: 12 }}>
+                  {chosenSizes.map((s) => {
+                    const scale = Math.min(230 / s.w, 290 / s.h);
+                    return (
+                      <div key={s.id}>
+                        <div
+                          className="thumb"
+                          style={{ width: s.w * scale, height: s.h * scale }}
+                          onClick={() => setZoom({ ci, sizeId: s.id })}
+                          title="クリックで拡大"
+                        >
+                          <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
+                            <Banner service={service} facts={bannerFacts} id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} image={photoSrc} imageFit={photoFit} imageFocus={photoFocus} />
+                          </div>
+                        </div>
+                        <button className="link" style={{ marginTop: 6 }} onClick={() => download(`bn-${ci}-${s.id}`, `${s.media}_${s.w}x${s.h}_${ci + 1}.png`)}>
+                          {s.w}×{s.h} を保存
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!isGuest && chosen.length > 0 && (
+        <section className="block">
+          <div className="sec-head" style={{ marginTop: 0 }}>
+            <span className="ic">▣</span>
+            <div>
+              <h2 id="sec-lp">リンク先LP</h2>
+              <div className="sub">広告と同じ訴求軸で着地を作ります</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <button className="btn" onClick={() => guarded("lp", async () => setLp(await runLp(d, chosen[0])))} disabled={!!busy}>
+            {busy === "lp" ? "生成中…" : `「${chosen[0].headline.join("")}」に合わせたLPを作る`}<span className="arw">→</span>
+          </button>
+          {lp && (
+            <div style={{ marginTop: 18 }}>
+              <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 12 }}>
+                <GuardTag g={lp.guard} />
+                <button className="link" onClick={() => {
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(new Blob([lp.html], { type: "text/html" }));
+                  a.download = "lp.html";
+                  a.click();
+                }}>index.html を保存</button>
+              </div>
+              <iframe srcDoc={lp.html} className="thumb" style={{ width: "100%", height: 560 }} />
+            </div>
+          )}
+        </section>
+      )}
+      {isGuest && (
+        <div className="wall">
+          <div className="lock">🔒</div>
+          <h2>バナーとLPは会員登録で</h2>
+          <p>
+            分析は完了しています。会員登録（無料）すると、媒体サイズのバナー一式とリンク先LPの作成・
+            書き出しがご利用いただけます。
+          </p>
+          <p className="fine">※ 登録しても、いま実行した分析結果はそのまま引き継がれます。</p>
+          <a className="btn" href="/login?mode=signup">無料で会員登録して続きを見る</a>
+          <p className="alt">
+            すでにアカウントをお持ちですか？ <a href="/login">ログイン</a>
+          </p>
+        </div>
+      )}
+      </>
+      )}
+
+      {zoom && (() => {
+        const zs = SIZES.find((x) => x.id === zoom.sizeId)!;
+        const zc = chosen[zoom.ci];
+        const zscale = Math.min(1, Math.min(760 / zs.w, (typeof window !== "undefined" ? window.innerHeight * 0.72 : 700) / zs.h));
+        return (
+          <div className="zoom" onClick={() => setZoom(null)}>
+            <div className="inner" onClick={(e) => e.stopPropagation()}>
+              <div className="cap">
+                {zs.media} {zs.w}×{zs.h}
+                <button className="x" onClick={() => setZoom(null)}>閉じる</button>
+              </div>
+              <div style={{ width: zs.w * zscale, height: zs.h * zscale, overflow: "hidden" }}>
+                <div style={{ transform: `scale(${zscale})`, transformOrigin: "top left" }}>
+                  <Banner service={service} facts={bannerFacts} id={`zoom-${zoom.ci}-${zs.id}`} copy={zc} brand={d.brand} size={zs} image={photoSrc} imageFit={photoFit} imageFocus={photoFocus} />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      <ReportChat id={id} />
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="label">{label}</div>
+      <div className="val">{children}</div>
+    </div>
+  );
+}
+
+function GuardTag({ g }: { g?: GuardVerdict }) {
+  if (!g) return null;
+  const map = { green: ["問題なし", "ok"], yellow: ["要確認", "warn"], red: ["修正必要", "ng"] } as const;
+  const [label, cls] = map[g.level];
+  return <span className={`tag ${cls}`}>法令 {label}</span>;
+}
+
+/** 広告原稿1本。文字数と法令の指摘をその場に出す */
+function AdLine({
+  text, limit, mode, flag,
+}: {
+  text: string;
+  limit: number;
+  mode: CountMode;
+  flag: { law: string; reason: string; suggestion: string } | null;
+}) {
+  const w = lengthIn(mode, text);
+  const over = w > limit;
+  // 全角換算の媒体は半角の数字で出すと運用者が読み替えることになるので、全角の数で出す
+  const div = mode === "半角換算" ? 2 : 1;
+  return (
+    <div className={`ln${over ? " over" : ""}${flag ? " flagged" : ""}`}>
+      <div className="t">
+        <span>{text}</span>
+        <small>{Math.ceil(w / div)}/{limit / div}</small>
+      </div>
+      {flag && (
+        <div className="why">
+          <b>{flag.law}</b>
+          <span>{flag.reason}</span>
+          <span className="fix">言い換え：{flag.suggestion}</span>
+        </div>
+      )}
+    </div>
+  );
+}
