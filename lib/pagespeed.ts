@@ -153,6 +153,11 @@ async function run(url: string | null): Promise<SpeedScan> {
     }
     if (!res.ok) return empty(`PageSpeed Insights を呼べませんでした（${msg || res.status}）`);
   } catch (e) {
+    // AbortSignal.timeout() が発火すると TimeoutError になる。英語の内部メッセージを
+    // そのまま出さず、重いサイトでは起こりうる旨と再試行を促す文にする
+    if (e instanceof Error && e.name === "TimeoutError") {
+      return empty("表示速度の測定が時間内に終わりませんでした。読み込みが重いサイトでは起こることがあります。もう一度お試しください。");
+    }
     return empty(e instanceof Error ? `PageSpeed Insights を呼べませんでした（${e.message}）` : "PageSpeed Insights を呼べませんでした");
   }
 

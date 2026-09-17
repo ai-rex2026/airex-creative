@@ -209,7 +209,10 @@ JSONのみで回答してください（前置き・コードフェンス無し�
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
       body: JSON.stringify({
         model: process.env.XAI_MODEL || "grok-4.6",
-        input: prompt,
+        // xAIの仕様は input を配列（role/content）で受け取る形。文字列のままでも
+        // 通ることはあるが、x_search が正しく起動しないケースがあったため、
+        // 公式ドキュメント通りの形に合わせる
+        input: [{ role: "user", content: prompt }],
         tools: [{ type: "x_search", allowed_x_handles: [a.handle] }],
       }),
       // x_search は実測で40〜50秒かかることがある。1ステップの予算内で
