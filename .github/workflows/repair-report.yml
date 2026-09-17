@@ -1,0 +1,38 @@
+name: repair-report
+
+on:
+  push:
+    paths:
+      - '.buildtmp/repair/report.patch'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Restore known-good baseline and apply fix patch
+        run: |
+          set -e
+          git show b2addacb64789f246c9dc493f24e5893e20d02da:components/Report.tsx > components/Report.tsx
+          patch -p1 components/Report.tsx < .buildtmp/repair/report.patch
+          wc -c components/Report.tsx
+          rm -rf .buildtmp
+          rm -f .github/workflows/assemble-report.yml .github/workflows/repair-report.yml
+
+      - name: Commit and push
+        run: |
+          set -e
+          git config user.name "repair-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: restore Report.tsx to correct content and clean up repair artifacts (automated)
+
+          Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+          git push origin HEAD:main
