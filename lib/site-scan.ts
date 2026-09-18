@@ -212,11 +212,14 @@ export function estimateSeo(s: SiteScan): SeoEstimate {
  *
  * 生成画像を使うより、そのサイトが実際に載せている写真のほうが安全で、
  * 見た人の記憶とも一致する。アイコン・ロゴ・計測用の1px画像は落とす。
+ *
+ * 上限は image-check.ts の checkImages() の MAX と揃えること（片方だけ増やしても、
+ * もう片方の上限で切られた分は「未判定」のまま候補から外れてしまうため）。
  */
 function readImages(html: string, base: string): string[] {
   const out: string[] = [];
   const push = (raw: string | undefined | null) => {
-    if (!raw || out.length >= 12) return;
+    if (!raw || out.length >= 20) return;
     const src = raw.split(/\s+/)[0]; // srcset は先頭の1本だけ見る
     if (!src || /^data:/i.test(src)) return;
     if (/sprite|icon|logo|favicon|spacer|blank|pixel|1x1|loading|arrow|btn_|badge/i.test(src)) return;
@@ -235,10 +238,14 @@ function readImages(html: string, base: string): string[] {
 
   for (const m of html.matchAll(/<img\s[^>]*>/gi)) {
     const tag = m[0];
-    // 小さいと分かっているものは落とす。指定が無いものは残す（多くは本文画像）
     const w = Number(tag.match(/\swidth=["']?(\d+)/i)?.[1] ?? 0);
     const h = Number(tag.match(/\sheight=["']?(\d+)/i)?.[1] ?? 0);
-    if ((w && w < 320) || (h && h < 200)) continue;
+    // 縦横どちらか片方しか指定されていない画像は、レイアウトのガタつき防止のために
+    // 片方だけ固定しているレスポンシブ画像であることが多く、実寸が小さいとは限らない。
+    // 両方が明示され、かつどちらかが小さいときだけ、アイコン等として除外する
+    // （以前は片方だけの指定でも除外していたため、実際は十分大きい写真が
+    // ギャラリー等のマークアップの都合でここで弾かれ、候補にすら入れなかった）
+    if (w > 0 && h > 0 && (w < 320 || h < 200)) continue;
     push(tag.match(/\ssrc=["']([^"']+)["']/i)?.[1] ?? tag.match(/\sdata-src=["']([^"']+)["']/i)?.[1] ?? tag.match(/\ssrcset=["']([^"']+)["']/i)?.[1]);
   }
   return out;
