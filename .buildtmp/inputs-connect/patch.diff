@@ -1,0 +1,22 @@
+diff --git a/components/Inputs.tsx b/components/Inputs.tsx
+index 36f55fc..48b9f7f 100644
+--- a/components/Inputs.tsx
++++ b/components/Inputs.tsx
+@@ -158,6 +158,17 @@ export function Inputs({
+                 m && <FollowerEdit id={id} url={s.url} label={`${label}数`} />
+              )}
+               <span className={`tag${m?.readable ? " ok" : ""}`}>{m?.readable ? "分析済み" : "検出"}</span>
++              {/* アカウント連携（OAuth）は未実装。�INEはデータ取得APIが無いため対象外。
++                  実装〾では押せない詋て盦にして「対応予定」であることだけ伝える */}
++              {s.platform !== "LINE" && (
++                <span
++                  className="tag"
++                  style={{ opacity: 0.55, cursor: "default" }}
++                  title="連携機能は現時点では未对応です。対応を予定しています"
++                >
++                  連携すり（対応予定）
++                </span>
++              )}
+             </div>
+           );
+         })}
