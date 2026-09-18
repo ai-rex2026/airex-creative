@@ -1,1 +1,1 @@
-plain ascii （full-width-parens-test） end
+lock emoji test: 🔒 end
