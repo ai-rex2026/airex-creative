@@ -6,6 +6,7 @@
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/webmasters.readonly",
   "https://www.googleapis.com/auth/analytics.readonly",
+  "https://www.googleapis.com/auth/yt-analytics.readonly",
 ].join(" ");
 
 export function hasGoogleApp() {
@@ -147,5 +148,88 @@ export async function fetchGa4(refreshToken: string, url: string): Promise<Ga4Da
     sessions,
     users,
     channels: rows.map((r) => ({ name: r.dimensionValues[0].value, sessions: Number(r.metricValues[0].value) })),
+  };
+}
+
+export type YoutubeAnalyticsData = {
+  from: string;
+  to: string;
+  views: number | null;
+  estimatedMinutesWatched: number | null;
+  averageViewDurationSec: number | null;
+  /** 期間中の純増登録者数（解除を差し引いた後）。公開APIでは取れない非公開指標 */
+  subscribersGained: number | null;
+  topTrafficSource: string | null;
+};
+
+const TRAFFIC_SOURCE_LABELS: Record<string, string> = {
+  YT_SEARCH: "YouTube内検索",
+  SUGGESTED_VIDEO: "関連動画（おすすめ）",
+  BROWSE: "ホームフィード・おすすめ",
+  EXT_URL: "外部サイト・アプリ",
+  NOTIFICATION: "通知",
+  PLAYLIST: "再生リスト",
+  SUBSCRIBER: "登録者のフィード",
+  CHANNEL: "チャンネルページ",
+  NO_LINK_OTHER: "その他",
+  ADVERTISING: "広告",
+  END_SCREEN: "エンドスクリーン",
+  ANNOTATION: "アノテーション",
+};
+
+/**
+ * YouTube Studio 相当の非公開指標（推定視聴時間・平均視聴時間・純増登録者数・主な流入経路）。
+ * 連携（yt-analytics.readonly）している場合だけ呼ぶ。
+ *
+ * 「インプレッション数・クリック率」もYouTube側には存在するが、2026年1月に追加されたばかりの
+ * 別API（YouTube Reporting API のバルクレポート）経由でしか取れず、reports.query（本関数が使う
+ * Analytics API）では未対応。未検証のまま出すと値が欠けるだけになるため、今回は含めない。
+ */
+export async function fetchYoutubeAnalytics(refreshToken: string): Promise<YoutubeAnalyticsData | null> {
+  const token = await accessToken(refreshToken);
+  const h = { authorization: `Bearer ${token}` };
+  const to = new Date();
+  const from = new Date(Date.now() - 28 * 864e5);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const startDate = fmt(from);
+  const endDate = fmt(to);
+  const base = "https://youtubeanalytics.googleapis.com/v2/reports";
+
+  const mainQ = new URLSearchParams({
+    ids: "channel==MINE",
+    startDate,
+    endDate,
+    metrics: "views,estimatedMinutesWatched,averageViewDuration,subscribersGained",
+  });
+  const main = await fetch(`${base}?${mainQ}`, { headers: h, signal: AbortSignal.timeout(15000) }).then((r) => r.json());
+  const row = main.rows?.[0] as number[] | undefined;
+  if (!row) return null;
+
+  let topTrafficSource: string | null = null;
+  try {
+    const trafficQ = new URLSearchParams({
+      ids: "channel==MINE",
+      startDate,
+      endDate,
+      metrics: "views",
+      dimensions: "insightTrafficSourceType",
+      sort: "-views",
+      maxResults: "1",
+    });
+    const traffic = await fetch(`${base}?${trafficQ}`, { headers: h, signal: AbortSignal.timeout(15000) }).then((r) => r.json());
+    const t = traffic.rows?.[0]?.[0] as string | undefined;
+    topTrafficSource = t ? (TRAFFIC_SOURCE_LABELS[t] ?? t) : null;
+  } catch {
+    // 主要指標だけ返す。流入経路が取れなくても止めない
+  }
+
+  return {
+    from: startDate,
+    to: endDate,
+    views: typeof row[0] === "number" ? row[0] : null,
+    estimatedMinutesWatched: typeof row[1] === "number" ? row[1] : null,
+    averageViewDurationSec: typeof row[2] === "number" ? row[2] : null,
+    subscribersGained: typeof row[3] === "number" ? row[3] : null,
+    topTrafficSource,
   };
 }
