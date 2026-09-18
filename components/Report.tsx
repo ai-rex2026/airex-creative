@@ -40,8 +40,8 @@ type Tab = "inputs" | "measures" | "overview";
 
 /**
  * 「切り抜く」表示のとき、横・縦どちらの位置スライダーが実際に効くかを判定する。
- * Banner.tsx の枠サイズ計算（photoTop/photoSide・photoShare）をここでも再現し、
- * object-fit: cover ではみ出す軸（＝動かして意味がある軸）だけを true にする。
+ * Banner.tsx の枠サイズ計算(photoTop/photoSide・photoShare)をここでも再現し、
+ * object-fit: cover ではみ出す軸(＝動かして意味がある軸)だけを true にする。
  * どちらもはみ出さない場合や、四捨五入で誤差が出る場合を考え、1px未満は「効かない」扱いにする
  */
 function coverAxisEffect(size: SizePreset, natural: { w: number; h: number }): { x: boolean; y: boolean } {
@@ -58,7 +58,7 @@ function coverAxisEffect(size: SizePreset, natural: { w: number; h: number }): {
 }
 
 /**
- * 候補一覧のサムネイルを、実際に選んだときに使われる範囲（safeCrop）だけを
+ * 候補一覧のサムネイルを、実際に選んだときに使われる範囲(safeCrop)だけを
  * 拡大して見せるための background-size / background-position を計算する。
  *
  * サムネイルが元画像のままだと、選ぶ前から文字入りの写真に見えてしまい、
@@ -66,7 +66,7 @@ function coverAxisEffect(size: SizePreset, natural: { w: number; h: number }): {
  * 選択した瞬間に cropImageToDataUrl が行うので、ここはその見た目を
  * サムネイルの時点で先取りして見せるだけの表示用計算。
  *
- * safeCrop は幅・高さとも40%以上（image-check.ts の validCrop）を保証されているため、
+ * safeCrop は幅・高さとも40%以上(image-check.ts の validCrop)を保証されているため、
  * 拡大率は最大でも 100/40 = 2.5倍程度に収まる
  */
 function safeCropPreviewStyle(c: SafeCrop): { backgroundSize: string; backgroundPosition: string } {
@@ -165,20 +165,20 @@ export function Report({
   const [margin, setMarginState] = useState<number>(initialMargin ?? MARGIN[d.industry] ?? 0.4);
   // 主力商材は押し替えられる。自動で拾った価格が実際の主力とずれることがある
   const [pricing, setPricing] = useState(initialPricing);
-  // バナーに載せる写真。サイトから拾ったものだけを使う（生成画像は使わない）
+  // バナーに載せる写真。サイトから拾ったものだけを使う(生成画像は使わない)
   const [photo, setPhoto] = useState<string | null>(null);
   // 文字入りの画像は切り抜くと見切れるので、切り方と位置を選べるようにする
   const [photoFit, setPhotoFit] = useState<"cover" | "contain">("cover");
   const [photoFocus, setPhotoFocus] = useState({ x: 50, y: 50 });
   const [showTexted, setShowTexted] = useState(false);
-  // 文字入り画像を選んだとき、文字を含まない領域だけを切り出した結果（data URL）
+  // 文字入り画像を選んだとき、文字を含まない領域だけを切り出した結果(data URL)
   const [croppedSrc, setCroppedSrc] = useState<string | null>(null);
   const [cropBusy, setCropBusy] = useState(false);
   const [cropError, setCropError] = useState<string | null>(null);
   // 広告主側でWebサイトに載っていない素材を使いたい場合のアップロード枠。
   // アップロード直後にも一覧へ反映したいのでローカル state も持つ
-  // （サーバー側は revalidatePath するが、このコンポーネント自体はクライアント側で
-  // 再マウントされないため、ローカルに足しておかないと選び直すまで出てこない）
+  // (サーバー側は revalidatePath するが、このコンポーネント自体はクライアント側で
+  // 再マウントされないため、ローカルに足しておかないと選び直すまで出てこない)
   const [customImages, setCustomImages] = useState<CustomImage[]>(initialCustomImages ?? []);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -192,7 +192,7 @@ export function Report({
         ? `/api/analysis/${id}/img?u=${encodeURIComponent(photo)}`
         : null;
   // 位置スライダーが実際に効くかは、写真の縦横比と枠の縦横比の組み合わせで決まる
-  // （object-fit: cover の性質上、はみ出さない軸は動かしても変化しない）。
+  // (object-fit: cover の性質上、はみ出さない軸は動かしても変化しない)。
   // 判定には元画像の実サイズが要るので、選ばれた瞬間に読み込んでおく
   const [photoNatural, setPhotoNatural] = useState<{ w: number; h: number } | null>(null);
   useEffect(() => {
@@ -215,10 +215,10 @@ export function Report({
   }, [photoSrc]);
 
   /**
-   * 写真候補を選ぶ。文字が写り込んでいても safeCrop（文字を含まない領域）が
+   * 写真候補を選ぶ。文字が写り込んでいても safeCrop(文字を含まない領域)が
    * 取れている画像なら、選んだ瞬間にその領域だけを切り出して使う。
    * こうすると、表示位置をどう動かしても文字が入り込まないことを保証できる
-   * （position をずらして避けるやり方は、文字が広く入った画像では成立しないため）
+   * (position をずらして避けるやり方は、文字が広く入った画像では成立しないため)
    */
   async function pickPhoto(u: string) {
     setPhoto(u);
@@ -242,8 +242,8 @@ export function Report({
 
   /**
    * 広告主側でWebサイトに載っていない独自素材を使いたい場合の、画像アップロード。
-   * アップロードした画像は自動の文字チェックにかけていない（利用者自身が選んだ
-   * 素材のため）。アップロードが終わったら、その画像を即座に選択状態にする
+   * アップロードした画像は自動の文字チェックにかけていない(利用者自身が選んだ
+   * 素材のため)。アップロードが終わったら、その画像を即座に選択状態にする
    */
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -284,7 +284,7 @@ export function Report({
 
   /**
    * 4領域のスコア。すべて実測済みの値から組む。
-   * 判定できない領域は出さない（0点として出すと、測っていないのに低評価に見える）
+   * 判定できない領域は出さない(0点として出すと、測っていないのに低評価に見える)
    */
   const cards: { key: string; label: string; got: number; max: number; note: string }[] = [];
   if (site) cards.push({ key: "site", label: "サイト健全性", got: site.passed, max: site.total, note: "HTTPS・ヘッダー・構造化データ" });
@@ -296,7 +296,7 @@ export function Report({
       max: 100,
       note:
         meo.stores.length > 1
-          ? `${meo.stores.length}店舗を検出（下の一覧に店舗ごとの点数）`
+          ? `${meo.stores.length}店舗を検出(下の一覧に店舗ごとの点数)`
           : meo.totalShops > 1
             ? `近隣${meo.totalShops}店中 レビュー${meo.reviewRank}位`
             : "近隣に比較できる同業が見つかりませんでした",
@@ -312,7 +312,7 @@ export function Report({
 
   /**
    * バナーに載せる「何屋か」。ブランド名だけでは何の広告か伝わらない。
-   * 商材の説明文から、記号より前の短い塊だけを取る（AIに書かせない）
+   * 商材の説明文から、記号より前の短い塊だけを取る(AIに書かせない)
    */
   /** バナー下部に並べる事実。強みから数字を機械的に抜く */
   const bannerFacts = pickFacts(d.strengths);
@@ -323,7 +323,7 @@ export function Report({
   const flagOf = (t: string) => adOps?.flagged?.find((f) => f.text === t) ?? null;
 
   /**
-   * 写真の文字チェックが丸ごと失敗したか（AI呼び出しエラー・全画像の取得失敗など）。
+   * 写真の文字チェックが丸ごと失敗したか(AI呼び出しエラー・全画像の取得失敗など)。
    * 候補画像が1枚もあるのに判定結果が0件なら、個別の画像が未判定なのではなく
    * チェック自体が動かなかったとみなす。この場合に「未判定は安全側で除外」を適用すると
    * 写真が一枚も出せなくなるため、下の候補フィルターで判定を丸ごとスキップする
@@ -473,7 +473,7 @@ export function Report({
             <span className="ic">⇄</span>
             <div>
               <h2 id="sec-linked">連携データ</h2>
-              <div className="sub">Search Console / GA4 の実データです（推定ではありません）</div>
+              <div className="sub">Search Console / GA4 の実データです(推定ではありません)</div>
             </div>
             <span className="rule" />
           </div>
@@ -484,7 +484,7 @@ export function Report({
                 <div className="h">Search Console<span className="live">実データ</span></div>
                 <div className="b">
                   <div className="big">
-                    <div><b>{gsc.totals.clicks.toLocaleString()}</b><small>クリック（28日）</small></div>
+                    <div><b>{gsc.totals.clicks.toLocaleString()}</b><small>クリック(28日)</small></div>
                     <div><b>{gsc.totals.impressions.toLocaleString()}</b><small>表示回数</small></div>
                     <div><b>{gsc.totals.position}</b><small>平均掲載順位</small></div>
                   </div>
@@ -509,7 +509,7 @@ export function Report({
                 <div className="h">Google Analytics 4<span className="live">実データ</span></div>
                 <div className="b">
                   <div className="big">
-                    <div><b>{ga4.sessions.toLocaleString()}</b><small>セッション（28日）</small></div>
+                    <div><b>{ga4.sessions.toLocaleString()}</b><small>セッション(28日)</small></div>
                     <div><b>{ga4.users.toLocaleString()}</b><small>ユーザー</small></div>
                   </div>
                   <table>
@@ -623,7 +623,7 @@ export function Report({
             ) : (
               <span className="chip-s">
                 {site.tech.includes("Google Tag Manager")
-                  ? "HTMLからは検出できず（GTM経由の可能性あり）"
+                  ? "HTMLからは検出できず(GTM経由の可能性あり)"
                   : "検出できず"}
               </span>
             )}
@@ -685,7 +685,7 @@ export function Report({
           <div className="note">
             <i className="i">i</i>
             <span>
-              YouTube は公式APIから取得しています（相手のアカウントとの連携は不要です）。
+              YouTube は公式APIから取得しています(相手のアカウントとの連携は不要です)。
               それ以外は公開ページから読み取れたものだけを出しています。
               媒体がログインを求める場合は取得できません。
               <b style={{ fontWeight: 600 }}>取れなかった数字は推測で埋めていません。</b>
@@ -748,7 +748,7 @@ export function Report({
             <span className="ic">⛓</span>
             <div style={{ display: "flex", alignItems: "center" }}>
               <div>
-                <h2 id="sec-seo">ドメインパワー（SEO強度）</h2>
+                <h2 id="sec-seo">ドメインパワー(SEO強度)</h2>
                 <div className="sub">推定スコア</div>
               </div>
               <span className="ai">AI推定</span>
@@ -771,14 +771,14 @@ export function Report({
           <div className="stat-row" style={{ marginTop: 14 }}>
             <div><b>{site.internalLinks}</b><small>内部リンク数</small></div>
             <div><b>{site.externalLinks}</b><small>外部リンク数</small></div>
-            <div><b>—</b><small>被リンク数（未取得）</small></div>
-            <div><b>—</b><small>参照ドメイン数（未取得）</small></div>
+            <div><b>—</b><small>被リンク数(未取得)</small></div>
+            <div><b>—</b><small>参照ドメイン数(未取得)</small></div>
           </div>
 
           <div className="note">
             <i className="i">i</i>
             <span>
-              スコアは、その場で取得できた指標（HTTPS・ヘッダー・サイトマップ・構造化データ・内部リンク）
+              スコアは、その場で取得できた指標(HTTPS・ヘッダー・サイトマップ・構造化データ・内部リンク)
               だけから出した<b style={{ fontWeight: 600 }}>推定値</b>です。被リンク数と参照ドメイン数は外部データが必要なため取得していません。
             </span>
           </div>
@@ -903,7 +903,7 @@ export function Report({
                 >
                   {replanning ? "作り直しています…" : "この予算で媒体構成を作り直す"}
                 </button>
-                <small>（広告運用設計も作り直すため、数分かかります）</small>
+                <small>(広告運用設計も作り直すため、数分かかります)</small>
               </span>
             </div>
           )}
@@ -948,7 +948,7 @@ export function Report({
           <div className="sec-head">
             <span className="ic">◉</span>
             <div>
-              <h2 id="sec-meo">MEO（Googleマップ対策）</h2>
+              <h2 id="sec-meo">MEO(Googleマップ対策)</h2>
               <div className="sub">Googleマップの実データで、近隣の同業と比べています</div>
             </div>
             <span className="rule" />
@@ -974,11 +974,11 @@ export function Report({
                 <div className="kpis">
                   <div className="kpi">
                     <b>{meo.self.rating?.toFixed(1) ?? "—"}</b>
-                    <small>評価{meo.avgRating !== null ? `（近隣平均 ${meo.avgRating}）` : ""}</small>
+                    <small>評価{meo.avgRating !== null ? `(近隣平均 ${meo.avgRating})` : ""}</small>
                   </div>
                   <div className="kpi">
                     <b>{meo.self.reviews}</b>
-                    <small>レビュー数{meo.avgReviews !== null ? `（近隣平均 ${meo.avgReviews}）` : ""}</small>
+                    <small>レビュー数{meo.avgReviews !== null ? `(近隣平均 ${meo.avgReviews})` : ""}</small>
                   </div>
                   <div className="kpi">
                     <b>{meo.totalShops > 1 && meo.ratingRank ? `${meo.ratingRank}位` : "—"}</b>
@@ -992,7 +992,7 @@ export function Report({
               </div>
 
               <details className="flags measure">
-                <summary>点数の内訳（何を測ったか）</summary>
+                <summary>点数の内訳(何を測ったか)</summary>
                 <div className="rows" style={{ margin: 0 }}>
                   {meo.breakdown.map((b, i) => (
                     <div className="r" key={i}>
@@ -1008,7 +1008,7 @@ export function Report({
 
               {meo.competitors.length > 0 && (
                 <details className="flags measure">
-                  <summary>近隣の同業（{meo.competitors.length}店）</summary>
+                  <summary>近隣の同業({meo.competitors.length}店)</summary>
                   <div className="rows" style={{ margin: 0 }}>
                     {(() => {
                       // 自社を含めた最大値で正規化する。順位だけでなく差の大きさを見せる
@@ -1079,7 +1079,7 @@ export function Report({
           </div>
 
           <details className="flags measure">
-            <summary>この数字の出どころ（掲載価格 {pricing.items.length}件）</summary>
+            <summary>この数字の出どころ(掲載価格 {pricing.items.length}件)</summary>
             <p className="note" style={{ marginTop: 0 }}>
               <i className="i">i</i>
               <span>
@@ -1101,7 +1101,7 @@ export function Report({
             <i className="i">i</i>
             <span>
               粗利率は業種のめやすを初期値にしています。<b style={{ fontWeight: 600 }}>実際の粗利率に合わせて押し直してください。</b>
-              いまいくらで獲得できているか（実際のCPA）は、広告費とコンバージョン数が要るためこちらでは測れません。
+              いまいくらで獲得できているか(実際のCPA)は、広告費とコンバージョン数が要るためこちらでは測れません。
               Google Analytics 4 を連携すると、コンバージョン数から実測できます。
             </span>
           </div>
@@ -1166,7 +1166,7 @@ export function Report({
 
                 {c.settings?.length > 0 && (
                   <details className="flags">
-                    <summary>ターゲティング設定（{c.settings.length}項目）</summary>
+                    <summary>ターゲティング設定({c.settings.length}項目)</summary>
                     <div className="rows" style={{ margin: 0 }}>
                       {c.settings.map((st, i) => (
                         <div className="r" key={i}>
@@ -1190,20 +1190,20 @@ export function Report({
 
                     {g.keywords?.length > 0 && (
                       <details className="flags">
-                        <summary>キーワード（{g.keywords.length}件）</summary>
+                        <summary>キーワード({g.keywords.length}件)</summary>
                         <div className="chips">{g.keywords.map((k, i) => <span className="chip" key={i}>{k}</span>)}</div>
                       </details>
                     )}
                     {g.negatives?.length > 0 && (
                       <details className="flags">
-                        <summary>除外キーワード（{g.negatives.length}件）</summary>
+                        <summary>除外キーワード({g.negatives.length}件)</summary>
                         <div className="chips">{g.negatives.map((k, i) => <span className="chip ng" key={i}>{k}</span>)}</div>
                       </details>
                     )}
                     {g.headlines?.length > 0 && (
                       <details className="flags">
                         <summary>
-                          {spec.headline.field}案（{g.headlines.length}件・{limitLabel(spec, "headline").split("・")[1]}）
+                          {spec.headline.field}案({g.headlines.length}件・{limitLabel(spec, "headline").split("・")[1]})
                         </summary>
                         <div className="lines">
                           {g.headlines.map((t, i) => (
@@ -1215,7 +1215,7 @@ export function Report({
                     {g.descriptions?.length > 0 && (
                       <details className="flags">
                         <summary>
-                          {spec.description.field}案（{g.descriptions.length}件・{limitLabel(spec, "description").split("・")[1]}）
+                          {spec.description.field}案({g.descriptions.length}件・{limitLabel(spec, "description").split("・")[1]})
                         </summary>
                         <div className="lines">
                           {g.descriptions.map((t, i) => (
@@ -1227,7 +1227,7 @@ export function Report({
                     {spec.long && (g.longHeadlines?.length ?? 0) > 0 && (
                       <details className="flags">
                         <summary>
-                          {spec.long.field}案（{g.longHeadlines!.length}件・{limitLabel(spec, "long").split("・")[1]}）
+                          {spec.long.field}案({g.longHeadlines!.length}件・{limitLabel(spec, "long").split("・")[1]})
                         </summary>
                         <div className="lines">
                           {g.longHeadlines!.map((t, i) => (
@@ -1259,8 +1259,8 @@ export function Report({
               <i className="i">!</i>
               <span>
                 <b style={{ fontWeight: 600 }}>{adOps.flagged.length}本</b>の原稿に法令上の指摘があります
-                （{adOps.guard.hits.slice(0, 3).map((h) => `「${h.text}」`).join("・")}
-                {adOps.guard.hits.length > 3 ? " ほか" : ""}）。
+                ({adOps.guard.hits.slice(0, 3).map((h) => `「${h.text}」`).join("・")}
+                {adOps.guard.hits.length > 3 ? " ほか" : ""})。
                 該当する原稿には理由と言い換え案を付けています。入稿前に直してください。
               </span>
             </div>
@@ -1326,7 +1326,7 @@ export function Report({
             return (
               <div className="alert" style={{ marginTop: 14 }}>
                 次の章は作成できませんでした：{broken.map((x) => x.name).join("・")}。
-                （理由：{broken[0].err}）分析をやり直すと作り直せます。
+                (理由：{broken[0].err})分析をやり直すと作り直せます。
               </div>
             );
           })()}
@@ -1343,7 +1343,7 @@ export function Report({
               <div className="sec-head">
                 <span className="ic">⚡</span>
                 <div>
-                  <h2 id="sec-speed">表示速度（実測）</h2>
+                  <h2 id="sec-speed">表示速度(実測)</h2>
                   <div className="sub">PageSpeed Insights・モバイル。推測ではなく計測値です</div>
                 </div>
                 <span className="rule" />
@@ -1374,7 +1374,7 @@ export function Report({
                 <i className="i">i</i>
                 <span>
                   {speed.field.length > 0
-                    ? "上の数字は実際にこのサイトを見た人の計測値（Chrome ユーザーエクスペリエンスレポート）です。"
+                    ? "上の数字は実際にこのサイトを見た人の計測値(Chrome ユーザーエクスペリエンスレポート)です。"
                     : speed.reason}
                   {speed.testedUrl && <> 測定URL：{speed.testedUrl.replace(/^https?:\/\//, "")}</>}
                 </span>
@@ -1402,7 +1402,7 @@ export function Report({
               <div className="sec-head">
                 <span className="ic">▤</span>
                 <div>
-                  <h2 id="sec-lpo">LP改善（受け皿の直し方）</h2>
+                  <h2 id="sec-lpo">LP改善(受け皿の直し方)</h2>
                   <div className="sub">広告を出す前に直すと、同じ予算で獲得数が変わります</div>
                 </div>
                 <span className="rule" />
@@ -1465,7 +1465,7 @@ export function Report({
                   {[
                     { t: "テクニカルSEO", v: keywords.technical },
                     { t: "コンテンツSEO", v: keywords.content },
-                    { t: "MEO（Googleマップ）", v: keywords.meo },
+                    { t: "MEO(Googleマップ)", v: keywords.meo },
                   ].filter((x) => x.v.length > 0).map((x, i) => (
                     <div className="tactic" key={i}>
                       <div className="top"><b>{x.t}</b></div>
@@ -1534,7 +1534,7 @@ export function Report({
                 <span className="ic">⌕</span>
                 <div>
                   <h2 id="sec-suggest">検索サジェスト</h2>
-                  <div className="sub">いま実際に出ているサジェストです（Googleから取得）</div>
+                  <div className="sub">いま実際に出ているサジェストです(Googleから取得)</div>
                 </div>
                 <span className="rule" />
               </div>
@@ -1559,7 +1559,7 @@ export function Report({
               <div className="note">
                 <i className="i">i</i>
                 <span>
-                  赤は放置すると不利になる語、黄は第三者サイトへ流れる語（口コミ・比較など）です。
+                  赤は放置すると不利になる語、黄は第三者サイトへ流れる語(口コミ・比較など)です。
                   黄は必ずしも悪くありませんが、遷移先の内容を自社で制御できません。
                   グレーは同名の別施設・別サービスのサジェストで、指名検索で埋もれている状態を示します。
                 </span>
@@ -1578,7 +1578,7 @@ export function Report({
               <div className="sec-head">
                 <span className="ic">↗</span>
                 <div>
-                  <h2 id="sec-outreach">外部施策（自社サイトの外でやること）</h2>
+                  <h2 id="sec-outreach">外部施策(自社サイトの外でやること)</h2>
                   <div className="sub">掲載・アフィリエイト・PR</div>
                 </div>
                 <span className="rule" />
@@ -1704,7 +1704,7 @@ export function Report({
           </button>
           <span>
             {visible.length} / {copies.length} 案を表示中
-            {redCount > 0 && `（要修正 ${redCount}件）`}
+            {redCount > 0 && `(要修正 ${redCount}件)`}
           </span>
         </div>
 
@@ -1802,13 +1802,13 @@ export function Report({
             ))}
           </div>
           {(
-            // この節は「バナー書き出し」の中（chosen.length > 0 が確定済み）なので、
+            // この節は「バナー書き出し」の中(chosen.length > 0 が確定済み)なので、
             // サイトに写真が1枚も無くても、アップロード枠は常に出す
             <div className="photopick">
               <div className="ph">
                 写真を載せる
                 <small>
-                  サイトに載っている写真から選ぶか、お手元の画像をアップロードして使えます（生成画像は使いません）
+                  サイトに載っている写真から選ぶか、お手元の画像をアップロードして使えます(生成画像は使いません)
                 </small>
               </div>
               {(d.industry === "medical" || d.industry === "beauty") && (
@@ -1873,20 +1873,35 @@ export function Report({
                 {(site?.images ?? [])
                   .filter((u) => !looksLikeCasePhoto(u))
                   .filter((u) => {
-                    // 文字チェック自体が丸ごと失敗した（AI呼び出しエラー・全画像の取得失敗など）
+                    // 文字チェック自体が丸ごと失敗した(AI呼び出しエラー・全画像の取得失敗など)
                     // 場合、判定結果が1件も無いのに全候補が「未判定」扱いになり、写真が
                     // 一枚も表示されなくなってしまう。判定が丸ごと無い時は安全側に倒さず、
-                    // 未判定のまま全部を候補に出す（目視で選んでもらう）
+                    // 未判定のまま全部を候補に出す(目視で選んでもらう)
                     if (checkUnavailable) return true;
                     const info = imageScan?.items.find((x) => x.url === u);
-                    // 判定結果が無い（AIの文字チェックに回らなかった等）場合、文字なしと
+                    // 判定結果が無い(AIの文字チェックに回らなかった等)場合、文字なしと
                     // 決めつけない。安全側に倒し、除外側と同じ「それも表示する」に回す
                     if (!info) return showTexted;
                     if (!info.hasText) return true;
                     if (info.safeCrop) return true; // 自動トリミングで使えるので候補に残す
                     return showTexted; // 除外対象。手動で「それも表示する」を選んだときだけ
                   })
-                  .slice(0, 10)
+                  // トリミング不要(文字なし)の写真を最優先で並べ、次に自動トリミングで
+                  // 使える写真、それ以外の順にする。文字なしの写真がサイト内に存在するのに
+                  // 発見順(HTML内の並び順)がたまたま後ろだと、下の枚数上限で弾かれて
+                  // 表示されないことがあったため、切り詰める前に並べ替える。
+                  // Array#sort は安定ソートなので、同じ優先度内の順序は変えない
+                  .sort((a, b) => {
+                    const rank = (u: string) => {
+                      const info = imageScan?.items.find((x) => x.url === u);
+                      if (!info) return 1; // 未判定は中間扱い
+                      if (!info.hasText) return 0; // 文字なし＝トリミング不要を最優先
+                      if (info.safeCrop) return 1; // 自動トリミングで使える
+                      return 2; // 除外対象(「それも表示する」を選んだときだけここに来る)
+                    };
+                    return rank(a) - rank(b);
+                  })
+                  .slice(0, 12)
                   .map((u) => {
                     const info = imageScan?.items.find((x) => x.url === u);
                     const autoCrop = !!(info?.hasText && info.safeCrop);
@@ -1901,7 +1916,7 @@ export function Report({
                       >
                         {autoCrop ? (
                           // 自動トリミング対象は、選択時に実際に使われる範囲だけを
-                          // 先取りして見せる（元画像のままだと文字入りに見えてしまうため）
+                          // 先取りして見せる(元画像のままだと文字入りに見えてしまうため)
                           <div
                             aria-hidden
                             style={{
@@ -1985,7 +2000,7 @@ export function Report({
                       {autoCrop.length > 0 && (
                         <>
                           文字が写り込んだ写真のうち <b style={{ fontWeight: 600 }}>{autoCrop.length}枚</b> は、
-                          文字を含まない部分だけを自動的に切り出して候補に含めています（サムネイルの「自動トリミング」表示）。
+                          文字を含まない部分だけを自動的に切り出して候補に含めています(サムネイルの「自動トリミング」表示)。
                           <br />
                         </>
                       )}
@@ -2028,8 +2043,8 @@ export function Report({
                   {photoFit === "cover" ? (
                     (() => {
                       // 写真の縦横比とバナー枠の縦横比の組み合わせ次第で、横・縦どちらかの
-                      // スライダーがそのサイズには効かないことがある（cover の性質上、
-                      // はみ出さない軸は動かしても変化しない）。選択中のサイズごとに
+                      // スライダーがそのサイズには効かないことがある(cover の性質上、
+                      // はみ出さない軸は動かしても変化しない)。選択中のサイズごとに
                       // 判定し、効かないサイズがあれば各スライダーの下に明示する
                       const per = photoNatural
                         ? chosenSizes.map((s) => ({ s, e: coverAxisEffect(s, photoNatural) }))
@@ -2052,7 +2067,7 @@ export function Report({
                           </div>
                           {xDead.length > 0 && (
                             <small className="hint" style={{ display: "block", marginTop: -4 }}>
-                              {xDead.map(label).join("・")}ではこの写真だと変化しません（このサイズの枠は縦方向にしかはみ出さないため）
+                              {xDead.map(label).join("・")}ではこの写真だと変化しません(このサイズの枠は縦方向にしかはみ出さないため)
                             </small>
                           )}
                           <div className="row">
@@ -2068,7 +2083,7 @@ export function Report({
                           </div>
                           {yDead.length > 0 && (
                             <small className="hint" style={{ display: "block", marginTop: -4 }}>
-                              {yDead.map(label).join("・")}ではこの写真だと変化しません（このサイズの枠は横方向にしかはみ出さないため）
+                              {yDead.map(label).join("・")}ではこの写真だと変化しません(このサイズの枠は横方向にしかはみ出さないため)
                             </small>
                           )}
                         </>
@@ -2155,7 +2170,7 @@ export function Report({
           <div className="lock">🔒</div>
           <h2>バナーとLPは会員登録で</h2>
           <p>
-            分析は完了しています。会員登録（無料）すると、媒体サイズのバナー一式とリンク先LPの作成・
+            分析は完了しています。会員登録(無料)すると、媒体サイズのバナー一式とリンク先LPの作成・
             書き出しがご利用いただけます。
           </p>
           <p className="fine">※ 登録しても、いま実行した分析結果はそのまま引き継がれます。</p>
