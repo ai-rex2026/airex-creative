@@ -28,7 +28,7 @@ export type ImageCheck = {
   hasFace: boolean;
   /**
    * hasText のとき、文字を一切含まない矩形領域（画像に対する 0〜100 の%座標）。
-   * 十分な大きさの領域が無ければ null。hasText が false のとは常に null
+   * 十分な大きさの領域が無ければ null。hasText が false のときは常に null
    */
   safeCrop: SafeCrop | null;
   /**
@@ -43,7 +43,7 @@ export type ImageCheck = {
 
 export type ImageScan = { items: ImageCheck[]; checkedAt: string };
 
-// site-scan.ts の readImages() も 20 枚で打ち切っている。ここを合わせおかないと、
+// site-scan.ts の readImages() も 20 枚で打ち切っている。ここを合わせておかないと、
 // 上限に収まらなかった画像が「文字チェックされないまま候補に残る」ことになる
 const MAX = 20;
 /** 1枚あたりの上限。大きすぎる画像は送らない */
@@ -120,7 +120,7 @@ hasText が true のときだけ、safeCrop も判定する。
 　バナーの縦横どちらの比率でも使い物にならない）。文字が画像全体に散らばっていて
 　そのような領域が取れないときは null を返す（無理に小さい領域を返さない）。
 　座標は画像の左上を (0,0)、右下を (100,100) とする%で、x0<x1、y0<y1。
-　hasText が false のとは safeCrop は常に null。
+　hasText が false のときは safeCrop は常に null。
 
 hasFace は、人物の顔がはっきり写っているか。
 
