@@ -186,7 +186,7 @@ export function Inputs({
         ))}
         <div className="r">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <b>Google 連携（Search Console / GA_）</b>
+            <b>Google 連携（Search Console / GA4）</b>
             <small>{hasGoogle ? "実測データをレポートに反映しています" : "連携すると、検索順位とアクセス数が推定ではなく実測になります"}</small>
           </div>
           {hasGoogle ? <span className="tag ok">連携済み</span> : <a className="tag" href="/settings">連携する</a>}
