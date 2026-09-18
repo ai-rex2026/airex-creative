@@ -3,7 +3,7 @@ name: apply-stepfix
 on:
   push:
     paths:
-      - '.buildtmp/stepfix/p08.b64'
+      - '.buildtmp/stepfix/GO.marker'
 
 permissions:
   contents: write
