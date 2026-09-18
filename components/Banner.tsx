@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import type { BannerCopy, BrandProfile } from "@/lib/types";
 import type { SizePreset } from "@/lib/sizes";
+import { ZONE_BOX, type TextZone } from "@/lib/overlay-position";
 
 /**
  * バナーは画像生成モデルに描かせず DOM で組む。
@@ -11,7 +12,7 @@ import type { SizePreset } from "@/lib/sizes";
  * 白地・情報整理型（打ち合わせで選定）。
  * 効果を重ねると「AIが作った感じ」になるので、色の面はブランド色ひとつに絞り、
  * 影・グラデーション・傾き・原色の下線は使わない。以前はリボンの下線に
- * ブランドと無関係な赤が直書きされていて、それがテンプレート感の元になっていた。
+ * ブラントと無関係な赤が直書きされていて、それがテンプレート感の元になっていた。
  * 装飾の代わりに**実測できた事実**を並べて密度を出す。
  */
 
@@ -83,6 +84,8 @@ export function Banner({
   image,
   imageFit = "cover",
   imageFocus = { x: 50, y: 50 },
+  layout = "split",
+  textZone = "bottom",
 }: {
   copy: BannerCopy;
   brand: BrandProfile;
@@ -93,7 +96,7 @@ export function Banner({
   /**
    * 写真の見せ方。
    * cover は枠いっぱいに切り抜く（位置を動かして、文字入りの部分を外せる）。
-   * contain は切らずに全体を入れる。文字入りの画像で見切れを避けたいときに使う。
+   * contain は切らずに全体を入れる。文字入りの画像で見切れを避けたいときに使わ。
    */
   imageFit?: "cover" | "contain";
   /** cover のときの表示位置。CSS の object-position と同じ 0〜100 */
@@ -102,6 +105,13 @@ export function Banner({
   service?: string;
   /** 下部に並べる事実。実測から作る */
   facts?: BannerFact[];
+  /**
+   * split（既定）は画像とテキストを完全に分けて並べる。
+   * overlay は画像を全面に敷き、テキストを画像の上に重ねる（image が無いと split と同じになる）
+   */
+  layout?: "split" | "overlay";
+  /** overlay のとき、テキストをどの帯に置くか。顔の位置から自動で選ぶ（lib/overlay-position.ts） */
+  textZone?: TextZone;
 }) {
   const { w, h } = size;
   const compact = Math.min(w, h) < 400;
@@ -111,6 +121,29 @@ export function Banner({
 
   const accent = brand.accent || "#8B7355";
   const pad = compact ? 18 * u : 44 * u;
+
+  if (layout === "overlay" && image) {
+    return (
+      <BannerOverlay
+        copy={copy}
+        brand={brand}
+        size={size}
+        id={id}
+        image={image}
+        imageFit={imageFit}
+        imageFocus={imageFocus}
+        service={service}
+        facts={facts}
+        textZone={textZone}
+        compact={compact}
+        u={u}
+        px={px}
+        pad={pad}
+        accent={accent}
+      />
+    );
+  }
+
   // 小枠では側面パネルを出さない。文字が入らなくなる
   const side = !compact && landscape && !image;
   // 写真は文字と重ねない。重ねると日本語が読めなくなり、
@@ -126,7 +159,7 @@ export function Banner({
 
   const maxChars = Math.max(copy.headline[0].length, copy.headline[1].length, 1);
   // 1文字1emで折り返さない上限。係数を1超にすると300x250で見出しが1文字だけ
-  // 次行に落ちるので、字送りのぶんを見て1未満に留める
+  // 次行に落ちるので、字送りのぶんを見て1未満に留もる
   const hMax = compact ? (image ? 21 : 34) * u : landscape ? 74 * u : (image ? 82 : 104) * u;
   const hSize = Math.min(hMax, (colW / maxChars) * 0.96, textH * (compact ? 0.2 : 0.19));
   // 小さい枠に写真を入れると、事実の行まで置く高さが残らない
@@ -323,6 +356,232 @@ export function Banner({
             )}
           </div>
           {cta}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const GRADIENT_DIR: Record<TextZone, string> = {
+  top: "to bottom",
+  bottom: "to top",
+  left: "to right",
+  right: "to left",
+};
+
+/**
+ * layout="overlay" のとき専用の描画。
+ *
+ * 画像を全面に敷き、テキストは4つの帯（上/下/左/右）のうちどれか1つに重ねる。
+ * どの帯を使うかは呼び出し側（lib/overlay-position.ts の pickTextZone）が
+ * 顔の位置から決めて textZone として渡してくる。ここでは渡された帯に
+ * ・「暗いほど外側」のグラデーション（視認性の確保）
+ * ・帯の外側の端にテキストを寄せる配置（グラデーションが一番濃い場所に文字を置く）
+ * だけを機械的に行う。
+ */
+function BannerOverlay({
+  copy,
+  brand,
+  size,
+  id,
+  image,
+  imageFit,
+  imageFocus,
+  service,
+  facts,
+  textZone,
+  compact,
+  u,
+  px,
+  pad,
+  accent,
+}: {
+  copy: BannerCopy;
+  brand: BrandProfile;
+  size: SizePreset;
+  id: string;
+  image: string;
+  imageFit: "cover" | "contain";
+  imageFocus: { x: number; y: number };
+  service?: string;
+  facts: BannerFact[];
+  textZone: TextZone;
+  compact: boolean;
+  u: number;
+  px: (n: number) => string;
+  pad: number;
+  accent: string;
+}) {
+  const { w, h } = size;
+  const box = ZONE_BOX[textZone];
+  const horizontal = textZone === "top" || textZone === "bottom";
+  const panelW = ((box.x1 - box.x0) / 100) * w;
+  const panelH = ((box.y1 - box.y0) / 100) * h;
+  const colW = panelW - pad * 2;
+
+  const maxChars = Math.max(copy.headline[0].length, copy.headline[1].length, 1);
+  const hMax = compact ? 26 * u : horizontal ? 64 * u : 42 * u;
+  const hSize = Math.min(hMax, (colW / maxChars) * 0.96, panelH * (horizontal ? 0.26 : 0.15));
+  const shown = facts.slice(0, compact ? 2 : horizontal ? 3 : 2);
+
+  const justify = textZone === "top" ? "flex-start" : textZone === "bottom" ? "flex-end" : "center";
+
+  return (
+    <div
+      id={id}
+      style={{
+        position: "relative",
+        width: w,
+        height: h,
+        overflow: "hidden",
+        background: "#EFEBE4",
+        fontFamily: '"Hiragino Sans", "ヒラギノ角ゴシック", "Noto Sans JP", sans-serif',
+        border: `${Math.max(1, u)}px solid #E8E4DC`,
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={image}
+        alt=""
+        crossOrigin="anonymous"
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: imageFit,
+          objectPosition: `${imageFocus.x}% ${imageFocus.y}%`,
+          display: "block",
+        }}
+      />
+
+      {/* テキストを置く帯だけに、外側の端が1一矪毃くなる暗幕をかけり（視認性の確保） */}
+      <div
+        style={{
+          position: "absolute",
+          left: `${box.x0}%`,
+          top: `${box.y0}%`,
+          width: `${box.x1 - box.x0}%`,
+          height: `${box.y1 - box.y0}%`,
+          background: `linear-gradient(${GRADIENT_DIR[textZone]}, rgba(0,0,0,.78) 0%, rgba(0,0,0,.38) 55%, rgba(0,0,0,0) 100%)`,
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: `${box.x0}%`,
+          top: `${box.y0}%`,
+          width: `${box.x1 - box.x0}%`,
+          height: `${box.y1 - box.y0}%`,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: justify,
+          gap: px(compact ? 5 : 11),
+          padding: px(compact ? 12 : horizontal ? 26 : 22),
+          color: "#fff",
+          boxSizing: "border-box",
+        }}
+      >
+        {service && (
+          <div
+            style={{
+              width: "fit-content",
+              maxWidth: "100%",
+              background: accent,
+              color: "#fff",
+              fontWeight: 700,
+              letterSpacing: px(0.6),
+              fontSize: fitOneLine(service, colW * 0.9, compact ? 14 * u : 18 * u),
+              padding: `${px(compact ? 3 : 5)} ${px(compact ? 9 : 13)}`,
+              borderRadius: px(2),
+              whiteSpace: "nowrap",
+            }}
+          >
+            {service}
+          </div>
+        )}
+
+        <div style={{ fontSize: hSize, fontWeight: 900, lineHeight: 1.16, letterSpacing: `${-hSize * 0.02}px`, color: "#fff" }}>
+          <div>{copy.headline[0]}</div>
+          <div>{copy.headline[1]}</div>
+        </div>
+
+        {copy.subhead && !compact && horizontal && (
+          <div
+            style={{
+              fontSize: fitSize(copy.subhead, colW, panelH * 0.22, hSize * 0.32, 1.6),
+              lineHeight: 1.6,
+              color: "rgba(255,255,255,.88)",
+              fontWeight: 500,
+            }}
+          >
+            {copy.subhead}
+          </div>
+        )}
+
+        {shown.length > 0 && (
+          <div style={{ display: "flex", gap: px(compact ? 12 : 18), flexWrap: "wrap" }}>
+            {shown.map((f, i) => (
+              <div key={i}>
+                <b
+                  style={{
+                    display: "block",
+                    fontSize: fitOneLine(f.value, colW / (shown.length + 0.4), compact ? 17 * u : 24 * u),
+                    fontWeight: 900,
+                    color: "#fff",
+                    lineHeight: 1.2,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {f.value}
+                </b>
+                {f.label && (
+                  <small style={{ fontSize: px(compact ? 9 : 12), color: "rgba(255,255,255,.75)", whiteSpace: "nowrap" }}>
+                    {f.label}
+                  </small>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div>
+          <div
+            style={{
+              background: accent,
+              color: "#fff",
+              fontWeight: 900,
+              fontSize: fitOneLine(copy.cta, colW - pad, compact ? 20 * u : 28 * u),
+              padding: `${px(compact ? 8 : 14)} ${px(compact ? 16 : 28)}`,
+              borderRadius: px(3),
+              whiteSpace: "nowrap",
+              width: "fit-content",
+            }}
+          >
+            {copy.cta}
+          </div>
+        </div>
+      </div>
+
+      {/* ブランド名の小さな表示。テキストの帯と重ならない角にだけ出す
+          （bottom/right の帯は下端・右端まで使うため、その2パターンでは出さない） */}
+      {(textZone === "top" || textZone === "left") && (
+        <div
+          style={{
+            position: "absolute",
+            right: px(compact ? 6 : 12),
+            bottom: px(compact ? 6 : 12),
+            background: "rgba(0,0,0,.55)",
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: fitOneLine(brand.name, w * 0.3, compact ? 11 * u : 15 * u),
+            padding: `${px(compact ? 3 : 5)} ${px(compact ? 8 : 12)}`,
+            borderRadius: px(2),
+            whiteSpace: "nowrap",
+          }}
+        >
+          {brand.name}
         </div>
       )}
     </div>
