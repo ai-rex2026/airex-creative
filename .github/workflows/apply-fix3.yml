@@ -1,0 +1,39 @@
+name: apply-fix3
+
+on:
+  push:
+    paths:
+      - '.buildtmp/fix3/p05.b64'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Assemble and apply combined patch
+        run: |
+          set -e
+          cat .buildtmp/fix3/p*.b64 | tr -d '\n' | base64 -d > /tmp/fix3.patch
+          wc -c /tmp/fix3.patch
+          git apply --whitespace=nowarn /tmp/fix3.patch
+          rm -rf .buildtmp/fix3
+          rmdir .buildtmp 2>/dev/null || true
+          rm -f .github/workflows/apply-fix3.yml
+
+      - name: Commit and push
+        run: |
+          set -e
+          git config user.name "apply-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: X follower lookup, PageSpeed retry, banner upload + crop preview (automated)
+
+          Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+          git push origin HEAD:main
