@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { ChangeEvent } from "react";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
-import { replanForBudget, runLp, setBudget, setMargin } from "@/app/actions";
+import { replanForBudget, runLp, setBudget, setMargin, uploadBannerImage } from "@/app/actions";
 import { SIZES, type SizePreset } from "@/lib/sizes";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
@@ -22,8 +23,9 @@ import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
 import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
 import type { SpeedScan } from "@/lib/pagespeed";
 import type { SocialScan } from "@/lib/social";
-import type { ImageScan } from "@/lib/image-check";
+import type { ImageScan, SafeCrop } from "@/lib/image-check";
 import type { Ga4Data, GscData } from "@/lib/google";
+import type { CustomImage } from "@/lib/analysis";
 import type { MediaPlanItem, Summary } from "@/lib/types";
 import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "@/lib/types";
 import { Banner, pickFacts } from "./Banner";
@@ -55,6 +57,31 @@ function coverAxisEffect(size: SizePreset, natural: { w: number; h: number }): {
   return { x: excessX > 1, y: excessY > 1 };
 }
 
+/**
+ * 候補一覧のサムネイルを、実際に選んだときに使われる範囲（safeCrop）だけを
+ * 拡大して見せるための background-size / background-position を計算する。
+ *
+ * サムネイルが元画像のままだと、選ぶ前から文字入りの写真に見えてしまい、
+ * 「文字入りの画像が候補に出ている」ように見えていた。実際の切り抜きは
+ * 選択した瞬間に cropImageToDataUrl が行うので、ここはその見た目を
+ * サムネイルの時点で先取りして見せるだけの表示用計算。
+ *
+ * safeCrop は幅・高さとも40%以上（image-check.ts の validCrop）を保証されているため、
+ * 拡大率は最大でも 100/40 = 2.5倍程度に収まる
+ */
+function safeCropPreviewStyle(c: SafeCrop): { backgroundSize: string; backgroundPosition: string } {
+  const w = Math.min(Math.max(c.x1 - c.x0, 1), 100);
+  const h = Math.min(Math.max(c.y1 - c.y0, 1), 100);
+  const sizeX = (100 / w) * 100;
+  const sizeY = (100 / h) * 100;
+  const posX = w >= 100 ? 0 : (100 * c.x0) / (100 - w);
+  const posY = h >= 100 ? 0 : (100 * c.y0) / (100 - h);
+  return {
+    backgroundSize: `${sizeX}% ${sizeY}%`,
+    backgroundPosition: `${posX}% ${posY}%`,
+  };
+}
+
 export function Report({
   d,
   copies,
@@ -77,6 +104,7 @@ export function Report({
   speed,
   social,
   imageScan,
+  customImages: initialCustomImages,
   margin: initialMargin,
   kpi,
   measures,
@@ -110,6 +138,7 @@ export function Report({
   speed: SpeedScan | null;
   social: SocialScan | null;
   imageScan: ImageScan | null;
+  customImages: CustomImage[] | null;
   margin: number | null;
   kpi: KpiTree | null;
   measures: Measure[] | null;
@@ -146,7 +175,22 @@ export function Report({
   const [croppedSrc, setCroppedSrc] = useState<string | null>(null);
   const [cropBusy, setCropBusy] = useState(false);
   const [cropError, setCropError] = useState<string | null>(null);
-  const photoSrc = croppedSrc ?? (photo ? `/api/analysis/${id}/img?u=${encodeURIComponent(photo)}` : null);
+  // 広告主側でWebサイトに載っていない素材を使いたい場合のアップロード枠。
+  // アップロード直後にも一覧へ反映したいのでローカル state も持つ
+  // （サーバー側は revalidatePath するが、このコンポーネント自体はクライアント側で
+  // 再マウントされないため、ローカルに足しておかないと選び直すまで出てこない）
+  const [customImages, setCustomImages] = useState<CustomImage[]>(initialCustomImages ?? []);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  // アップロード素材は "custom:<path>" という合成IDで他候補と区別する
+  const CUSTOM_PREFIX = "custom:";
+  const photoSrc = croppedSrc
+    ? croppedSrc
+    : photo?.startsWith(CUSTOM_PREFIX)
+      ? `/api/analysis/${id}/img?c=${encodeURIComponent(photo.slice(CUSTOM_PREFIX.length))}`
+      : photo
+        ? `/api/analysis/${id}/img?u=${encodeURIComponent(photo)}`
+        : null;
   // 位置スライダーが実際に効くかは、写真の縦横比と枠の縦横比の組み合わせで決まる
   // （object-fit: cover の性質上、はみ出さない軸は動かしても変化しない）。
   // 判定には元画像の実サイズが要るので、選ばれた瞬間に読み込んでおく
@@ -193,6 +237,30 @@ export function Report({
       }
     } else {
       setCroppedSrc(null);
+    }
+  }
+
+  /**
+   * 広告主側でWebサイトに載っていない独自素材を使いたい場合の、画像アップロード。
+   * アップロードした画像は自動の文字チェックにかけていない（利用者自身が選んだ
+   * 素材のため）。アップロードが終わったら、その画像を即座に選択状態にする
+   */
+  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 同じファイルを続けて選んでも onChange が発火するようにする
+    if (!file) return;
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.set("file", file);
+      const { path } = await uploadBannerImage(id, fd);
+      setCustomImages((prev) => [...prev, { path, uploadedAt: new Date().toISOString() }]);
+      void pickPhoto(`${CUSTOM_PREFIX}${path}`);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "アップロードに失敗しました");
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -1733,11 +1801,15 @@ export function Report({
               </button>
             ))}
           </div>
-          {(site?.images?.length ?? 0) > 0 && (
+          {(
+            // この節は「バナー書き出し」の中（chosen.length > 0 が確定済み）なので、
+            // サイトに写真が1枚も無くても、アップロード枠は常に出す
             <div className="photopick">
               <div className="ph">
                 写真を載せる
-                <small>サイトに載っている写真から選びます。生成画像は使いません</small>
+                <small>
+                  サイトに載っている写真から選ぶか、お手元の画像をアップロードして使えます（生成画像は使いません）
+                </small>
               </div>
               {(d.industry === "medical" || d.industry === "beauty") && (
                 <div className="note warn" style={{ marginTop: 10 }}>
@@ -1756,6 +1828,48 @@ export function Report({
                 >
                   <span className="none">文字のみ</span>
                 </button>
+                {customImages.map((ci) => {
+                  const u = `${CUSTOM_PREFIX}${ci.path}`;
+                  const src = `/api/analysis/${id}/img?c=${encodeURIComponent(ci.path)}`;
+                  return (
+                    <button
+                      key={ci.path}
+                      className={photo === u ? "on" : ""}
+                      style={{ position: "relative" }}
+                      disabled={cropBusy && photo === u}
+                      onClick={() => void pickPhoto(u)}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={src} alt="" />
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: 4,
+                          bottom: 4,
+                          background: "rgba(0,0,0,.65)",
+                          color: "#fff",
+                          fontSize: 10,
+                          lineHeight: 1,
+                          padding: "3px 6px",
+                          borderRadius: 3,
+                          fontWeight: 600,
+                        }}
+                      >
+                        アップロード素材
+                      </span>
+                    </button>
+                  );
+                })}
+                <label className={`uploadbtn${uploading ? " busy" : ""}`}>
+                  {uploading ? "アップロード中…" : "＋ 画像を追加"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    disabled={uploading}
+                    onChange={(e) => void handleUpload(e)}
+                  />
+                </label>
                 {(site?.images ?? [])
                   .filter((u) => !looksLikeCasePhoto(u))
                   .filter((u) => {
@@ -1776,6 +1890,7 @@ export function Report({
                   .map((u) => {
                     const info = imageScan?.items.find((x) => x.url === u);
                     const autoCrop = !!(info?.hasText && info.safeCrop);
+                    const src = `/api/analysis/${id}/img?u=${encodeURIComponent(u)}`;
                     return (
                       <button
                         key={u}
@@ -1784,8 +1899,23 @@ export function Report({
                         disabled={cropBusy && photo === u}
                         onClick={() => void pickPhoto(u)}
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/api/analysis/${id}/img?u=${encodeURIComponent(u)}`} alt="" />
+                        {autoCrop ? (
+                          // 自動トリミング対象は、選択時に実際に使われる範囲だけを
+                          // 先取りして見せる（元画像のままだと文字入りに見えてしまうため）
+                          <div
+                            aria-hidden
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              backgroundImage: `url(${src})`,
+                              backgroundRepeat: "no-repeat",
+                              ...safeCropPreviewStyle(info!.safeCrop!),
+                            }}
+                          />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={src} alt="" />
+                        )}
                         {autoCrop && (
                           <span
                             style={{
@@ -1813,6 +1943,13 @@ export function Report({
                 <div className="note warn" style={{ marginTop: 10 }}>
                   <i className="i">!</i>
                   <span>{cropError}</span>
+                </div>
+              )}
+
+              {uploadError && (
+                <div className="note warn" style={{ marginTop: 10 }}>
+                  <i className="i">!</i>
+                  <span>{uploadError}</span>
                 </div>
               )}
 

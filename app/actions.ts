@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { newAnalysisId, type Analysis } from "@/lib/analysis";
 import { askAboutReport } from "@/lib/chat";
 import { generateMeasures, type Measure } from "@/lib/measures";
@@ -399,6 +400,53 @@ export async function setMainPrice(id: string, item: { name: string; yen: number
   await updateOwned(sb, id, user.id, { pricing: next });
   revalidatePath(`/analysis/${id}/report`);
   return next;
+}
+
+const MAX_CUSTOM_IMAGES = 10;
+const MAX_UPLOAD_BYTES = 8_000_000;
+
+/**
+ * 広告主側でWebサイトに載っていない独自素材をアップロードする。
+ *
+ * サイトから拾った写真は全滅で文字入りということがあり得る（バナー用に
+ * 作り込まれたサイトほど、逆にどの写真にも価格やキャッチコピーが焼き込まれて
+ * いたりする）。その場合の逃げ道として、利用者が用意した画像を直接使えるようにする。
+ * アップロードした画像は本人が選んだ素材という前提で、自動の文字チェックにはかけない。
+ *
+ * 画像そのものは Storage に置き、行には path だけを持たせる（img プロキシ経由でしか
+ * 配信しない＝本人の分析かどうかを毎回 owner_id で確認してから返す）
+ */
+export async function uploadBannerImage(id: string, formData: FormData): Promise<{ path: string }> {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) throw new Error("画像ファイルを選んでください");
+  if (!file.type.startsWith("image/")) throw new Error("画像ファイルのみアップロードできます");
+  if (file.size > MAX_UPLOAD_BYTES) throw new Error("画像サイズが大きすぎます（8MBまでです）");
+
+  const { data: row } = await sb.from("analyses").select("custom_images").eq("id", id).eq("owner_id", user.id).single();
+  if (!row) throw new Error("この分析を編集する権限がありません");
+  const cur = (row.custom_images as { path: string; uploadedAt: string }[] | null) ?? [];
+  if (cur.length >= MAX_CUSTOM_IMAGES) throw new Error(`アップロードできる画像は${MAX_CUSTOM_IMAGES}枚までです`);
+
+  const ext = (file.type.split("/")[1] || "jpg").replace(/[^a-z0-9]/gi, "").slice(0, 8) || "jpg";
+  const path = `${id}/${crypto.randomUUID()}.${ext}`;
+
+  const admin = createAdminClient();
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const { error: upErr } = await admin.storage
+    .from("banner-uploads")
+    .upload(path, buf, { contentType: file.type, upsert: false });
+  if (upErr) throw new Error("アップロードに失敗しました");
+
+  const next = [...cur, { path, uploadedAt: new Date().toISOString() }];
+  await updateOwned(sb, id, user.id, { custom_images: next }, "アップロードした画像を保存できませんでした");
+  revalidatePath(`/analysis/${id}/report`);
+  return { path };
 }
 
 /** 追うKPIを選ぶ。複数選べる */

@@ -183,11 +183,17 @@ async function run(url: string | null): Promise<SpeedScan> {
 
   const key = process.env.PAGESPEED_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
 
+  // 「Lighthouse returned error: Something went wrong.」やタイムアウトは、
+  // Google 側のクロール環境が一時的に詰まっているだけのことが多い。
+  // 1回の再試行では直らないサイトもあったため、間隔を空けながら計3回まで試す
+  // （OUTER_MS の外側タイムアウトが最終的な歯止めになる）
   let result = await callPsi(url, key);
-  if (!result.ok && result.retryable) {
-    // Google 側の瞬断が疑われる失敗だけ、少し間を置いてもう一度だけ試す
-    await new Promise((r) => setTimeout(r, 4_000));
+  let attempt = 1;
+  const RETRY_DELAYS_MS = [4_000, 8_000];
+  while (!result.ok && result.retryable && attempt <= RETRY_DELAYS_MS.length) {
+    await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
     result = await callPsi(url, key);
+    attempt += 1;
   }
   if (!result.ok) return empty(result.message);
   const j = result.j;

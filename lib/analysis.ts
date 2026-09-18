@@ -27,6 +27,13 @@ export function newAnalysisId() {
   return Array.from(buf, (b) => chars[b % chars.length]).join("");
 }
 
+/**
+ * 広告主側でWebサイトに載っていない独自素材を使いたい場合のアップロード画像。
+ * path は Supabase Storage の banner-uploads バケット内のパス（公開URLではない。
+ * 本人の分析にしか紐付いていないことを毎回確認してから配信する）
+ */
+export type CustomImage = { path: string; uploadedAt: string };
+
 export type Analysis = {
   id: string;
   owner_id: string;
@@ -54,6 +61,7 @@ export type Analysis = {
   speed: SpeedScan | null;
   social: SocialScan | null;
   image_scan: ImageScan | null;
+  custom_images: CustomImage[] | null;
   margin: number | null;
   kpi: KpiTree | null;
   /** 選ばれたKPIのID。自由入力ぶんも id を振ってここに入る */

@@ -979,6 +979,11 @@ h2[id^="sec-"]{scroll-margin-top:64px}
 .photopick .opts button .none{font-size:11.5px;color:var(--muted)}
 .photopick .opts button:hover{border-color:var(--gold)}
 .photopick .opts button.on{border-color:var(--btn);outline:2px solid var(--btn);outline-offset:-3px}
+.photopick .opts .uploadbtn{width:84px;height:60px;padding:0;border:1px dashed var(--line);
+  border-radius:8px;background:var(--bg);cursor:pointer;display:flex;align-items:center;
+  justify-content:center;text-align:center;font:inherit;font-size:11px;color:var(--muted);line-height:1.3}
+.photopick .opts .uploadbtn:hover{border-color:var(--gold);color:var(--head)}
+.photopick .opts .uploadbtn.busy{cursor:default;opacity:.6}
 
 /* ── バナー写真の切り方 ── */
 .crop{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);display:grid;gap:10px}
