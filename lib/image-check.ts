@@ -37,9 +37,9 @@ export type ImageCheck = {
 
 export type ImageScan = { items: ImageCheck[]; checkedAt: string };
 
-// site-scan.ts の readImages() も 12 枚で打ち切っている。ここを合わせておかないと、
+// site-scan.ts の readImages() も 20 枚で打ち切っている。ここを合わせておかないと、
 // 上限に収まらなかった画像が「文字チェックされないまま候補に残る」ことになる
-const MAX = 12;
+const MAX = 20;
 /** 1枚あたりの上限。大きすぎる画像は送らない */
 const MAX_BYTES = 3_500_000;
 
@@ -126,9 +126,10 @@ note は、その画像がバナーに向くか向かないかを15文字以内�
 出力: {"items":[{"index":0,"hasText":false,"hasFace":false,"safeCrop":null,"note":""}]}
 safeCrop の例（文字が上部1/3にある場合）: {"x0":0,"y0":34,"x1":100,"y1":100}`,
       usable.map((x) => x.im),
-      // 最大12枚ぶんの判定をまとめて出させるため、項目数が多いと2000では
-      // 出力が途中で切れてJSONとして読めなくなることがあった
-      { maxTokens: 3200 }
+      // 最大20枚ぶんの判定をまとめて出させるため、項目数が多いと出力が
+      // 途中で切れてJSONとして読めなくなることがあった。枚数を12→20に
+      // 増やした分、上限も余裕を見て引き上げている
+      { maxTokens: 5200 }
     );
   } catch {
     return { items: [], checkedAt: new Date().toISOString() };
