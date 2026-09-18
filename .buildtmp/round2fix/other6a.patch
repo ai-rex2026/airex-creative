@@ -1,0 +1,206 @@
+diff --git a/app/actions.ts b/app/actions.ts
+index bbaf7ce..46a00d7 100644
+--- a/app/actions.ts
++++ b/app/actions.ts
+@@ -11,6 +11,7 @@ import { generateMeasures, type Measure } from "@/lib/measures";
+ import { generateRunbook } from "@/lib/runbook";
+ import type { AnalysisMode, BudgetBand } from "@/lib/types";
+ import type { PriceScan } from "@/lib/pricing";
++import type { SocialScan } from "@/lib/social";
+ import { processAnalysis } from "@/lib/worker";
+ import { generateLp } from "@/lib/lp";
+ import { hasAnthropic } from "@/lib/anthropic";
+@@ -402,6 +403,53 @@ export async function setMainPrice(id: string, item: { name: string; yen: number
+   return next;
+ }
+ 
++/**
++ * SNSのフォロワー数を利用者が直接入力する。
++ *
++ * X（Grok経由）は小規模・ニッチなアカウントだと、xAI側の検索でも
++ * プロフィールの数字に一度も当たらず取得できないことがある（検索カバレッジの限界で、
++ * こちら側のバグではない）。自動取得が失敗しても、利用者が実際の数値を知っていれば
++ * それをそのままレポートに反映できるようにする。
++ *
++ * followers に null を渡すと手入力を取り消し、自動取得時の状態表示に戻す。
++ */
++export async function setSocialFollowers(id: string, url: string, followers: number | null) {
++  const sb = await createClient();
++  const {
++    data: { user },
++  } = await sb.auth.getUser();
++  if (!user) throw new Error("ログインが必要です");
++
++  if (followers !== null && (!Number.isFinite(followers) || followers < 0)) {
++    throw new Error("フォロワー数は0以上の数値で入力してください");
++  }
++
++  const { data } = await sb.from("analyses").select("social").eq("id", id).eq("owner_id", user.id).single();
++  if (!data?.social) throw new Error("SNSの情報がありません");
++  const cur = data.social as SocialScan;
++  const idx = cur.accounts.findIndex((a) => a.url === url);
++  if (idx === -1) throw new Error("該当のアカウントが見つかりません");
++
++  const next: SocialScan = {
++    ...cur,
++    accounts: cur.accounts.map((a, i) =>
++      i === idx
++        ? {
++            ...a,
++            followers,
++            readable: followers !== null || a.posts !== null,
++            via: followers !== null ? "手入力" : a.via === "手入力" ? null : a.via,
++            reason: followers !== null ? null : a.reason,
++          }
++        : a
++    ),
++  };
++
++  await updateOwned(sb, id, user.id, { social: next }, "フォロワー数を保存できませんでした");
++  revalidatePath(`/analysis/${id}/report`);
++  return next;
++}
++
+ const MAX_CUSTOM_IMAGES = 10;
+ const MAX_UPLOAD_BYTES = 8_000_000;
+ 
+ diff --git a/components/Inputs.tsx b/components/Inputs.tsx
+index c920c2b..36f55fc 100644
+--- a/components/Inputs.tsx
++++ b/components/Inputs.tsx
+@@ -1,7 +1,7 @@
+ "use client";
+ 
+ import { useState, useTransition } from "react";
+-import { addInput, replanForBudget } from "@/app/actions";
++import { addInput, replanForBudget, setSocialFollowers } from "@/app/actions";
+ import { BUDGETS, type BudgetBand } from "@/lib/types";
+ import type { SiteScan } from "@/lib/site-scan";
+ import type { SocialScan } from "@/lib/social";
+@@ -16,6 +16,66 @@ import { Spinner } from "./Loading";
+ 
+ const PLATFORMS = ["Instagram", "X（Twitter）", "Facebook", "TikTok", "YouTube", "LINE", "別ドメインのLP", "その他"];
+ 
++/**
++ * フォロワー数の手入力欄。
++ *
++ * X（Grok経由）などは小規模・ニッチなアカウントだと自動取得が失敗することがある
++ * （xAI側の検索でプロフィールの数字に一度も当たらない、という検索カバレッジの限界で、
++ * 直せるバグではない）。自動で取れなかったときに、利用者が知っている数字を
++ * そのまま入力できるようにする。
++ */
++function FollowerEdit({ id, url, label }: { id: string; url: string; label: string }) {
++  const [open, setOpen] = useState(false);
++  const [value, setValue] = useState("");
++  const [err, setErr] = useState<string | null>(null);
++  const [busy, start] = useTransition();
++
++  if (!open) {
++    return (
++      <button className="linkbtn" onClick={() => setOpen(true)}>
++        数字を知っていれば入力する
++      </button>
++    );
++  }
++
++  function save() {
++    const n = Number(value.replace(/,/g, ""));
++    if (!value.trim() || !Number.isFinite(n) || n < 0) {
++      setErr("0以上の数値で入力してください");
++      return;
++    }
++    setErr(null);
++    start(async () => {
++      try {
++        await setSocialFollowers(id, url, Math.round(n));
++        setOpen(false);
++        setValue("");
++      } catch (e) {
++        setErr(e instanceof Error ? e.message : String(e));
++      }
++    });
++  }
++
++  return (
++    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
++      <div style={{ display: "flex", gap: 6 }}>
++        <input
++          value={value}
++          onChange={(e) => setValue(e.target.value)}
++          placeholder={label}
++          inputMode="numeric"
++          style={{ width: 110 }}
++          onKeyDown={(e) => { if (e.key === "Enter") save(); }}
++        />
++        <button className="btn" onClick={save} disabled={busy}>
++          {busy ? <Spinner label="保存中" /> : "保存"}
++        </button>
++      </div>
++      {err && <small className="warn">{err}</small>}
++    </div>
++  );
++}
++
+ export function Inputs({
+   id,
+   url,
+@@ -81,6 +141,7 @@ export function Inputs({
+         )}
+         {(site?.social ?? []).map((s, i) => {
+           const m = social?.accounts.find((a) => a.url === s.url);
++          const label = /youtube/i.test(s.platform) ? "登録者" : "フォロワー";
+           return (
+             <div className="r" key={i}>
+               <div style={{ flex: 1, minWidth: 0 }}>
+@@ -88,10 +149,13 @@ export function Inputs({
+                 <small>{m?.title ?? s.handle}</small>
+                 {m?.reason && <small className="warn">{m.reason}</small>}
+               </div>
+-              {m?.followers != null && (
++              {m?.followers != null ? (
+                 <span className="tag ok">
+-                  {/youtube/i.test(s.platform) ? "登録者" : "フォロワー"} {m.followers.toLocaleString()}
++                  {label} {m.followers.toLocaleString()}
++                  {m.via === "手入力" && "（手入力）"}
+                 </span>
++              ) : (
++                m && <FollowerEdit id={id} url={s.url} label={`${label}数`} />
+               )}
+               <span className={`tag${m?.readable ? " ok" : ""}`}>{m?.readable ? "分析済み" : "検出"}</span>
+             </div>
+ diff --git a/lib/analysis.ts b/lib/analysis.ts
+index 82e638f..40d8d9e 100644
+--- a/lib/analysis.ts
++++ b/lib/analysis.ts
+@@ -202,7 +202,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
+       return await save({ ad_ops: ops, step: "広告以外の施策を整理しています", progress: 62 });
+     }
+     if (!a.tactics) {
+-      const t = await generateTactics(a.diagnosis, a.site);
++      const t = await generateTactics(a.diagnosis, a.site, a.social);
+       return await save({ tactics: t, step: "訴求軸ごとにコピーを書いています", progress: 66 });
+     }
+     // 施策はKPIに効くものだけを出す。だからKPIの仮説を先に立てる
+ diff --git a/lib/pagespeed.ts b/lib/pagespeed.ts
+index 921d769..7801f91 100644
+--- a/lib/pagespeed.ts
++++ b/lib/pagespeed.ts
+@@ -12,11 +12,14 @@
+ /**
+  * 計測の待ち時間。
+  * 重いページは1分を超えることがある（ib-clinic.jp で40秒では足りなかった）。
+- * この工程は最後に置いてあるので、長く待ってもレポート本体には影響しない。
+- * 関数の実行上限（300秒）とワーカーの持ち時間（240秒）の内側に収める。
++ * この工程は最後に置いてあるので、長く待ってもレポート本体には影響しない
++ * （すでに保存済みの工程はやり直さない。この工程に来た時点でほぼ丸ごとの
++ * 実行時間を使える）。関数の実行上限（300秒。app/api/cron/worker/route.ts の
++ * maxDuration）と、その場合のワーカーの1回ぶんの持ち時間（240秒。lib/worker.ts の
++ * processAnalysis の既定 budgetMs）の内側に収める。
+  */
+-const FETCH_MS = 90_000;
+-const OUTER_MS = 200_000;
++const FETCH_MS = 100_000;
++const OUTER_MS = 240_000;
+ 
+ export type SpeedRating = "良好" | "改善が必要" | "不良";
+ 

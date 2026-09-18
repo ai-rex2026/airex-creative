@@ -19,7 +19,8 @@ jobs:
         run: |
           set -e
           patch -p1 --verbose < .buildtmp/round2fix/report_fix.patch
-          patch -p1 --verbose < .buildtmp/round2fix/other6.patch
+          patch -p1 --verbose < .buildtmp/round2fix/other6a.patch
+          patch -p1 --verbose < .buildtmp/round2fix/other6b.patch
 
       - name: Remove temp files and this workflow
         run: |
