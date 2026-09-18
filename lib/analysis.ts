@@ -12,6 +12,8 @@ import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } f
 import { scanPrices, type PriceScan } from "./pricing";
 import { scanSpeed, type SpeedScan } from "./pagespeed";
 import { scanSocial, type SocialScan } from "./social";
+import { findSocialCompetitors, type SocialCompetitorScan } from "./social-competitors";
+import { generateSocialInsights, type SocialInsightPlan } from "./social-insights";
 import { checkImages, type ImageScan } from "./image-check";
 import { generateKpi, type KpiTree } from "./kpi";
 import { generateMeasures, type Measure } from "./measures";
@@ -60,6 +62,8 @@ export type Analysis = {
   pricing: PriceScan | null;
   speed: SpeedScan | null;
   social: SocialScan | null;
+  social_competitors: SocialCompetitorScan | null;
+  social_insights: SocialInsightPlan | null;
   image_scan: ImageScan | null;
   custom_images: CustomImage[] | null;
   margin: number | null;
@@ -201,6 +205,36 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const ops = await finishAdOps(built, a.site, a.media_plan, a.diagnosis.industry);
       return await save({ ad_ops: ops, step: "広告以外の施策を整理しています", progress: 62 });
     }
+    // YouTube・Xはアカウント情報（登録者数・直近の投稿）が実測できている場合だけ、
+    // 競合アカウントを探して実測し直す。実測が無い媒体は探しに行くだけ無駄になる
+    if (!a.social_competitors) {
+      const readableTargets = (["YouTube", "X"] as const).filter((p) =>
+        (a.social?.accounts ?? []).some((acc) => acc.readable && (p === "YouTube" ? /youtube/i : /twitter/i).test(acc.platform))
+      );
+      if (readableTargets.length === 0) {
+        return await save({
+          social_competitors: { items: [], searchedAt: new Date().toISOString() },
+          step: "広告以外の施策を整理しています",
+          progress: 63,
+        });
+      }
+      let sc: SocialCompetitorScan = { items: [], searchedAt: new Date().toISOString() };
+      try {
+        sc = await findSocialCompetitors(a.diagnosis, a.url, readableTargets);
+      } catch {
+        // Web検索が失敗しても止めない。取れなければ自社の実測値だけで分析結果を作る
+      }
+      return await save({ social_competitors: sc, step: "広告以外の施策を整理しています", progress: 64 });
+    }
+    if (!a.social_insights) {
+      let si: SocialInsightPlan = { items: [] };
+      try {
+        si = await generateSocialInsights(a.diagnosis, a.social, a.social_competitors);
+      } catch {
+        // 作れなくても分析全体は止めない。その媒体の分析結果が空のまま先に進む
+      }
+      return await save({ social_insights: si, step: "広告以外の施策を整理しています", progress: 65 });
+    }
     if (!a.tactics) {
       const t = await generateTactics(a.diagnosis, a.site, a.social);
       return await save({ tactics: t, step: "訴求軸ごとにコピーを書いています", progress: 66 });
@@ -230,7 +264,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       );
       return await save({ line_plan, step: "訴求軸ごとにコピーを書いています", progress: 78 });
     }
-    // サジェストは Google の公開エンドポイントから実測する。AI は使わないので速い
+    // サジェストは Google の公開エントポイントから実測する。AI は使わないので速い
     if (!a.suggests) {
       // 地名は MEO の実測住所から。町名まで細かいとサジェストが返らないので、
       // 「渋谷区」と方角を落とした町名（恵比寿西→恵比寿）の両方を候補にする
