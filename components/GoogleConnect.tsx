@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { disconnectGoogle } from "@/app/actions";
 
+// lib/google.ts の GOOGLE_SCOPES と同じ内容を保つこと（クライアント側でこのファイルだけ独立して使うため複製）
 const SCOPES =
-  "https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/analytics.readonly";
+  "https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/yt-analytics.readonly";
 
 /**
  * Search Console / GA4 を読む許可をもらう。

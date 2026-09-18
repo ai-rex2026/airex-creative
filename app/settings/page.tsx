@@ -50,11 +50,11 @@ export default async function SettingsPage() {
           <div className="rh">データ連携</div>
           <div className="r">
             <div style={{ flex: 1, minWidth: 0 }}>
-              <b>Search Console / Google Analytics 4</b>
+              <b>Search Console / Google Analytics 4 / YouTube</b>
               <small>
                 {conn
                   ? `連携済み（${new Date(conn.connected_at).toLocaleDateString("ja-JP")}）。分析するとレポートに実データが入ります。`
-                  : "連携すると、検索クエリ・順位・流入チャネルを推定ではなく実データで出せます。"}
+                  : "連携すると、検索クエリ・順位・流入チャネルに加え、自社YouTubeチャンネルの非公開指標（推定視聴時間・純増登録者数・主な流入経路など）も推定ではなく実データで出せます。"}
               </small>
             </div>
             {hasGoogleApp() ? (
