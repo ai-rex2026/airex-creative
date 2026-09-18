@@ -26,5 +26,5 @@ jobs:
       - name: Commit and push
         run: |
           git add -A
-          git commit -m "apply social/banner changes (temp workflow self-clean)"
+          git commit -m "apply Report.tsx patch (temp workflow self-clean)"
           git push origin HEAD:main
