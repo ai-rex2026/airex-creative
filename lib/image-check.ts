@@ -28,16 +28,22 @@ export type ImageCheck = {
   hasFace: boolean;
   /**
    * hasText のとき、文字を一切含まない矩形領域（画像に対する 0〜100 の%座標）。
-   * 十分な大きさの領域が無ければ null。hasText が false のときは常に null
+   * 十分な大きさの領域が無ければ null。hasText が false のとは常に null
    */
   safeCrop: SafeCrop | null;
+  /**
+   * hasFace のとき、顔（複数あれば主役級の顔をまとめて含む範囲）のおおよその位置
+   * （画像に対する 0〜100 の%座標）。バナーで画像の上にテキストを重ねる際、
+   * この範囲を避けてテキストを置くために使う。hasFace が false のときは常に null
+   */
+  facePosition: SafeCrop | null;
   /** 一言。なぜ使えない／使えるのか */
   note: string;
 };
 
 export type ImageScan = { items: ImageCheck[]; checkedAt: string };
 
-// site-scan.ts の readImages() も 20 枚で打ち切っている。ここを合わせておかないと、
+// site-scan.ts の readImages() も 20 枚で打ち切っている。ここを合わせおかないと、
 // 上限に収まらなかった画像が「文字チェックされないまま候補に残る」ことになる
 const MAX = 20;
 /** 1枚あたりの上限。大きすぎる画像は送らない */
@@ -89,6 +95,7 @@ export async function checkImages(urls: string[]): Promise<ImageScan> {
       hasText: boolean;
       hasFace: boolean;
       safeCrop: SafeCrop | null;
+      facePosition: SafeCrop | null;
       note: string;
     }[];
   };
@@ -113,9 +120,17 @@ hasText が true のときだけ、safeCrop も判定する。
 　バナーの縦横どちらの比率でも使い物にならない）。文字が画像全体に散らばっていて
 　そのような領域が取れないときは null を返す（無理に小さい領域を返さない）。
 　座標は画像の左上を (0,0)、右下を (100,100) とする%で、x0<x1、y0<y1。
-　hasText が false のときは safeCrop は常に null。
+　hasText が false のとは safeCrop は常に null。
 
 hasFace は、人物の顔がはっきり写っているか。
+
+hasFace が true のときだけ、facePosition も判定する。
+　写っている顔（複数人いる場合は、主役級の顔をすべて含む最小の範囲）のおおよその位置を、
+　画像の左上を (0,0)、右下を (100,100) とする%の矩形で返す。バナーでこの画像の上に
+　テキストを重ねるとき、顔にかからない位置を選ぶために使う。判定は緩めでよいが、
+　実際の顔より狭く見積もって顔の一部が範囲外にはみ出すことは避けること（広めに見積もる）。
+　hasFace が false のときは facePosition は常に null。
+
 note は、その画像がバナーに向くか向かないかを15文字以内で。
 
 判定は見えたままを答えること。推測で補わない。safeCrop も、実際に文字が
@@ -123,8 +138,9 @@ note は、その画像がバナーに向くか向かないかを15文字以内�
 あるなら小さく見積もるか null にする）。`,
       `画像は ${usable.length} 枚です。index は 0 から始まる画像の番号です。
 
-出力: {"items":[{"index":0,"hasText":false,"hasFace":false,"safeCrop":null,"note":""}]}
-safeCrop の例（文字が上部1/3にある場合）: {"x0":0,"y0":34,"x1":100,"y1":100}`,
+出力: {"items":[{"index":0,"hasText":false,"hasFace":false,"safeCrop":null,"facePosition":null,"note":""}]}
+safeCrop の例（文字が上部1/3にある場合）: {"x0":0,"y0":34,"x1":100,"y1":100}
+facePosition の例（顔が画面中央やや上にある場合）: {"x0":30,"y0":10,"x1":70,"y1":45}`,
       usable.map((x) => x.im),
       // 最大20枚ぶんの判定をまとめて出させるため、項目数が多いと出力が
       // 途中で切れてJSONとして読めなくなることがあった。枚数を12→20に
@@ -146,11 +162,18 @@ safeCrop の例（文字が上部1/3にある場合）: {"x0":0,"y0":34,"x1":100
       !!c &&
       c.x0 >= 0 && c.y0 >= 0 && c.x1 <= 100 && c.y1 <= 100 &&
       c.x1 - c.x0 >= 40 && c.y1 - c.y0 >= 40;
+    const fp = r.facePosition;
+    // facePosition は「テキストを重ねてよい場所」を避けるためだけに使う。
+    // safeCrop ほど厳密な最小サイズは要らないが、座標として壊れているものは捨てる
+    // （はみ出した座標をそのまま使うと、避けたはずの位置に文字を置いてしまう）
+    const validFace =
+      !!fp && fp.x0 >= 0 && fp.y0 >= 0 && fp.x1 <= 100 && fp.y1 <= 100 && fp.x1 > fp.x0 && fp.y1 > fp.y0;
     items.push({
       url: src.url,
       hasText: !!r.hasText,
       hasFace: !!r.hasFace,
       safeCrop: r.hasText && validCrop ? c : null,
+      facePosition: r.hasFace && validFace ? fp : null,
       note: r.note ?? "",
     });
   }
