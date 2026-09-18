@@ -135,9 +135,23 @@ export async function generateSocialInsights(
   ・steps は3〜4手順。誰がどこで何をするか
   ・owner は実在する役割（「SNS運用担当」「店舗責任者」など）
   ・effort は すぐ / 数日 / 数週間 のいずれか
-  ・kpi は1つ。数えられるものにする (の analysis.ts の場合と同じ内容を保つ。
-  /** YouTube連携(觯単セッシュン情報。
- */
+  ・kpi は1つ。数えられるものにする（例：登録者数、動画の平均再生数、投稿へのリプライ数）
+  ・効果や結果を断定しない。「必ず」「保証」は使わない`,
+    `商材: ${d.product}
+ターゲット: ${d.audience}
+業種: ${d.industry}
 
-export type SocialInsightMeasure = {
-  title: string;
+【実測データ】
+${blocks.join("\n\n")}
+
+出力:
+{"items":[{"platform":"YouTube","findings":["",""],
+ "measures":[{"title":"","why":"","steps":["",""],"owner":"","effort":"すぐ","kpi":""}]}]}`,
+    { maxTokens: 4000 }
+  );
+
+  const items = await Promise.all(
+    (res.items ?? []).map(async (it) => ({ ...it, measures: await flag(it.measures ?? [], d.industry) }))
+  );
+  return { items };
+}
