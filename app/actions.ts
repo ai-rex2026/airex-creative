@@ -11,6 +11,7 @@ import { generateMeasures, type Measure } from "@/lib/measures";
 import { generateRunbook } from "@/lib/runbook";
 import type { AnalysisMode, BudgetBand } from "@/lib/types";
 import type { PriceScan } from "@/lib/pricing";
+import type { SocialScan } from "@/lib/social";
 import { processAnalysis } from "@/lib/worker";
 import { generateLp } from "@/lib/lp";
 import { hasAnthropic } from "@/lib/anthropic";
@@ -398,6 +399,53 @@ export async function setMainPrice(id: string, item: { name: string; yen: number
     : { ...cur, main: cur.items[0] ?? null };
 
   await updateOwned(sb, id, user.id, { pricing: next });
+  revalidatePath(`/analysis/${id}/report`);
+  return next;
+}
+
+/**
+ * SNSのフォロワー数を利用者が直接入力する。
+ *
+ * X（Grok経由）は小規模・ニッチなアカウントだと、xAI側の検索でも
+ * プロフィールの数字に一度も当たらず取得できないことがある（検索カバレッジの限界で、
+ * こちら側のバグではない）。自動取得が失敗しても、利用者が実際の数値を知っていれば
+ * それをそのままレポートに反映できるようにする。
+ *
+ * followers に null を渡すと手入力を取り消し、自動取得時の状態表示に戻す。
+ */
+export async function setSocialFollowers(id: string, url: string, followers: number | null) {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+
+  if (followers !== null && (!Number.isFinite(followers) || followers < 0)) {
+    throw new Error("フォロワー数は0以上の数値で入力してください");
+  }
+
+  const { data } = await sb.from("analyses").select("social").eq("id", id).eq("owner_id", user.id).single();
+  if (!data?.social) throw new Error("SNSの情報がありません");
+  const cur = data.social as SocialScan;
+  const idx = cur.accounts.findIndex((a) => a.url === url);
+  if (idx === -1) throw new Error("該当のアカウントが見つかりません");
+
+  const next: SocialScan = {
+    ...cur,
+    accounts: cur.accounts.map((a, i) =>
+      i === idx
+        ? {
+            ...a,
+            followers,
+            readable: followers !== null || a.posts !== null,
+            via: followers !== null ? "手入力" : a.via === "手入力" ? null : a.via,
+            reason: followers !== null ? null : a.reason,
+          }
+        : a
+    ),
+  };
+
+  await updateOwned(sb, id, user.id, { social: next }, "フォロワー数を保存できませんでした");
   revalidatePath(`/analysis/${id}/report`);
   return next;
 }

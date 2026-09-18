@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { addInput, replanForBudget } from "@/app/actions";
+import { addInput, replanForBudget, setSocialFollowers } from "@/app/actions";
 import { BUDGETS, type BudgetBand } from "@/lib/types";
 import type { SiteScan } from "@/lib/site-scan";
 import type { SocialScan } from "@/lib/social";
@@ -15,6 +15,66 @@ import { Spinner } from "./Loading";
  */
 
 const PLATFORMS = ["Instagram", "X（Twitter）", "Facebook", "TikTok", "YouTube", "LINE", "別ドメインのLP", "その他"];
+
+/**
+ * フォロワー数の手入力欄。
+ *
+ * X（Grok経由）などは小規模・ニッチなアカウントだと自動取得が失敗することがある
+ * （xAI側の検索でプロフィールの数字に一度も当たらない、という検索カバレッジの限界で、
+ * 直せるバグではない）。自動で取れなかったときに、利用者が知っている数字を
+ * そのまま入力できるようにする。
+ */
+function FollowerEdit({ id, url, label }: { id: string; url: string; label: string }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, start] = useTransition();
+
+  if (!open) {
+    return (
+      <button className="linkbtn" onClick={() => setOpen(true)}>
+        数字を知っていれば入力する
+      </button>
+    );
+  }
+
+  function save() {
+    const n = Number(value.replace(/,/g, ""));
+    if (!value.trim() || !Number.isFinite(n) || n < 0) {
+      setErr("0以上の数値で入力してください");
+      return;
+    }
+    setErr(null);
+    start(async () => {
+      try {
+        await setSocialFollowers(id, url, Math.round(n));
+        setOpen(false);
+        setValue("");
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+      }
+    });
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={label}
+          inputMode="numeric"
+          style={{ width: 110 }}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+        />
+        <button className="btn" onClick={save} disabled={busy}>
+          {busy ? <Spinner label="保存中" /> : "保存"}
+        </button>
+      </div>
+      {err && <small className="warn">{err}</small>}
+    </div>
+  );
+}
 
 export function Inputs({
   id,
@@ -81,6 +141,7 @@ export function Inputs({
         )}
         {(site?.social ?? []).map((s, i) => {
           const m = social?.accounts.find((a) => a.url === s.url);
+          const label = /youtube/i.test(s.platform) ? "登録者" : "フォロワー";
           return (
             <div className="r" key={i}>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -88,10 +149,13 @@ export function Inputs({
                 <small>{m?.title ?? s.handle}</small>
                 {m?.reason && <small className="warn">{m.reason}</small>}
               </div>
-              {m?.followers != null && (
+              {m?.followers != null ? (
                 <span className="tag ok">
-                  {/youtube/i.test(s.platform) ? "登録者" : "フォロワー"} {m.followers.toLocaleString()}
+                  {label} {m.followers.toLocaleString()}
+                  {m.via === "手入力" && "（手入力）"}
                 </span>
+              ) : (
+                m && <FollowerEdit id={id} url={s.url} label={`${label}数`} />
               )}
               <span className={`tag${m?.readable ? " ok" : ""}`}>{m?.readable ? "分析済み" : "検出"}</span>
             </div>

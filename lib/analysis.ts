@@ -202,7 +202,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       return await save({ ad_ops: ops, step: "広告以外の施策を整理しています", progress: 62 });
     }
     if (!a.tactics) {
-      const t = await generateTactics(a.diagnosis, a.site);
+      const t = await generateTactics(a.diagnosis, a.site, a.social);
       return await save({ tactics: t, step: "訴求軸ごとにコピーを書いています", progress: 66 });
     }
     // 施策はKPIに効くものだけを出す。だからKPIの仮説を先に立てる
