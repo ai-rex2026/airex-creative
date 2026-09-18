@@ -1,0 +1,478 @@
+diff --git a/app/analysis/[id]/report/page.tsx b/app/analysis/[id]/report/page.tsx
+index 2495a62..660ab40 100644
+--- a/app/analysis/[id]/report/page.tsx
++++ b/app/analysis/[id]/report/page.tsx
+@@ -36,7 +36,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
+ 
+   return (
+     <Shell active="analysis">
+-      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} site={a.site} seo={a.seo} plan={a.media_plan} summary={a.summary} competitors={a.competitors} tactics={a.tactics} adOps={a.ad_ops} meo={a.meo} lpo={a.lpo} keywords={a.keywords} linePlan={a.line_plan} suggests={a.suggests} outreach={a.outreach} pricing={a.pricing} speed={a.speed} social={a.social} imageScan={a.image_scan} customImages={a.custom_images} margin={a.margin} kpi={a.kpi} measures={a.measures} kpiSelected={a.kpi_selected} measuresDone={a.measures_done} extraInputs={a.extra_inputs} measureLog={a.measure_log} budget={a.budget} id={a.id} gsc={a.gsc} ga4={a.ga4} />
++      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} site={a.site} seo={a.seo} plan={a.media_plan} summary={a.summary} competitors={a.competitors} tactics={a.tactics} adOps={a.ad_ops} meo={a.meo} lpo={a.lpo} keywords={a.keywords} linePlan={a.line_plan} suggests={a.suggests} outreach={a.outreach} pricing={a.pricing} speed={a.speed} social={a.social} socialInsights={a.social_insights} imageScan={a.image_scan} customImages={a.custom_images} margin={a.margin} kpi={a.kpi} measures={a.measures} kpiSelected={a.kpi_selected} measuresDone={a.measures_done} extraInputs={a.extra_inputs} measureLog={a.measure_log} budget={a.budget} id={a.id} gsc={a.gsc} ga4={a.ga4} />
+     </Shell>
+   );
+ }
+diff --git a/components/Banner.tsx b/components/Banner.tsx
+index d1ae7a2..d47f1b5 100644
+--- a/components/Banner.tsx
++++ b/components/Banner.tsx
+@@ -3,6 +3,7 @@
+ import type { CSSProperties } from "react";
+ import type { BannerCopy, BrandProfile } from "@/lib/types";
+ import type { SizePreset } from "@/lib/sizes";
++import { ZONE_BOX, type TextZone } from "@/lib/overlay-position";
+ 
+ /**
+  * バナーは画像生成モデルに描かせず DOM で組む。
+@@ -83,6 +84,8 @@ export function Banner({
+   image,
+   imageFit = "cover",
+   imageFocus = { x: 50, y: 50 },
++  layout = "split",
++  textZone = "bottom",
+ }: {
+   copy: BannerCopy;
+   brand: BrandProfile;
+@@ -102,6 +105,13 @@ export function Banner({
+   service?: string;
+   /** 下部に並べる事実。実測から作る */
+   facts?: BannerFact[];
++  /**
++   * split（既定）は画像とテキストを完全に分けて並べる。
++   * overlay は画像を全面に敷き、テキストを画像の上に重ねる（image が無いと split と同じになる）
++   */
++  layout?: "split" | "overlay";
++  /** overlay のとき、テキストをどの帯に置くか。顔の位置から自動で選ぶ（lib/overlay-position.ts） */
++  textZone?: TextZone;
+ }) {
+   const { w, h } = size;
+   const compact = Math.min(w, h) < 400;
+@@ -111,6 +121,29 @@ export function Banner({
+ 
+   const accent = brand.accent || "#8B7355";
+   const pad = compact ? 18 * u : 44 * u;
++
++  if (layout === "overlay" && image) {
++    return (
++      <BannerOverlay
++        copy={copy}
++        brand={brand}
++        size={size}
++        id={id}
++        image={image}
++        imageFit={imageFit}
++        imageFocus={imageFocus}
++        service={service}
++        facts={facts}
++        textZone={textZone}
++        compact={compact}
++        u={u}
++        px={px}
++        pad={pad}
++        accent={accent}
++      />
++    );
++  }
++
+   // 小枠では側面パネルを出さない。文字が入らなくなる
+   const side = !compact && landscape && !image;
+   // 写真は文字と重ねない。重ねると日本語が読めなくなり、
+@@ -328,3 +361,229 @@ export function Banner({
+     </div>
+   );
+ }
++
++const GRADIENT_DIR: Record<TextZone, string> = {
++  top: "to bottom",
++  bottom: "to top",
++  left: "to right",
++  right: "to left",
++};
++
++/**
++ * layout="overlay" のとき専用の描画。
++ *
++ * 画像を全面に敷き、テキストは4つの帯（上/下/左/右）のうちどれか1つに重ねる。
++ * どの帯を使うかは呼び出し側（lib/overlay-position.ts の pickTextZone）が
++ * 顔の位置から決めて textZone として渡してくる。ここでは渡された帯に
++ * ・「暗いほど外側」のグラデーション（視認性の確保）
++ * ・帯の外側の端にテキストを寄せる配置（グラデーションが一番濃い場所に文字を置く）
++ * だけを機械的に行う。
++ */
++function BannerOverlay({
++  copy,
++  brand,
++  size,
++  id,
++  image,
++  imageFit,
++  imageFocus,
++  service,
++  facts,
++  textZone,
++  compact,
++  u,
++  px,
++  pad,
++  accent,
++}: {
++  copy: BannerCopy;
++  brand: BrandProfile;
++  size: SizePreset;
++  id: string;
++  image: string;
++  imageFit: "cover" | "contain";
++  imageFocus: { x: number; y: number };
++  service?: string;
++  facts: BannerFact[];
++  textZone: TextZone;
++  compact: boolean;
++  u: number;
++  px: (n: number) => string;
++  pad: number;
++  accent: string;
++}) {
++  const { w, h } = size;
++  const box = ZONE_BOX[textZone];
++  const horizontal = textZone === "top" || textZone === "bottom";
++  const panelW = ((box.x1 - box.x0) / 100) * w;
++  const panelH = ((box.y1 - box.y0) / 100) * h;
++  const colW = panelW - pad * 2;
++
++  const maxChars = Math.max(copy.headline[0].length, copy.headline[1].length, 1);
++  const hMax = compact ? 26 * u : horizontal ? 64 * u : 42 * u;
++  const hSize = Math.min(hMax, (colW / maxChars) * 0.96, panelH * (horizontal ? 0.26 : 0.15));
++  const shown = facts.slice(0, compact ? 2 : horizontal ? 3 : 2);
++
++  const justify = textZone === "top" ? "flex-start" : textZone === "bottom" ? "flex-end" : "center";
++
++  return (
++    <div
++      id={id}
++      style={{
++        position: "relative",
++        width: w,
++        height: h,
++        overflow: "hidden",
++        background: "#EFEBE4",
++        fontFamily: '"Hiragino Sans", "ヒラギノ角ゴシック", "Noto Sans JP", sans-serif',
++        border: `${Math.max(1, u)}px solid #E8E4DC`,
++      }}
++    >
++      {/* eslint-disable-next-line @next/next/no-img-element */}
++      <img
++        src={image}
++        alt=""
++        crossOrigin="anonymous"
++        style={{
++          position: "absolute",
++          inset: 0,
++          width: "100%",
++          height: "100%",
++          objectFit: imageFit,
++          objectPosition: `${imageFocus.x}% ${imageFocus.y}%`,
++          display: "block",
++        }}
++      />
++
++      {/* テキストを置く帯だけに、外側の端が一番濃くなる暗幕をかける（視認性の確保） */}
++      <div
++        style={{
++          position: "absolute",
++          left: `${box.x0}%`,
++          top: `${box.y0}%`,
++          width: `${box.x1 - box.x0}%`,
++          height: `${box.y1 - box.y0}%`,
++          background: `linear-gradient(${GRADIENT_DIR[textZone]}, rgba(0,0,0,.78) 0%, rgba(0,0,0,.38) 55%, rgba(0,0,0,0) 100%)`,
++        }}
++      />
++
++      <div
++        style={{
++          position: "absolute",
++          left: `${box.x0}%`,
++          top: `${box.y0}%`,
++          width: `${box.x1 - box.x0}%`,
++          height: `${box.y1 - box.y0}%`,
++          display: "flex",
++          flexDirection: "column",
++          justifyContent: justify,
++          gap: px(compact ? 5 : 11),
++          padding: px(compact ? 12 : horizontal ? 26 : 22),
++          color: "#fff",
++          boxSizing: "border-box",
++        }}
++      >
++        {service && (
++          <div
++            style={{
++              width: "fit-content",
++              maxWidth: "100%",
++              background: accent,
++              color: "#fff",
++              fontWeight: 700,
++              letterSpacing: px(0.6),
++              fontSize: fitOneLine(service, colW * 0.9, compact ? 14 * u : 18 * u),
++              padding: `${px(compact ? 3 : 5)} ${px(compact ? 9 : 13)}`,
++              borderRadius: px(2),
++              whiteSpace: "nowrap",
++            }}
++          >
++            {service}
++          </div>
++        )}
++
++        <div style={{ fontSize: hSize, fontWeight: 900, lineHeight: 1.16, letterSpacing: `${-hSize * 0.02}px`, color: "#fff" }}>
++          <div>{copy.headline[0]}</div>
++          <div>{copy.headline[1]}</div>
++        </div>
++
++        {copy.subhead && !compact && horizontal && (
++          <div
++            style={{
++              fontSize: fitSize(copy.subhead, colW, panelH * 0.22, hSize * 0.32, 1.6),
++              lineHeight: 1.6,
++              color: "rgba(255,255,255,.88)",
++              fontWeight: 500,
++            }}
++          >
++            {copy.subhead}
++          </div>
++        )}
++
++        {shown.length > 0 && (
++          <div style={{ display: "flex", gap: px(compact ? 12 : 18), flexWrap: "wrap" }}>
++            {shown.map((f, i) => (
++              <div key={i}>
++                <b
++                  style={{
++                    display: "block",
++                    fontSize: fitOneLine(f.value, colW / (shown.length + 0.4), compact ? 17 * u : 24 * u),
++                    fontWeight: 900,
++                    color: "#fff",
++                    lineHeight: 1.2,
++                    whiteSpace: "nowrap",
++                  }}
++                >
++                  {f.value}
++                </b>
++                {f.label && (
++                  <small style={{ fontSize: px(compact ? 9 : 12), color: "rgba(255,255,255,.75)", whiteSpace: "nowrap" }}>
++                    {f.label}
++                  </small>
++                )}
++              </div>
++            ))}
++          </div>
++        )}
++
++        <div>
++          <div
++            style={{
++              background: accent,
++              color: "#fff",
++              fontWeight: 900,
++              fontSize: fitOneLine(copy.cta, colW - pad, compact ? 20 * u : 28 * u),
++              padding: `${px(compact ? 8 : 14)} ${px(compact ? 16 : 28)}`,
++              borderRadius: px(3),
++              whiteSpace: "nowrap",
++              width: "fit-content",
++            }}
++          >
++            {copy.cta}
++          </div>
++        </div>
++      </div>
++
++      {/* ブランド名の小さな表示。テキストの帯と重ならない角にだけ出す
++          （bottom/right の帯は下端・右端まで使うため、その2パターンでは出さない） */}
++      {(textZone === "top" || textZone === "left") && (
++        <div
++          style={{
++            position: "absolute",
++            right: px(compact ? 6 : 12),
++            bottom: px(compact ? 6 : 12),
++            background: "rgba(0,0,0,.55)",
++            color: "#fff",
++            fontWeight: 700,
++            fontSize: fitOneLine(brand.name, w * 0.3, compact ? 11 * u : 15 * u),
++            padding: `${px(compact ? 3 : 5)} ${px(compact ? 8 : 12)}`,
++            borderRadius: px(2),
++            whiteSpace: "nowrap",
++          }}
++        >
++          {brand.name}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/components/Report.tsx b/components/Report.tsx
+index 5b3feec..37c578b 100644
+--- a/components/Report.tsx
++++ b/components/Report.tsx
+@@ -23,7 +23,9 @@ import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
+ import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
+ import type { SpeedScan } from "@/lib/pagespeed";
+ import type { SocialScan } from "@/lib/social";
++import type { SocialInsightPlan } from "@/lib/social-insights";
+ import type { ImageScan, SafeCrop } from "@/lib/image-check";
++import { pickTextZone, type TextZone } from "@/lib/overlay-position";
+ import type { Ga4Data, GscData } from "@/lib/google";
+ import type { CustomImage } from "@/lib/analysis";
+ import type { MediaPlanItem, Summary } from "@/lib/types";
+@@ -103,6 +105,7 @@ export function Report({
+   pricing: initialPricing,
+   speed,
+   social,
++  socialInsights,
+   imageScan,
+   customImages: initialCustomImages,
+   margin: initialMargin,
+@@ -137,6 +140,7 @@ export function Report({
+   pricing: PriceScan | null;
+   speed: SpeedScan | null;
+   social: SocialScan | null;
++  socialInsights: SocialInsightPlan | null;
+   imageScan: ImageScan | null;
+   customImages: CustomImage[] | null;
+   margin: number | null;
+@@ -170,6 +174,10 @@ export function Report({
+   // 文字入りの画像は切り抜くと見切れるので、切り方と位置を選べるようにする
+   const [photoFit, setPhotoFit] = useState<"cover" | "contain">("cover");
+   const [photoFocus, setPhotoFocus] = useState({ x: 50, y: 50 });
++  // 画像とテキストを分けて並べる（split）か、画像の上にテキストを重ねる（overlay）か
++  const [photoLayout, setPhotoLayout] = useState<"split" | "overlay">("split");
++  // overlay のとき、テキストをどの帯に置くか。写真を選んだ瞬間に顔の位置から自動で決める
++  const [photoTextZone, setPhotoTextZone] = useState<TextZone>("bottom");
+   const [showTexted, setShowTexted] = useState(false);
+   // 文字入り画像を選んだとき、文字を含まない領域だけを切り出した結果（data URL）
+   const [croppedSrc, setCroppedSrc] = useState<string | null>(null);
+@@ -224,6 +232,8 @@ export function Report({
+     setPhoto(u);
+     setCropError(null);
+     const info = imageScan?.items.find((x) => x.url === u);
++    // テキストを重ねる帯は、この写真の顔の位置から選び直す（無ければ定石どおり下部）
++    setPhotoTextZone(pickTextZone(info?.hasFace ? info.facePosition : null));
+     if (info?.hasText && info.safeCrop) {
+       setCropBusy(true);
+       try {
+@@ -1313,6 +1323,69 @@ export function Report({
+             ))}
+           </div>
+ 
++          {socialInsights && socialInsights.items.length > 0 && (
++            <div style={{ marginTop: 24 }}>
++              <div className="sec-head" style={{ marginTop: 0 }}>
++                <span className="ic">▶</span>
++                <div>
++                  <h2 id="sec-social-insights">YouTube・Xの分析</h2>
++                  <div className="sub">
++                    アカウント情報が実測できた媒体だけ、自社の投稿内容を競合の実測値と比べています
++                  </div>
++                </div>
++                <span className="rule" />
++              </div>
++              {socialInsights.items.map((si, i) => (
++                <div key={i} style={{ marginTop: i === 0 ? 0 : 22 }}>
++                  <p className="eyebrow">{si.platform}</p>
++                  {si.findings.length > 0 && (
++                    <div className="tactic" style={{ marginTop: 10 }}>
++                      <div className="top">
++                        <b>分析結果</b>
++                      </div>
++                      <ul>
++                        {si.findings.map((f, k) => (
++                          <li key={k}>{f}</li>
++                        ))}
++                      </ul>
++                    </div>
++                  )}
++                  {si.measures.length > 0 && (
++                    <div className="measure" style={{ display: "grid", gap: 12, marginTop: 12 }}>
++                      {si.measures.map((m, k) => (
++                        <div className="tactic" key={k}>
++                          <div className="top">
++                            <b>{m.title}</b>
++                            {m.kpi && <span className="kpi">見る数字：{m.kpi}</span>}
++                          </div>
++                          <p>{m.why}</p>
++                          <ul>
++                            {m.steps?.map((s, j) => (
++                              <li key={j}>{s}</li>
++                            ))}
++                          </ul>
++                          <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
++                            <span className="chip">担当：{m.owner}</span>
++                            <span className="chip">{m.effort}</span>
++                          </div>
++                          {m.flags && m.flags.length > 0 && (
++                            <div className="alert" style={{ marginTop: 10 }}>
++                              {m.flags.map((f, j) => (
++                                <div key={j}>
++                                  {f.law}「{f.text}」：{f.reason}（言い換え：{f.suggestion}）
++                                </div>
++                              ))}
++                            </div>
++                          )}
++                        </div>
++                      ))}
++                    </div>
++                  )}
++                </div>
++              ))}
++            </div>
++          )}
++
+           {/* 作れなかった章は黙って消さない。無いのか、作れなかったのかで読み方が変わる */}
+           {(() => {
+             const broken = [
+@@ -2032,6 +2105,40 @@ export function Report({
+               {photo && (
+                 <div className="crop">
+                   <div className="row">
++                    <span>テキストの重ね方</span>
++                    <button className={photoLayout === "split" ? "on" : ""} onClick={() => setPhotoLayout("split")}>
++                      画像とテキストを分ける
++                    </button>
++                    <button className={photoLayout === "overlay" ? "on" : ""} onClick={() => setPhotoLayout("overlay")}>
++                      画像にテキストを重ねる
++                    </button>
++                  </div>
++                  {photoLayout === "overlay" && (
++                    <>
++                      <small>
++                        {(() => {
++                          const info = imageScan?.items.find((x) => x.url === photo);
++                          return info?.hasFace
++                            ? "顔の位置を避けて、文字を重ねる場所を自動で選んでいます。"
++                            : "視認性が高くなるよう、暗いグラデーションを敷いた上に文字を重ねます。";
++                        })()}
++                      </small>
++                      <div className="row" style={{ marginTop: 8 }}>
++                        <span>重ねる場所</span>
++                        {([
++                          ["top", "上"],
++                          ["bottom", "下"],
++                          ["left", "左"],
++                          ["right", "右"],
++                        ] as [TextZone, string][]).map(([z, label]) => (
++                          <button key={z} className={photoTextZone === z ? "on" : ""} onClick={() => setPhotoTextZone(z)}>
++                            {label}
++                          </button>
++                        ))}
++                      </div>
++                    </>
++                  )}
++                  <div className="row" style={{ marginTop: photoLayout === "overlay" ? 8 : 0 }}>
+                     <span>写真の入れ方</span>
+                     <button className={photoFit === "cover" ? "on" : ""} onClick={() => setPhotoFit("cover")}>
+                       切り抜く
+@@ -2120,7 +2227,7 @@ export function Report({
+                           title="クリックで拡大"
+                         >
+                           <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
+-                            <Banner service={service} facts={bannerFacts} id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} image={photoSrc} imageFit={photoFit} imageFocus={photoFocus} />
++                            <Banner service={service} facts={bannerFacts} id={`bn-${ci}-${s.id}`} copy={c} brand={d.brand} size={s} image={photoSrc} imageFit={photoFit} imageFocus={photoFocus} layout={photoLayout} textZone={photoTextZone} />
+                           </div>
+                         </div>
+                         <button className="link" style={{ marginTop: 6 }} onClick={() => download(`bn-${ci}-${s.id}`, `${s.media}_${s.w}x${s.id}_${ci + 1}.png`)}>
