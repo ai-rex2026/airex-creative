@@ -17,11 +17,11 @@ import { generateSocialInsights, type SocialInsightPlan } from "./social-insight
 import { checkImages, type ImageScan } from "./image-check";
 import { generateKpi, type KpiTree } from "./kpi";
 import { generateMeasures, type Measure } from "./measures";
-import { fetchGa4, fetchSearchConsole, hasGoogleApp, type Ga4Data, type GscData } from "./google";
+import { fetchGa4, fetchSearchConsole, fetchYoutubeAnalytics, hasGoogleApp, type Ga4Data, type GscData, type YoutubeAnalyticsData } from "./google";
 import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 
-/** 本番と同じ見た目の短いID（英数20文字） */
+/** 本番と同じ見た目の�mいID（英数20文字） */
 export function newAnalysisId() {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const buf = new Uint8Array(20);
@@ -82,6 +82,8 @@ export type Analysis = {
   budget: BudgetBand | null;
   gsc: GscData | null;
   ga4: Ga4Data | null;
+  /** YouTube Studio相当の非公開指標。Google連携があり自チャンネルを検出できた場合だけ入る */
+  social_yt_analytics: YoutubeAnalyticsData | null;
   created_at: string;
 };
 
@@ -164,6 +166,32 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
         });
       }
     }
+    // Google連携があり、かつ自社SNSにYouTubeチャンネルが検出できている場合だけ、
+    // 公開APIでは取れない非公開指標（推定視聴時間・純増登録者数・主な流入経路）を追加で取り込む
+    if (a.social && a.social_yt_analytics === null) {
+      const hasYoutube = (a.social.accounts ?? []).some((acc) => /youtube/i.test(acc.platform));
+      const empty: YoutubeAnalyticsData = {
+        from: "", to: "", views: null, estimatedMinutesWatched: null,
+        averageViewDurationSec: null, subscribersGained: null, topTrafficSource: null,
+      };
+      if (hasYoutube && hasGoogleApp()) {
+        const { data: conn } = await sb
+          .from("google_connections")
+          .select("refresh_token")
+          .eq("user_id", a.owner_id)
+          .maybeSingle();
+        if (conn?.refresh_token) {
+          let yt: YoutubeAnalyticsData | null = null;
+          try {
+            yt = await fetchYoutubeAnalytics(conn.refresh_token);
+          } catch {
+            // 権限が無い・チャンネルが紐づいていない等。落とさず先へ
+          }
+          return await save({ social_yt_analytics: yt ?? empty, step: "競合を調べています", progress: 35 });
+        }
+      }
+      return await save({ social_yt_analytics: empty, step: "競合を調べています", progress: 35 });
+    }
     // 価格はサイトから実測する。広告費とCV数は公開情報に無いので取りに行かない
     if (a.url && !a.pricing) {
       const hints = [a.diagnosis.product, ...a.diagnosis.strengths, ...a.diagnosis.angles.map((x) => x.name)].join(" ");
@@ -229,7 +257,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     if (!a.social_insights) {
       let si: SocialInsightPlan = { items: [] };
       try {
-        si = await generateSocialInsights(a.diagnosis, a.social, a.social_competitors);
+        si = await generateSocialInsights(a.diagnosis, a.social, a.social_competitors, a.social_yt_analytics);
       } catch {
         // 作れなくても分析全体は止めない。その媒体の分析結果が空のまま先に進む
       }
@@ -302,7 +330,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const image_scan = await checkImages(a.site!.images).catch(() => ({ items: [], checkedAt: new Date().toISOString() }));
       return await save({ image_scan, step: "要約をまとめています", progress: 94 });
     }
-    // 表示速度の実測は最後に回す。PSI は返らないことがあり、
+    // 表示速度の実隬は最後に回す。PSI は返らないことがあり、
     // 途中に置くとレポート全体がそこで止まる
     if (a.url && !a.speed) {
       const speed = await scanSpeed(a.url);
