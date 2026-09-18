@@ -3,6 +3,7 @@ import { checkGuard } from "./guardrail";
 import type { Diagnosis, GuardHit, Industry } from "./types";
 import type { SocialAccount, SocialScan } from "./social";
 import type { SocialCompetitorScan } from "./social-competitors";
+import type { YoutubeAnalyticsData } from "./google";
 
 /**
  * YouTube・Xの「分析結果」と「施策詳細」。
@@ -81,10 +82,24 @@ async function flag(items: SocialInsightMeasure[], industry: Industry): Promise<
   });
 }
 
+/** YouTube連携（OAuth）で取れた非公開指標を、実測データのブロックに追記する文字列にする */
+function ytAnalyticsFacts(yt: YoutubeAnalyticsData | null): string {
+  if (!yt || !yt.from) return "";
+  const lines = [
+    `直近28日間（${yt.from}〜${yt.to}）の非公開指標（YouTube連携により取得）：`,
+    yt.estimatedMinutesWatched !== null ? `推定視聴時間 ${yt.estimatedMinutesWatched.toLocaleString()}分` : "",
+    yt.averageViewDurationSec !== null ? `平均視聴時間 ${yt.averageViewDurationSec}秒` : "",
+    yt.subscribersGained !== null ? `期間中の純増登録者数 ${yt.subscribersGained.toLocaleString()}人` : "",
+    yt.topTrafficSource ? `主な流入経路 ${yt.topTrafficSource}` : "",
+  ].filter(Boolean);
+  return lines.length > 1 ? "\n  " + lines.join("\n  ") : "";
+}
+
 export async function generateSocialInsights(
   d: Diagnosis,
   social: SocialScan | null,
-  competitors: SocialCompetitorScan | null
+  competitors: SocialCompetitorScan | null,
+  ytAnalytics: YoutubeAnalyticsData | null = null
 ): Promise<SocialInsightPlan> {
   const own = ownAccountsByPlatform(social);
   const targets = (["YouTube", "X"] as const).filter((p) => own[p]);
@@ -96,8 +111,9 @@ export async function generateSocialInsights(
     const compBlock = comp.length
       ? comp.map((c, i) => accountFacts(c.account, `競合${i + 1}（${p}）`)).join("\n  ")
       : "競合アカウントは見つからなかった、または実測できなかった";
+    const extra = p === "YouTube" ? ytAnalyticsFacts(ytAnalytics) : "";
     return `【${p}】
-  ${accountFacts(a, `自社（${p}）`)}
+  ${accountFacts(a, `自社（${p}）`)}${extra}
   ${compBlock}`;
   });
 
@@ -107,7 +123,8 @@ export async function generateSocialInsights(
 
 守ること:
 - 対象媒体は ${targets.join("・")} のみ。実測が無い媒体は出さない
-- findings は媒体ごとに2〜4件。**渡された実測値（フォロワー数・投稿数・直近の投稿内容）を
+- findings は媒体ごとに2〜4件。**渡された実測値（フォロワー数・投稿数・直近の投稿内容、
+  YouTubeは連携時のみ渡る推定視聴時間・平均視聴時間・純増登録者数・主な流入経路も含む）を
   引用して**書く。競合が実測できていれば自社との比較で書き、競合が無ければ自社の実測値と
   投稿内容から分かることだけを書く
   ・渡されていない数字を作らない（「エンゲージメント率が高い」のような、渡していない指標の断定は禁止）
@@ -118,23 +135,9 @@ export async function generateSocialInsights(
   ・steps は3〜4手順。誰がどこで何をするか
   ・owner は実在する役割（「SNS運用担当」「店舗責任者」など）
   ・effort は すぐ / 数日 / 数週間 のいずれか
-  ・kpi は1つ。数えられるものにする（例：登録者数、動画の平均再生数、投稿へのリプライ数）
-  ・効果や結果を断定しない。「必ず」「保証」は使わない`,
-    `商材: ${d.product}
-ターゲット: ${d.audience}
-業種: ${d.industry}
+  ・kpi は1つ。数えられるものにする (の analysis.ts の場合と同じ内容を保つ。
+  /** YouTube連携(觯単セッシュン情報。
+ */
 
-【実測データ】
-${blocks.join("\n\n")}
-
-出力:
-{"items":[{"platform":"YouTube","findings":["",""],
- "measures":[{"title":"","why":"","steps":["",""],"owner":"","effort":"すぐ","kpi":""}]}]}`,
-    { maxTokens: 4000 }
-  );
-
-  const items = await Promise.all(
-    (res.items ?? []).map(async (it) => ({ ...it, measures: await flag(it.measures ?? [], d.industry) }))
-  );
-  return { items };
-}
+export type SocialInsightMeasure = {
+  title: string;
