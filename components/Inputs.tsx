@@ -232,7 +232,7 @@ export function Inputs({
         <i className="i">i</i>
         <span>
           別ドメインで運用しているLPや、サイトからリンクしていないSNSは自動では見つけられません。
-          <b style={{ fontWeight: 600 }}>すでに実施している施策を重複して提案しないため</b>にも、ここに足してください"}
+          <b style={{ fontWeight: 600 }}>すでに実施している施策を重複して提案しないため</b>にも、ここに足してください。
           足した材料は、次に施策を作り直したときから反映されます。
         </span>
       </div>
@@ -240,7 +240,7 @@ export function Inputs({
       <div className="sec-head">
         <span className="ic">¥</span>
         <div>
-          <h2>产算と粗利率</h2>
+          <h2>予算と粗利率</h2>
           <div className="sub">入れると、媒体ごとの実額と損益分岐CPAが出ます</div>
         </div>
         <span className="rule" />
@@ -255,7 +255,7 @@ export function Inputs({
             </button>
           ))}
         </div>
-        <p>金額を1点で(��くと持っていない精度を偽ることになるの、广で受けて幅で返みます　</p>
+        <p>金額を1点で聞くと持っていない精度を偽ることになるので、幅で受けて幅で返します。</p>
       </div>
 
       <div className="budget measure" style={{ marginTop: 12 }}>
@@ -267,7 +267,7 @@ export function Inputs({
             </button>
           ))}
         </div>
-        <p>業種灮ぁゅすを则期値にしています。実測の紗利率に合わせて押ず替えてください。</p>
+        <p>業種のめやすを初期値にしています。実際の粗利率に合わせて押し替えてください。</p>
       </div>
 
       {budget && (
