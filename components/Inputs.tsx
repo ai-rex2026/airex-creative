@@ -158,6 +158,17 @@ export function Inputs({
                 m && <FollowerEdit id={id} url={s.url} label={`${label}数`} />
               )}
               <span className={`tag${m?.readable ? " ok" : ""}`}>{m?.readable ? "分析済み" : "検出"}</span>
+              {/* アカウント連携（OAuth）は未実装。LINEはデータ取得APIが無いため対象外。
+                  実装までは押せない見た目にして「対応予定」であることだけ伝える */}
+              {s.platform !== "LINE" && (
+                <span
+                  className="tag"
+                  style={{ opacity: 0.55, cursor: "default" }}
+                  title="連携機能は現時点では未対応です。対応を予定しています"
+                >
+                  連携する（対応予定）
+                </span>
+              )}
             </div>
           );
         })}
