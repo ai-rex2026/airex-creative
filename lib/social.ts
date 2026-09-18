@@ -26,6 +26,11 @@ export type SocialAccount = {
   via: "公式API" | "公開ページ" | "Grok(xAI)" | "手入力" | null;
   /** 読めなかった理由 */
   reason: string | null;
+  /**
+   * 直近の投稿内容。YouTubeは実際の動画タイトル、Xは投稿の話題を要約した見出し（原文の引用はしない）。
+   * 取れなかった・対象外の媒体は null
+   */
+  recentContent: string[] | null;
 };
 
 export type SocialScan = {
@@ -96,9 +101,37 @@ function youtubeTarget(url: string): { param: string; value: string } | null {
 }
 
 type YtResponse = {
-  items?: { snippet?: { title?: string; description?: string }; statistics?: Record<string, string> }[];
+  items?: {
+    snippet?: { title?: string; description?: string };
+    statistics?: Record<string, string>;
+    contentDetails?: { relatedPlaylists?: { uploads?: string } };
+  }[];
   error?: { message?: string };
 };
+
+type YtPlaylistItemsResponse = {
+  items?: { snippet?: { title?: string } }[];
+};
+
+/**
+ * 直近の投稿内容（アップロード動画のタイトル）を取る。
+ * 「アップロード」再生リストの一覧取得は登録者数の取得と同じAPIキーで済み、
+ * クォータもごくわずか（1ユニット）。取れなくても登録者数などの本筋は返す。
+ */
+async function readRecentUploads(key: string, uploadsPlaylistId: string): Promise<string[] | null> {
+  try {
+    const q = new URLSearchParams({ part: "snippet", key, playlistId: uploadsPlaylistId, maxResults: "5" });
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?${q}`, {
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as YtPlaylistItemsResponse;
+    const titles = (j.items ?? []).map((x) => x.snippet?.title).filter((t): t is string => !!t);
+    return titles.length ? titles.slice(0, 5) : null;
+  } catch {
+    return null;
+  }
+}
 
 async function readYouTube(a: { platform: string; url: string; handle: string }, base: SocialAccount): Promise<SocialAccount> {
   const key = youtubeKey();
@@ -106,7 +139,7 @@ async function readYouTube(a: { platform: string; url: string; handle: string },
   if (!key) return { ...base, reason: "YouTube Data API のキーが未設定のため取得していません" };
   if (!target) return { ...base, reason: "チャンネルの識別子をURLから取り出せませんでした" };
 
-  const q = new URLSearchParams({ part: "snippet,statistics", key, [target.param]: target.value });
+  const q = new URLSearchParams({ part: "snippet,statistics,contentDetails", key, [target.param]: target.value });
   let j: YtResponse;
   try {
     const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?${q}`, {
@@ -125,6 +158,9 @@ async function readYouTube(a: { platform: string; url: string; handle: string },
   const n = (v: string | undefined) => (v !== undefined && /^\d+$/.test(v) ? Number(v) : null);
   const subs = n(st.subscriberCount);
 
+  const uploadsId = it.contentDetails?.relatedPlaylists?.uploads;
+  const recentContent = uploadsId ? await readRecentUploads(key, uploadsId) : null;
+
   return {
     ...base,
     readable: subs !== null || n(st.videoCount) !== null,
@@ -134,6 +170,7 @@ async function readYouTube(a: { platform: string; url: string; handle: string },
     via: "公式API",
     title: it.snippet?.title ?? null,
     bio: it.snippet?.description?.slice(0, 160) ?? null,
+    recentContent,
     // 登録者数を非公開にしているチャンネルは API でも返ってこない
     reason: subs === null ? "このチャンネルは登録者数を非公開にしています" : null,
   };
@@ -178,6 +215,8 @@ type XaiFacts = {
   posts?: number | null;
   displayName?: string | null;
   bio?: string | null;
+  /** 直近の投稿の話題を要約した見出し（原文の引用ではない） */
+  recentTopics?: string[] | null;
 };
 
 function parseXaiFacts(text: string): XaiFacts | null {
@@ -222,15 +261,18 @@ x_search だけではフォロワー数が読み取れない場合は、続け�
 - 投稿数（表示されている実数）
 - 表示名
 - プロフィール文（bio、100文字以内）
+- 直近の投稿の話題（recentTopics）。実際に見つかった直近の投稿から、何についての投稿かを
+  3〜5件、それぞれ20文字以内の見出しで要約してください（例：「新商品の告知」「来店キャンペーン」）。
+  **投稿本文をそのまま書き写さない**こと。話題が分からない・投稿が見つからない場合は空配列ょよい
 
 found を false にするのは、あらゆる手段を試してもこのアカウントの存在自体を確認できない・
 アカウントが凍結／鍵アカウントである場合だけにしてください。アカウントは見つかったが
-フォロワー数など一部の数値だけ読み取れない場合は found を true にして、わかる項目だけ埋めてください
+フォロワー数など一部の数値だけ読み取れない場合は found を true にして、わかる項目だけ埋めでください
 （他の項目は null で構いません）。
 似た名前の別アカウントの数値と混同しないでください。
 
 JSONのみで回答してください（前置き・コードフェンス無し）:
-{"found":true,"followers":12345,"posts":678,"displayName":"...","bio":"..."}
+{"found":true,"followers":12345,"posts":678,"displayName":"...","bio":"...","recentTopics":["",""]}
 見つからない場合: {"found":false}`;
 
   let json: XaiResponse;
@@ -280,6 +322,9 @@ JSONのみで回答してください（前置き・コードフェンス無し�
 
   const followers = typeof facts.followers === "number" && Number.isFinite(facts.followers) ? Math.round(facts.followers) : null;
   const posts = typeof facts.posts === "number" && Number.isFinite(facts.posts) ? Math.round(facts.posts) : null;
+  const recentContent = Array.isArray(facts.recentTopics)
+    ? facts.recentTopics.filter((t): t is string => typeof t === "string" && t.trim().length > 0).slice(0, 5)
+    : null;
 
   return {
     ...base,
@@ -289,13 +334,20 @@ JSONのみで回答してください（前置き・コードフェンス無し�
     via: "Grok(xAI)",
     title: facts.displayName ?? null,
     bio: facts.bio ? facts.bio.slice(0, 160) : null,
+    recentContent: recentContent && recentContent.length > 0 ? recentContent : null,
     reason: followers === null ? "フォロワー数を確認できませんでした" : null,
   };
 }
 
-async function readOne(a: { platform: string; url: string; handle: string }): Promise<SocialAccount> {
+/**
+ * 媒体を1件、実際に見に行って測る。自社アカウントの巡回（scanSocial）だけでなく、
+ * SNS競合の実測（social-competitors.ts）からも同じロジックを使い回すため公開している。
+ * どちらも「AIの知識で数字を書かない、実測できたものだけを返す」原則は共通のため。
+ */
+export async function readSocialAccount(a: { platform: string; url: string; handle: string }): Promise<SocialAccount> {
   const base: SocialAccount = {
     ...a, readable: false, followers: null, posts: null, views: null, via: null, title: null, bio: null, reason: null,
+    recentContent: null,
   };
 
   // YouTube だけは公式APIで正規に取れる
@@ -349,7 +401,7 @@ async function readOne(a: { platform: string; url: string; handle: string }): Pr
 export async function scanSocial(site: SiteScan | null): Promise<SocialScan> {
   const list = (site?.social ?? []).slice(0, 8);
   // 媒体ごとに独立しているので並行で取る。1件が遅くても全体は止めない
-  const accounts = await Promise.all(list.map(readOne));
+  const accounts = await Promise.all(list.map(readSocialAccount));
   return { accounts, fetchedAt: new Date().toISOString() };
 }
 
