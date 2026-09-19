@@ -1,0 +1,42 @@
+name: tmp-apply-meta-1
+on:
+  push:
+    paths:
+      - '.buildtmp/meta-fix-1/GO.marker'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patches in order
+        run: |
+          set -e
+          for p in .buildtmp/meta-fix-1/part1.patch \
+                   .buildtmp/meta-fix-1/part2.patch \
+                   .buildtmp/meta-fix-1/part3.patch \
+                   .buildtmp/meta-fix-1/part4.patch \
+                   .buildtmp/meta-fix-1/part5.patch \
+                   .buildtmp/meta-fix-1/part6.patch; do
+            echo "applying $p"
+            git apply --whitespace=nowarn "$p"
+          done
+
+      - name: Remove temp files (patches, marker, this workflow)
+        run: |
+          rm -rf .buildtmp/meta-fix-1
+          rm -f .github/workflows/tmp-apply-meta-1.yml
+
+      - name: Commit and push
+        run: |
+          git config user.name "airex-bot"
+          git config user.email "bot@ad-rex.com"
+          git add -A
+          git commit -m "feat: Meta(Instagram/Facebook) OAuth連携の土台を追加 (自動適用・自己削除ワークフロー)"
+          git push
