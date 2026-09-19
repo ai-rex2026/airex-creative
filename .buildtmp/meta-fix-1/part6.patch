@@ -1,0 +1,147 @@
+diff --git a/lib/meta.ts b/lib/meta.ts
+new file mode 100644
+index 0000000..31a223f
+--- /dev/null
++++ b/lib/meta.ts
+@@ -0,0 +1,141 @@
++/**
++ * Meta（Facebook Login / Instagram Graph API）連携。
++ *
++ * Facebookは Google と違い refresh_token を発行しない。ブラウザから戻る
++ * provider_token は数時間で切れる短期トークンなので、サーバー側で
++ * fb_exchange_token に交換して60日間の長期トークンにしてから保存する
++ * （長期トークンは期限が来る前に同じ交換を繰り返せば延長できる＝実質のrefresh）。
++ *
++ * 権限は最小限（pages_show_list / pages_read_engagement / instagram_basic /
++ * instagram_manage_insights）。App Review はリクエストする権限が少ないほど通りやすい。
++ */
++
++const GRAPH = "https://graph.facebook.com/v21.0";
++
++export const META_SCOPES = [
++  "pages_show_list",
++  "pages_read_engagement",
++  "instagram_basic",
++  "instagram_manage_insights",
++].join(",");
++
++export function hasMetaApp() {
++  return !!(process.env.META_APP_ID && process.env.META_APP_SECRET);
++}
++
++/** 数時間で切れる短期トークンを、60日間の長期トークンに交換する */
++export async function exchangeLongLivedToken(shortLivedToken: string): Promise<{ accessToken: string; expiresAt: string }> {
++  const res = await fetch(
++    `${GRAPH}/oauth/access_token?` +
++      new URLSearchParams({
++        grant_type: "fb_exchange_token",
++        client_id: process.env.META_APP_ID!,
++        client_secret: process.env.META_APP_SECRET!,
++        fb_exchange_token: shortLivedToken,
++      }),
++    { signal: AbortSignal.timeout(15000) }
++  );
++  const j = await res.json();
++  if (!res.ok || !j.access_token) throw new Error(j.error?.message ?? "長期トークンへの交換に失敗しました");
++  const expiresInSec = j.expires_in ?? 60 * 86400; // 返らないことがあるので60日を既定にする
++  return { accessToken: j.access_token as string, expiresAt: new Date(Date.now() + expiresInSec * 1000).toISOString() };
++}
++
++export type MetaPageCandidate = {
++  pageId: string;
++  pageName: string;
++  pageAccessToken: string;
++  igBusinessId: string | null;
++  igUsername: string | null;
++};
++
++/**
++ * ユーザーの長期トークンから、管理しているPageと紐づくInstagramビジネスアカウントを列挙する
++ * Page個別のアクセストークンは、ユーザートークンが長期であれば同様に長期になる
++ * （ユーザーがPage管理者であり続ける限り、明示的に無効化されない）。
++ */
++export async function discoverMetaPages(userAccessToken: string): Promise<MetaPageCandidate[]> {
++  const res = await fetch(
++    `${GRAPH}/me/accounts?fields=${encodeURIComponent("id,name,access_token,instagram_business_account{id,username}")}&access_token=${encodeURIComponent(userAccessToken)}`,
++    { signal: AbortSignal.timeout(15000) }
++  );
++  const j = await res.json();
++  if (!res.ok) throw new Error(j.error?.message ?? "Facebook Pageの取得に失敗しました");
++
++  const data: {
++    id: string;
++    name: string;
++    access_token: string;
++    instagram_business_account?: { id: string; username?: string };
++  }[] = j.data ?? [];
++
++  return data.map((p) => ({
++    pageId: p.id,
++    pageName: p.name,
++    pageAccessToken: p.access_token,
++    igBusinessId: p.instagram_business_account?.id ?? null,
++    igUsername: p.instagram_business_account?.username ?? null,
++  }));
++}
++
++/** Instagramビジネスアカウントの基本情報（フォロワー数・投稿数）。実測のみ、無ければnull */
++export type InstagramProfile = {
++  followersCount: number | null;
++  followsCount: number | null;
++  mediaCount: number | null;
++  username: string | null;
++};
++
++export async function fetchInstagramProfile(pageAccessToken: string, igBusinessId: string): Promise<InstagramProfile | null> {
++  const res = await fetch(
++    `${GRAPH}/${igBusinessId}?fields=${encodeURIComponent("username,followers_count,follows_count,media_count")}&access_token=${encodeURIComponent(pageAccessToken)}`,
++    { signal: AbortSignal.timeout(15000) }
++  );
++  const j = await res.json();
++  if (!res.ok) return null;
++  return {
++    followersCount: j.followers_count ?? null,
++    followsCount: j.follows_count ?? null,
++    mediaCount: j.media_count ?? null,
++    username: j.username ?? null,
++  };
++}
++
++export type InstagramInsights = {
++  from: string;
++  to: string;
++  reach: number | null;
++  profileViews: number | null;
++};
++
++/** 直近28日の到達数・プロフィール閲覧数。instagram_manage_insights が要る */
++export async function fetchInstagramInsights(pageAccessToken: string, igBusinessId: string): Promise<InstagramInsights | null> {
++  const to = new Date();
++  const from = new Date(Date.now() - 28 * 864e5);
++  const res = await fetch(
++    `${GRAPH}/${igBusinessId}/insights?` +
++      new URLSearchParams({
++        metric: "reach,profile_views",
++        period: "day",
++        since: String(Math.floor(from.getTime() / 1000)),
++        until: String(Math.floor(to.getTime() / 1000)),
++        access_token: pageAccessToken,
++      }),
++    { signal: AbortSignal.timeout(20000) }
++  );
++  const j = await res.json();
++  if (!res.ok) return null;
++
++  const sum = (name: string) => {
++    const metric = (j.data ?? []).find((m: { name: string }) => m.name === name);
++    const values: { value: number }[] = metric?.values ?? [];
++    return values.length ? values.reduce((a, v) => a + (v.value ?? 0), 0) : null;
++  };
++
++  return {
++    from: from.toISOString().slice(0, 10),
++    to: to.toISOString().slice(0, 10),
++    reach: sum("reach"),
++    profileViews: sum("profile_views"),
++  };
++}
