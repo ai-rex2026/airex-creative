@@ -1,0 +1,62 @@
+diff --git a/lib/analysis.ts b/lib/analysis.ts
+index 7d3f8b1..05c43d7 100644
+--- a/lib/analysis.ts
++++ b/lib/analysis.ts
+@@ -21,7 +21,7 @@ import { fetchGa4, fetchSearchConsole, fetchYoutubeAnalytics, hasGoogleApp, type
+ import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
+ import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
+ 
+-/** 本番と同じ見た目の�mいID（英数20文字） */
++/** 本番と同じ見た目の短いID（英数20文字） */
+ export function newAnalysisId() {
+   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+   const buf = new Uint8Array(20);
+@@ -292,10 +292,10 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
+       );
+       return await save({ line_plan, step: "訴求軸ごとにコピーを書いています", progress: 78 });
+     }
+-    // サジェストは Google の公開エンドポイントから実際 する。AI は使わないので速い
++    // サジェストは Google の公開エンドポイントから実測する。AI は使わないので速い
+     if (!a.suggests) {
+-      // 地名は MEO の実測住所から。町名まで細かいとサイェストが返らないので、
+-      // 「渋裷区」と方角を落とした町名（恵比寿西→恵比寿）の现方を候補にする
++      // 地名は MEO の実測住所から。町名まで細かいとサジェストが返らないので、
++      // 「渋谷区」と方角を落とした町名（恵比寿西→恵比寿）の両方を候補にする
+       const addr = a.meo?.self?.address ?? "";
+       const ward = addr.match(/[都道府県](.*?[市区町村])/)?.[1] ?? "";
+       const town = addr.match(/[市区町村]([^\d\s]{2,6})/)?.[1]?.replace(/[東西南北]$/, "") ?? "";
+@@ -303,7 +303,7 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
+       const suggests = await scanSuggests(a.diagnosis, a.site, areas).catch(
+         failedChapter<SuggestScan>({ rows: [], queried: [], fetchedAt: new Date().toISOString() })
+       );
+-      return await save({ suggests, step: "夦部露出の施策を書いています", progress: 79 });
++      return await save({ suggests, step: "外部露出の施策を書いています", progress: 79 });
+     }
+     if (!a.outreach) {
+       const outreach = await generateOutreach(a.diagnosis, a.suggests, a.competitors).catch(
+@@ -318,20 +318,20 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
+     }
+     if (!a.copies) {
+       const copies = await generateCopies(a.diagnosis, 2);
+-      return await save({ copies, step: "勝ち等を採点しています", progress: 86 });
++      return await save({ copies, step: "勝ち筋を採点しています", progress: 86 });
+     }
+     if (!a.copies[0]?.score) {
+       const scored = await scoreCopies(a.diagnosis, a.copies);
+       return await save({ copies: scored, step: "要約をまとめています", progress: 92 });
+     }
+-    // バりーに使える写真かを見る。文字が焼き迼まれた画像は切り抜くと切れるので
+-    // 候補かり外すために先に判定しておく
++    // バナーに使える写真かを見る。文字が焼き込まれた画像は切り抜くと切れるので、
++    // 候補から外すために先に判定しておく
+     if (!a.image_scan && (a.site?.images ?? []).length > 0) {
+       const image_scan = await checkImages(a.site!.images).catch(() => ({ items: [], checkedAt: new Date().toISOString() }));
+       return await save({ image_scan, step: "要約をまとめています", progress: 94 });
+     }
+-    // 表示速度の実測は最後に回す　PSI は返らないことがあり、
+-    // 途中に罦くとレポート全体がそこで止まる
++    // 表示速度の実測は最後に回す。PSI は返らないことがあり、
++    // 途中に置くとレポート全体がそこで止まる
+     if (a.url && !a.speed) {
+       const speed = await scanSpeed(a.url);
+       return await save({ speed, step: "要約をまとめています", progress: 95 });
