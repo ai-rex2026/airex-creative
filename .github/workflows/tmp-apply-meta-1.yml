@@ -21,7 +21,8 @@ jobs:
           for p in .buildtmp/meta-fix-1/part1.patch \
                    .buildtmp/meta-fix-1/part2.patch \
                    .buildtmp/meta-fix-1/part3.patch \
-                   .buildtmp/meta-fix-1/part4.patch \
+                   .buildtmp/meta-fix-1/part4a.patch \
+                   .buildtmp/meta-fix-1/part4b.patch \
                    .buildtmp/meta-fix-1/part5.patch \
                    .buildtmp/meta-fix-1/part6.patch; do
             echo "applying $p"
