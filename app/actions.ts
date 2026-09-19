@@ -195,6 +195,30 @@ export async function disconnectGoogle() {
   await sb.from("google_connections").delete().eq("user_id", user.id);
 }
 
+/** Meta 連携の状態。設定画面で出す */
+export async function metaConnection() {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) return null;
+  const { data } = await sb
+    .from("meta_connections")
+    .select("connected_at, page_name, ig_username")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  return data ?? null;
+}
+
+export async function disconnectMeta() {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) return;
+  await sb.from("meta_connections").delete().eq("user_id", user.id);
+}
+
 export async function signOut() {
   const sb = await createClient();
   await sb.auth.signOut();
