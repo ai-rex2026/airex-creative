@@ -62,23 +62,35 @@ export async function listAccessibleCustomerIds(accessToken: string): Promise<st
   return ((j.resourceNames ?? []) as string[]).map((n) => n.replace("customers/", "")).filter(isCustomerId);
 }
 
-/** 1アカウントの名前と、MCC（管理者アカウント）かどうか。取れなければ null（解約済みなど） */
-export async function customerInfo(accessToken: string, id: string): Promise<GoogleCustomer | null> {
+/** 1アカウントの名前と、MCC（管理者アカウント）かどうか。取れなければ理由を返す（解約済み・権限なしなど） */
+export async function customerInfo(
+  accessToken: string,
+  id: string
+): Promise<{ info: GoogleCustomer } | { error: string }> {
   try {
     const rows = await search(accessToken, id, "SELECT customer.id, customer.descriptive_name, customer.manager FROM customer LIMIT 1");
     const c = rows[0]?.customer;
-    if (!c) return null;
-    return { id, name: c.descriptiveName || id, manager: !!c.manager };
-  } catch {
-    return null;
+    if (!c) return { error: "情報が空でした" };
+    return { info: { id, name: c.descriptiveName || id, manager: !!c.manager } };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
   }
 }
 
-/** 直接アクセスできるアカウントを、名前と種別つきで返す（数が多くても並列で取る） */
+/**
+ * 直接アクセスできるアカウントを、名前と種別つきで返す（数が多くても並列で取る）。
+ * 1件も取れず、理由がある場合は、その理由を投げる（画面に「取れなかった理由」を出すため）。
+ */
 export async function listAccessibleCustomers(accessToken: string): Promise<{ accounts: GoogleCustomer[]; skipped: number }> {
   const ids = await listAccessibleCustomerIds(accessToken);
-  const infos = await Promise.all(ids.slice(0, 60).map((id) => customerInfo(accessToken, id)));
-  const accounts = infos.filter((x): x is GoogleCustomer => !!x);
+  const results = await Promise.all(ids.slice(0, 60).map((id) => customerInfo(accessToken, id)));
+  const accounts: GoogleCustomer[] = [];
+  let firstError: string | null = null;
+  for (const r of results) {
+    if ("info" in r) accounts.push(r.info);
+    else firstError ??= r.error;
+  }
+  if (accounts.length === 0 && firstError) throw new Error(firstError);
   return { accounts: sortCustomers(accounts), skipped: ids.length - accounts.length };
 }
 
