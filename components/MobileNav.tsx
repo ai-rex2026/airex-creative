@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 /**
  * 狭い画面（スマホ・小さいウィンドウ）用のメニュー。
  * 左のサイドバーは 860px 以下で上部の細いバーに変わり、履歴や「設定」が隠れてしまう。
- * ハンバーガーボタンから、全部の行き先をドロワーで開けるようにする。
+ * ハンバーガーボタン（バーの左端）から、全部の行き先をドロワーで開けるようにする。
  * 広い画面ではボタンごと非表示（これまでどおりサイドバーを使う）。
  */
 
@@ -17,8 +17,8 @@ const CSS = `
 .mnav-btn{display:none}
 @media(max-width:860px){
   .side-nav .item{display:none}
-  .mnav-btn{display:inline-flex;margin-left:auto;align-items:center;justify-content:center;width:44px;height:44px;
-    border:0;border-radius:8px;background:transparent;color:var(--head);cursor:pointer}
+  .mnav-btn{display:inline-flex;order:-1;margin:0 4px 0 -6px;align-items:center;justify-content:center;width:44px;height:44px;
+    border:0;border-radius:8px;background:transparent;color:var(--head);cursor:pointer;flex:0 0 auto}
   .mnav-btn:hover{background:rgba(255,255,255,.6)}
 }
 .mnav-ov{position:fixed;inset:0;z-index:100;background:rgba(20,20,20,.4)}
