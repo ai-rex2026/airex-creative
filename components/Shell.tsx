@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { IconArrowRight } from "./Chrome";
+import { MobileNav } from "./MobileNav";
 
 type HistRow = { id: string; url: string | null; status: string; diagnosis: { product?: string } | null };
 
@@ -15,6 +16,7 @@ const PILL: Record<string, [string, string]> = {
  * 管理画面の外枠。本番 /ja/analysis/* と同じく
  * 左に固定サイドバー（新規分析／分析サマリー／最近の分析）、上にアップグレード、
  * ゲスト利用中は本登録を促す帯を出す。
+ * 860px 以下ではサイドバーが上部バーに変わるので、ハンバーガーメニュー（MobileNav）で全項目を開く。
  */
 export async function Shell({
   active,
@@ -38,6 +40,7 @@ export async function Shell({
   const label = (h: HistRow) =>
     h.diagnosis?.product?.slice(0, 22) ??
     (h.url ? h.url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "分析");
+  const dest = (h: HistRow) => (h.status === "done" ? `/analysis/${h.id}/report` : `/analysis/${h.id}/waiting`);
 
   return (
     <div className="app">
@@ -47,6 +50,12 @@ export async function Shell({
           <img src="/logo.svg" alt="" width={20} height={20} />
           AI-REX
         </Link>
+
+        <MobileNav
+          active={active}
+          hist={hist.map((h) => ({ id: h.id, to: dest(h), label: label(h), text: PILL[h.status]?.[0] ?? "" }))}
+          account={user?.is_anonymous ? "ゲスト" : user?.email ?? "ユーザー"}
+        />
 
         <Link href="/analysis/new" className={`item${active === "new" ? " on" : ""}`}>✎ 新規分析</Link>
         <Link href="/analysis" className={`item${active === "summary" ? " on" : ""}`}>▤ 分析サマリー</Link>
@@ -60,9 +69,8 @@ export async function Shell({
         ) : (
           hist.map((h) => {
             const [text, cls] = PILL[h.status] ?? ["", ""];
-            const to = h.status === "done" ? `/analysis/${h.id}/report` : `/analysis/${h.id}/waiting`;
             return (
-              <Link key={h.id} href={to} className="hist">
+              <Link key={h.id} href={dest(h)} className="hist">
                 <span>{label(h)}</span>
                 <em className={`pill ${cls}`} style={{ fontStyle: "normal" }}>{text}</em>
               </Link>
