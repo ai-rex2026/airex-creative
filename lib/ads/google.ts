@@ -23,7 +23,16 @@ function headers(accessToken: string, loginCustomerId?: string | null): Record<s
 
 async function errorText(res: Response) {
   const j = await res.json().catch(() => ({}));
-  return j?.error?.message ?? `HTTP ${res.status}`;
+  // Google Ads API のエラーは details[].errors[].errorCode に原因のコードが入る（例: USER_PERMISSION_DENIED）
+  const codes: string[] = [];
+  for (const d of j?.error?.details ?? []) {
+    for (const e of d?.errors ?? []) {
+      const c = e?.errorCode && Object.values(e.errorCode)[0];
+      if (typeof c === "string") codes.push(c);
+    }
+  }
+  const msg = j?.error?.message ?? `HTTP ${res.status}`;
+  return codes.length ? `${msg}（${[...new Set(codes)].join(", ")}）` : msg;
 }
 
 /** GAQL を1回流す（ページは最大5枚まで追う） */
