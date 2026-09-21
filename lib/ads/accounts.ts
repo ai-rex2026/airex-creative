@@ -24,7 +24,8 @@ export async function discoverAccounts(
         const res = await fetch(`https://googleads.googleapis.com/${GOOGLE_ADS_VERSION}/customers:listAccessibleCustomers`, {
           headers: {
             authorization: `Bearer ${t.accessToken}`,
-            "developer-token": process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? "",
+            // 開発者トークンは任意（クラウド管理に移行済みなら不要）。あるときだけ付ける
+            ...(process.env.GOOGLE_ADS_DEVELOPER_TOKEN ? { "developer-token": process.env.GOOGLE_ADS_DEVELOPER_TOKEN } : {}),
           },
           signal: AbortSignal.timeout(20000),
         });

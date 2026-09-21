@@ -22,7 +22,9 @@ export const AD_PLATFORMS: AdPlatformDef[] = [
     id: "google",
     name: "Google 広告",
     media: "検索・ディスプレイ・P-MAX・YouTube 広告",
-    env: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_ADS_DEVELOPER_TOKEN"],
+    // GOOGLE_ADS_DEVELOPER_TOKEN は任意。Google がクラウド管理のアクセスに移行中で、
+    // 移行済みのアカウントでは不要。あれば API 呼び出しに付ける
+    env: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
   },
   {
     id: "yahoo",
