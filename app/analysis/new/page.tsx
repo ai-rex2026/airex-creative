@@ -1,6 +1,7 @@
 import { Shell } from "@/components/Shell";
 import { NewAnalysisForm } from "@/components/NewAnalysisForm";
 import { AdAccountPicker } from "@/components/AdAccountPicker";
+import { AdPerformance } from "@/components/AdPerformance";
 import { adConnections } from "@/app/ad-actions";
 
 export const metadata = { title: "新規分析｜AI-REX Studio" };
@@ -17,7 +18,12 @@ export default async function NewAnalysisPage({
   return (
     <Shell active="new">
       <NewAnalysisForm initialUrl={url ?? ""} />
-      {ads.some((c) => c.platform === "google") && <AdAccountPicker />}
+      {ads.some((c) => c.platform === "google") && (
+        <>
+          <AdAccountPicker />
+          <AdPerformance />
+        </>
+      )}
     </Shell>
   );
 }
