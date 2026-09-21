@@ -40,7 +40,7 @@ export function AdConnections({
         {AD_PLATFORMS.map((def) => {
           const conn = connections.find((c) => c.platform === def.id);
           const missing = missingEnv(def);
-          const shown = conn?.accounts.slice(0, 3).map((a) => (a.name === a.id ? a.id : `${a.name}（${a.id}）`)) ?? [];
+          const shown = conn?.accounts.slice(0, 3).map((a) => `${a.name === a.id ? a.id : `${a.name}（${a.id}）`}${a.manager ? "［MCC］" : ""}`) ?? [];
           const rest = (conn?.accounts.length ?? 0) - shown.length;
 
           return (
