@@ -4,13 +4,19 @@ import { Shell } from "@/components/Shell";
 import { SignOutButton } from "@/components/SignOutButton";
 import { GoogleConnect } from "@/components/GoogleConnect";
 import { MetaConnect } from "@/components/MetaConnect";
+import { AdConnections } from "@/components/AdConnections";
 import { googleConnection, metaConnection } from "@/app/actions";
+import { adConnections } from "@/app/ad-actions";
 import { hasGoogleApp } from "@/lib/google";
 import { hasMetaApp } from "@/lib/meta";
 
 export const metadata = { title: "設定｜AI-REX Studio" };
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const sb = await createClient();
   const {
     data: { user },
@@ -19,6 +25,10 @@ export default async function SettingsPage() {
 
   const conn = await googleConnection();
   const metaConn = await metaConnection();
+  const adConns = await adConnections();
+
+  const sp = await searchParams;
+  const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
   return (
     <Shell active="settings">
@@ -100,6 +110,13 @@ export default async function SettingsPage() {
             </span>
           </p>
         )}
+
+        <AdConnections
+          connections={adConns}
+          canConnect={!user.is_anonymous}
+          ok={first(sp.ad_ok)}
+          error={first(sp.ad_error)}
+        />
 
         {user.is_anonymous && (
           <p className="note">
