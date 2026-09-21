@@ -36,7 +36,7 @@ async function errorText(res: Response) {
 }
 
 /** GAQL を1回流す（ページは最大5枚まで追う） */
-async function search(
+export async function search(
   accessToken: string,
   customerId: string,
   query: string,
@@ -164,4 +164,85 @@ export async function verifyClients(
 function sortCustomers(list: GoogleCustomer[]) {
   // MCC を先に、あとは名前順
   return [...list].sort((a, b) => Number(b.manager) - Number(a.manager) || a.name.localeCompare(b.name, "ja"));
+}
+
+/* ------------------------------------------------------------------
+ * キャンペーン別の実績（読み取りのみ）
+ * ------------------------------------------------------------------ */
+
+export type CampaignMetric = {
+  id: string;
+  name: string;
+  status: string;
+  cost: number; // 円（通貨は口座の設定に従う。cost_micros / 1,000,000）
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  conversionsValue: number;
+};
+
+export type DailyMetric = Omit<CampaignMetric, "id" | "name" | "status"> & { date: string };
+
+export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** キャンペーン別の合計と、日別の合計を返す（from / to は YYYY-MM-DD、両端を含む） */
+export async function fetchCampaignMetrics(
+  accessToken: string,
+  customerId: string,
+  loginCustomerId: string | null,
+  from: string,
+  to: string
+): Promise<{ campaigns: CampaignMetric[]; daily: DailyMetric[] }> {
+  if (!isCustomerId(customerId) || !DATE_RE.test(from) || !DATE_RE.test(to)) {
+    throw new Error("パラメータが正しくありません");
+  }
+  const rows = await search(
+    accessToken,
+    customerId,
+    "SELECT campaign.id, campaign.name, campaign.status, segments.date, " +
+      "metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value " +
+      `FROM campaign WHERE segments.date BETWEEN '${from}' AND '${to}' AND campaign.status != 'REMOVED'`,
+    loginCustomerId
+  );
+  const byCampaign = new Map<string, CampaignMetric>();
+  const byDate = new Map<string, DailyMetric>();
+  for (const r of rows) {
+    const m = r.metrics ?? {};
+    const cost = Number(m.costMicros ?? 0) / 1_000_000;
+    const impressions = Number(m.impressions ?? 0);
+    const clicks = Number(m.clicks ?? 0);
+    const conversions = Number(m.conversions ?? 0);
+    const conversionsValue = Number(m.conversionsValue ?? 0);
+
+    const id = String(r.campaign?.id ?? "");
+    const c = byCampaign.get(id) ?? {
+      id,
+      name: r.campaign?.name ?? id,
+      status: r.campaign?.status ?? "",
+      cost: 0,
+      impressions: 0,
+      clicks: 0,
+      conversions: 0,
+      conversionsValue: 0,
+    };
+    c.cost += cost;
+    c.impressions += impressions;
+    c.clicks += clicks;
+    c.conversions += conversions;
+    c.conversionsValue += conversionsValue;
+    byCampaign.set(id, c);
+
+    const date = String(r.segments?.date ?? "");
+    const d = byDate.get(date) ?? { date, cost: 0, impressions: 0, clicks: 0, conversions: 0, conversionsValue: 0 };
+    d.cost += cost;
+    d.impressions += impressions;
+    d.clicks += clicks;
+    d.conversions += conversions;
+    d.conversionsValue += conversionsValue;
+    byDate.set(date, d);
+  }
+  return {
+    campaigns: [...byCampaign.values()].sort((a, b) => b.cost - a.cost),
+    daily: [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)),
+  };
 }
