@@ -53,7 +53,7 @@ export const AD_PLATFORMS: AdPlatformDef[] = [
   {
     id: "x",
     name: "X 広告",
-    media: "X（旧 Twitter）広告。Ads API の利用承認が別途必要",
+    media: "X（旧 Twitter）広告（Ads API の利用承認が別途必要）",
     env: ["X_API_KEY", "X_API_SECRET"],
   },
 ];

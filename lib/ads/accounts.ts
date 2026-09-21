@@ -1,5 +1,6 @@
 import { xSignedGet, type TokenSet } from "./oauth";
 import type { AdPlatform } from "./platforms";
+import { listAccessibleCustomers } from "./google";
 
 /**
  * 連携直後に「どの広告アカウントが読めるか」を控える。
@@ -9,9 +10,8 @@ import type { AdPlatform } from "./platforms";
  * 実績取得の段階で実装する（いまは空で返す）。
  */
 
-export type AdAccount = { id: string; name: string };
+export type AdAccount = { id: string; name: string; /** MCC（管理者アカウント）か。Google 広告のみ */ manager?: boolean };
 
-const GOOGLE_ADS_VERSION = process.env.GOOGLE_ADS_API_VERSION || "v24";
 const X_ADS_BASE = process.env.X_ADS_API_BASE || "https://ads-api.x.com/12";
 
 export async function discoverAccounts(
@@ -21,18 +21,12 @@ export async function discoverAccounts(
   try {
     switch (platform) {
       case "google": {
-        const res = await fetch(`https://googleads.googleapis.com/${GOOGLE_ADS_VERSION}/customers:listAccessibleCustomers`, {
-          headers: {
-            authorization: `Bearer ${t.accessToken}`,
-            // 開発者トークンは任意（クラウド管理に移行済みなら不要）。あるときだけ付ける
-            ...(process.env.GOOGLE_ADS_DEVELOPER_TOKEN ? { "developer-token": process.env.GOOGLE_ADS_DEVELOPER_TOKEN } : {}),
-          },
-          signal: AbortSignal.timeout(20000),
-        });
-        const j = await res.json().catch(() => ({}));
-        if (!res.ok) return { accounts: [], note: `アカウント一覧を取れませんでした：${j.error?.message ?? `HTTP ${res.status}`}` };
-        const names: string[] = j.resourceNames ?? [];
-        return { accounts: names.map((n) => ({ id: n.replace("customers/", ""), name: n.replace("customers/", "") })), note: null };
+        // 直接アクセスできるアカウントを名前・種別つきで控える。MCC 配下は選択画面で展開する
+        const { accounts, skipped } = await listAccessibleCustomers(t.accessToken);
+        return {
+          accounts: accounts.map((a) => ({ id: a.id, name: a.name, manager: a.manager })),
+          note: skipped > 0 ? `${skipped}件のアカウントは情報を取れませんでした（解約済みなど）` : null,
+        };
       }
       case "meta": {
         const res = await fetch(
