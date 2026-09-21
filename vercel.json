@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron/worker", "schedule": "* * * * *" }
+    { "path": "/api/cron/worker", "schedule": "* * * * *" },
+    { "path": "/api/cron/ad-tokens", "schedule": "0 18 * * 1" }
   ]
 }

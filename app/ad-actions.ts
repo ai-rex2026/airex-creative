@@ -39,7 +39,8 @@ export async function adConnections(): Promise<AdConnectionView[]> {
         platform: r.platform as AdPlatform,
         connected_at: r.connected_at as string,
         accounts: (r.accounts as { id: string; name: string }[]) ?? [],
-        note: ((r.meta as { note?: string } | null)?.note as string | undefined) ?? null,
+        // 更新の失敗（再連携が必要）を、アカウント一覧の注記より優先して出す
+        note: ((r.meta as { tokenError?: string; note?: string } | null)?.tokenError ?? (r.meta as { note?: string } | null)?.note) ?? null,
       }));
   } catch {
     // テーブル未作成などで設定画面ごと落とさない

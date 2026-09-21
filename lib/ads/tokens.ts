@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { openToken, sealToken } from "./crypto";
 import { refreshTokens, type TokenSet } from "./oauth";
 import type { AdAccount } from "./accounts";
-import type { AdPlatform } from "./platforms";
+import { isAdPlatform, type AdPlatform } from "./platforms";
 
 /**
  * ad_connections の読み書き。トークンを含むので service role でしか触らない
@@ -87,4 +87,74 @@ export async function getAdCredentials(userId: string, platform: AdPlatform): Pr
     accounts: (data.accounts as AdAccount[]) ?? [],
     meta: (data.meta as Record<string, unknown>) ?? {},
   };
+}
+
+/**
+ * 定期実行（/api/cron/ad-tokens）用。使われていなくてもトークンが切れないように、まとめて更新する。
+ *
+ * - Google / Yahoo! / Microsoft … refresh_token でアクセストークンを取り直す。
+ *   使わないまま放っておくと refresh_token 自体が失効する媒体があるため、定期的に触る
+ * - Meta … 60日トークンの期限まで20日を切ったら再交換して延ばす
+ * - TikTok / X … 期限がないので対象外
+ *
+ * 更新に失敗したら meta.tokenError に残し、設定画面に「再連携してください」と出す。
+ * 成功すれば消す。
+ */
+export async function refreshAllAdTokens() {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("ad_connections")
+    .select("user_id, platform, access_token, refresh_token, token_expires_at, meta");
+
+  const result = { checked: 0, refreshed: 0, skipped: 0, failed: 0 };
+
+  for (const row of data ?? []) {
+    const platform = row.platform as string;
+    if (!isAdPlatform(platform) || platform === "tiktok" || platform === "x") continue;
+    result.checked++;
+
+    const meta = { ...((row.meta as Record<string, unknown> | null) ?? {}) };
+    const save = (patch: Record<string, unknown>) =>
+      admin
+        .from("ad_connections")
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq("user_id", row.user_id)
+        .eq("platform", platform);
+
+    try {
+      const accessToken = openToken(row.access_token as string | null);
+      if (!accessToken) {
+        result.skipped++;
+        continue;
+      }
+      if (platform === "meta" && row.token_expires_at) {
+        const left = new Date(row.token_expires_at as string).getTime() - Date.now();
+        if (left > 20 * 86400_000) {
+          result.skipped++;
+          continue;
+        }
+      }
+      const refreshToken = openToken(row.refresh_token as string | null);
+      const fresh = await refreshTokens(platform, { accessToken, refreshToken });
+      if (!fresh) {
+        result.skipped++;
+        continue;
+      }
+      delete meta.tokenError;
+      await save({
+        access_token: sealToken(fresh.accessToken),
+        refresh_token: sealToken(fresh.refreshToken ?? refreshToken),
+        token_expires_at: fresh.expiresAt ?? null,
+        meta,
+      });
+      result.refreshed++;
+    } catch (e) {
+      result.failed++;
+      meta.tokenError = `トークンを更新できませんでした。もう一度連携してください（${
+        e instanceof Error ? e.message.slice(0, 80) : "原因不明"
+      }）`;
+      await save({ meta });
+    }
+  }
+  return result;
 }
