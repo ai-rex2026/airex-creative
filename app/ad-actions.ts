@@ -90,16 +90,23 @@ function readSelected(meta: Record<string, unknown>): AdSelection[] {
 
 /** 選択画面の最初の一覧（直接アクセスできるアカウント）と、保存済みの選択 */
 export async function googleAccountPicker(): Promise<
-  { connected: false } | { connected: true; accounts: AdPickerAccount[]; selected: AdSelection[]; error?: string }
+  | { connected: false }
+  | {
+      connected: true;
+      accounts: AdPickerAccount[];
+      failed: { id: string; error: string }[];
+      selected: AdSelection[];
+      error?: string;
+    }
 > {
   const g = await googleCreds();
   if (!g) return { connected: false };
   const selected = readSelected(g.creds.meta);
   try {
-    const { accounts } = await listAccessibleCustomers(g.creds.accessToken);
-    return { connected: true, accounts, selected };
+    const { accounts, failed } = await listAccessibleCustomers(g.creds.accessToken);
+    return { connected: true, accounts, failed, selected };
   } catch (e) {
-    return { connected: true, accounts: [], selected, error: e instanceof Error ? e.message : String(e) };
+    return { connected: true, accounts: [], failed: [], selected, error: e instanceof Error ? e.message : String(e) };
   }
 }
 

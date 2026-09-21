@@ -22,10 +22,10 @@ export async function discoverAccounts(
     switch (platform) {
       case "google": {
         // 直接アクセスできるアカウントを名前・種別つきで控える。MCC 配下は選択画面で展開する
-        const { accounts, skipped } = await listAccessibleCustomers(t.accessToken);
+        const { accounts, failed } = await listAccessibleCustomers(t.accessToken);
         return {
           accounts: accounts.map((a) => ({ id: a.id, name: a.name, manager: a.manager })),
-          note: skipped > 0 ? `${skipped}件のアカウントは情報を取れませんでした（解約済みなど）` : null,
+          note: failed.length > 0 ? `${failed.length}件のアカウントは情報を取れませんでした（解約済みなど）` : null,
         };
       }
       case "meta": {

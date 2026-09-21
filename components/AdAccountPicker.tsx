@@ -41,6 +41,7 @@ export function AdAccountPicker() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [picked, setPicked] = useState<Map<string, AdSelection>>(new Map());
   const [err, setErr] = useState<string | null>(null);
+  const [failed, setFailed] = useState<{ id: string; error: string }[]>([]);
   const [saved, setSaved] = useState(false);
   const [saving, startSave] = useTransition();
 
@@ -49,6 +50,7 @@ export function AdAccountPicker() {
       if (!r.connected) return setState("off");
       setNodes(r.accounts.map((a) => ({ ...a, root: a.manager ? a.id : null })));
       setPicked(new Map(r.selected.map((s) => [s.id, s])));
+      setFailed(r.failed);
       if (r.error) setErr(`アカウント一覧を取れませんでした：${r.error}`);
       setState("ready");
     });
@@ -156,6 +158,20 @@ export function AdAccountPicker() {
         </div>
       )}
       {state === "ready" && nodes.map((n, i) => row(n, [i], 0))}
+      {state === "ready" && failed.length > 0 && (
+        <div className="r" style={{ display: "block" }}>
+          <small style={{ display: "block" }}>
+            {nodes.length === 0
+              ? "アクセスできるアカウントはありましたが、どれも情報を取れませんでした。"
+              : `${failed.length}件のアカウントは情報を取れませんでした（解約済みなど）。`}
+          </small>
+          {failed.slice(0, 5).map((f) => (
+            <small key={f.id} style={{ display: "block" }}>
+              ID: {f.id}：{f.error}
+            </small>
+          ))}
+        </div>
+      )}
       {state === "ready" && (
         <div className="r" style={{ gap: 12 }}>
           <small style={{ flex: 1 }}>

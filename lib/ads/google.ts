@@ -81,7 +81,9 @@ export async function customerInfo(
     let rows: Record<string, any>[];
     try {
       rows = await search(accessToken, id, q);
-    } catch {
+    } catch (e) {
+      // 解約済み・未有効のアカウントは、何度やっても同じなので再試行しない
+      if (e instanceof Error && e.message.includes("CUSTOMER_NOT_ENABLED")) throw e;
       // MCC（管理者アカウント）は、自分自身を login-customer-id に指定しないと権限エラーになることがある
       rows = await search(accessToken, id, q, id);
     }
@@ -95,19 +97,20 @@ export async function customerInfo(
 
 /**
  * 直接アクセスできるアカウントを、名前と種別つきで返す（数が多くても並列で取る）。
- * 1件も取れず、理由がある場合は、その理由を投げる（画面に「取れなかった理由」を出すため）。
+ * 取れなかったアカウントは、ID と理由を failed に残す（解約済み・権限なしなど。画面に出す）。
  */
-export async function listAccessibleCustomers(accessToken: string): Promise<{ accounts: GoogleCustomer[]; skipped: number }> {
+export async function listAccessibleCustomers(
+  accessToken: string
+): Promise<{ accounts: GoogleCustomer[]; failed: { id: string; error: string }[] }> {
   const ids = await listAccessibleCustomerIds(accessToken);
   const results = await Promise.all(ids.slice(0, 60).map((id) => customerInfo(accessToken, id)));
   const accounts: GoogleCustomer[] = [];
-  let firstError: string | null = null;
-  for (const r of results) {
+  const failed: { id: string; error: string }[] = [];
+  results.forEach((r, i) => {
     if ("info" in r) accounts.push(r.info);
-    else firstError ??= r.error;
-  }
-  if (accounts.length === 0 && firstError) throw new Error(firstError);
-  return { accounts: sortCustomers(accounts), skipped: ids.length - accounts.length };
+    else failed.push({ id: ids[i], error: r.error });
+  });
+  return { accounts: sortCustomers(accounts), failed };
 }
 
 /**
