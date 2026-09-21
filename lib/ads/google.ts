@@ -67,8 +67,15 @@ export async function customerInfo(
   accessToken: string,
   id: string
 ): Promise<{ info: GoogleCustomer } | { error: string }> {
+  const q = "SELECT customer.id, customer.descriptive_name, customer.manager FROM customer LIMIT 1";
   try {
-    const rows = await search(accessToken, id, "SELECT customer.id, customer.descriptive_name, customer.manager FROM customer LIMIT 1");
+    let rows: Record<string, any>[];
+    try {
+      rows = await search(accessToken, id, q);
+    } catch {
+      // MCC（管理者アカウント）は、自分自身を login-customer-id に指定しないと権限エラーになることがある
+      rows = await search(accessToken, id, q, id);
+    }
     const c = rows[0]?.customer;
     if (!c) return { error: "情報が空でした" };
     return { info: { id, name: c.descriptiveName || id, manager: !!c.manager } };
