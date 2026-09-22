@@ -15,7 +15,7 @@
  * フィールド名は、ドキュメントサイトの該当ページを機械的に取得できず確認できていない。
  * 実際の Yahoo!広告 API 利用申込・アプリ登録が済み次第、本番で1回連携して確認・調整する。
  * 失敗しても discoverAccounts の呼び出し元（lib/ads/accounts.ts）が例外を捕まえて
- * 「アカウント一覧を取れණせんでした：〜」という注記に変えるので、連携（トークン保存）
+ * 「アカウント一覧を取れませんでした：〜」という注記に変えるので、連携（トークン保存）
  * 自体は失敗しない。
  */
 
@@ -81,7 +81,11 @@ export async function yahooBaseAccounts(accessToken: string): Promise<YahooAccou
   }
   const accounts = extractAccounts(j);
   if (accounts.length === 0) {
-    throw new Error("Yahoo! 広告のアカウント一覧のレスポンス形式が想定と異なります（要確認）");
+    // 調査用：実際のレスポンスの先頭を注記にそのまま出す（トークン等の秘匿情報は含まれない。
+    // これで実際のフィールド名が分かり次第、上の extractAccounts の候補を直す）
+    throw new Error(
+      `Yahoo! 広告のアカウント一覧のレスポンス形式が想定と異なります（要確認）。実際のレスポンス：${text.slice(0, 500)}`
+    );
   }
   return accounts;
 }
