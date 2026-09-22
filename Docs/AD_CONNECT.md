@@ -12,18 +12,22 @@
 
 | 媒体 | 必須 |
 |---|---|
-| Google 広告 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET`（ログイン用と共通）`GOOGLE_ADS_DEVELOPER_TOKEN` |
+| Google 広告 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET`（ログイン用と共通） |
 | Yahoo! 広告 | `YAHOO_ADS_CLIENT_ID` `YAHOO_ADS_CLIENT_SECRET` |
 | Meta 広告 | `META_APP_ID` `META_APP_SECRET`（Instagram 連携と共通） |
 | Microsoft 広告 | `MICROSOFT_CLIENT_ID` `MICROSOFT_CLIENT_SECRET` `MICROSOFT_DEVELOPER_TOKEN` |
 | TikTok 広告 | `TIKTOK_APP_ID` `TIKTOK_SECRET` |
 | X 広告 | `X_API_KEY` `X_API_SECRET`（コンシューマーキー。**OAuth 1.0a**） |
 
+> `GOOGLE_ADS_DEVELOPER_TOKEN` は **必須ではない**。Google Cloud プロジェクトのアクセスレベルを
+> 「テスト」から「エクスプローラ」に上げれば、開発者トークンなしで MCC 配下の取得・選択保存・
+> 実績取得が動く（2026-09 に本番で確認済み）。あれば `lib/ads/google.ts` が自動でヘッダーに付ける。
+
 任意：
 
 - `AD_TOKEN_ENC_KEY` … `openssl rand -base64 32`。設定すると保存するトークンを AES-256-GCM で暗号化する
 - `APP_ORIGIN` … リダイレクトURIの origin を固定したいとき（例 `https://xxxx.vercel.app`）。未設定ならアクセスされたホストを使う
-- `GOOGLE_ADS_API_VERSION`（既定 `v24`）／`X_ADS_API_BASE`（既定 `https://ads-api.x.com/12`）
+- `GOOGLE_ADS_API_VERSION`（既定 `v24`）／`X_ADS_API_BASE`（既定 `https://ads-api.x.com/12`）／`YAHOO_ADS_API_BASE`（既定 `https://ads-search.yahooapis.jp/api/v19`）
 
 ## 各媒体の開発者ポータルに登録するリダイレクトURI
 
@@ -57,7 +61,21 @@ alter table public.ad_connections enable row level security;
 revoke all on public.ad_connections from anon, authenticated;
 ```
 
+## 対象アカウント一覧の取得状況
+
+連携（OAuth・トークン保存）自体は6媒体とも同じ仕組みで動く（`lib/ads/oauth.ts`）。
+連携直後にどの広告アカウントが読めるかを控える `discoverAccounts`（`lib/ads/accounts.ts`）は媒体ごとに実装が要る：
+
+| 媒体 | 状態 |
+|---|---|
+| Google | 実装済み・本番で確認済み |
+| Meta / TikTok / X | 実装済み（未検証） |
+| Yahoo! | 実装（`lib/ads/yahoo.ts`）。**BaseAccountService/get のレスポンス形式は未検証**（公式リファレンスサイトがJS描画のSPAで詳細を機械的に確認できなかったため）。実際の開発者アプリ登録後、本番で1回連携して要確認 |
+| Microsoft | 実装（`lib/ads/microsoft.ts`）。Customer Management Service は SOAP のみ（REST版なし、2026-09 Microsoft Learn で確認）。GetUser→SearchAccounts の手順・リクエスト形式は公式ドキュメントの実例どおりだが、**レスポンスのXMLタグ構成は未検証** |
+
+取得に失敗しても連携自体（トークン保存）は成功する。設定画面には「アカウント一覧を取れませんでした：〜」という注記が出るので、実際に連携して確認し、ずれていれば `lib/ads/yahoo.ts` / `lib/ads/microsoft.ts` を直す。
+
 ## 未実装（次の段階）
 
-- Yahoo! / Microsoft の対象アカウント一覧取得（実績取得と一緒に実装する）
-- 各媒体の実績取得と `UnifiedCampaignMetric` への正規化
+- 各媒体の実績取得（`lib/ads/google.ts` の `fetchCampaignMetrics` 相当）と `UnifiedCampaignMetric` への正規化。いまは Google 広告のみ（`app/ad-performance-actions.ts`）
+- 実績（費用・CV・CPA・ROAS）を「伸びしろ診断」の分析に接続する部分
