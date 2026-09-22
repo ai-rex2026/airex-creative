@@ -34,7 +34,7 @@
 `{APP_ORIGIN}/api/ads/{媒体}/callback`
 
 - Google：OAuth クライアントの「承認済みのリダイレクト URI」に追加。スコープ `adwords`
-- Yahoo!：アプリのコールバックURLに追加。スコープ `yahooads`
+- Yahoo!：アプリのコールバック URL に追加。スコープ `yahooads`
 - Meta：アプリの「有効な OAuth リダイレクト URI」に追加。権限 `ads_read`（審査前は開発者・テスターのみ）
 - Microsoft：Azure のアプリ登録（Web）にリダイレクトURIを追加
 - TikTok：アプリの Redirect URL に追加
@@ -69,8 +69,8 @@ revoke all on public.ad_connections from anon, authenticated;
 | 媒体 | 状態 |
 |---|---|
 | Google | 実装済み・本番で確認済み |
+| Yahoo! | 実装済み・本番で確認済み（`lib/ads/yahoo.ts`。2026-09-23、MCCアカウント1件・通常広告アカウント1件を実際に取得できることを確認） |
 | Meta / TikTok / X | 実装済み（未検証） |
-| Yahoo! | 実装（`lib/ads/yahoo.ts`）。**BaseAccountService/get のレスポンス形式は未検証**（公式リファレンスサイトがJS描画のSPAで詳細を機械的に確認できなかったため）。実際の開発者アプリ登録後、本番で1回連携して要確認 |
 | Microsoft | 実装（`lib/ads/microsoft.ts`）。Customer Management Service は SOAP のみ（REST版なし、2026-09 Microsoft Learn で確認）。GetUser→SearchAccounts の手順・リクエスト形式は公式ドキュメントの実例どおりだが、**レスポンスのXMLタグ構成は未検証** |
 
 取得に失敗しても連携自体（トークン保存）は成功する。設定画面には「アカウント一覧を取れませんでした：〜」という注記が出るので、実際に連携して確認し、ずれていれば `lib/ads/yahoo.ts` / `lib/ads/microsoft.ts` を直す。

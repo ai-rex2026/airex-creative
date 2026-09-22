@@ -1,19 +1,37 @@
 /**
  * Yahoo! 広告 API（Search Ads API / LY Ads）の最小クライアント（アカウント一覧の発見だけに使う）。
  *
- * 確認できた事実（2026-09 時点。公式サイトが JS 描画のSPAで詳細ページを機械的に読めなかったため、
- * yahoojp-marketing/ads-search-api-documents の design/v19/Route.yaml と
- * ads-search-api-python-samples の README から拾えた範囲）:
  * - ベースURL: https://ads-search.yahooapis.jp/api/v19
  * - 認証: Authorization: Bearer {アクセストークン}
- * - AccountService/get（POST）は x-z-base-account-id ヘッダー（対象アカウントID）が必須
- * - BaseAccountService は「操作対象のビジネスIDが直接権限を持つ全てのアカウント
+ * - BaseAccountService/get は「操作対象のビジネスIDが直接権限を持つ全てのアカウント
  *   （MCCアカウント・広告アカウント）の一覧を提供します」と説明されており、
  *   x-z-base-account-id を決める前に呼ぶ、連携直後の起点となるサービスと判断した
  *
- * 未検証の注意：BaseAccountService/get のリクエストボディとレスポンスの正確なJSON
- * フィールド名は、ドキュメントサイトの該当ページを機械的に取得できず確認できていない。
- * 実際の Yahoo!広告 API 利用申込・アプリ登録が済み次第、本番で1回連携して確認・調整する。
+ * レスポンス形式（2026-09、本番の実レスポンスで確認済み）:
+ * {
+ *   "rval": {
+ *     "authorizationBusinessId": "...",
+ *     "totalNumEntries": 2,
+ *     "values": [
+ *       {
+ *         "account": {
+ *           "accountId": 1002473759,
+ *           "accountName": "株式会社 アドレクス",
+ *           "accountStatus": "SERVING",
+ *           "isMccAccount": "TRUE",        // 文字列 "TRUE"/"FALSE"
+ *           "isRootMccAccount": "TRUE",
+ *           ...
+ *         },
+ *         "errors": null,
+ *         "operationSucceeded": true
+ *       },
+ *       { "account": { "accountId": 1279455, "accountName": "ゆりかご", "isMccAccount": "FALSE", ... }, ... }
+ *     ]
+ *   }
+ * }
+ * 各エントリは account 本体を errors/operationSucceeded と一緒にラップして返す。
+ * MCC 判定は accountType ではなく isMccAccount / isRootMccAccount（文字列）で行う。
+ *
  * 失敗しても discoverAccounts の呼び出し元（lib/ads/accounts.ts）が例外を捕まえて
  * 「アカウント一覧を取れませんでした：〜」という注記に変えるので、連携（トークン保存）
  * 自体は失敗しない。
@@ -23,7 +41,7 @@ const BASE = process.env.YAHOO_ADS_API_BASE || "https://ads-search.yahooapis.jp/
 
 export type YahooAccount = { id: string; name: string; manager?: boolean };
 
-/** レスポンスの形が候補のどれに当たるかを総当たりで探す（フィールド名を断定できないため） */
+/** rval.values の各エントリは { account: {...}, errors, operationSucceeded } でラップされている */
 function extractAccounts(j: unknown): YahooAccount[] {
   const candidates: unknown[] = [];
   if (j && typeof j === "object") {
@@ -39,16 +57,21 @@ function extractAccounts(j: unknown): YahooAccount[] {
   const out: YahooAccount[] = [];
   for (const c of candidates) {
     if (!c || typeof c !== "object") continue;
-    const r = c as Record<string, unknown>;
+    let r = c as Record<string, unknown>;
+    if (r.operationSucceeded === false) continue; // 個別に失敗したエントリはスキップ
+    if (r.account && typeof r.account === "object") {
+      r = r.account as Record<string, unknown>; // { account: {...} } のラップを剥がす
+    }
     const id = r.accountId ?? r.baseAccountId ?? r.id;
     const name = r.accountName ?? r.name;
-    const type = r.accountType ?? r.type;
+    const isMcc =
+      r.isMccAccount === "TRUE" ||
+      r.isMccAccount === true ||
+      r.isRootMccAccount === "TRUE" ||
+      r.isRootMccAccount === true ||
+      (typeof (r.accountType ?? r.type) === "string" && /mcc|manager/i.test(String(r.accountType ?? r.type)));
     if (id != null) {
-      out.push({
-        id: String(id),
-        name: name != null ? String(name) : String(id),
-        manager: typeof type === "string" ? /mcc|manager/i.test(type) : undefined,
-      });
+      out.push({ id: String(id), name: name != null ? String(name) : String(id), manager: isMcc });
     }
   }
   return out;
