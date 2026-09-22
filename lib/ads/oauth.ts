@@ -6,7 +6,7 @@ import type { AdPlatform } from "./platforms";
  * 広告媒体ごとの OAuth。認可URLの組み立て・コード交換・トークン更新。
  *
  * 媒体ごとにクセが違う：
- * - Google / Yahoo / Microsoft … 標準の認可コード。refresh_token で更新する
+ * - Google / ヤフーLINE広告 / Microsoft … 標準の認可コード。refresh_token で更新する
  * - Meta … refresh_token が無い。短期トークンを60日の長期トークンに交換し、期限前に同じ交換で延ばす
  * - TikTok … 認可後に auth_code が返る。アクセストークンに期限がない
  * - X … Ads API は OAuth 1.0a（3-legged）。OAuth 2.0 では広告アカウントに届かない。トークンに期限がない
@@ -145,7 +145,7 @@ export async function exchangeCode(
           client_id: env("YAHOO_ADS_CLIENT_ID"),
           client_secret: env("YAHOO_ADS_CLIENT_SECRET"),
         },
-        "Yahoo! 広告のトークン取得に失敗しました"
+        "ヤフーLINE広告のトークン取得に失敗しました"
       );
       return { accessToken: j.access_token, refreshToken: j.refresh_token ?? null, expiresAt: inSeconds(j.expires_in) };
     }
@@ -205,7 +205,7 @@ export async function exchangeCode(
 
 /**
  * 期限が近いトークンを更新する。null が返ったら更新不要（または更新手段がない）。
- * Google / Yahoo / Microsoft は refresh_token、Meta は長期トークンの再交換。
+ * Google / ヤフーLINE広告 / Microsoft は refresh_token、Meta は長期トークンの再交換。
  */
 export async function refreshTokens(
   platform: AdPlatform,
@@ -236,7 +236,7 @@ export async function refreshTokens(
           client_id: env("YAHOO_ADS_CLIENT_ID"),
           client_secret: env("YAHOO_ADS_CLIENT_SECRET"),
         },
-        "Yahoo! 広告のトークン更新に失敗しました"
+        "ヤフーLINE広告のトークン更新に失敗しました"
       );
       return { accessToken: j.access_token, refreshToken: j.refresh_token ?? current.refreshToken, expiresAt: inSeconds(j.expires_in) };
     }

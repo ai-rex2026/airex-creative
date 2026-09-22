@@ -13,7 +13,7 @@
 | 媒体 | 必須 |
 |---|---|
 | Google 広告 | `GOOGLE_CLIENT_ID` `GOOGLE_CLIENT_SECRET`（ログイン用と共通） |
-| Yahoo! 広告 | `YAHOO_ADS_CLIENT_ID` `YAHOO_ADS_CLIENT_SECRET` |
+| ヤフーLINE広告（旧 Yahoo!広告） | `YAHOO_ADS_CLIENT_ID` `YAHOO_ADS_CLIENT_SECRET` |
 | Meta 広告 | `META_APP_ID` `META_APP_SECRET`（Instagram 連携と共通） |
 | Microsoft 広告 | `MICROSOFT_CLIENT_ID` `MICROSOFT_CLIENT_SECRET` `MICROSOFT_DEVELOPER_TOKEN` |
 | TikTok 広告 | `TIKTOK_APP_ID` `TIKTOK_SECRET` |
@@ -34,7 +34,7 @@
 `{APP_ORIGIN}/api/ads/{媒体}/callback`
 
 - Google：OAuth クライアントの「承認済みのリダイレクト URI」に追加。スコープ `adwords`
-- Yahoo!：アプリのコールバック URL に追加。スコープ `yahooads`
+- ヤフーLINE広告：アプリのコールバックURLに追加。スコープ `yahooads`
 - Meta：アプリの「有効な OAuth リダイレクト URI」に追加。権限 `ads_read`（審査前は開発者・テスターのみ）
 - Microsoft：Azure のアプリ登録（Web）にリダイレクトURIを追加
 - TikTok：アプリの Redirect URL に追加
@@ -69,13 +69,25 @@ revoke all on public.ad_connections from anon, authenticated;
 | 媒体 | 状態 |
 |---|---|
 | Google | 実装済み・本番で確認済み |
-| Yahoo! | 実装済み・本番で確認済み（`lib/ads/yahoo.ts`。2026-09-23、MCCアカウント1件・通常広告アカウント1件を実際に取得できることを確認） |
+| ヤフーLINE広告 | 実装済み・本番で確認済み（`lib/ads/yahoo.ts`。2026-09-23、MCCアカウント1件・通常広告アカウント1件を実際に取得できることを確認。分析対象アカウントの選択UIも実装済み、`components/YahooAccountPicker.tsx`） |
 | Meta / TikTok / X | 実装済み（未検証） |
 | Microsoft | 実装（`lib/ads/microsoft.ts`）。Customer Management Service は SOAP のみ（REST版なし、2026-09 Microsoft Learn で確認）。GetUser→SearchAccounts の手順・リクエスト形式は公式ドキュメントの実例どおりだが、**レスポンスのXMLタグ構成は未検証** |
 
 取得に失敗しても連携自体（トークン保存）は成功する。設定画面には「アカウント一覧を取れませんでした：〜」という注記が出るので、実際に連携して確認し、ずれていれば `lib/ads/yahoo.ts` / `lib/ads/microsoft.ts` を直す。
 
+## 分析対象アカウントの選択
+
+新規分析画面（`/analysis/new`）で、連携済みの媒体ごとに「どのアカウントを分析するか」を選んで
+`ad_connections.meta.selected` に保存する。MCC（管理者アカウント）自体は実績を持たないため選べない。
+
+| 媒体 | 状態 |
+|---|---|
+| Google | 実装済み（`components/AdAccountPicker.tsx`）。MCC を開いて配下を辿れる（`googleChildAccounts`） |
+| ヤフーLINE広告 | 実装済み（`components/YahooAccountPicker.tsx`）。BaseAccountService/get の一覧がすでにフラットなので、Google のような「開いて配下を取る」操作はなく、連携時に控えた一覧からそのまま選ぶ |
+| Meta / Microsoft / TikTok / X | 未実装 |
+
 ## 未実装（次の段階）
 
 - 各媒体の実績取得（`lib/ads/google.ts` の `fetchCampaignMetrics` 相当）と `UnifiedCampaignMetric` への正規化。いまは Google 広告のみ（`app/ad-performance-actions.ts`）
+- Meta / Microsoft / TikTok / X の分析対象アカウント選択UI
 - 実績（費用・CV・CPA・ROAS）を「伸びしろ診断」の分析に接続する部分

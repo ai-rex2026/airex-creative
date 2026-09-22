@@ -1,5 +1,6 @@
 /**
- * Yahoo! 広告 API（Search Ads API / LY Ads）の最小クライアント（アカウント一覧の発見だけに使う）。
+ * ヤフーLINE広告 API（Search Ads API / LY Ads）の最小クライアント（アカウント一覧の発見だけに使う）。
+ * 2026-09 に「Yahoo!広告」から名称変更。API・エンドポイント名は変わらない。
  *
  * - ベースURL: https://ads-search.yahooapis.jp/api/v19
  * - 認証: Authorization: Bearer {アクセストークン}
@@ -16,7 +17,7 @@
  *       {
  *         "account": {
  *           "accountId": 1002473759,
- *           "accountName": "株式会社 アドレクス",
+ *           "accountName": "株式会社アドレクス",
  *           "accountStatus": "SERVING",
  *           "isMccAccount": "TRUE",        // 文字列 "TRUE"/"FALSE"
  *           "isRootMccAccount": "TRUE",
@@ -100,14 +101,14 @@ export async function yahooBaseAccounts(accessToken: string): Promise<YahooAccou
       j && typeof j === "object" && "message" in (j as Record<string, unknown>)
         ? String((j as Record<string, unknown>).message)
         : text.slice(0, 200) || `HTTP ${res.status}`;
-    throw new Error(`Yahoo! 広告のアカウント一覧を取得できませんでした：${msg}`);
+    throw new Error(`ヤフーLINE広告のアカウント一覧を取得できませんでした：${msg}`);
   }
   const accounts = extractAccounts(j);
   if (accounts.length === 0) {
     // 調査用：実際のレスポンスの先頭を注記にそのまま出す（トークン等の秘匿情報は含まれない。
     // これで実際のフィールド名が分かり次第、上の extractAccounts の候補を直す）
     throw new Error(
-      `Yahoo! 広告のアカウント一覧のレスポンス形式が想定と異なります（要確認）。実際のレスポンス：${text.slice(0, 500)}`
+      `ヤフーLINE広告のアカウント一覧のレスポンス形式が想定と異なります（要確認）。実際のレスポンス：${text.slice(0, 500)}`
     );
   }
   return accounts;

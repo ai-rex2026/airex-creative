@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdPlatform, type AdPlatform } from "@/lib/ads/platforms";
 import { getAdCredentials } from "@/lib/ads/tokens";
+import type { AdAccount } from "@/lib/ads/accounts";
 import {
   isCustomerId,
   listAccessibleCustomers,
@@ -185,4 +186,66 @@ export async function saveGoogleSelection(
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/* ------------------------------------------------------------------
+ * ヤフーLINE広告：分析する広告アカウントの選択
+ * BaseAccountService/get が連携直後に控える一覧（lib/ads/accounts.ts）は
+ * すでにフラット（MCC・広告アカウントが1階層で並ぶ）なので、Google のような
+ * 「MCC を開いて配下を取りに行く」操作はない。MCC は実績を持たないため選べない。
+ * ------------------------------------------------------------------ */
+
+export type YahooSelection = { id: string; name: string };
+
+const MAX_SELECTED_YAHOO = 50;
+
+async function yahooCreds() {
+  const user = await currentUser();
+  if (!user || user.is_anonymous) return null;
+  const creds = await getAdCredentials(user.id, "yahoo");
+  return creds ? { user, creds } : null;
+}
+
+function readYahooSelected(meta: Record<string, unknown>): YahooSelection[] {
+  const v = meta.selected;
+  return Array.isArray(v)
+    ? v.filter((x): x is YahooSelection => !!x && typeof (x as YahooSelection).id === "string" && (x as YahooSelection).id.length > 0)
+    : [];
+}
+
+/** 選択画面の一覧（連携時に控えた MCC・広告アカウント）と、保存済みの選択 */
+export async function yahooAccountPicker(): Promise<
+  { connected: false } | { connected: true; accounts: AdAccount[]; selected: YahooSelection[] }
+> {
+  const y = await yahooCreds();
+  if (!y) return { connected: false };
+  return { connected: true, accounts: y.creds.accounts, selected: readYahooSelected(y.creds.meta) };
+}
+
+/** 選んだ広告アカウントIDを保存する。連携時に控えた一覧にあるか（MCCでないか）を確かめてから保存 */
+export async function saveYahooSelection(ids: string[]): Promise<{ selected: YahooSelection[] } | { error: string }> {
+  const y = await yahooCreds();
+  if (!y) return { error: "ヤフーLINE広告と連携してください" };
+  if (!Array.isArray(ids) || ids.length > MAX_SELECTED_YAHOO) {
+    return { error: `選べるのは${MAX_SELECTED_YAHOO}件までです` };
+  }
+  const byId = new Map(y.creds.accounts.map((a) => [a.id, a]));
+  const out: YahooSelection[] = [];
+  for (const id of ids) {
+    if (typeof id !== "string") return { error: "アカウントIDが正しくありません" };
+    const a = byId.get(id);
+    if (!a) return { error: `アクセスできないアカウントが含まれています（${id}）` };
+    if (a.manager) return { error: `MCC（管理者アカウント）は選べません。配下のアカウントを選んでください（${a.name}）` };
+    out.push({ id: a.id, name: a.name });
+  }
+
+  const admin = createAdminClient();
+  const meta = { ...y.creds.meta, selected: out };
+  const { error } = await admin
+    .from("ad_connections")
+    .update({ meta, updated_at: new Date().toISOString() })
+    .eq("user_id", y.user.id)
+    .eq("platform", "yahoo");
+  if (error) return { error: `保存できませんでした：${error.message}` };
+  return { selected: out };
 }

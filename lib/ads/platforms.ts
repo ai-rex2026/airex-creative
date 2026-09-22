@@ -28,7 +28,8 @@ export const AD_PLATFORMS: AdPlatformDef[] = [
   },
   {
     id: "yahoo",
-    name: "Yahoo! 広告",
+    // 2026-09 に「Yahoo!広告」から「ヤフーLINE広告」に名称変更。id（DB・URL）は "yahoo" のまま変えない
+    name: "ヤフーLINE広告",
     media: "検索広告・ディスプレイ広告（YDA）・LINE広告",
     env: ["YAHOO_ADS_CLIENT_ID", "YAHOO_ADS_CLIENT_SECRET"],
   },
