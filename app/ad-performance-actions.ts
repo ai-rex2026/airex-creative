@@ -72,6 +72,9 @@ export async function googlePerformance(
  * ヤフーLINE広告：選んだアカウントのキャンペーン別実績（読み取りのみ）。
  * 選択は ad_connections.meta.selected（saveYahooSelection で検証済みのもの）だけを使う。
  * MCC自身は選べない仕様なので、ここに来る account.id は必ず配下の広告アカウント自身のID。
+ * account.mccId は x-z-base-account-id ヘッダーに使う「直接の base account」を選ぶために必要
+ * （MCC配下で選んだ場合はそのMCCのID、直下で選んだ場合は null＝lib/ads/yahoo.ts 側で
+ * account.id 自身にフォールバックする。詳細は lib/ads/yahoo.ts 冒頭のコメント）。
  */
 
 export type YahooAdPerformance = {
@@ -109,7 +112,7 @@ export async function yahooPerformance(
     selected.map(async (account): Promise<YahooAdPerformance> => {
       const acc = { id: account.id, name: account.name };
       try {
-        const m = await fetchYahooCampaignMetrics(creds.accessToken, account.id, from, to);
+        const m = await fetchYahooCampaignMetrics(creds.accessToken, account.id, account.mccId, from, to);
         return { account: acc, ...m };
       } catch (e) {
         return { account: acc, campaigns: [], daily: [], error: e instanceof Error ? e.message : String(e) };

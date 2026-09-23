@@ -48,17 +48,21 @@
  * つまり: 「MCCへのアカウントリンク」と「そのアカウントへの直接の権限（担当者登録）」は別レイヤーで、
  * BaseAccountService/get・AccountService/get による名前解決には後者が必須。MCCリンクだけでは
  * 広告アカウント名は取得できない（＝クライアント側にそのアカウントの担当者としてこのビジネスIDを
- * 追加登録してもらう以外に解決方法はない）。一方、実際のキャンペーン・実績データの取得は別の
- * エンドポイント群であり、同じ制限は仕様上かかっていないため、MCCリンクだけでも取得できる可能性が
- * 高い（実装時に要検証）。この結論に基づき、常に失敗する AccountService/get への個別リトライは
- * 削除した（同じ「直接権限」制限を持つため、一括取得で引けなかった名前は個別に試しても引けない）。
+ * 追加登録してもらう以外に解決方法はない）。
  *
- * 実績データ取得（CampaignService/get・ReportDefinitionService）について（2026-09、下部に追加）:
- * 名前解決とは別に、公式OpenAPI定義を確認したところ CampaignService/get には「直接権限」の制限が
- * 付いておらず、MCCリンクだけの子アカウントでもキャンペーンの id・名前・ステータスは同期で取れる
- * はず（未実測・実装時に要検証）。一方、実際の数値（費用・表示回数・クリック数・コンバージョン等）は
- * Google の googleAds:search のような同期の検索APIが存在せず、ReportDefinitionService の
- * 非同期ジョブ（add でジョブ作成 → get でポーリング → download でTSV取得）でのみ取れる。
+ * 実績データ取得（CampaignService/get・ReportDefinitionService）について（2026-09、実測で確定）:
+ * 名前解決とは別レイヤーとして、x-z-base-account-id ヘッダーには「このアクセストークンが直接の
+ * base account として持つアカウント（BaseAccountService/get の結果に出てくるもの＝自分の直接
+ * アカウントか、MCC自身）」しか指定できないことを本番エラーで確認した：
+ * 子アカウント自身のIDをヘッダーに渡すと CampaignService/get が
+ * `HTTP 401 {"code":"0117","message":"Account(specified by x-z-base-account-id) not found."}`
+ * を返す（Route.yaml の文言上は制限が書かれていないサービスでも、実際には base account 以外は
+ * ヘッダーに渡せない）。つまり Google 広告の login-customer-id（MCC）＋ customer-id（対象アカウント）
+ * と同じパターンで、ヘッダーには常に MCC（または直接権限を持つ自分自身のアカウント＝mccIdがnullの
+ * 場合はそのアカウント自身のID）を指定し、実際に取得したい対象アカウントは各サービスのリクエスト
+ * body の accountId フィールドで指定する。この対応により、MCCリンクだけの子アカウント（NON_OWNER）
+ * でもキャンペーン・実績データ自体は取得できる（名前解決とは異なり、担当者としての直接登録は不要）。
+ *
  * レポートに使えるフィールド名（fieldName）はレポート種別ごとに動的で、固定のenumとしては
  * 定義されていないため、毎回 getReportFields を呼んで日本語名・英語名でマッチングする
  * （getReportFields 自体はアカウント非依存でヘッダー不要。公式OpenAPI定義で確認済み）。
@@ -289,14 +293,25 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** POST してJSONを返す共通ヘルパー（レポート系・キャンペーン系で使う） */
-async function postJson(path: string, accessToken: string, accountId: string | null, body: unknown): Promise<Record<string, unknown>> {
+/**
+ * POST してJSONを返す共通ヘルパー（レポート系・キャンペーン系で使う）。
+ * baseAccountId は x-z-base-account-id ヘッダーに使う値で、必ず「このアクセストークンが直接の
+ * base account として持つアカウント」（＝自分の直接アカウント、またはMCC自身のID）でなければならない。
+ * 実際に取得したい対象アカウント（MCCリンクだけの子アカウントでもよい）は呼び出し側で body の
+ * accountId に入れる（本ファイル冒頭のコメント参照）。
+ */
+async function postJson(
+  path: string,
+  accessToken: string,
+  baseAccountId: string | null,
+  body: unknown
+): Promise<Record<string, unknown>> {
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,
       "content-type": "application/json",
-      ...(accountId ? { "x-z-base-account-id": accountId } : {}),
+      ...(baseAccountId ? { "x-z-base-account-id": baseAccountId } : {}),
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(20000),
@@ -319,12 +334,16 @@ async function postJson(path: string, accessToken: string, accountId: string | n
 }
 
 /**
- * CampaignService/get: アカウント自身の立場でキャンペーンの id・名前・ステータスを取る（同期）。
- * 公式OpenAPI定義に「直接権限」の制限が書かれていないサービスなので、MCCリンクだけの
- * 子アカウントでも取れるはず（未実測・実装時に要検証。詳細は本ファイル冒頭のコメント）。
+ * CampaignService/get: 対象アカウントのキャンペーンの id・名前・ステータスを取る（同期）。
+ * x-z-base-account-id ヘッダーには baseAccountId（MCC、または直接権限を持つ自分自身のID）を渡し、
+ * 実際に見たい対象アカウントは body の accountId で指定する（本ファイル冒頭のコメント参照）。
  */
-async function campaignList(accessToken: string, accountId: string): Promise<Map<string, { name: string; status: string }>> {
-  const j = await postJson("/CampaignService/get", accessToken, accountId, {
+async function campaignList(
+  accessToken: string,
+  accountId: string,
+  baseAccountId: string
+): Promise<Map<string, { name: string; status: string }>> {
+  const j = await postJson("/CampaignService/get", accessToken, baseAccountId, {
     accountId: Number(accountId),
     userStatuses: ["ACTIVE", "PAUSED"],
     numberResults: 10000,
@@ -416,11 +435,18 @@ async function resolveCampaignReportColumns(accessToken: string): Promise<Report
 }
 
 /** ReportDefinitionService/add: レポートジョブを作る。reportJobId を返す */
-async function addReportJob(accessToken: string, accountId: string, columns: ReportColumns, from: string, to: string): Promise<string> {
+async function addReportJob(
+  accessToken: string,
+  accountId: string,
+  baseAccountId: string,
+  columns: ReportColumns,
+  from: string,
+  to: string
+): Promise<string> {
   const fields = [columns.campaignId, columns.day, columns.cost, columns.impressions, columns.clicks, columns.conversions, columns.conversionsValue]
     .filter((f): f is ReportField => !!f)
     .map((f) => f.fieldName);
-  const j = await postJson("/ReportDefinitionService/add", accessToken, accountId, {
+  const j = await postJson("/ReportDefinitionService/add", accessToken, baseAccountId, {
     accountId: Number(accountId),
     operand: [
       {
@@ -451,12 +477,12 @@ async function addReportJob(accessToken: string, accountId: string, columns: Rep
 }
 
 /** ReportDefinitionService/get をポーリングして、ジョブが COMPLETED になるまで待つ */
-async function waitReportJob(accessToken: string, accountId: string, jobId: string): Promise<void> {
+async function waitReportJob(accessToken: string, accountId: string, baseAccountId: string, jobId: string): Promise<void> {
   const MAX_ATTEMPTS = 15;
   const INTERVAL_MS = 1500;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     if (attempt > 0) await sleep(INTERVAL_MS);
-    const j = await postJson("/ReportDefinitionService/get", accessToken, accountId, {
+    const j = await postJson("/ReportDefinitionService/get", accessToken, baseAccountId, {
       accountId: Number(accountId),
       reportJobIds: [Number(jobId)],
     });
@@ -475,13 +501,13 @@ async function waitReportJob(accessToken: string, accountId: string, jobId: stri
 }
 
 /** ReportDefinitionService/download: 完成したレポートをTSVのテキストとして取る */
-async function downloadReport(accessToken: string, accountId: string, jobId: string): Promise<string> {
+async function downloadReport(accessToken: string, accountId: string, baseAccountId: string, jobId: string): Promise<string> {
   const res = await fetch(`${BASE}/ReportDefinitionService/download`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,
       "content-type": "application/json",
-      "x-z-base-account-id": accountId,
+      "x-z-base-account-id": baseAccountId,
     },
     body: JSON.stringify({ accountId: Number(accountId), reportJobId: Number(jobId) }),
     signal: AbortSignal.timeout(20000),
@@ -494,9 +520,9 @@ async function downloadReport(accessToken: string, accountId: string, jobId: str
 }
 
 /** 後片付け（ベストエフォート。失敗しても実績取得自体は成立しているので無視する） */
-async function removeReportJob(accessToken: string, accountId: string, jobId: string): Promise<void> {
+async function removeReportJob(accessToken: string, accountId: string, baseAccountId: string, jobId: string): Promise<void> {
   try {
-    await postJson("/ReportDefinitionService/remove", accessToken, accountId, {
+    await postJson("/ReportDefinitionService/remove", accessToken, baseAccountId, {
       accountId: Number(accountId),
       operand: [{ reportJobId: Number(jobId) }],
     });
@@ -530,7 +556,11 @@ function parseTsv(text: string): Record<string, string>[] {
 
 /**
  * MCC 配下も含めて、指定した広告アカウント1件のキャンペーン別実績・日別実績を取る（読み取りのみ）。
- * accountId は広告アカウント自身のID（MCCのIDではない）。from / to は YYYY-MM-DD（両端を含む）。
+ * accountId は広告アカウント自身のID（MCCのIDではない）。mccId は選択時に控えた、そのアカウントが
+ * ぶら下がる MCC の ID（直下で選ばれた＝MCC配下でない場合は null）。x-z-base-account-id ヘッダーには
+ * 常に「直接の base account」（mccId があればそれ、なければ accountId 自身）を使い、対象アカウントは
+ * 各リクエストの body の accountId で指定する（本ファイル冒頭のコメント参照）。
+ * from / to は YYYY-MM-DD（両端を含む）。
  *
  * 1) CampaignService/get でキャンペーンの名前・ステータスを取る（同期）。
  * 2) ReportDefinitionService でレポートジョブを作り、完了を待ってTSVをダウンロードする（非同期）。
@@ -539,25 +569,27 @@ function parseTsv(text: string): Record<string, string>[] {
 export async function fetchCampaignMetrics(
   accessToken: string,
   accountId: string,
+  mccId: string | null,
   from: string,
   to: string
 ): Promise<{ campaigns: YahooCampaignMetric[]; daily: YahooDailyMetric[] }> {
   if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
     throw new Error("パラメータが正しくありません");
   }
+  const baseAccountId = mccId ?? accountId;
 
   const [campaigns, columns] = await Promise.all([
-    campaignList(accessToken, accountId),
+    campaignList(accessToken, accountId, baseAccountId),
     resolveCampaignReportColumns(accessToken),
   ]);
 
-  const jobId = await addReportJob(accessToken, accountId, columns, from, to);
+  const jobId = await addReportJob(accessToken, accountId, baseAccountId, columns, from, to);
   let tsv: string;
   try {
-    await waitReportJob(accessToken, accountId, jobId);
-    tsv = await downloadReport(accessToken, accountId, jobId);
+    await waitReportJob(accessToken, accountId, baseAccountId, jobId);
+    tsv = await downloadReport(accessToken, accountId, baseAccountId, jobId);
   } finally {
-    void removeReportJob(accessToken, accountId, jobId);
+    void removeReportJob(accessToken, accountId, baseAccountId, jobId);
   }
   const rows = parseTsv(tsv);
 
