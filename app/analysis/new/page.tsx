@@ -3,6 +3,7 @@ import { NewAnalysisForm } from "@/components/NewAnalysisForm";
 import { AdAccountPicker } from "@/components/AdAccountPicker";
 import { AdPerformance } from "@/components/AdPerformance";
 import { YahooAccountPicker } from "@/components/YahooAccountPicker";
+import { YahooPerformance } from "@/components/YahooPerformance";
 import { adConnections } from "@/app/ad-actions";
 
 export const metadata = { title: "新規分析｜AI-REX Studio" };
@@ -25,7 +26,12 @@ export default async function NewAnalysisPage({
           <AdPerformance />
         </>
       )}
-      {ads.some((c) => c.platform === "yahoo") && <YahooAccountPicker />}
+      {ads.some((c) => c.platform === "yahoo") && (
+        <>
+          <YahooAccountPicker />
+          <YahooPerformance />
+        </>
+      )}
     </Shell>
   );
 }

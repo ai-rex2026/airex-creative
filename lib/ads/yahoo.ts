@@ -1,12 +1,12 @@
 /**
- * ヤフーLINE広告 API（Search Ads API / LY Ads）の最小クライアント（アカウント一覧の発見・MCC配下の展開に使う）。
+ * ヤフーLINE広告 API（Search Ads API / LY Ads）の最小クライアント（アカウント一覧の発見・MCC配下の展開・実績取得に使う）。
  * 2026-09 に「Yahoo!広告」から名称変更。API・エンドポイント名は変わらない。
  *
  * - ベースURL: https://ads-search.yahooapis.jp/api/v19
  * - 認証: Authorization: Bearer {アクセストークン}
  * - リクエストボディは「{selector: {...}}」ではなく、Selectorオブジェクトそのものを直接渡す
  *   （公式OpenAPI定義で確認済み。yahoojp-marketing/ads-search-api-documents
- *   design/v19/{baseaccount,accountlink,account}/*.yaml）。
+ *   design/v19/{baseaccount,accountlink,account,campaign,reportdefinition}/*.yaml）。
  *
  * BaseAccountService/get・AccountService/get のレスポンス形式は同じ
  * （2026-09、本番の実レスポンス・公式OpenAPI定義の両方で確認済み）:
@@ -52,6 +52,16 @@
  * エンドポイント群であり、同じ制限は仕様上かかっていないため、MCCリンクだけでも取得できる可能性が
  * 高い（実装時に要検証）。この結論に基づき、常に失敗する AccountService/get への個別リトライは
  * 削除した（同じ「直接権限」制限を持つため、一括取得で引けなかった名前は個別に試しても引けない）。
+ *
+ * 実績データ取得（CampaignService/get・ReportDefinitionService）について（2026-09、下部に追加）:
+ * 名前解決とは別に、公式OpenAPI定義を確認したところ CampaignService/get には「直接権限」の制限が
+ * 付いておらず、MCCリンクだけの子アカウントでもキャンペーンの id・名前・ステータスは同期で取れる
+ * はず（未実測・実装時に要検証）。一方、実際の数値（費用・表示回数・クリック数・コンバージョン等）は
+ * Google の googleAds:search のような同期の検索APIが存在せず、ReportDefinitionService の
+ * 非同期ジョブ（add でジョブ作成 → get でポーリング → download でTSV取得）でのみ取れる。
+ * レポートに使えるフィールド名（fieldName）はレポート種別ごとに動的で、固定のenumとしては
+ * 定義されていないため、毎回 getReportFields を呼んで日本語名・英語名でマッチングする
+ * （getReportFields 自体はアカウント非依存でヘッダー不要。公式OpenAPI定義で確認済み）。
  */
 
 const BASE = process.env.YAHOO_ADS_API_BASE || "https://ads-search.yahooapis.jp/api/v19";
@@ -248,4 +258,350 @@ export async function yahooChildAccounts(accessToken: string, mccId: string): Pr
       : undefined;
 
   return { accounts, nameLookupError };
+}
+
+/* ------------------------------------------------------------------
+ * キャンペーン別の実績（読み取りのみ）
+ * ------------------------------------------------------------------ */
+
+export type YahooCampaignMetric = {
+  id: string;
+  name: string;
+  status: string;
+  cost: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  conversionsValue: number;
+};
+
+export type YahooDailyMetric = Omit<YahooCampaignMetric, "id" | "name" | "status"> & { date: string };
+
+export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const CAMPAIGN_STATUS_JA: Record<string, string> = { ACTIVE: "有効", PAUSED: "停止中" };
+
+function ymdCompact(ymd: string): string {
+  return ymd.replace(/-/g, ""); // "2026-09-01" -> "20260901"
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** POST してJSONを返す共通ヘルパー（レポート系・キャンペーン系で使う） */
+async function postJson(path: string, accessToken: string, accountId: string | null, body: unknown): Promise<Record<string, unknown>> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      ...(accountId ? { "x-z-base-account-id": accountId } : {}),
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20000),
+  });
+  const text = await res.text();
+  let j: unknown = {};
+  try {
+    j = JSON.parse(text);
+  } catch {
+    // JSON以外
+  }
+  if (!res.ok) {
+    const msg =
+      j && typeof j === "object" && "message" in (j as Record<string, unknown>)
+        ? String((j as Record<string, unknown>).message)
+        : text.slice(0, 300) || `HTTP ${res.status}`;
+    throw new Error(`${path} 失敗（HTTP ${res.status}）：${msg}`);
+  }
+  return (j && typeof j === "object" ? (j as Record<string, unknown>) : {});
+}
+
+/**
+ * CampaignService/get: アカウント自身の立場でキャンペーンの id・名前・ステータスを取る（同期）。
+ * 公式OpenAPI定義に「直接権限」の制限が書かれていないサービスなので、MCCリンクだけの
+ * 子アカウントでも取れるはず（未実測・実装時に要検証。詳細は本ファイル冒頭のコメント）。
+ */
+async function campaignList(accessToken: string, accountId: string): Promise<Map<string, { name: string; status: string }>> {
+  const j = await postJson("/CampaignService/get", accessToken, accountId, {
+    accountId: Number(accountId),
+    userStatuses: ["ACTIVE", "PAUSED"],
+    numberResults: 10000,
+  });
+  const out = new Map<string, { name: string; status: string }>();
+  const values = ((j.rval as Record<string, unknown> | undefined)?.values ?? []) as unknown[];
+  for (const v of values) {
+    if (!v || typeof v !== "object") continue;
+    const r = v as Record<string, unknown>;
+    if (r.operationSucceeded === false) continue;
+    const c = (r.campaign && typeof r.campaign === "object" ? r.campaign : r) as Record<string, unknown>;
+    const id = c.campaignId;
+    if (id == null) continue;
+    const status = String(c.userStatus ?? "");
+    out.set(String(id), {
+      name: c.campaignName != null ? String(c.campaignName) : String(id),
+      status: CAMPAIGN_STATUS_JA[status] ?? status,
+    });
+  }
+  return out;
+}
+
+type ReportField = { fieldName: string; ja: string; en: string };
+const reportFieldsCache = new Map<string, ReportField[]>();
+
+/**
+ * ReportDefinitionService/getReportFields: レポート種別ごとに使えるフィールド名一覧を取る。
+ * アカウント非依存・ヘッダー不要（公式OpenAPI定義で確認済み）。同じアクセストークンの間はプロセス内キャッシュする。
+ */
+async function getReportFields(accessToken: string, reportType: string): Promise<ReportField[]> {
+  const cached = reportFieldsCache.get(reportType);
+  if (cached) return cached;
+  const j = await postJson("/ReportDefinitionService/getReportFields", accessToken, null, { reportType });
+  const rval = j.rval as Record<string, unknown> | undefined;
+  const fields = ((rval?.fields ?? []) as unknown[])
+    .filter((f): f is Record<string, unknown> => !!f && typeof f === "object")
+    .map((f) => ({
+      fieldName: String(f.fieldName ?? ""),
+      ja: String(f.displayFieldNameJa ?? ""),
+      en: String(f.displayFieldNameEn ?? ""),
+    }))
+    .filter((f) => f.fieldName);
+  reportFieldsCache.set(reportType, fields);
+  return fields;
+}
+
+/** 候補（fieldName・日本語名・英語名のどれか）に完全一致するフィールドを探す */
+function pickField(fields: ReportField[], candidates: string[]): ReportField | undefined {
+  for (const cand of candidates) {
+    const hit = fields.find((f) => f.fieldName === cand || f.ja === cand || f.en === cand);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+type ReportColumns = {
+  campaignId: ReportField;
+  day: ReportField;
+  cost: ReportField;
+  impressions: ReportField;
+  clicks: ReportField;
+  conversions?: ReportField;
+  conversionsValue?: ReportField;
+};
+
+/** CAMPAIGN レポートで使うフィールドを、getReportFields の結果から名前でマッチングして決める */
+async function resolveCampaignReportColumns(accessToken: string): Promise<ReportColumns> {
+  const fields = await getReportFields(accessToken, "CAMPAIGN");
+  const campaignId = pickField(fields, ["CampaignId", "キャンペーンID"]);
+  const day = pickField(fields, ["Day", "日"]);
+  const cost = pickField(fields, ["Cost", "費用"]);
+  const impressions = pickField(fields, ["Impressions", "Imps", "表示回数"]);
+  const clicks = pickField(fields, ["Clicks", "クリック数"]);
+  const conversions = pickField(fields, ["Conversions", "コンバージョン数"]);
+  const conversionsValue = pickField(fields, [
+    "ConversionValue",
+    "TotalConversionValue",
+    "コンバージョン価値",
+    "コンバージョン値",
+  ]);
+  if (!campaignId || !day || !cost || !impressions || !clicks) {
+    throw new Error(
+      `レポートの必須フィールドが見つかりませんでした（campaignId=${campaignId?.fieldName}, day=${day?.fieldName}, ` +
+        `cost=${cost?.fieldName}, impressions=${impressions?.fieldName}, clicks=${clicks?.fieldName}）。` +
+        `利用可能なフィールド：${fields.map((f) => `${f.fieldName}(${f.ja}/${f.en})`).join(", ")}`
+    );
+  }
+  return { campaignId, day, cost, impressions, clicks, conversions, conversionsValue };
+}
+
+/** ReportDefinitionService/add: レポートジョブを作る。reportJobId を返す */
+async function addReportJob(accessToken: string, accountId: string, columns: ReportColumns, from: string, to: string): Promise<string> {
+  const fields = [columns.campaignId, columns.day, columns.cost, columns.impressions, columns.clicks, columns.conversions, columns.conversionsValue]
+    .filter((f): f is ReportField => !!f)
+    .map((f) => f.fieldName);
+  const j = await postJson("/ReportDefinitionService/add", accessToken, accountId, {
+    accountId: Number(accountId),
+    operand: [
+      {
+        reportName: `airex-${Date.now()}`,
+        reportType: "CAMPAIGN",
+        reportDateRangeType: "CUSTOM_DATE",
+        dateRange: { startDate: ymdCompact(from), endDate: ymdCompact(to) },
+        fields,
+        reportDownloadFormat: "TSV",
+        reportLanguage: "EN",
+        reportSkipReportSummary: "TRUE",
+        reportSkipColumnHeader: "FALSE",
+      },
+    ],
+  });
+  const rval = j.rval as Record<string, unknown> | undefined;
+  const values = (rval?.values ?? []) as unknown[];
+  const v = values[0] as Record<string, unknown> | undefined;
+  if (!v || v.operationSucceeded === false) {
+    const errs = Array.isArray(v?.errors) ? v!.errors : [];
+    const msg = errs[0] && typeof errs[0] === "object" ? String((errs[0] as Record<string, unknown>).message ?? "") : "";
+    throw new Error(msg || "レポートジョブの作成に失敗しました");
+  }
+  const def = v.reportDefinition as Record<string, unknown> | undefined;
+  const jobId = def?.reportJobId;
+  if (jobId == null) throw new Error("reportJobId が取得できませんでした");
+  return String(jobId);
+}
+
+/** ReportDefinitionService/get をポーリングして、ジョブが COMPLETED になるまで待つ */
+async function waitReportJob(accessToken: string, accountId: string, jobId: string): Promise<void> {
+  const MAX_ATTEMPTS = 15;
+  const INTERVAL_MS = 1500;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) await sleep(INTERVAL_MS);
+    const j = await postJson("/ReportDefinitionService/get", accessToken, accountId, {
+      accountId: Number(accountId),
+      reportJobIds: [Number(jobId)],
+    });
+    const rval = j.rval as Record<string, unknown> | undefined;
+    const values = (rval?.values ?? []) as unknown[];
+    const v = values[0] as Record<string, unknown> | undefined;
+    const def = v?.reportDefinition as Record<string, unknown> | undefined;
+    const status = def?.reportJobStatus;
+    if (status === "COMPLETED") return;
+    if (status === "FAILED") {
+      throw new Error(`レポートの作成に失敗しました：${def?.reportJobErrorDetail ?? "詳細不明"}`);
+    }
+    // WAIT・IN_PROGRESS ならもう少し待つ
+  }
+  throw new Error("レポートの生成に時間がかかっています。しばらくしてからもう一度お試しください。");
+}
+
+/** ReportDefinitionService/download: 完成したレポートをTSVのテキストとして取る */
+async function downloadReport(accessToken: string, accountId: string, jobId: string): Promise<string> {
+  const res = await fetch(`${BASE}/ReportDefinitionService/download`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      "x-z-base-account-id": accountId,
+    },
+    body: JSON.stringify({ accountId: Number(accountId), reportJobId: Number(jobId) }),
+    signal: AbortSignal.timeout(20000),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`レポートのダウンロードに失敗しました（HTTP ${res.status}）：${text.slice(0, 300)}`);
+  }
+  return text;
+}
+
+/** 後片付け（ベストエフォート。失敗しても実績取得自体は成立しているので無視する） */
+async function removeReportJob(accessToken: string, accountId: string, jobId: string): Promise<void> {
+  try {
+    await postJson("/ReportDefinitionService/remove", accessToken, accountId, {
+      accountId: Number(accountId),
+      operand: [{ reportJobId: Number(jobId) }],
+    });
+  } catch {
+    // 無視（レポート定義が残っても実害はない）
+  }
+}
+
+function parseNumber(v: string | undefined): number {
+  if (!v) return 0;
+  const n = Number(v.replace(/[,\s]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** TSV（1行目がヘッダー）を、英語表示名 → 値 の行の配列にパースする */
+function parseTsv(text: string): Record<string, string>[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.length > 0);
+  if (lines.length === 0) return [];
+  const header = lines[0].split("\t");
+  const out: Record<string, string>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = lines[i].split("\t");
+    const row: Record<string, string> = {};
+    header.forEach((h, idx) => {
+      row[h] = cells[idx] ?? "";
+    });
+    out.push(row);
+  }
+  return out;
+}
+
+/**
+ * MCC 配下も含めて、指定した広告アカウント1件のキャンペーン別実績・日別実績を取る（読み取りのみ）。
+ * accountId は広告アカウント自身のID（MCCのIDではない）。from / to は YYYY-MM-DD（両端を含む）。
+ *
+ * 1) CampaignService/get でキャンペーンの名前・ステータスを取る（同期）。
+ * 2) ReportDefinitionService でレポートジョブを作り、完了を待ってTSVをダウンロードする（非同期）。
+ * 3) campaignId で突き合わせて、キャンペーン別・日別に集計する。
+ */
+export async function fetchCampaignMetrics(
+  accessToken: string,
+  accountId: string,
+  from: string,
+  to: string
+): Promise<{ campaigns: YahooCampaignMetric[]; daily: YahooDailyMetric[] }> {
+  if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
+    throw new Error("パラメータが正しくありません");
+  }
+
+  const [campaigns, columns] = await Promise.all([
+    campaignList(accessToken, accountId),
+    resolveCampaignReportColumns(accessToken),
+  ]);
+
+  const jobId = await addReportJob(accessToken, accountId, columns, from, to);
+  let tsv: string;
+  try {
+    await waitReportJob(accessToken, accountId, jobId);
+    tsv = await downloadReport(accessToken, accountId, jobId);
+  } finally {
+    void removeReportJob(accessToken, accountId, jobId);
+  }
+  const rows = parseTsv(tsv);
+
+  const byCampaign = new Map<string, YahooCampaignMetric>();
+  const byDate = new Map<string, YahooDailyMetric>();
+  for (const row of rows) {
+    const id = row[columns.campaignId.en] ?? "";
+    if (!id) continue;
+    const date = row[columns.day.en] ?? "";
+    const cost = parseNumber(row[columns.cost.en]);
+    const impressions = parseNumber(row[columns.impressions.en]);
+    const clicks = parseNumber(row[columns.clicks.en]);
+    const conversions = columns.conversions ? parseNumber(row[columns.conversions.en]) : 0;
+    const conversionsValue = columns.conversionsValue ? parseNumber(row[columns.conversionsValue.en]) : 0;
+
+    const known = campaigns.get(id);
+    const c = byCampaign.get(id) ?? {
+      id,
+      name: known?.name ?? id,
+      status: known?.status ?? "",
+      cost: 0,
+      impressions: 0,
+      clicks: 0,
+      conversions: 0,
+      conversionsValue: 0,
+    };
+    c.cost += cost;
+    c.impressions += impressions;
+    c.clicks += clicks;
+    c.conversions += conversions;
+    c.conversionsValue += conversionsValue;
+    byCampaign.set(id, c);
+
+    const d = byDate.get(date) ?? { date, cost: 0, impressions: 0, clicks: 0, conversions: 0, conversionsValue: 0 };
+    d.cost += cost;
+    d.impressions += impressions;
+    d.clicks += clicks;
+    d.conversions += conversions;
+    d.conversionsValue += conversionsValue;
+    byDate.set(date, d);
+  }
+
+  return {
+    campaigns: [...byCampaign.values()].sort((a, b) => b.cost - a.cost),
+    daily: [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)),
+  };
 }
