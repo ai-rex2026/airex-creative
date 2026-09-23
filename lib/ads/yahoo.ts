@@ -7,9 +7,6 @@
  * - リクエストボディは「{selector: {...}}」ではなく、Selectorオブジェクトそのものを直接渡す
  *   （公式OpenAPI定義で確認済み。yahoojp-marketing/ads-search-api-documents
  *   design/v19/{baseaccount,accountlink}/*.yaml）。
- * - x-z-base-account-id ヘッダー：「どのアカウントの立場で呼ぶか」を指定するもので、
- *   BaseAccountService/get（自分の直接権限を調べる入口点）以外のところでは**必須**（未指定だと
- *   "x-z-base-account-id": "Must not be null" で 400 になることを本番で確認済み）。
  *
  * BaseAccountService/getのレスポンス形式（2026-09、本番の実レスポンスで確認済み）:
  * {
@@ -40,27 +37,37 @@
  * 「アカウント一覧を取れませんでした：〜」という注記に変えるので、連携（トークン保存）
  * 自体は失敗しない。
  *
- * MCC配下の展開（yahooChildAccounts）について、修正履歴:
+ * MCC配下の展開（yahooChildAccounts）について、調査の経緯（最終的な結論は末尾）:
  * 1回目: BaseAccountService/get に x-z-base-account-id ヘッダー（MCCのID）を付ければ
  * Google の login-customer-id と同じように配下が取れると仮定 → 本番で確認したところ
  * このヘッダーは BaseAccountService/get には効果がなく（常に自分の直接権限分だけが返る）、誤りだった。
- * 2回目: OpenAPI定義（design/v19/accountlink/）とLY Ads Scriptのサンプルから、MCC配下の
- * 列挙は別サービス **AccountLinkService/get**（Google の customer_client クエリに相当）だと
- * 判明 → ヘッダーなしで呼んだところ「x-z-base-account-id: Must not be null」で400。
- * つまりこのヘッダーは BaseAccountService/get 以外では必須（本番のエラーで確認済み）。
- * 3回目: AccountLinkService/get・および配下アカウントの名前を引き直す BaseAccountService/get
- * の両方に x-z-base-account-id: <MCCのaccountId> を付けて呼ぶ。配下の列挙自体は本番で成功
- * （本番で配下が正しく表示されることを確認済み）。
- * 4回目（現状）: 配下は正しく列挙されるようになったが、名前の引き直し（BaseAccountService/get
- * の accountIds セレクタ）が全件失敗し、名前の代わりに ID がそのまま表示される不具合を確認。
- * 代理店（このユーザー：株式会社アドレクス）の MCC 配下には、クライアント別会社の
- * NON_OWNER（他企業）アカウントがひもづくのが普通で、その場合 BaseAccountService/get 側の
- * 読み取り権限が及ばず、レスポンスの該当エントリが operationSucceeded: false になっている
- * 可能性が高い（未確認）。原因を切り分けるため、名前の引き直しに失敗した場合は診断メッセージ
- * （HTTPステータス・レスポンス本文の先頭・失敗エントリの errors）を nameLookupError として
- * 呼び出し元に返すようにした。それでも読み取り権限が及ばない子アカウントがあれば、ID を
- * そのまま名前として返す（選べなくはしないが、その場合はその子アカウント単体での API 連携許可が
- * 別途必要な可能性が高い）。
+ * 2回目: OpenAPI定義（design/v19/accountlink/）から、MCC配下の列挙は別サービス
+ * **AccountLinkService/get**（Google の customer_client クエリに相当）だと判明。こちらは
+ * x-z-base-account-id: <MCCのaccountId> が必須（本番のエラーで確認済み）で、配下の
+ * accountId・accountStatus・ownerShipType（OWNER=同一企業内／NON_OWNER=他企業）の一覧が取れる
+ * （accountName は含まれない）。代理店の MCC には、クライアント別企業の NON_OWNER アカウントが
+ * ひもづくのが普通。
+ * 3回目: 配下の accountId を BaseAccountService/get の `{ accountIds: [...] }` セレクタに渡して
+ * 名前を引き直そうとしたが、NON_OWNER の子アカウントでは常に `totalNumEntries: 0, values: null`
+ * （＝該当エントリそのものが返らない）になり、名前が一切引けない不具合を確認。
+ * 4回目（確定・根本原因）: 公式OpenAPI定義（design/v19/Route.yaml）を直接確認したところ、
+ * BaseAccountService/get のエンドポイント定義には x-z-base-account-id ヘッダーのパラメータが
+ * そもそも存在しない（AccountService/get・AccountLinkService/get・AccountManagementService/get には
+ * `parameters: - in: header, name: x-z-base-account-id, required: true` があるが、
+ * BaseAccountService/get にはない）。さらに公式説明文に「操作対象のビジネスIDが直接権限を持つ
+ * 全てのアカウントの一覧を取得します」と明記されている。つまり BaseAccountService/get は常に
+ * 「このアクセストークンの持ち主（代理店のビジネスID）が直接権限を持つアカウント」だけを返す
+ * 仕様で、ヘッダーや accountIds セレクタで絞り込んでも、直接権限のないアカウント（NON_OWNER の
+ * 他社アカウントなど）は決して含まれない。AccountService/get（アカウント設定の取得）も同様に、
+ * x-z-base-account-id に指定できるのは「BaseAccountService/get で取得可能なアカウントID」に
+ * 限定されると公式に明記されており、同じ理由で NON_OWNER アカウントには使えない。
+ * → 結論：現状の API 仕様では、代理店のビジネスIDが直接権限を持たない NON_OWNER アカウントの
+ * 名前を取得する公式な手段は存在しない。AccountLinkService/get で MCC 配下のリンク（ID・
+ * ステータス・ownerShipType）は見えても、そのアカウント自体の詳細（名前）を引く経路が API 上に
+ * ない。これはコードの不具合ではなく、ヤフーLINE広告 API の権限モデル上の制約であり、名前を
+ * 表示するには各クライアントアカウント側でこのビジネスIDに「直接の操作権限（担当者権限）」を
+ * 別途付与してもらう必要がある（MCC配下へのリンクだけでは不十分）。それまでの間、コード側では
+ * ID をそのまま名前として表示する（選べなくはしない）。
  */
 
 const BASE = process.env.YAHOO_ADS_API_BASE || "https://ads-search.yahooapis.jp/api/v19";
@@ -103,35 +110,6 @@ function extractAccounts(j: unknown): YahooAccount[] {
   return out;
 }
 
-/** operationSucceeded: false のエントリから errors[].message を集める（診断用） */
-function collectFailedEntryMessages(j: unknown): string | undefined {
-  if (!j || typeof j !== "object") return undefined;
-  const rval = (j as Record<string, unknown>).rval;
-  if (!rval || typeof rval !== "object") return undefined;
-  const values = (rval as Record<string, unknown>).values;
-  if (!Array.isArray(values)) return undefined;
-  const msgs: string[] = [];
-  for (const v of values) {
-    if (!v || typeof v !== "object") continue;
-    const r = v as Record<string, unknown>;
-    if (r.operationSucceeded === false) {
-      const errs = r.errors;
-      if (Array.isArray(errs)) {
-        for (const e of errs) {
-          if (e && typeof e === "object") {
-            const rec = e as Record<string, unknown>;
-            const msg = rec.message != null ? String(rec.message) : JSON.stringify(rec).slice(0, 200);
-            msgs.push(msg);
-          }
-        }
-      } else if (errs != null) {
-        msgs.push(String(errs));
-      }
-    }
-  }
-  return msgs.length > 0 ? [...new Set(msgs)].join(" / ") : undefined;
-}
-
 /** 連携直後に、このアクセストークンでアクセスできる全アカウント（MCC・広告アカウント）を取る */
 export async function yahooBaseAccounts(accessToken: string): Promise<YahooAccount[]> {
   const res = await fetch(`${BASE}/BaseAccountService/get`, {
@@ -172,7 +150,7 @@ type AccountLink = { accountId: string; accountStatus?: string; ownerShipType?: 
 
 /**
  * AccountLinkService/get: MCC の accountId を渡すと、配下にリンクされているアカウントIDの一覧が返る（名前は含まない）。
- * x-z-base-account-id ヘッダー（=このMCCのaccountId）が必須（未指定だと本番で400を確認済み）。
+ * x-z-base-account-id ヘッダー（=このMCCのaccountId）が必須（公式OpenAPI定義・本番のエラー両方で確認済み）。
  */
 async function accountLinks(accessToken: string, mccId: string): Promise<AccountLink[]> {
   const res = await fetch(`${BASE}/AccountLinkService/get`, {
@@ -232,19 +210,19 @@ async function accountLinks(accessToken: string, mccId: string): Promise<Account
 
 export type YahooChildAccountsResult = {
   accounts: YahooAccount[];
-  /** 配下は取れたが、一部または全部のアカウント名が引き直せなかった場合の診断メッセージ（表示は呼び出し元に任せる） */
+  /** 配下は取れたが、一部または全部のアカウント名が引き直せなかった場合の注記（表示は呼び出し元に任せる） */
   nameLookupError?: string;
 };
 
 /**
  * MCC の配下にある広告アカウントを取る（Google の listChildCustomers に相当）。
- * 1) AccountLinkService/get で配下の accountId 一覧を取り（名前は含まない）、
- * 2) BaseAccountService/get にその accountIds を渡して名前・MCC判定を引き直す
- *    （どちらも x-z-base-account-id: MCCのaccountId を付けて呼ぶ）。
- * NON_OWNER（他企業）リンクなどで 2) に失敗する（名前を取れない）場合は、ID をそのまま名前として
- * 返しつつ、原因調査用の診断メッセージ（HTTPステータス・レスポンス本文・失敗エントリの errors）を
- * nameLookupError に入れて返す（選べなくはしないが、その場合はその子アカウント単体での
- * API連携許可が別途必要な可能性が高い）。
+ * 1) AccountLinkService/get で配下の accountId・ownerShipType 一覧を取り（名前は含まない）、
+ * 2) BaseAccountService/get にその accountIds を渡して名前・MCC判定を引き直す。
+ * ただし、代理店のビジネスIDが「直接の操作権限」を持たない NON_OWNER（他企業＝クライアント）の
+ * 子アカウントは、BaseAccountService/get の仕様上そもそも結果に含まれない（ヘッダーや
+ * accountIds セレクタでは絞り込めない、公式OpenAPI定義で確認済み。ファイル冒頭のコメント参照）。
+ * その場合は ID をそのまま名前として返しつつ、原因（直接の操作権限が必要）を nameLookupError に
+ * 入れて返す（選べなくはしない）。
  */
 export async function yahooChildAccounts(accessToken: string, mccId: string): Promise<YahooChildAccountsResult> {
   const links = await accountLinks(accessToken, mccId);
@@ -252,9 +230,9 @@ export async function yahooChildAccounts(accessToken: string, mccId: string): Pr
   if (childIds.length === 0) {
     throw new Error("MCC自身以外に配下のアカウントが見つかりませんでした。");
   }
+  const ownerShipById = new Map(links.map((l) => [l.accountId, l.ownerShipType]));
 
   const byId = new Map<string, YahooAccount>();
-  let diag: string | undefined;
   for (let i = 0; i < childIds.length; i += 200) {
     const chunk = childIds.slice(i, i + 200).map(Number);
     try {
@@ -263,46 +241,28 @@ export async function yahooChildAccounts(accessToken: string, mccId: string): Pr
         headers: {
           authorization: `Bearer ${accessToken}`,
           "content-type": "application/json",
-          "x-z-base-account-id": mccId,
         },
         body: JSON.stringify({ accountIds: chunk }),
         signal: AbortSignal.timeout(20000),
       });
-      const text = await res.text();
-      let j: unknown = {};
-      try {
-        j = JSON.parse(text);
-      } catch {
-        // JSON以外
+      if (res.ok) {
+        const j = await res.json().catch(() => ({}));
+        for (const a of extractAccounts(j)) byId.set(a.id, a);
       }
-      if (!res.ok) {
-        const msg =
-          j && typeof j === "object" && "message" in (j as Record<string, unknown>)
-            ? String((j as Record<string, unknown>).message)
-            : text.slice(0, 300) || `HTTP ${res.status}`;
-        diag = `名前の取得に失敗しました（HTTP ${res.status}）：${msg}`;
-        continue;
-      }
-      const found = extractAccounts(j);
-      for (const a of found) byId.set(a.id, a);
-      if (found.length === 0) {
-        // このチャンク分が丸ごと名前を引けなかった：実際のレスポンスをそのまま診断に出す
-        diag = `名前の取得結果が空でした。実際のレスポンス：${text.slice(0, 600)}`;
-      } else if (found.length < chunk.length) {
-        diag = collectFailedEntryMessages(j) ?? `一部のアカウント名を取得できませんでした。実際のレスポンス：${text.slice(0, 600)}`;
-      }
-    } catch (e) {
-      diag = `名前の取得中にエラーが発生しました：${e instanceof Error ? e.message : String(e)}`;
+    } catch {
+      // 名前の引き直しに失敗しても、下で ID フォールバックするのでここでは止めない
     }
   }
 
   const accounts = childIds.map((id) => byId.get(id) ?? { id, name: id, manager: false });
-  const unresolved = accounts.filter((a) => a.name === a.id).length;
+  const unresolvedIds = accounts.filter((a) => a.name === a.id).map((a) => a.id);
+  const unresolvedNonOwner = unresolvedIds.filter((id) => ownerShipById.get(id) === "NON_OWNER").length;
   const nameLookupError =
-    unresolved > 0
-      ? `${unresolved}/${accounts.length}件のアカウント名を取得できませんでした（IDをそのまま表示しています）。他社（クライアント）のアカウントで読み取り権限が及んでいない可能性があります。${
-          diag ? "詳細：" + diag : ""
-        }`
+    unresolvedIds.length > 0
+      ? `${unresolvedIds.length}/${accounts.length}件のアカウント名を取得できませんでした（IDをそのまま表示しています）。` +
+        (unresolvedNonOwner > 0
+          ? `うち${unresolvedNonOwner}件は他社（クライアント）のアカウント（NON_OWNER）です。ヤフーLINE広告APIの仕様上、この代理店ビジネスIDに直接の操作権限（担当者権限）がないアカウントは名前を取得できません。名前を表示するには、各クライアントのヤフーLINE広告アカウント側で、このビジネスIDに直接の操作権限を付与してもらう必要があります（MCC配下へのリンクだけでは不十分です）。`
+          : "")
       : undefined;
 
   return { accounts, nameLookupError };

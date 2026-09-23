@@ -34,7 +34,7 @@
 `{APP_ORIGIN}/api/ads/{媒体}/callback`
 
 - Google：OAuth クライアントの「承認済みのリダイレクト URI」に追加。スコープ `adwords`
-- ヤフーLINE広告：アプリのコールバックURLに追加。スコープ `yahooads`
+- ヤフーLINE広告：アプリのコールバック URL に追加。スコープ `yahooads`
 - Meta：アプリの「有効な OAuth リダイレクト URI」に追加。権限 `ads_read`（審査前は開発者・テスターのみ）
 - Microsoft：Azure のアプリ登録（Web）にリダイレクトURIを追加
 - TikTok：アプリの Redirect URL に追加
@@ -83,7 +83,7 @@ revoke all on public.ad_connections from anon, authenticated;
 | 媒体 | 状態 |
 |---|---|
 | Google | 実装済み（`components/AdAccountPicker.tsx`）。MCC を開いて配下を辿れる（`googleChildAccounts`、`customer_client` を `login-customer-id` 付きで検索） |
-| ヤフーLINE広告 | 実装済み（`components/YahooAccountPicker.tsx`）。Google と同じ「MCC を開いて配下を辿る」UI。当初は `BaseAccountService/get` を `x-z-base-account-id`（MCCのID）ヘッダー付きで呼ぶ方式を試したが、本番で確認したところこのヘッダーは効果がなく（常に自分の直接権限分だけが返る）、誤りだった。これを **AccountLinkService/get**（`selector: { mccAccountId }`，公式OpenAPI定義で確認）に差し替えて実装し直した（`lib/ads/yahoo.ts` の `yahooChildAccounts`）。AccountLinkService はアカウントIDとリンクの種類（OWNER/NON_OWNER）だけを返すので、名前は `BaseAccountService/get` の `accountIds` セレクタで別途引き直している。**NON_OWNER（他企業）などで名前引き直しに失敗する子アカウントは、IDをそのまま名前として表示する（選べなくはしないが、その場合はその子アカウント単体での API 連携許可が別途必要な可能性が高い）** |
+| ヤフーLINE広告 | 実装済み（`components/YahooAccountPicker.tsx`）。Google と同じ「MCC を開いて配下を辿る」UI。配下の列挙は **AccountLinkService/get**（`selector: { mccAccountId }`、`x-z-base-account-id: MCCのID` ヘッダー必須。公式OpenAPI定義・本番エラー両方で確認済み）で行い、`lib/ads/yahoo.ts` の `yahooChildAccounts` に実装済み（本番で配下が正しく列挙されることを確認済み）。**名前の取得には既知の制約がある**：AccountLinkService はアカウントID・ステータス・`ownerShipType`（OWNER=同一企業内／NON_OWNER=他企業＝クライアント）だけを返し、名前を含まない。名前は `BaseAccountService/get` の `accountIds` セレクタで別途引き直しているが、公式OpenAPI定義（`design/v19/Route.yaml`）を確認したところ、この API は**代理店のビジネスIDが直接の操作権限を持つアカウントしか返さない仕様**で（x-z-base-account-id ヘッダー自体がこのエンドポイントの正式パラメータに存在しない）、NON_OWNER の子アカウントは常に0件で返ってくる（本番で確認済み）。`AccountService/get` も同じ制約（x-z-base-account-id に指定できるのは `BaseAccountService/get` で取得可能なIDのみ、と公式に明記）で代替にならない。**つまり現状のAPI仕様では、直接の操作権限を持たない NON_OWNER アカウントの名前を取得する公式な手段が存在しない**（コードの不具合ではない）。該当する子アカウントは ID をそのまま名前として表示する（選べなくはしない）。解消するには、各クライアントのヤフーLINE広告アカウント側で、このビジネスIDに MCC 配下へのリンクとは別に「直接の操作権限（担当者権限）」を付与してもらう必要がある |
 | Meta / Microsoft / TikTok / X | 未実装 |
 
 ## 未実装（次の段階）
