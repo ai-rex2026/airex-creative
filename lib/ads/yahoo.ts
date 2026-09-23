@@ -7,6 +7,9 @@
  * - リクエストボディは「{selector: {...}}」ではなく、Selectorオブジェクトそのものを直接渡す
  *   （公式OpenAPI定義で確認済み。yahoojp-marketing/ads-search-api-documents
  *   design/v19/{baseaccount,accountlink}/*.yaml）。
+ * - x-z-base-account-id ヘッダー：「どのアカウントの立場で呼ぶか」を指定するもので、
+ *   BaseAccountService/get（自分の直接権限を調べる入口点）以外のところでは**必須**（未指定だと
+ *   "x-z-base-account-id": "Must not be null" で 400 になることを本番で確認済み）。
  *
  * BaseAccountService/getのレスポンス形式（2026-09、本番の実レスポンスで確認済み）:
  * {
@@ -38,21 +41,24 @@
  * 自体は失敗しない。
  *
  * MCC配下の展開（yahooChildAccounts）について、修正履歴:
- * 当初は BaseAccountService/get に x-z-base-account-id ヘッダー（MCCのID）を
- * 付けて呼べば Google の login-customer-id と同じように配下が取れると仮定していたが、
- * 本番で確認したところこのヘッダーは効果がなく（常に自分の直接権限分だけが返る）、誤りだった。
- * yahoojp-marketing/ads-search-api-documents の OpenAPI 定義（design/v19/accountlink/）と
- * LY Ads Script のサンプルコードを確認した結果、MCC配下のアカウントを列挙する正しい
- * 方法は別のサービス **AccountLinkService/get** だった（Google の customer_client
- * クエリに相当）。selector は `{ mccAccountId: <MCCのaccountId> }`（数値）で、
- * レスポンスは `rval.values[].accountLink = { mccAccountId, accountId, accountStatus,
- * ownerShipType }` という形。ownerShipType は OWNER（同一企業内）/ NON_OWNER（他企業）
- * を表し、代理店のMCCにはクライアント別企業のNON_OWNERアカウントがひもづくのが普通。
- * ただし AccountLink には accountName が含まれないため、返ってきた accountId 群を
- * BaseAccountService/get の selector `{ accountIds: [...] }`（直接指定・最大200件）で
- * 名前を引き直して合成する。NON_OWNER などで読み取り権限が及ばない子アカウントは
- * この名前解決に失敗しうるので、その場合は ID をそのまま名前として返す（選べなくは
- * しないが、名前が出ない＝その子アカウント単体でのAPI連携許可が別途必要な可能性が高い）。
+ * 1回目: BaseAccountService/get に x-z-base-account-id ヘッダー（MCCのID）を付ければ
+ * Google の login-customer-id と同じように配下が取れると仮定 → 本番で確認したところ
+ * このヘッダーは BaseAccountService/get には効果がなく（常に自分の直接権限分だけが返る）、誤りだった。
+ * 2回目: OpenAPI定義（design/v19/accountlink/）とLY Ads Scriptのサンプルから、MCC配下の
+ * 列挙は別サービス **AccountLinkService/get**（Google の customer_client クエリに相当）だと
+ * 判明 → ヘッダーなしで呼んだところ「x-z-base-account-id: Must not be null」で400。
+ * つまりこのヘッダーは BaseAccountService/get 以外では必須（本番のエラーで確認済み）。
+ * 3回目（現状）: AccountLinkService/get・および配下アカウントの名前を引き直す
+ * BaseAccountService/get の両方に x-z-base-account-id: <MCCのaccountId> を付けて呼ぶ。
+ * selector は `{ mccAccountId: <MCCのaccountId> }`（数値）で、レスポンスは
+ * `rval.values[].accountLink = { mccAccountId, accountId, accountStatus, ownerShipType }`
+ * という形。ownerShipType は OWNER（同一企業内）/ NON_OWNER（他企業）を表し、代理店の
+ * MCCにはクライアント別企業のNON_OWNERアカウントがひもづくのが普通。AccountLink には
+ * accountName が含まれないため、返ってきた accountId 群を BaseAccountService/get の
+ * selector `{ accountIds: [...] }`（直接指定・最大200件、x-z-base-account-idはMCCのまま）
+ * で名前を引き直して合成する。それでも読み取り権限が及ばない子アカウントがあれば、
+ * ID をそのまま名前として返す（選べなくはしないが、その場合はその子アカウント単体での
+ * API連携許可が別途必要な可能性が高い）。
  */
 
 const BASE = process.env.YAHOO_ADS_API_BASE || "https://ads-search.yahooapis.jp/api/v19";
@@ -133,13 +139,17 @@ export async function yahooBaseAccounts(accessToken: string): Promise<YahooAccou
 
 type AccountLink = { accountId: string; accountStatus?: string; ownerShipType?: string };
 
-/** AccountLinkService/get: MCC の accountId を渡すと、配下にリンクされているアカウントIDの一覧が返る（名前は含まない） */
+/**
+ * AccountLinkService/get: MCC の accountId を渡すと、配下にリンクされているアカウントIDの一覧が返る（名前は含まない）。
+ * x-z-base-account-id ヘッダー（=このMCCのaccountId）が必須（未指定だと本番で400を確認済み）。
+ */
 async function accountLinks(accessToken: string, mccId: string): Promise<AccountLink[]> {
   const res = await fetch(`${BASE}/AccountLinkService/get`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,
       "content-type": "application/json",
+      "x-z-base-account-id": mccId,
     },
     body: JSON.stringify({ mccAccountId: Number(mccId) }),
     signal: AbortSignal.timeout(20000),
@@ -192,7 +202,8 @@ async function accountLinks(accessToken: string, mccId: string): Promise<Account
 /**
  * MCC の配下にある広告アカウントを取る（Google の listChildCustomers に相当）。
  * 1) AccountLinkService/get で配下の accountId 一覧を取り（名前は含まない）、
- * 2) BaseAccountService/get にその accountIds を渡して名前・MCC判定を引き直す。
+ * 2) BaseAccountService/get にその accountIds を渡して名前・MCC判定を引き直す
+ *    （どちらも x-z-base-account-id: MCCのaccountId を付けて呼ぶ）。
  * NON_OWNER（他企業）リンクなどで 2) に失敗する（名前を取れない）場合は、ID をそのまま名前として
  * 返す（選べなくはしないが、その場合はその子アカウント単体での API 連携許可が別途必要な可能性が高い）。
  */
@@ -212,6 +223,7 @@ export async function yahooChildAccounts(accessToken: string, mccId: string): Pr
         headers: {
           authorization: `Bearer ${accessToken}`,
           "content-type": "application/json",
+          "x-z-base-account-id": mccId,
         },
         body: JSON.stringify({ accountIds: chunk }),
         signal: AbortSignal.timeout(20000),
