@@ -4,13 +4,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdPlatform, type AdPlatform } from "@/lib/ads/platforms";
 import { getAdCredentials } from "@/lib/ads/tokens";
-import type { AdAccount } from "@/lib/ads/accounts";
 import {
   isCustomerId,
   listAccessibleCustomers,
   listChildCustomers,
   verifyClients,
 } from "@/lib/ads/google";
+import { yahooChildAccounts } from "@/lib/ads/yahoo";
 
 /** 画面に出してよい形。トークンは含めない */
 export type AdConnectionView = {
@@ -191,11 +191,15 @@ export async function saveGoogleSelection(
 /* ------------------------------------------------------------------
  * ヤフーLINE広告：分析する広告アカウントの選択
  * BaseAccountService/get が連携直後に控える一覧（lib/ads/accounts.ts）は
- * すでにフラット（MCC・広告アカウントが1階層で並ぶ）なので、Google のような
- * 「MCC を開いて配下を取りに行く」操作はない。MCC は実績を持たないため選べない。
+ * 「操作対象のビジネスIDが直接権限を持つアカウント」だけのフラットな一覧で、
+ * MCC の配下に複数の広告アカウントがひもづいていてもそこには出てこない
+ * （本番で確認済み）。Google と同じ「MCC を開いて配下を取りに行く」操作を持たせ、
+ * 配下は x-z-base-account-id ヘッダーで MCC を指定して都度取得する
+ * （lib/ads/yahoo.ts の yahooChildAccounts。実際に配下が返るかは未検証）。
  * ------------------------------------------------------------------ */
 
-export type YahooSelection = { id: string; name: string };
+export type YahooPickerAccount = { id: string; name: string; manager: boolean };
+export type YahooSelection = { id: string; name: string; mccId: string | null };
 
 const MAX_SELECTED_YAHOO = 50;
 
@@ -209,34 +213,86 @@ async function yahooCreds() {
 function readYahooSelected(meta: Record<string, unknown>): YahooSelection[] {
   const v = meta.selected;
   return Array.isArray(v)
-    ? v.filter((x): x is YahooSelection => !!x && typeof (x as YahooSelection).id === "string" && (x as YahooSelection).id.length > 0)
+    ? v.filter(
+        (x): x is YahooSelection =>
+          !!x && typeof (x as YahooSelection).id === "string" && (x as YahooSelection).id.length > 0
+      )
     : [];
 }
 
-/** 選択画面の一覧（連携時に控えた MCC・広告アカウント）と、保存済みの選択 */
+/** 選択画面の最初の一覧（連携時に控えた MCC・広告アカウント）と、保存済みの選択 */
 export async function yahooAccountPicker(): Promise<
-  { connected: false } | { connected: true; accounts: AdAccount[]; selected: YahooSelection[] }
+  { connected: false } | { connected: true; accounts: YahooPickerAccount[]; selected: YahooSelection[] }
 > {
   const y = await yahooCreds();
   if (!y) return { connected: false };
-  return { connected: true, accounts: y.creds.accounts, selected: readYahooSelected(y.creds.meta) };
+  return {
+    connected: true,
+    accounts: y.creds.accounts.map((a) => ({ id: a.id, name: a.name, manager: !!a.manager })),
+    selected: readYahooSelected(y.creds.meta),
+  };
 }
 
-/** 選んだ広告アカウントIDを保存する。連携時に控えた一覧にあるか（MCCでないか）を確かめてから保存 */
-export async function saveYahooSelection(ids: string[]): Promise<{ selected: YahooSelection[] } | { error: string }> {
+/** MCC を開いたときに、配下のアカウントを返す */
+export async function yahooChildAccountsAction(
+  mccId: string
+): Promise<{ accounts: YahooPickerAccount[]; error?: string }> {
+  if (typeof mccId !== "string" || !mccId) return { accounts: [], error: "アカウントIDが正しくありません" };
+  const y = await yahooCreds();
+  if (!y) return { accounts: [], error: "ヤフーLINE広告と連携してください" };
+  if (!y.creds.accounts.some((a) => a.id === mccId && a.manager)) {
+    return { accounts: [], error: "MCCアカウントが見つかりません" };
+  }
+  try {
+    const children = await yahooChildAccounts(y.creds.accessToken, mccId);
+    return { accounts: children.map((a) => ({ id: a.id, name: a.name, manager: !!a.manager })) };
+  } catch (e) {
+    return { accounts: [], error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** 選んだ広告アカウントを保存する。直下の選択は連携時の一覧、MCC配下の選択はその場で MCC に確かめてから保存 */
+export async function saveYahooSelection(
+  picks: { id: string; mccId: string | null }[]
+): Promise<{ selected: YahooSelection[] } | { error: string }> {
   const y = await yahooCreds();
   if (!y) return { error: "ヤフーLINE広告と連携してください" };
-  if (!Array.isArray(ids) || ids.length > MAX_SELECTED_YAHOO) {
+  if (!Array.isArray(picks) || picks.length > MAX_SELECTED_YAHOO) {
     return { error: `選べるのは${MAX_SELECTED_YAHOO}件までです` };
   }
+  for (const p of picks) {
+    if (typeof p?.id !== "string" || !p.id) return { error: "アカウントIDが正しくありません" };
+  }
+
   const byId = new Map(y.creds.accounts.map((a) => [a.id, a]));
   const out: YahooSelection[] = [];
-  for (const id of ids) {
-    if (typeof id !== "string") return { error: "アカウントIDが正しくありません" };
-    const a = byId.get(id);
-    if (!a) return { error: `アクセスできないアカウントが含まれています（${id}）` };
-    if (a.manager) return { error: `MCC（管理者アカウント）は選べません。配下のアカウントを選んでください（${a.name}）` };
-    out.push({ id: a.id, name: a.name });
+
+  const byMcc = new Map<string, string[]>();
+  for (const p of picks) {
+    if (p.mccId === null) {
+      const a = byId.get(p.id);
+      if (!a) return { error: `アクセスできないアカウントが含まれています（${p.id}）` };
+      if (a.manager) return { error: `MCC（管理者アカウント）は選べません。配下のアカウントを選んでください（${a.name}）` };
+      out.push({ id: a.id, name: a.name, mccId: null });
+    } else {
+      if (!byId.get(p.mccId)?.manager) return { error: `MCCにアクセスできません（${p.mccId}）` };
+      byMcc.set(p.mccId, [...(byMcc.get(p.mccId) ?? []), p.id]);
+    }
+  }
+  for (const [mccId, ids] of byMcc) {
+    let children: Awaited<ReturnType<typeof yahooChildAccounts>>;
+    try {
+      children = await yahooChildAccounts(y.creds.accessToken, mccId);
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
+    const found = new Map(children.map((c) => [c.id, c]));
+    for (const id of ids) {
+      const c = found.get(id);
+      if (!c) return { error: `MCC の配下にないアカウントが含まれています（${id}）` };
+      if (c.manager) return { error: `MCC（管理者アカウント）は選べません。配下のアカウントを選んでください（${c.name}）` };
+      out.push({ id: c.id, name: c.name, mccId });
+    }
   }
 
   const admin = createAdminClient();

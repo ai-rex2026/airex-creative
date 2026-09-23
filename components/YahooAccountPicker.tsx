@@ -1,15 +1,29 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { yahooAccountPicker, saveYahooSelection } from "@/app/ad-actions";
-import type { AdAccount } from "@/lib/ads/accounts";
+import {
+  yahooAccountPicker,
+  yahooChildAccountsAction,
+  saveYahooSelection,
+  type YahooPickerAccount,
+  type YahooSelection,
+} from "@/app/ad-actions";
 
 /**
  * ヤフーLINE広告：分析する広告アカウントの選択。
- * BaseAccountService/get の一覧はすでにフラット（MCC・広告アカウントが1階層で並ぶ）なので、
- * Google（components/AdAccountPicker.tsx）のような「MCC を開いて配下を取る」操作はない。
- * MCC（管理者アカウント）はラベルとして出すだけで、選べるのは配下の広告アカウントだけ。
+ * Google（components/AdAccountPicker.tsx）と同じく、MCC（管理者アカウント）は
+ * 一覧に「MCC」と表示し、「配下を開く」で配下の広告アカウントを取得できる。
+ * MCC そのものは選べない（実績を持たないため）。選べるのは配下のアカウントだけ。
  */
+
+type Node = YahooPickerAccount & {
+  /** このアカウントが属する MCC（配下なら MCC の ID、直下の一覧なら null） */
+  mcc: string | null;
+  open?: boolean;
+  loading?: boolean;
+  error?: string;
+  children?: Node[];
+};
 
 const badge: React.CSSProperties = {
   display: "inline-block",
@@ -25,8 +39,8 @@ const badge: React.CSSProperties = {
 
 export function YahooAccountPicker() {
   const [state, setState] = useState<"loading" | "off" | "ready">("loading");
-  const [accounts, setAccounts] = useState<AdAccount[]>([]);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [picked, setPicked] = useState<Map<string, YahooSelection>>(new Map());
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, startSave] = useTransition();
@@ -34,19 +48,43 @@ export function YahooAccountPicker() {
   useEffect(() => {
     yahooAccountPicker().then((r) => {
       if (!r.connected) return setState("off");
-      setAccounts(r.accounts);
-      setPicked(new Set(r.selected.map((s) => s.id)));
+      setNodes(r.accounts.map((a) => ({ ...a, mcc: null })));
+      setPicked(new Map(r.selected.map((s) => [s.id, s])));
       setState("ready");
     });
   }, []);
 
-  function toggle(a: AdAccount) {
+  /** path は nodes 内の位置（インデックスの列） */
+  function update(path: number[], fn: (n: Node) => Node) {
+    const walk = (list: Node[], depth: number): Node[] =>
+      list.map((n, i) => {
+        if (i !== path[depth]) return n;
+        if (depth === path.length - 1) return fn(n);
+        return { ...n, children: walk(n.children ?? [], depth + 1) };
+      });
+    setNodes((cur) => walk(cur, 0));
+  }
+
+  async function toggleOpen(n: Node, path: number[]) {
+    if (n.open) return update(path, (x) => ({ ...x, open: false }));
+    if (n.children) return update(path, (x) => ({ ...x, open: true }));
+    update(path, (x) => ({ ...x, open: true, loading: true, error: undefined }));
+    const r = await yahooChildAccountsAction(n.id);
+    update(path, (x) => ({
+      ...x,
+      loading: false,
+      error: r.error,
+      children: r.error ? undefined : r.accounts.map((a) => ({ ...a, mcc: n.id })),
+    }));
+  }
+
+  function toggle(n: Node) {
     setSaved(false);
     setPicked((cur) => {
-      const s = new Set(cur);
-      if (s.has(a.id)) s.delete(a.id);
-      else s.add(a.id);
-      return s;
+      const m = new Map(cur);
+      if (m.has(n.id)) m.delete(n.id);
+      else m.set(n.id, { id: n.id, name: n.name, mccId: n.mcc });
+      return m;
     });
   }
 
@@ -54,7 +92,7 @@ export function YahooAccountPicker() {
     setErr(null);
     setSaved(false);
     startSave(async () => {
-      const r = await saveYahooSelection([...picked]);
+      const r = await saveYahooSelection([...picked.values()].map((s) => ({ id: s.id, mccId: s.mccId })));
       if ("error" in r) setErr(r.error);
       else setSaved(true);
     });
@@ -62,7 +100,47 @@ export function YahooAccountPicker() {
 
   if (state === "off") return null;
 
-  const selectable = accounts.filter((a) => !a.manager);
+  const row = (n: Node, path: number[], depth: number): React.ReactNode => (
+    <div key={`${path.join("-")}-${n.id}`}>
+      <div className="r" style={{ paddingLeft: 16 + depth * 24, gap: 12 }}>
+        {n.manager ? (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <b>{n.name}</b>
+            <span style={badge}>MCC（管理者アカウント）</span>
+            <small>ID: {n.id}。開くと、配下の広告アカウントを選べます</small>
+          </div>
+        ) : (
+          <label style={{ flex: 1, minWidth: 0, display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
+            <input type="checkbox" checked={picked.has(n.id)} onChange={() => toggle(n)} style={{ marginTop: 4 }} />
+            <span style={{ minWidth: 0 }}>
+              <b>{n.name}</b>
+              <small style={{ display: "block" }}>ID: {n.id}</small>
+            </span>
+          </label>
+        )}
+        {n.manager && (
+          <button className="btn ghost sm" onClick={() => toggleOpen(n, path)} disabled={n.loading}>
+            {n.loading ? "読み込み中…" : n.open ? "閉じる" : "配下を開く"}
+          </button>
+        )}
+      </div>
+      {n.manager && n.open && (
+        <>
+          {n.error && (
+            <div className="r" style={{ paddingLeft: 40 + depth * 24 }}>
+              <small>配下を取れませんでした：{n.error}</small>
+            </div>
+          )}
+          {n.children?.length === 0 && (
+            <div className="r" style={{ paddingLeft: 40 + depth * 24 }}>
+              <small>配下に有効なアカウントがありません</small>
+            </div>
+          )}
+          {n.children?.map((c, i) => row(c, [...path, i], depth + 1))}
+        </>
+      )}
+    </div>
+  );
 
   return (
     <div className="rows" style={{ maxWidth: 620, margin: "32px auto 0" }}>
@@ -77,32 +155,13 @@ export function YahooAccountPicker() {
           <small style={{ color: "var(--danger, #b42318)" }}>{err}</small>
         </div>
       )}
-      {state === "ready" && accounts.length === 0 && (
+      {state === "ready" && nodes.length === 0 && (
         <div className="r">
           <small>アカウントを取れていません。設定画面でもう一度連携し直してください。</small>
         </div>
       )}
-      {state === "ready" &&
-        accounts.map((a) => (
-          <div className="r" key={a.id} style={{ gap: 12 }}>
-            {a.manager ? (
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <b>{a.name}</b>
-                <span style={badge}>MCC（管理者アカウント）</span>
-                <small>ID: {a.id}。MCC自体は実績を持たないため選べません</small>
-              </div>
-            ) : (
-              <label style={{ flex: 1, minWidth: 0, display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
-                <input type="checkbox" checked={picked.has(a.id)} onChange={() => toggle(a)} style={{ marginTop: 4 }} />
-                <span style={{ minWidth: 0 }}>
-                  <b>{a.name}</b>
-                  <small style={{ display: "block" }}>ID: {a.id}</small>
-                </span>
-              </label>
-            )}
-          </div>
-        ))}
-      {state === "ready" && selectable.length > 0 && (
+      {state === "ready" && nodes.map((n, i) => row(n, [i], 0))}
+      {state === "ready" && nodes.length > 0 && (
         <div className="r" style={{ gap: 12 }}>
           <small style={{ flex: 1 }}>
             {picked.size > 0 ? `${picked.size}件を選択中` : "分析する広告アカウントを選んでください"}

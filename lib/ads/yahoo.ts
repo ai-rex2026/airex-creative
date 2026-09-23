@@ -1,5 +1,5 @@
 /**
- * ヤフーLINE広告 API（Search Ads API / LY Ads）の最小クライアント（アカウント一覧の発見だけに使う）。
+ * ヤフーLINE広告 API（Search Ads API / LY Ads）の最小クライアント（アカウント一覧の発見・MCC配下の展開に使う）。
  * 2026-09 に「Yahoo!広告」から名称変更。API・エンドポイント名は変わらない。
  *
  * - ベースURL: https://ads-search.yahooapis.jp/api/v19
@@ -36,6 +36,18 @@
  * 失敗しても discoverAccounts の呼び出し元（lib/ads/accounts.ts）が例外を捕まえて
  * 「アカウント一覧を取れませんでした：〜」という注記に変えるので、連携（トークン保存）
  * 自体は失敗しない。
+ *
+ * MCC配下の展開（yahooChildAccounts）について:
+ * BaseAccountService/get を素で呼ぶと「操作対象のビジネスIDが直接権限を持つアカウント」
+ * だけが返る。本番で確認したのは MCC自身＋直接ひもづく広告アカウント1件のみで、ユーザーの
+ * 申告では MCC 配下にはさらに複数の広告アカウントがひもづいているはずとのことなので、
+ * フラットな一覧だけでは足りない。Google Ads の login-customer-id ヘッダー（MCC を
+ * 指定して customer_client を辿ると配下が見える）と同じ発想で、x-z-base-account-id
+ * ヘッダーに MCC の accountId を指定して同じ BaseAccountService/get を呼べば、その
+ * MCC の視点で見える配下アカウントが返るはずと考えて実装した。公式リファレンスが
+ * JS描画のSPAで機械的に読めず、実際にこの組み合わせで配下が返ってくるかは未検証。
+ * 配下が0件（MCC自身しか返らない）ときは、原因調査のため実際のレスポンスをそのまま
+ * エラーに出す（BaseAccountService と同じデバッグの型）。
  */
 
 const BASE = process.env.YAHOO_ADS_API_BASE || "https://ads-search.yahooapis.jp/api/v19";
@@ -112,4 +124,46 @@ export async function yahooBaseAccounts(accessToken: string): Promise<YahooAccou
     );
   }
   return accounts;
+}
+
+/**
+ * MCC の配下にある広告アカウントを取る（Google の listChildCustomers に相当）。
+ * x-z-base-account-id ヘッダーに MCC の accountId を指定して呼ぶ。上のコメント
+ * のとおり未検証のため、配下が0件（MCC自身しか返らない）ときは実際のレスポンスを
+ * そのままエラーに出す。呼び出し元は accountId が既知の MCC であることを確認してから呼ぶこと。
+ */
+export async function yahooChildAccounts(accessToken: string, mccId: string): Promise<YahooAccount[]> {
+  const res = await fetch(`${BASE}/BaseAccountService/get`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      "x-z-base-account-id": mccId,
+    },
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(20000),
+  });
+  const text = await res.text();
+  let j: unknown = {};
+  try {
+    j = JSON.parse(text);
+  } catch {
+    // JSON以外
+  }
+  if (!res.ok) {
+    const msg =
+      j && typeof j === "object" && "message" in (j as Record<string, unknown>)
+        ? String((j as Record<string, unknown>).message)
+        : text.slice(0, 300) || `HTTP ${res.status}`;
+    throw new Error(`MCC配下のアカウント一覧を取得できませんでした：${msg}`);
+  }
+  const all = extractAccounts(j);
+  const children = all.filter((a) => a.id !== mccId && !a.manager);
+  if (children.length === 0) {
+    // 調査用：x-z-base-account-id が効いているか、配下が本当に0件かを見分けるため
+    throw new Error(
+      `MCCの配下に広告アカウントが見つかりませんでした（要確認）。実際のレスポンス：${text.slice(0, 800)}`
+    );
+  }
+  return children;
 }

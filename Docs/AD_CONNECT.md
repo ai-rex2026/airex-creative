@@ -69,7 +69,7 @@ revoke all on public.ad_connections from anon, authenticated;
 | 媒体 | 状態 |
 |---|---|
 | Google | 実装済み・本番で確認済み |
-| ヤフーLINE広告 | 実装済み・本番で確認済み（`lib/ads/yahoo.ts`。2026-09-23、MCCアカウント1件・通常広告アカウント1件を実際に取得できることを確認。分析対象アカウントの選択UIも実装済み、`components/YahooAccountPicker.tsx`） |
+| ヤフーLINE広告 | 実装済み・本番で確認済み（`lib/ads/yahoo.ts`。2026-09-23、MCCアカウント1件・通常広告アカウント1件を実際に取得できることを確認。ただしこれは直接権限のある分だけで、MCC配下の全アカウントではない。分析対象アカウントの選択UIも実装済み、`components/YahooAccountPicker.tsx`） |
 | Meta / TikTok / X | 実装済み（未検証） |
 | Microsoft | 実装（`lib/ads/microsoft.ts`）。Customer Management Service は SOAP のみ（REST版なし、2026-09 Microsoft Learn で確認）。GetUser→SearchAccounts の手順・リクエスト形式は公式ドキュメントの実例どおりだが、**レスポンスのXMLタグ構成は未検証** |
 
@@ -82,8 +82,8 @@ revoke all on public.ad_connections from anon, authenticated;
 
 | 媒体 | 状態 |
 |---|---|
-| Google | 実装済み（`components/AdAccountPicker.tsx`）。MCC を開いて配下を辿れる（`googleChildAccounts`） |
-| ヤフーLINE広告 | 実装済み（`components/YahooAccountPicker.tsx`）。BaseAccountService/get の一覧がすでにフラットなので、Google のような「開いて配下を取る」操作はなく、連携時に控えた一覧からそのまま選ぶ |
+| Google | 実装済み（`components/AdAccountPicker.tsx`）。MCC を開いて配下を辿れる（`googleChildAccounts`、`customer_client` を `login-customer-id` 付きで検索） |
+| ヤフーLINE広告 | 実装済み（`components/YahooAccountPicker.tsx`）。Google と同じ「MCC を開いて配下を辿る」UI。配下は `lib/ads/yahoo.ts` の `yahooChildAccounts` が `BaseAccountService/get` を `x-z-base-account-id`（MCCのaccountId）ヘッダー付きで呼んで取得する。**この組み合わせで実際にMCC配下の全アカウントが返ってくるかは未検証**（公式リファレンスがJS描画のSPAで機械的に確認できなかったため、Googleのlogin-customer-idと同じ発想からの実装。配下が0件のときはエラーに実レスポンスをそのまま出すので、本番で「配下を開く」を押した結果を教えてもらえれば次を直せる） |
 | Meta / Microsoft / TikTok / X | 未実装 |
 
 ## 未実装（次の段階）
