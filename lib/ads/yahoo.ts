@@ -29,32 +29,29 @@
  * 「アカウント一覧を取れませんでした：〜」という注記に変えるので、連携（トークン保存）
  * 自体は失敗しない。
  *
- * MCC配下の子アカウントの「名前」の取得について、調査の経緯:
- * 1回目: BaseAccountService/get に x-z-base-account-id ヘッダー（MCCのID）を付ければ
- * Google の login-customer-id と同じように配下が取れると仮定 → 本番で確認したところ
- * このヘッダーは BaseAccountService/get には効果がなく（常に自分の直接権限分だけが返る）、誤りだった。
- * 2回目: OpenAPI定義から、MCC配下の列挙は別サービス **AccountLinkService/get**
- * （x-z-base-account-id: MCCのaccountId が必須）だと判明。accountId・accountStatus・
- * ownerShipType（OWNER=同一企業内／NON_OWNER=他企業）の一覧が取れる（accountName は含まない）。
- * 3回目: 配下の accountId を BaseAccountService/get の `{ accountIds: [...] }` に渡して名前を
- * 引き直そうとしたが、NON_OWNER の子アカウントでは常に `totalNumEntries: 0, values: null` になり、
- * 名前が一切引けない不具合を確認。公式OpenAPI定義（Route.yaml）にも「操作対象のビジネスIDが
- * 直接権限を持つ全てのアカウントの一覧を取得します」とあり、BaseAccountService/get はこのビジネスIDが
- * 直接権限を持つアカウントしか返さない、と一旦結論づけた。
- * 4回目（3回目の結論は誤り・訂正）: ユーザーに実際の管理画面での見え方を確認したところ、
- * MCCの管理画面上ではこれらNON_OWNERアカウントも名前付きで一覧表示され、クリックして中の
- * キャンペーンまで操作・閲覧できるとのこと。つまりブラウザでログインしているビジネスID自体は
- * これらのアカウントに対して十分な権限を持っている。BaseAccountService/get が空を返すのは
- * 「権限がない」からではなく、この API が“直接（MCC階層を介さない）権限”という狭い定義でしか
- * 絞り込めない仕様上の制約であり、OAuth連携で使っているビジネスIDそのものの実際の権限とは
- * 一致しない。そこで、BaseAccountService/get より広い範囲を見られる可能性のある
- * **AccountService/get**（x-z-base-account-id にそのアカウント自身のIDを指定して「そのアカウントの
- * 立場として」問い合わせる。公式定義ではヘッダーに指定できるIDはBaseAccountService/getで取得
- * 可能なものに限る、と説明されているが、これはあくまで“推奨される調べ方”の説明であり、実際に
- * MCC経由で操作権限がある子アカウント自身のIDを指定した場合にどう振る舒うかは未検証だったため、
- * 名前が引けなかった子アカウントに対してだけ 1件ずつこの方法で追加リトライするようにした。
- * これでも名前が取れない場合は、原因（HTTPステータス・レスポンス本文）を nameLookupError として
- * 呼び出し元に返す。
+ * MCC配下の子アカウントの「名前」が取れない問題について、調査の経緯と最終結論（2026-09）:
+ * 1回目〜3回目: BaseAccountService/get への x-z-base-account-id ヘッダーは効果なし。配下の列挙は
+ * AccountLinkService/get（accountId・ownerShipType のみ、accountName は含まない）で行う必要があると判明。
+ * その accountId を BaseAccountService/get の `{ accountIds: [...] }` に渡しても、NON_OWNER
+ * （他企業＝クライアント）の子アカウントは常に `totalNumEntries: 0` で名前が引けないことを確認。
+ * 4回目: ユーザーに管理画面での見え方を確認 → MCCの管理画面上ではこれらNON_OWNERアカウントも
+ * 名前付きで表示され、クリックしてキャンペーンまで操作できる。つまりブラウザ側は十分な権限を持つ。
+ * 5回目（最終結論）: ユーザーが実際に各広告アカウント側の「権限管理＞ユーザー」を確認したところ、
+ * MCCとリンクされているだけのビジネスIDはそこには現れない（＝各アカウント個別の担当者としては
+ * 登録されていない）ことを確認。さらに公式OpenAPI定義（Route.yaml）を全サービス横断で確認した結果、
+ * 「x-z-base-account-idに指定可能なアカウントIDはBaseAccountService/getで取得可能なものに限る」という
+ * 制限文言が付いているのは AccountService/get と SsaAccountService/get の2つ（＝アカウント情報を
+ * 引く系のサービス）だけで、CampaignService/get・AdGroupService/get・ReportDefinitionService/get
+ * などキャンペーン・実績を扱う系のサービスにはこの制限が書かれていない（単に「アカウントIDを
+ * 指定してください」とあるのみ）。
+ *
+ * つまり: 「MCCへのアカウントリンク」と「そのアカウントへの直接の権限（担当者登録）」は別レイヤーで、
+ * BaseAccountService/get・AccountService/get による名前解決には後者が必須。MCCリンクだけでは
+ * 広告アカウント名は取得できない（＝クライアント側にそのアカウントの担当者としてこのビジネスIDを
+ * 追加登録してもらう以外に解決方法はない）。一方、実際のキャンペーン・実績データの取得は別の
+ * エンドポイント群であり、同じ制限は仕様上かかっていないため、MCCリンクだけでも取得できる可能性が
+ * 高い（実装時に要検証）。この結論に基づき、常に失敗する AccountService/get への個別リトライは
+ * 削除した（同じ「直接権限」制限を持つため、一括取得で引けなかった名前は個別に試しても引けない）。
  */
 
 const BASE = process.env.YAHOO_ADS_API_BASE || "https://ads-search.yahooapis.jp/api/v19";
@@ -195,47 +192,6 @@ async function accountLinks(accessToken: string, mccId: string): Promise<Account
   return out;
 }
 
-/**
- * AccountService/get: x-z-base-account-id で指定したアカウント自身の立場として、そのアカウントの
- * 詳細（名前など）を取る。BaseAccountService/get の `{ accountIds: [...] }` で名前が引けなかった
- * 子アカウントに対して、1件ずつ「そのアカウント自身のID」をヘッダーに指定して追加で試す
- * （公式定義ではヘッダーに指定可能なIDはBaseAccountService/getで取得可能なものに限るとされて
- * いるが、MCC経由で実際に操作権限がある子アカウント自身のIDでどう振る舒うかは未検証だったため）。
- */
-async function accountSelf(accessToken: string, accountId: string): Promise<{ account?: YahooAccount; diag?: string }> {
-  try {
-    const res = await fetch(`${BASE}/AccountService/get`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${accessToken}`,
-        "content-type": "application/json",
-        "x-z-base-account-id": accountId,
-      },
-      body: JSON.stringify({ accountIds: [Number(accountId)] }),
-      signal: AbortSignal.timeout(20000),
-    });
-    const text = await res.text();
-    let j: unknown = {};
-    try {
-      j = JSON.parse(text);
-    } catch {
-      // JSON以外
-    }
-    if (!res.ok) {
-      const msg =
-        j && typeof j === "object" && "message" in (j as Record<string, unknown>)
-          ? String((j as Record<string, unknown>).message)
-          : text.slice(0, 300) || `HTTP ${res.status}`;
-      return { diag: `AccountService/get 失敗（HTTP ${res.status}）：${msg}` };
-    }
-    const found = extractAccounts(j)[0];
-    if (found) return { account: found };
-    return { diag: `AccountService/get の結果が空でした。実際のレスポンス：${text.slice(0, 400)}` };
-  } catch (e) {
-    return { diag: `AccountService/get 呼び出し中にエラー：${e instanceof Error ? e.message : String(e)}` };
-  }
-}
-
 export type YahooChildAccountsResult = {
   accounts: YahooAccount[];
   /** 配下は取れたが、一部または全部のアカウント名が引き直せなかった場合の注記（表示は呼び出し元に任せる） */
@@ -246,9 +202,9 @@ export type YahooChildAccountsResult = {
  * MCC の配下にある広告アカウントを取る（Google の listChildCustomers に相当）。
  * 1) AccountLinkService/get で配下の accountId・ownerShipType 一覧を取り（名前は含まない）、
  * 2) BaseAccountService/get にその accountIds を渡して名前・MCC判定を一括で引き直す。
- * 3) それでも名前が引けなかったものだけ、AccountService/get で1件ずつ（そのアカウント自身の
- *    IDをヘッダーに指定して）追加リトライする。
- * それでも引けない場合は ID をそのまま名前として返しつつ、原因を nameLookupError に入れて返す
+ * ヤフーLINE広告APIの仕様上、名前が取れるのは「そのビジネスIDが直接の権限（担当者登録）を
+ * 持つアカウント」だけで、MCCとのアカウントリンクだけでは不足する（詳細は本ファイル冒頭のコメント）。
+ * 引けなかったものは ID をそのまま名前として返しつつ、原因を nameLookupError に入れて返す
  * （選べなくはしない）。
  */
 export async function yahooChildAccounts(accessToken: string, mccId: string): Promise<YahooChildAccountsResult> {
@@ -260,7 +216,6 @@ export async function yahooChildAccounts(accessToken: string, mccId: string): Pr
 
   const byId = new Map<string, YahooAccount>();
 
-  // 1) 一括で名前を引く
   for (let i = 0; i < childIds.length; i += 200) {
     const chunk = childIds.slice(i, i + 200).map(Number);
     try {
@@ -278,31 +233,18 @@ export async function yahooChildAccounts(accessToken: string, mccId: string): Pr
         for (const a of extractAccounts(j)) byId.set(a.id, a);
       }
     } catch {
-      // 一括取得に失敗しても、2) の個別リトライに任せるのでここでは止めない
+      // 一括取得に失敗した分は ID フォールバックに任せる
     }
-  }
-
-  // 2) 一括で引けなかったものだけ、一件ずつ「そのアカウント自身のID」で追加リトライ
-  const stillMissing = childIds.filter((id) => !byId.has(id));
-  let lastDiag: string | undefined;
-  const CONCURRENCY = 5;
-  for (let i = 0; i < stillMissing.length; i += CONCURRENCY) {
-    const batch = stillMissing.slice(i, i + CONCURRENCY);
-    const results = await Promise.all(batch.map((id) => accountSelf(accessToken, id)));
-    results.forEach((r, idx) => {
-      const id = batch[idx];
-      if (r.account) byId.set(id, r.account);
-      else if (r.diag) lastDiag = r.diag;
-    });
   }
 
   const accounts = childIds.map((id) => byId.get(id) ?? { id, name: id, manager: false });
   const unresolved = accounts.filter((a) => a.name === a.id).length;
   const nameLookupError =
     unresolved > 0
-      ? `${unresolved}/${accounts.length}件のアカウント名を取得できませんでした（IDをそのまま表示しています）。${
-          lastDiag ? "詳細：" + lastDiag : ""
-        }`
+      ? `${unresolved}/${accounts.length}件のアカウント名を取得できませんでした（IDをそのまま表示しています）。` +
+        `ヤフーLINE広告APIの仕様上、広告アカウント自体の権限（そのアカウントへの担当者としての直接登録）がない場合、` +
+        `MCCとのアカウントリンクのみでは広告アカウント名の取得はできません。` +
+        `名前まで表示したい場合は、対象のクライアントに各広告アカウント側で担当者権限を付与してもらってください。`
       : undefined;
 
   return { accounts, nameLookupError };
