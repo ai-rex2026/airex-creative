@@ -83,11 +83,21 @@ revoke all on public.ad_connections from anon, authenticated;
 | 媒体 | 状態 |
 |---|---|
 | Google | 実装済み（`components/AdAccountPicker.tsx`）。MCC を開いて配下を辿れる（`googleChildAccounts`、`customer_client` を `login-customer-id` 付きで検索） |
-| ヤフーLINE広告 | 実装済み（`components/YahooAccountPicker.tsx`）。Google と同じ「MCC を開いて配下を辿る」UI。配下の列挙は **AccountLinkService/get**（`selector: { mccAccountId }`、`x-z-base-account-id: MCCのID` ヘッダー必須。公式OpenAPI定義・本番エラー両方で確認済み）で行い、`lib/ads/yahoo.ts` の `yahooChildAccounts` に実装済み（本番で配下が正しく列挙されることを確認済み）。**名前解決について最終結論（2026-09）**：名前は `BaseAccountService/get` の `accountIds` セレクタで一括取得するが、NON_OWNER（他企業＝クライアント）の子アカウントは、そのアカウント側で連携ビジネスIDが「担当者」として直接登録されていない限り `totalNumEntries: 0` で名前が引けない。MCCとのアカウントリンクだけでは不足（ユーザーが対象アカウントの「権限管理＞ユーザー」で確認済み：MCCリンクだけのビジネスIDはそこに現れない）。公式OpenAPI定義（Route.yaml）を全サービス横断で確認した結果、この「直接権限必須」の制限文言は `AccountService/get`・`SsaAccountService/get` の2つ（アカウント情報系）にのみ付いており、`CampaignService/get` 等キャンペーン・実績を扱う系には付いていない。**つまり名前が引けないアカウントでも、実績データ自体は取得できる可能性が高い**（未実装のため要検証）。引けない名前は ID をそのまま表示し、`nameLookupError` としてUIに「広告アカウント自体の権限がない場合は広告アカウント名の取得は不可」という注意書きを出す（選べなくはしない） |
+| ヤフーLINE広告 | 実装済み（`components/YahooAccountPicker.tsx`）。Google と同じ「MCC を開いて配下を辿る」UI。配下の列挙は **AccountLinkService/get**（`selector: { mccAccountId }`、`x-z-base-account-id: MCCのID` ヘッダー必須。公式OpenAPI定義・本番エラー両方で確認済み）で行い、`lib/ads/yahoo.ts` の `yahooChildAccounts` に実装済み（本番で配下が正しく列挙されることを確認済み）。**名前解決について最終結論（2026-09）**：名前は `BaseAccountService/get` の `accountIds` セレクタで一括取得するが、NON_OWNER（他企業＝クライアント）の子アカウントは、そのアカウント側で連携ビジネスIDが「担当者」として直接登録されていない限り `totalNumEntries: 0` で名前が引けない。MCCとのアカウントリンクだけでは不足（ユーザーが対象アカウントの「権限管理＞ユーザー」で確認済み：MCCリンクだけのビジネスIDはそこに現れない）。引けない名前は ID をそのまま表示し、`nameLookupError` としてUIに「広告アカウント自体の権限がない場合は広告アカウント名の取得は不可」という注意書きを出す（選べなくはしない）。保存は `saveYahooSelection`（`YahooSelection = { id, name, mccId }`）で、`mccId` は下記の実績取得で使う |
 | Meta / Microsoft / TikTok / X | 未実装 |
+
+## 実績取得（キャンペーン別）
+
+| 媒体 | 状態 |
+|---|---|
+| Google | 実装済み・本番で確認済み（`lib/ads/google.ts` の `fetchCampaignMetrics`。`googleAds:search` の同期検索） |
+| ヤフーLINE広告 | 実装済み・本番で確認済み（2026-09）。`lib/ads/yahoo.ts` の `fetchCampaignMetrics`：① `CampaignService/get` でキャンペーンの id・名前・ステータスを同期取得、② `ReportDefinitionService`（`getReportFields` でフィールド名を動的解決 → `add` でジョブ作成 → `get` でポーリング → `download` でTSV取得）で費用・表示回数・クリック等を非同期取得。**`x-z-base-account-id` ヘッダーの仕様（本番エラーで確定）**：このヘッダーには「アクセストークンが直接の base account として持つアカウント」（MCC自身、または直接権限を持つ自分のアカウント）しか指定できない。子アカウント自身のIDを渡すと `HTTP 401 {"code":"0117","message":"Account(specified by x-z-base-account-id) not found."}`。Google広告の login-customer-id（MCC）＋ customer-id（対象アカウント）と同じパターンで、ヘッダーには常に base account（`YahooSelection.mccId`、直下選択で null の場合はアカウント自身のID）を渡し、実際に取得したい対象アカウントは各リクエスト body の `accountId` で指定する。これにより MCCリンクだけの子アカウント（NON_OWNER、名前解決はできないもの）でもキャンペーン・実績データ自体は取得できることを確認済み（名前解決とは異なるレイヤー） |
+| Meta / Microsoft / TikTok / X | 未実装 |
+
+`UnifiedCampaignMetric` のような媒体横断の正規化はまだ無く、`app/ad-performance-actions.ts` に媒体ごとの型（`AdPerformance` / `YahooAdPerformance`）のまま並んでいる。
 
 ## 未実装（次の段階）
 
-- 各媒体の実績取得（`lib/ads/google.ts` の `fetchCampaignMetrics` 相当）と `UnifiedCampaignMetric` への正規化。いまは Google 広告のみ（`app/ad-performance-actions.ts`）
-- Meta / Microsoft / TikTok / X の分析対象アカウント選択UI
+- Meta / Microsoft / TikTok / X の実績取得・分析対象アカウント選択UI
+- 媒体ごとにバラバラの実績の型を `UnifiedCampaignMetric` に正規化する部分
 - 実績（費用・CV・CPA・ROAS）を「伸びしろ診断」の分析に接続する部分
