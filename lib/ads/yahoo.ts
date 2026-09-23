@@ -4,11 +4,11 @@
  *
  * - ベースURL: https://ads-search.yahooapis.jp/api/v19
  * - 認証: Authorization: Bearer {アクセストークン}
- * - BaseAccountService/get は「操作対象のビジネスIDが直接権限を持つ全てのアカウント
- *   （MCCアカウント・広告アカウント）の一覧を提供します」と説明されており、
- *   x-z-base-account-id を決める前に呼ぶ、連携直後の起点となるサービスと判断した
+ * - リクエストボディは「{selector: {...}}」ではなく、Selectorオブジェクトそのものを直接渡す
+ *   （公式OpenAPI定義で確認済み。yahoojp-marketing/ads-search-api-documents
+ *   design/v19/{baseaccount,accountlink}/*.yaml）。
  *
- * レスポンス形式（2026-09、本番の実レスポンスで確認済み）:
+ * BaseAccountService/getのレスポンス形式（2026-09、本番の実レスポンスで確認済み）:
  * {
  *   "rval": {
  *     "authorizationBusinessId": "...",
@@ -37,17 +37,22 @@
  * 「アカウント一覧を取れませんでした：〜」という注記に変えるので、連携（トークン保存）
  * 自体は失敗しない。
  *
- * MCC配下の展開（yahooChildAccounts）について:
- * BaseAccountService/get を素で呼ぶと「操作対象のビジネスIDが直接権限を持つアカウント」
- * だけが返る。本番で確認したのは MCC自身＋直接ひもづく広告アカウント1件のみで、ユーザーの
- * 申告では MCC 配下にはさらに複数の広告アカウントがひもづいているはずとのことなので、
- * フラットな一覧だけでは足りない。Google Ads の login-customer-id ヘッダー（MCC を
- * 指定して customer_client を辿ると配下が見える）と同じ発想で、x-z-base-account-id
- * ヘッダーに MCC の accountId を指定して同じ BaseAccountService/get を呼べば、その
- * MCC の視点で見える配下アカウントが返るはずと考えて実装した。公式リファレンスが
- * JS描画のSPAで機械的に読めず、実際にこの組み合わせで配下が返ってくるかは未検証。
- * 配下が0件（MCC自身しか返らない）ときは、原因調査のため実際のレスポンスをそのまま
- * エラーに出す（BaseAccountService と同じデバッグの型）。
+ * MCC配下の展開（yahooChildAccounts）について、修正履歴:
+ * 当初は BaseAccountService/get に x-z-base-account-id ヘッダー（MCCのID）を
+ * 付けて呼べば Google の login-customer-id と同じように配下が取れると仮定していたが、
+ * 本番で確認したところこのヘッダーは効果がなく（常に自分の直接権限分だけが返る）、誤りだった。
+ * yahoojp-marketing/ads-search-api-documents の OpenAPI 定義（design/v19/accountlink/）と
+ * LY Ads Script のサンプルコードを確認した結果、MCC配下のアカウントを列挙する正しい
+ * 方法は別のサービス **AccountLinkService/get** だった（Google の customer_client
+ * クエリに相当）。selector は `{ mccAccountId: <MCCのaccountId> }`（数値）で、
+ * レスポンスは `rval.values[].accountLink = { mccAccountId, accountId, accountStatus,
+ * ownerShipType }` という形。ownerShipType は OWNER（同一企業内）/ NON_OWNER（他企業）
+ * を表し、代理店のMCCにはクライアント別企業のNON_OWNERアカウントがひもづくのが普通。
+ * ただし AccountLink には accountName が含まれないため、返ってきた accountId 群を
+ * BaseAccountService/get の selector `{ accountIds: [...] }`（直接指定・最大200件）で
+ * 名前を引き直して合成する。NON_OWNER などで読み取り権限が及ばない子アカウントは
+ * この名前解決に失敗しうるので、その場合は ID をそのまま名前として返す（選べなくは
+ * しないが、名前が出ない＝その子アカウント単体でのAPI連携許可が別途必要な可能性が高い）。
  */
 
 const BASE = process.env.YAHOO_ADS_API_BASE || "https://ads-search.yahooapis.jp/api/v19";
@@ -126,21 +131,17 @@ export async function yahooBaseAccounts(accessToken: string): Promise<YahooAccou
   return accounts;
 }
 
-/**
- * MCC の配下にある広告アカウントを取る（Google の listChildCustomers に相当）。
- * x-z-base-account-id ヘッダーに MCC の accountId を指定して呼ぶ。上のコメント
- * のとおり未検証のため、配下が0件（MCC自身しか返らない）ときは実際のレスポンスを
- * そのままエラーに出す。呼び出し元は accountId が既知の MCC であることを確認してから呼ぶこと。
- */
-export async function yahooChildAccounts(accessToken: string, mccId: string): Promise<YahooAccount[]> {
-  const res = await fetch(`${BASE}/BaseAccountService/get`, {
+type AccountLink = { accountId: string; accountStatus?: string; ownerShipType?: string };
+
+/** AccountLinkService/get: MCC の accountId を渡すと、配下にリンクされているアカウントIDの一覧が返る（名前は含まない） */
+async function accountLinks(accessToken: string, mccId: string): Promise<AccountLink[]> {
+  const res = await fetch(`${BASE}/AccountLinkService/get`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${accessToken}`,
       "content-type": "application/json",
-      "x-z-base-account-id": mccId,
     },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ mccAccountId: Number(mccId) }),
     signal: AbortSignal.timeout(20000),
   });
   const text = await res.text();
@@ -155,15 +156,74 @@ export async function yahooChildAccounts(accessToken: string, mccId: string): Pr
       j && typeof j === "object" && "message" in (j as Record<string, unknown>)
         ? String((j as Record<string, unknown>).message)
         : text.slice(0, 300) || `HTTP ${res.status}`;
-    throw new Error(`MCC配下のアカウント一覧を取得できませんでした：${msg}`);
+    throw new Error(`MCC配下のアカウントリンクを取得できませんでした：${msg}`);
   }
-  const all = extractAccounts(j);
-  const children = all.filter((a) => a.id !== mccId && !a.manager);
-  if (children.length === 0) {
-    // 調査用：x-z-base-account-id が効いているか、配下が本当に0件かを見分けるため
+  const candidates: unknown[] = [];
+  if (j && typeof j === "object") {
+    const rval = (j as Record<string, unknown>).rval;
+    if (rval && typeof rval === "object" && Array.isArray((rval as Record<string, unknown>).values)) {
+      candidates.push(...((rval as Record<string, unknown>).values as unknown[]));
+    }
+  }
+  const out: AccountLink[] = [];
+  for (const c of candidates) {
+    if (!c || typeof c !== "object") continue;
+    const r = c as Record<string, unknown>;
+    if (r.operationSucceeded === false) continue;
+    const link = (r.accountLink && typeof r.accountLink === "object" ? r.accountLink : r) as Record<string, unknown>;
+    const id = link.accountId;
+    if (id != null) {
+      out.push({
+        accountId: String(id),
+        accountStatus: link.accountStatus != null ? String(link.accountStatus) : undefined,
+        ownerShipType: link.ownerShipType != null ? String(link.ownerShipType) : undefined,
+      });
+    }
+  }
+  if (out.length === 0) {
+    // 調査用：本当に配下が0件なのか、レスポンス形式が想定と違うのかを見分けるため
     throw new Error(
-      `MCCの配下に広告アカウントが見つかりませんでした（要確認）。実際のレスポンス：${text.slice(0, 800)}`
+      `MCCの配下にリンクされたアカウントが見つかりませんでした。実際のレスポンス：${text.slice(0, 800)}`
     );
   }
-  return children;
+  return out;
+}
+
+/**
+ * MCC の配下にある広告アカウントを取る（Google の listChildCustomers に相当）。
+ * 1) AccountLinkService/get で配下の accountId 一覧を取り（名前は含まない）、
+ * 2) BaseAccountService/get にその accountIds を渡して名前・MCC判定を引き直す。
+ * NON_OWNER（他企業）リンクなどで 2) に失敗する（名前を取れない）場合は、ID をそのまま名前として
+ * 返す（選べなくはしないが、その場合はその子アカウント単体での API 連携許可が別途必要な可能性が高い）。
+ */
+export async function yahooChildAccounts(accessToken: string, mccId: string): Promise<YahooAccount[]> {
+  const links = await accountLinks(accessToken, mccId);
+  const childIds = [...new Set(links.map((l) => l.accountId).filter((id) => id !== mccId))];
+  if (childIds.length === 0) {
+    throw new Error("MCC自身以外に配下のアカウントが見つかりませんでした。");
+  }
+
+  const byId = new Map<string, YahooAccount>();
+  for (let i = 0; i < childIds.length; i += 200) {
+    const chunk = childIds.slice(i, i + 200).map(Number);
+    try {
+      const res = await fetch(`${BASE}/BaseAccountService/get`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ accountIds: chunk }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (res.ok) {
+        const j = await res.json().catch(() => ({}));
+        for (const a of extractAccounts(j)) byId.set(a.id, a);
+      }
+    } catch {
+      // 名前の引き直しに失敗しても、下で ID フォールバックするのでここでは止めない
+    }
+  }
+
+  return childIds.map((id) => byId.get(id) ?? { id, name: id, manager: false });
 }
