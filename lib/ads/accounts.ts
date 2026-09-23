@@ -45,10 +45,12 @@ export async function discoverAccounts(
         return { accounts: rows.map((r) => ({ id: r.id, name: r.name ?? r.id })), note: null };
       }
       case "microsoft": {
-        // Customer Management Service（SOAP）で GetUser → SearchAccounts。lib/ads/microsoft.ts 参照
-        const userId = await microsoftUserId(t.accessToken);
+        // Customer Management Service（SOAP）で GetUser → SearchAccounts。lib/ads/microsoft.ts 参照。
+        // SearchAccounts はフラットな一覧を返す（MCC配下の展開は不要）。ParentCustomerId（実績取得で
+        // 使う）はここでは控えず、分析対象アカウントの選択の保存時に取り直す（app/ad-actions.ts 参照）
+        const { id: userId } = await microsoftUserId(t.accessToken);
         const accounts = await microsoftSearchAccounts(t.accessToken, userId);
-        return { accounts, note: null };
+        return { accounts: accounts.map((a) => ({ id: a.id, name: a.name })), note: null };
       }
       case "tiktok": {
         const res = await fetch(

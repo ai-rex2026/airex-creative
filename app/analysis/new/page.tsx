@@ -4,6 +4,8 @@ import { AdAccountPicker } from "@/components/AdAccountPicker";
 import { AdPerformance } from "@/components/AdPerformance";
 import { YahooAccountPicker } from "@/components/YahooAccountPicker";
 import { YahooPerformance } from "@/components/YahooPerformance";
+import { MicrosoftAccountPicker } from "@/components/MicrosoftAccountPicker";
+import { MicrosoftPerformance } from "@/components/MicrosoftPerformance";
 import { adConnections } from "@/app/ad-actions";
 
 export const metadata = { title: "新規分析｜AI-REX Studio" };
@@ -30,6 +32,12 @@ export default async function NewAnalysisPage({
         <>
           <YahooAccountPicker />
           <YahooPerformance />
+        </>
+      )}
+      {ads.some((c) => c.platform === "microsoft") && (
+        <>
+          <MicrosoftAccountPicker />
+          <MicrosoftPerformance />
         </>
       )}
     </Shell>

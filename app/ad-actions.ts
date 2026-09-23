@@ -11,6 +11,7 @@ import {
   verifyClients,
 } from "@/lib/ads/google";
 import { yahooChildAccounts } from "@/lib/ads/yahoo";
+import { microsoftUserId, microsoftSearchAccounts } from "@/lib/ads/microsoft";
 
 /** 画面に出してよい形。トークンは含めない */
 export type AdConnectionView = {
@@ -309,4 +310,91 @@ export async function saveYahooSelection(
     .eq("platform", "yahoo");
   if (error) return { error: `保存できませんでした：${error.message}` };
   return { selected: out };
+}
+
+/* ------------------------------------------------------------------
+ * Microsoft 広告：分析する広告アカウントの選択
+ * SearchAccounts（lib/ads/microsoft.ts）が、このユーザーがアクセスできる広告アカウントを
+ * すでにフラットな一覧で返す（MCC配下の展開が要らない）ため、Google/ヤフーLINE広告のような
+ * 「MCC を開いて配下を辿る」操作は持たせず、一覧から直接チェックして保存するだけにする。
+ * 実績取得（GetCampaignsByAccountId・Reporting Service）の CustomerId ヘッダーに使う
+ * ParentCustomerId は連携時点ではキャッシュせず、保存のたびに Microsoft 側から取り直して
+ * 検証する（Google の googleAccountPicker が listAccessibleCustomers を都度呼ぶのと同じ考え方）。
+ * ------------------------------------------------------------------ */
+
+export type MicrosoftPickerAccount = { id: string; name: string };
+export type MicrosoftSelection = { id: string; name: string; customerId: string };
+
+const MAX_SELECTED_MICROSOFT = 50;
+
+async function microsoftCreds() {
+  const user = await currentUser();
+  if (!user || user.is_anonymous) return null;
+  const creds = await getAdCredentials(user.id, "microsoft");
+  return creds ? { user, creds } : null;
+}
+
+function readMicrosoftSelected(meta: Record<string, unknown>): MicrosoftSelection[] {
+  const v = meta.selected;
+  return Array.isArray(v)
+    ? v.filter(
+        (x): x is MicrosoftSelection =>
+          !!x && typeof (x as MicrosoftSelection).id === "string" && (x as MicrosoftSelection).id.length > 0
+      )
+    : [];
+}
+
+/** 選択画面の一覧（本人がアクセスできる広告アカウント、フラット）と、保存済みの選択 */
+export async function microsoftAccountPicker(): Promise<
+  | { connected: false }
+  | { connected: true; accounts: MicrosoftPickerAccount[]; selected: MicrosoftSelection[]; error?: string }
+> {
+  const m = await microsoftCreds();
+  if (!m) return { connected: false };
+  const selected = readMicrosoftSelected(m.creds.meta);
+  try {
+    const { id: userId } = await microsoftUserId(m.creds.accessToken);
+    const accounts = await microsoftSearchAccounts(m.creds.accessToken, userId);
+    return { connected: true, accounts: accounts.map((a) => ({ id: a.id, name: a.name })), selected };
+  } catch (e) {
+    return { connected: true, accounts: [], selected, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** 選んだアカウントを保存する。Microsoft から一覧を取り直して含まれるか確かめ、CustomerId とあわせて保存 */
+export async function saveMicrosoftSelection(
+  picks: { id: string }[]
+): Promise<{ selected: MicrosoftSelection[] } | { error: string }> {
+  const m = await microsoftCreds();
+  if (!m) return { error: "Microsoft 広告と連携してください" };
+  if (!Array.isArray(picks) || picks.length > MAX_SELECTED_MICROSOFT) {
+    return { error: `選べるのは${MAX_SELECTED_MICROSOFT}件までです` };
+  }
+  for (const p of picks) {
+    if (typeof p?.id !== "string" || !p.id) return { error: "アカウントIDが正しくありません" };
+  }
+
+  try {
+    const { id: userId } = await microsoftUserId(m.creds.accessToken);
+    const accounts = await microsoftSearchAccounts(m.creds.accessToken, userId);
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+    const out: MicrosoftSelection[] = [];
+    for (const p of picks) {
+      const a = byId.get(p.id);
+      if (!a) return { error: `アクセスできないアカウントが含まれています（${p.id}）` };
+      out.push({ id: a.id, name: a.name, customerId: a.parentCustomerId });
+    }
+
+    const admin = createAdminClient();
+    const meta = { ...m.creds.meta, selected: out };
+    const { error } = await admin
+      .from("ad_connections")
+      .update({ meta, updated_at: new Date().toISOString() })
+      .eq("user_id", m.user.id)
+      .eq("platform", "microsoft");
+    if (error) return { error: `保存できませんでした：${error.message}` };
+    return { selected: out };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
 }
