@@ -21,7 +21,10 @@ type Node = YahooPickerAccount & {
   mcc: string | null;
   open?: boolean;
   loading?: boolean;
+  /** 配下の一覧そのものが取れなかった場合のエラー（この場合 children は出さない） */
   error?: string;
+  /** 配下は取れたが、一部/全部のアカウント名を引き直せなかった場合の注記（children と併記） */
+  note?: string;
   children?: Node[];
 };
 
@@ -68,13 +71,17 @@ export function YahooAccountPicker() {
   async function toggleOpen(n: Node, path: number[]) {
     if (n.open) return update(path, (x) => ({ ...x, open: false }));
     if (n.children) return update(path, (x) => ({ ...x, open: true }));
-    update(path, (x) => ({ ...x, open: true, loading: true, error: undefined }));
+    update(path, (x) => ({ ...x, open: true, loading: true, error: undefined, note: undefined }));
     const r = await yahooChildAccountsAction(n.id);
+    const hasAccounts = r.accounts.length > 0;
     update(path, (x) => ({
       ...x,
       loading: false,
-      error: r.error,
-      children: r.error ? undefined : r.accounts.map((a) => ({ ...a, mcc: n.id })),
+      // 配下の一覧そのものが空だった場合だけエラーとして出す。一覧が取れていれば、
+      // 名前の引き直しに失敗しても note として一覧と併記する（一覧は隠さない）
+      error: hasAccounts ? undefined : r.error,
+      note: hasAccounts ? r.note : undefined,
+      children: hasAccounts ? r.accounts.map((a) => ({ ...a, mcc: n.id })) : undefined,
     }));
   }
 
@@ -129,6 +136,11 @@ export function YahooAccountPicker() {
           {n.error && (
             <div className="r" style={{ paddingLeft: 40 + depth * 24 }}>
               <small>配下を取れませんでした：{n.error}</small>
+            </div>
+          )}
+          {n.note && (
+            <div className="r" style={{ paddingLeft: 40 + depth * 24 }}>
+              <small style={{ color: "var(--danger, #b42318)" }}>{n.note}</small>
             </div>
           )}
           {n.children?.length === 0 && (

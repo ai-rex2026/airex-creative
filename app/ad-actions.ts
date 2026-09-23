@@ -194,8 +194,10 @@ export async function saveGoogleSelection(
  * 「操作対象のビジネスIDが直接権限を持つアカウント」だけのフラットな一覧で、
  * MCC の配下に複数の広告アカウントがひもづいていてもそこには出てこない
  * （本番で確認済み）。Google と同じ「MCC を開いて配下を取りに行く」操作を持たせ、
- * 配下は x-z-base-account-id ヘッダーで MCC を指定して都度取得する
- * （lib/ads/yahoo.ts の yahooChildAccounts。実際に配下が返るかは未検証）。
+ * 配下は AccountLinkService/get（x-z-base-account-id ヘッダーで MCC を指定）で
+ * 都度取得する（lib/ads/yahoo.ts の yahooChildAccounts。本番で配下の列挙自体は
+ * 成功することを確認済み。名前の引き直しが失敗する子アカウントがある場合は
+ * nameLookupError に診断メッセージが入るので、それを note として画面に出す）。
  * ------------------------------------------------------------------ */
 
 export type YahooPickerAccount = { id: string; name: string; manager: boolean };
@@ -233,10 +235,10 @@ export async function yahooAccountPicker(): Promise<
   };
 }
 
-/** MCC を開いたときに、配下のアカウントを返す */
+/** MCC を開いたときに、配下のアカウントを返す。note は名前の引き直しが一部/全部失敗した場合の診断メッセージ（配下の一覧自体は取れている） */
 export async function yahooChildAccountsAction(
   mccId: string
-): Promise<{ accounts: YahooPickerAccount[]; error?: string }> {
+): Promise<{ accounts: YahooPickerAccount[]; error?: string; note?: string }> {
   if (typeof mccId !== "string" || !mccId) return { accounts: [], error: "アカウントIDが正しくありません" };
   const y = await yahooCreds();
   if (!y) return { accounts: [], error: "ヤフーLINE広告と連携してください" };
@@ -244,8 +246,11 @@ export async function yahooChildAccountsAction(
     return { accounts: [], error: "MCCアカウントが見つかりません" };
   }
   try {
-    const children = await yahooChildAccounts(y.creds.accessToken, mccId);
-    return { accounts: children.map((a) => ({ id: a.id, name: a.name, manager: !!a.manager })) };
+    const { accounts, nameLookupError } = await yahooChildAccounts(y.creds.accessToken, mccId);
+    return {
+      accounts: accounts.map((a) => ({ id: a.id, name: a.name, manager: !!a.manager })),
+      note: nameLookupError,
+    };
   } catch (e) {
     return { accounts: [], error: e instanceof Error ? e.message : String(e) };
   }
@@ -280,13 +285,13 @@ export async function saveYahooSelection(
     }
   }
   for (const [mccId, ids] of byMcc) {
-    let children: Awaited<ReturnType<typeof yahooChildAccounts>>;
+    let result: Awaited<ReturnType<typeof yahooChildAccounts>>;
     try {
-      children = await yahooChildAccounts(y.creds.accessToken, mccId);
+      result = await yahooChildAccounts(y.creds.accessToken, mccId);
     } catch (e) {
       return { error: e instanceof Error ? e.message : String(e) };
     }
-    const found = new Map(children.map((c) => [c.id, c]));
+    const found = new Map(result.accounts.map((c) => [c.id, c]));
     for (const id of ids) {
       const c = found.get(id);
       if (!c) return { error: `MCC の配下にないアカウントが含まれています（${id}）` };

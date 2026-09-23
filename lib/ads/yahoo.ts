@@ -48,17 +48,19 @@
  * 列挙は別サービス **AccountLinkService/get**（Google の customer_client クエリに相当）だと
  * 判明 → ヘッダーなしで呼んだところ「x-z-base-account-id: Must not be null」で400。
  * つまりこのヘッダーは BaseAccountService/get 以外では必須（本番のエラーで確認済み）。
- * 3回目（現状）: AccountLinkService/get・および配下アカウントの名前を引き直す
- * BaseAccountService/get の両方に x-z-base-account-id: <MCCのaccountId> を付けて呼ぶ。
- * selector は `{ mccAccountId: <MCCのaccountId> }`（数値）で、レスポンスは
- * `rval.values[].accountLink = { mccAccountId, accountId, accountStatus, ownerShipType }`
- * という形。ownerShipType は OWNER（同一企業内）/ NON_OWNER（他企業）を表し、代理店の
- * MCCにはクライアント別企業のNON_OWNERアカウントがひもづくのが普通。AccountLink には
- * accountName が含まれないため、返ってきた accountId 群を BaseAccountService/get の
- * selector `{ accountIds: [...] }`（直接指定・最大200件、x-z-base-account-idはMCCのまま）
- * で名前を引き直して合成する。それでも読み取り権限が及ばない子アカウントがあれば、
- * ID をそのまま名前として返す（選べなくはしないが、その場合はその子アカウント単体での
- * API連携許可が別途必要な可能性が高い）。
+ * 3回目: AccountLinkService/get・および配下アカウントの名前を引き直す BaseAccountService/get
+ * の両方に x-z-base-account-id: <MCCのaccountId> を付けて呼ぶ。配下の列挙自体は本番で成功
+ * （本番で配下が正しく表示されることを確認済み）。
+ * 4回目（現状）: 配下は正しく列挙されるようになったが、名前の引き直し（BaseAccountService/get
+ * の accountIds セレクタ）が全件失敗し、名前の代わりに ID がそのまま表示される不具合を確認。
+ * 代理店（このユーザー：株式会社アドレクス）の MCC 配下には、クライアント別会社の
+ * NON_OWNER（他企業）アカウントがひもづくのが普通で、その場合 BaseAccountService/get 側の
+ * 読み取り権限が及ばず、レスポンスの該当エントリが operationSucceeded: false になっている
+ * 可能性が高い（未確認）。原因を切り分けるため、名前の引き直しに失敗した場合は診断メッセージ
+ * （HTTPステータス・レスポンス本文の先頭・失敗エントリの errors）を nameLookupError として
+ * 呼び出し元に返すようにした。それでも読み取り権限が及ばない子アカウントがあれば、ID を
+ * そのまま名前として返す（選べなくはしないが、その場合はその子アカウント単体での API 連携許可が
+ * 別途必要な可能性が高い）。
  */
 
 const BASE = process.env.YAHOO_ADS_API_BASE || "https://ads-search.yahooapis.jp/api/v19";
@@ -99,6 +101,35 @@ function extractAccounts(j: unknown): YahooAccount[] {
     }
   }
   return out;
+}
+
+/** operationSucceeded: false のエントリから errors[].message を集める（診断用） */
+function collectFailedEntryMessages(j: unknown): string | undefined {
+  if (!j || typeof j !== "object") return undefined;
+  const rval = (j as Record<string, unknown>).rval;
+  if (!rval || typeof rval !== "object") return undefined;
+  const values = (rval as Record<string, unknown>).values;
+  if (!Array.isArray(values)) return undefined;
+  const msgs: string[] = [];
+  for (const v of values) {
+    if (!v || typeof v !== "object") continue;
+    const r = v as Record<string, unknown>;
+    if (r.operationSucceeded === false) {
+      const errs = r.errors;
+      if (Array.isArray(errs)) {
+        for (const e of errs) {
+          if (e && typeof e === "object") {
+            const rec = e as Record<string, unknown>;
+            const msg = rec.message != null ? String(rec.message) : JSON.stringify(rec).slice(0, 200);
+            msgs.push(msg);
+          }
+        }
+      } else if (errs != null) {
+        msgs.push(String(errs));
+      }
+    }
+  }
+  return msgs.length > 0 ? [...new Set(msgs)].join(" / ") : undefined;
 }
 
 /** 連携直後に、このアクセストークンでアクセスできる全アカウント（MCC・広告アカウント）を取る */
@@ -199,15 +230,23 @@ async function accountLinks(accessToken: string, mccId: string): Promise<Account
   return out;
 }
 
+export type YahooChildAccountsResult = {
+  accounts: YahooAccount[];
+  /** 配下は取れたが、一部または全部のアカウント名が引き直せなかった場合の診断メッセージ（表示は呼び出し元に任せる） */
+  nameLookupError?: string;
+};
+
 /**
  * MCC の配下にある広告アカウントを取る（Google の listChildCustomers に相当）。
  * 1) AccountLinkService/get で配下の accountId 一覧を取り（名前は含まない）、
  * 2) BaseAccountService/get にその accountIds を渡して名前・MCC判定を引き直す
  *    （どちらも x-z-base-account-id: MCCのaccountId を付けて呼ぶ）。
  * NON_OWNER（他企業）リンクなどで 2) に失敗する（名前を取れない）場合は、ID をそのまま名前として
- * 返す（選べなくはしないが、その場合はその子アカウント単体での API 連携許可が別途必要な可能性が高い）。
+ * 返しつつ、原因調査用の診断メッセージ（HTTPステータス・レスポンス本文・失敗エントリの errors）を
+ * nameLookupError に入れて返す（選べなくはしないが、その場合はその子アカウント単体での
+ * API連携許可が別途必要な可能性が高い）。
  */
-export async function yahooChildAccounts(accessToken: string, mccId: string): Promise<YahooAccount[]> {
+export async function yahooChildAccounts(accessToken: string, mccId: string): Promise<YahooChildAccountsResult> {
   const links = await accountLinks(accessToken, mccId);
   const childIds = [...new Set(links.map((l) => l.accountId).filter((id) => id !== mccId))];
   if (childIds.length === 0) {
@@ -215,6 +254,7 @@ export async function yahooChildAccounts(accessToken: string, mccId: string): Pr
   }
 
   const byId = new Map<string, YahooAccount>();
+  let diag: string | undefined;
   for (let i = 0; i < childIds.length; i += 200) {
     const chunk = childIds.slice(i, i + 200).map(Number);
     try {
@@ -228,14 +268,42 @@ export async function yahooChildAccounts(accessToken: string, mccId: string): Pr
         body: JSON.stringify({ accountIds: chunk }),
         signal: AbortSignal.timeout(20000),
       });
-      if (res.ok) {
-        const j = await res.json().catch(() => ({}));
-        for (const a of extractAccounts(j)) byId.set(a.id, a);
+      const text = await res.text();
+      let j: unknown = {};
+      try {
+        j = JSON.parse(text);
+      } catch {
+        // JSON以外
       }
-    } catch {
-      // 名前の引き直しに失敗しても、下で ID フォールバックするのでここでは止めない
+      if (!res.ok) {
+        const msg =
+          j && typeof j === "object" && "message" in (j as Record<string, unknown>)
+            ? String((j as Record<string, unknown>).message)
+            : text.slice(0, 300) || `HTTP ${res.status}`;
+        diag = `名前の取得に失敗しました（HTTP ${res.status}）：${msg}`;
+        continue;
+      }
+      const found = extractAccounts(j);
+      for (const a of found) byId.set(a.id, a);
+      if (found.length === 0) {
+        // このチャンク分が丸ごと名前を引けなかった：実際のレスポンスをそのまま診断に出す
+        diag = `名前の取得結果が空でした。実際のレスポンス：${text.slice(0, 600)}`;
+      } else if (found.length < chunk.length) {
+        diag = collectFailedEntryMessages(j) ?? `一部のアカウント名を取得できませんでした。実際のレスポンス：${text.slice(0, 600)}`;
+      }
+    } catch (e) {
+      diag = `名前の取得中にエラーが発生しました：${e instanceof Error ? e.message : String(e)}`;
     }
   }
 
-  return childIds.map((id) => byId.get(id) ?? { id, name: id, manager: false });
+  const accounts = childIds.map((id) => byId.get(id) ?? { id, name: id, manager: false });
+  const unresolved = accounts.filter((a) => a.name === a.id).length;
+  const nameLookupError =
+    unresolved > 0
+      ? `${unresolved}/${accounts.length}件のアカウント名を取得できませんでした（IDをそのまま表示しています）。他社（クライアント）のアカウントで読み取り権限が及んでいない可能性があります。${
+          diag ? "詳細：" + diag : ""
+        }`
+      : undefined;
+
+  return { accounts, nameLookupError };
 }
