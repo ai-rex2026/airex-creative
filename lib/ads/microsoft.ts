@@ -17,17 +17,23 @@
  * 3) Reporting Service（実績データ。非同期）
  *    SubmitGenerateReport → PollGenerateReport → ダウンロードURLをGET（ZIPファイル。jszipで展開）
  *
- * Campaign Management Service・Reporting Service の SOAP ヘッダーは Customer Management Service と
- * 違い、AuthenticationToken・DeveloperToken に加えて CustomerAccountId・CustomerId・Action（操作名）
- * が必須（Microsoft Learn 2026-09 確認）。CustomerAccountId には対象の広告アカウント自身のID、
- * CustomerId にはその ParentCustomerId を渡す（ドキュメントの文言どおり。Google広告の
+ * SOAP ヘッダーは3サービス共通で、操作名を示す <Action mustUnderstand="1">{operation}</Action> が
+ * 必須（Microsoft Learn の GetUser/SearchAccounts/GetCampaignsByAccountId 等の各リファレンスで
+ * 確認、2026-09）。これが無いと HTTP 200 は返らず「ContractFilter mismatch at the
+ * EndpointDispatcher」という WCF 側のディスパッチ失敗になる（実際に Customer Management Service
+ * 側でこの Action ヘッダーを落としていて発生・修正した実績あり）。Campaign Management Service・
+ * Reporting Service は Action に加えて CustomerAccountId・CustomerId も必須（CustomerAccountId
+ * には対象の広告アカウント自身のID、CustomerId にはその ParentCustomerId を渡す。Google広告の
  * login-customer-id（MCC）＋customer-id（対象）や、ヤフーLINE広告の x-z-base-account-id（base
  * account）＋body の accountId（対象）のような「ヘッダーは別のID」パターンとは違い、Microsoft は
- * ヘッダーのCustomerAccountIdが対象アカウント自身のIDでよい）。
+ * ヘッダーのCustomerAccountIdが対象アカウント自身のIDでよい）。Customer Management Service
+ * （GetUser・SearchAccounts）はこの2つ（CustomerAccountId・CustomerId）を使わない（というより
+ * まだ持っていない＝これから発見する呼び出しのため）。
  *
  * 参照:
  * - https://learn.microsoft.com/en-us/advertising/guides/get-started?view=bingads-13
  * - https://learn.microsoft.com/en-us/advertising/customer-management-service/getuser?view=bingads-13
+ * - https://learn.microsoft.com/en-us/advertising/customer-management-service/searchaccounts?view=bingads-13
  * - https://learn.microsoft.com/en-us/advertising/customer-management-service/advertiseraccount?view=bingads-13
  * - https://learn.microsoft.com/en-us/advertising/campaign-management-service/getcampaignsbyaccountid?view=bingads-13
  * - https://learn.microsoft.com/en-us/advertising/reporting-service/submitgeneratereport?view=bingads-13
@@ -36,7 +42,7 @@
  * - https://learn.microsoft.com/en-us/advertising/guides/reports?view=bingads-13
  * - https://learn.microsoft.com/en-us/advertising/guides/web-service-addresses?view=bingads-13
  *
- * 未検証の注意（2026-09時点。実際の開発者トークン・認証情報での疎通確認がまだできていない）：
+ * 未検証の注意（2026-09時点。実際の開発者トークン・認証情報での疎通確認の途中）：
  * - GetUser/SearchAccounts のレスポンスのXMLタグ構成（アカウント一覧の発見のみ、以前から未検証）
  * - Campaign Management Service・Reporting Service の SOAPAction ヘッダーの正確なワイヤー形式
  *   （Customer Management Service で実績のある `${NS}/{ServiceName}Service/{operation}` という
@@ -100,13 +106,21 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Customer Management Service 用の SOAP 呼び出し。ヘッダーに Action（操作名。mustUnderstand="1"）
+ * ・AuthenticationToken・DeveloperToken が必須（CustomerAccountId・CustomerId は不要＝まだ発見前）。
+ * 以前は Action ヘッダーを省略していたため、HTTPステータスは返るものの WCF 側で操作を解決できず
+ * 「ContractFilter mismatch at the EndpointDispatcher」で失敗していた（2026-09、実トークンでの
+ * 疎通確認で発覚・修正）。
+ */
 async function soapCall(operation: string, accessToken: string, bodyXml: string): Promise<string> {
   const xml = `<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Header>
-    <h:ApplicationToken i:nil="true" xmlns:h="${NS}" xmlns:i="http://www.w3.org/2001/XMLSchema-instance" />
-    <h:AuthenticationToken xmlns:h="${NS}">${escapeXml(accessToken)}</h:AuthenticationToken>
-    <h:DeveloperToken xmlns:h="${NS}">${escapeXml(env("MICROSOFT_DEVELOPER_TOKEN"))}</h:DeveloperToken>
+<s:Envelope xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Header xmlns="${NS}">
+    <Action mustUnderstand="1">${operation}</Action>
+    <ApplicationToken i:nil="true" />
+    <AuthenticationToken i:nil="false">${escapeXml(accessToken)}</AuthenticationToken>
+    <DeveloperToken i:nil="false">${escapeXml(env("MICROSOFT_DEVELOPER_TOKEN"))}</DeveloperToken>
   </s:Header>
   <s:Body>
     ${bodyXml}
