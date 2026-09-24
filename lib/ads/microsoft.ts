@@ -20,9 +20,16 @@
  * SOAP ヘッダーは3サービス共通で、操作名を示す <Action mustUnderstand="1">{operation}</Action> が
  * 必須（Microsoft Learn の GetUser/SearchAccounts/GetCampaignsByAccountId 等の各リファレンスで
  * 確認、2026-09）。これが無いと HTTP 200 は返らず「ContractFilter mismatch at the
- * EndpointDispatcher」という WCF 側のディスパッチ失敗になる（実際に Customer Management Service
- * 側でこの Action ヘッダーを落としていて発生・修正した実績あり）。Campaign Management Service・
- * Reporting Service は Action に加えて CustomerAccountId・CustomerId も必須（CustomerAccountId
+ * EndpointDispatcher」という WCF 側のディスパッチ失敗になる。
+ *
+ * さらに、HTTP の SOAPAction ヘッダー（SOAP本文とは別のHTTPヘッダー）は、ネームスペース付きURIでは
+ * なく**操作名だけをダブルクオートで囲んだ値**（例: `"GetUser"`）でなければならない（SOAP 1.1仕様
+ * どおり。以前は `${NS}/CustomerManagementService/${operation}` のようなURI形式で送っていたため、
+ * ヘッダー自体は存在してもWCF側で操作を解決できず同じ ContractFilter mismatch になっていた。
+ * 実際に稼働している SOAP クライアント（Ruby Savon 製、Bing Ads Campaign Management Service 宛）の
+ * 生ワイヤーログで SOAPAction: "GetAdExtensionsAssociations" という単純な形式を確認して特定・修正、
+ * 2026-09）。Campaign Management Service・Reporting Service は Action に加えて CustomerAccountId・
+ * CustomerId も必須（CustomerAccountId
  * には対象の広告アカウント自身のID、CustomerId にはその ParentCustomerId を渡す。Google広告の
  * login-customer-id（MCC）＋customer-id（対象）や、ヤフーLINE広告の x-z-base-account-id（base
  * account）＋body の accountId（対象）のような「ヘッダーは別のID」パターンとは違い、Microsoft は
@@ -44,9 +51,6 @@
  *
  * 未検証の注意（2026-09時点。実際の開発者トークン・認証情報での疎通確認の途中）：
  * - GetUser/SearchAccounts のレスポンスのXMLタグ構成（アカウント一覧の発見のみ、以前から未検証）
- * - Campaign Management Service・Reporting Service の SOAPAction ヘッダーの正確なワイヤー形式
- *   （Customer Management Service で実績のある `${NS}/{ServiceName}Service/{operation}` という
- *   フルURI形式を踏襲しているが、この2サービスで直接確認したものではない）
  * - ダウンロードしたレポートファイルが標準的なZIP形式（PKヘッダー）であること
  * - TimePeriod（日付列）の実際の文字列フォーマット（"M/D/YYYY" を想定して正規化している。
  *   違う形式で返ってきた場合、日別実績の日付が正しく表示されない）
@@ -109,9 +113,10 @@ async function sleep(ms: number): Promise<void> {
 /**
  * Customer Management Service 用の SOAP 呼び出し。ヘッダーに Action（操作名。mustUnderstand="1"）
  * ・AuthenticationToken・DeveloperToken が必須（CustomerAccountId・CustomerId は不要＝まだ発見前）。
- * 以前は Action ヘッダーを省略していたため、HTTPステータスは返るものの WCF 側で操作を解決できず
- * 「ContractFilter mismatch at the EndpointDispatcher」で失敗していた（2026-09、実トークンでの
- * 疎通確認で発覚・修正）。
+ * HTTP の SOAPAction ヘッダーは操作名だけをダブルクオートで囲んだ値（例: `"GetUser"`）。
+ * 以前は SOAP本文の Action ヘッダー省略・HTTP SOAPAction のURI形式誤りの2つが重なっていたため、
+ * HTTPステータスは返るものの WCF 側で操作を解決できず「ContractFilter mismatch at the
+ * EndpointDispatcher」で失敗していた（2026-09、実トークンでの疎通確認で発覚・修正）。
  */
 async function soapCall(operation: string, accessToken: string, bodyXml: string): Promise<string> {
   const xml = `<?xml version="1.0" encoding="utf-8"?>
@@ -131,7 +136,7 @@ async function soapCall(operation: string, accessToken: string, bodyXml: string)
     method: "POST",
     headers: {
       "content-type": "text/xml; charset=utf-8",
-      soapaction: `${NS}/CustomerManagementService/${operation}`,
+      soapaction: `"${operation}"`,
     },
     body: xml,
     signal: AbortSignal.timeout(20000),
@@ -176,7 +181,7 @@ async function soapCallWithCustomer(
     method: "POST",
     headers: {
       "content-type": "text/xml; charset=utf-8",
-      soapaction: `${ns}/${serviceName}/${operation}`,
+      soapaction: `"${operation}"`,
     },
     body: xml,
     signal: AbortSignal.timeout(30000),
@@ -418,7 +423,7 @@ function normalizeDate(s: string): string {
   return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
 }
 
-/** 1行分のCSVをセルの配列にする（ダブルクォート囲み・""エスケープに対応。キャンペーン名にカンマが入りうるため単純split不可） */
+/** 1行分のCSVをセルの配列にする（ダブルクオート囲み・""エスケープに対応。キャンペーン名にカンマが入りうるため単純split不可） */
 function parseCsvLine(line: string): string[] {
   const out: string[] = [];
   let cur = "";
