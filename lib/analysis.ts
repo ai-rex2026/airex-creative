@@ -5,7 +5,8 @@ import { generateMediaPlan } from "./media-plan";
 import { generateSummary } from "./summary";
 import { findCompetitors, type CompetitorScan } from "./competitors";
 import { generateTactics, type TacticPlan } from "./tactics";
-import { finishAdOps, generateCampaign, opsTargets, type AdOps } from "./ad-ops";
+import { generateSnsPlan, type SnsPlan } from "./sns-plan";
+import { finishAdOps, generateCampaign, opsTargets, planChannel, type AdOps } from "./ad-ops";
 import { hasPlacesApi, scanMeo, type MeoScan } from "./meo";
 import { generateKeywords, generateLine, generateLpo, type KeywordPlan, type LinePlan, type LpoPlan } from "./deep";
 import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } from "./outreach";
@@ -53,6 +54,8 @@ export type Analysis = {
   summary: Summary | null;
   competitors: CompetitorScan | null;
   tactics: TacticPlan | null;
+  /** SNSオーガニック運用とSNSキャンペーン企画。古い分析には無い */
+  sns_plan: SnsPlan | null;
   ad_ops: AdOps | null;
   meo: MeoScan | null;
   lpo: LpoPlan | null;
@@ -212,25 +215,41 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
       const plan = await generateMediaPlan(a.diagnosis, a.site, a.budget);
       return await save({ media_plan: plan, step: "広告の運用設計を書いています", progress: 55 });
     }
-    // 媒体1つ＝1工程。まとめて生成すると1リクエストの実行時間に収まらず、
-    // 何も保存されないまま再試行を繰り返して進捗が止まる
+    // 広告運用設計。媒体ごとに「構成（キャンペーン・広告グループの骨組み）」→「キャンペーン1本ずつの中身」の順に作る。
+    // まとめて生成すると1リクエストの実行時間に収まらず、何も保存されないまま再試行を繰り返して進捗が止まる
     if (!a.ad_ops?.done) {
       const targets = opsTargets(a.media_plan);
       const built = a.ad_ops?.campaigns ?? [];
-      const next = targets[built.length];
-      if (next) {
-        const c = await generateCampaign(a.diagnosis, a.site, next);
-        const ops: AdOps = {
-          done: false, campaigns: [...built, c], tags: [], overLength: [],
-          guard: { level: "green", hits: [] }, flagged: [],
-        };
+      const structures = a.ad_ops?.plan ?? [];
+      const empty = { tags: [], overLength: [], guard: { level: "green" as const, hits: [] }, flagged: [] };
+
+      const nextChannel = targets.find((t) => !structures.some((s) => s.channel === t.channel));
+      if (nextChannel) {
+        const st = await planChannel(a.diagnosis, a.site, nextChannel);
+        const ops: AdOps = { done: false, plan: [...structures, st], campaigns: built, ...empty };
         return await save({
           ad_ops: ops,
-          step: `広告の運用設計を書いています（${built.length + 1}/${targets.length}）`,
-          progress: 55 + Math.round((5 * (built.length + 1)) / targets.length),
+          step: `広告の運用設計を書いています（${nextChannel.channel}の構成）`,
+          progress: 55 + Math.round((2 * (structures.length + 1)) / targets.length),
         });
       }
-      const ops = await finishAdOps(built, a.site, a.media_plan, a.diagnosis.industry);
+
+      const skeletons = structures.flatMap((s) => {
+        const item = targets.find((t) => t.channel === s.channel);
+        return item ? s.campaigns.map((c) => ({ item, c })) : [];
+      });
+      const next = skeletons.find((k) => !built.some((b) => b.channel === k.item.channel && b.name === k.c.name));
+      if (next) {
+        const c = await generateCampaign(a.diagnosis, a.site, next.item, next.c, a.budget);
+        const doneCount = built.length + 1;
+        const ops: AdOps = { done: false, plan: structures, campaigns: [...built, c], ...empty };
+        return await save({
+          ad_ops: ops,
+          step: `広告の運用設計を書いています（${doneCount}/${skeletons.length}：${next.c.name}）`,
+          progress: 57 + Math.round((5 * doneCount) / Math.max(skeletons.length, 1)),
+        });
+      }
+      const ops = await finishAdOps(built, a.site, a.media_plan, a.diagnosis.industry, structures);
       return await save({ ad_ops: ops, step: "広告以外の施策を整理しています", progress: 62 });
     }
     // YouTube・Xはアカウント情報（登録者数・直近の投稿）が実測できている場合だけ、
@@ -265,7 +284,12 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     }
     if (!a.tactics) {
       const t = await generateTactics(a.diagnosis, a.site, a.social);
-      return await save({ tactics: t, step: "訴求軸ごとにコピーを書いています", progress: 66 });
+      return await save({ tactics: t, step: "SNSの運用プランを書いています", progress: 66 });
+    }
+    // SNSオーガニック運用とSNSキャンペーン企画。「広告以外の施策」の各SNSの下に出す
+    if (!a.sns_plan) {
+      const sns_plan = await generateSnsPlan(a.diagnosis, a.social).catch(failedChapter<SnsPlan>({ channels: [], campaign: null }));
+      return await save({ sns_plan, step: "訴求軸ごとにコピーを書いています", progress: 67 });
     }
     // 施策はKPIに効くものだけを出す。だからKPIの仮説を先に立てる
     if (!a.kpi) {

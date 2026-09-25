@@ -129,9 +129,21 @@ export type OutreachPlan = {
   /** サジェストへの打ち手。実測した内容を踏まえて書かせる */
   suggestActions: string[];
   prThemes: string[];
+  /**
+   * ネガティブ対策。悪い評判・誤解が広がったときに備えて先にやること（本体 ch6_pr.negative_countermeasures）。
+   * 古い分析には無い
+   */
+  negatives?: string[];
   /** 生成に失敗したときの理由 */
   error?: string;
 };
+
+const NEGATIVE_RULES = `- negatives は4〜5件。**悪い評判や誤解が広がったときに備えて、先にやっておくこと**を書く
+  対象の例：低評価の口コミへの返信方針、よくある誤解（料金・痛み・副作用・解約など）を先回りして説明するページ、
+  指名検索で不利な語が出たときの受け皿、SNSでの批判への初動（誰が・何時間以内に・どこで返すか）、
+  社内の問い合わせ窓口の一本化
+  サジェストに「注意」の語があれば、その語への対処を必ず含める。
+  口コミの削除依頼・サクラ投稿・逆SEOのような、規約や法律に触れる手段は書かない`;
 
 export async function generateOutreach(
   d: Diagnosis,
@@ -158,6 +170,7 @@ export async function generateOutreach(
 - suggestActions は3〜5件。**下に渡す実測のサジェストを踏まえて**書く。
   一般論（「ポジティブな情報を増やす」等）は書かない。どの語に何をするかを書く
 - prThemes は3〜4件。この商材の事実を使う。誇張しない
+${NEGATIVE_RULES}
 - 効果を断定する表現・最上級表現は書かない`,
     `商材: ${d.product}
 ターゲット: ${d.audience}
@@ -175,7 +188,27 @@ ${competitors?.items?.length ? `\n競合: ${competitors.items.slice(0, 5).map((c
 
 出力: {"citations":[{"site":"","kind":"","why":"","how":""}],
  "affiliate":{"fit":true,"reason":"","asps":[""],"terms":"","caution":null},
- "suggestActions":[""],"prThemes":[""]}`,
+ "suggestActions":[""],"prThemes":[""],"negatives":[""]}`,
     { maxTokens: 4000 }
   );
+}
+
+/** 古い分析に、ネガティブ対策だけを後から足す */
+export async function generateNegatives(d: Diagnosis, suggests: SuggestScan | null): Promise<string[]> {
+  const risky = (suggests?.rows ?? []).filter((r) => r.kind !== "中立");
+  const res = await askJson<{ negatives: string[] }>(
+    `あなたは広報・評判管理の実務者です。
+${NEGATIVE_RULES}
+- 効果を断定する表現・最上級表現は書かない`,
+    `商材: ${d.product}
+ターゲット: ${d.audience}
+業種: ${d.industry}
+買わない理由: ${d.objections.join(" / ")}
+${suggests?.rows.length ? `実測した検索サジェスト:\n${suggests.rows.map((r) => `- ${r.suggestion}（${r.kind}）`).join("\n")}` : "検索サジェストは取得できていません"}
+${risky.length ? `\n※ このうち ${risky.map((r) => `「${r.suggestion}」`).join("・")} は放置すると不利になります` : ""}
+
+出力: {"negatives":[""]}`,
+    { maxTokens: 2000 }
+  );
+  return (res.negatives ?? []).filter(Boolean).slice(0, 6);
 }

@@ -2,7 +2,8 @@ import { createAdminClient } from "./supabase/admin";
 import { tick } from "./analysis";
 
 /** 実行中とみなす猶予。これより古い更新は「止まっている」と判断して拾い直す */
-const STALE_MS = 90_000;
+// 広告運用設計のようにAIの1工程が2分を超えることがあるので、実行中の工程を二重に走らせない長さにする
+const STALE_MS = 200_000;
 
 /**
  * 1件の分析を、完了するか時間切れになるまで進める。

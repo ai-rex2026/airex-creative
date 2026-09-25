@@ -36,7 +36,8 @@ export const AD_SPECS: AdSpec[] = [
     label: "Google 検索（レスポンシブ検索広告）",
     match: /google.*(検索|search)|検索.*google|リスティング/i,
     count: "半角換算",
-    headline: { field: "見出し", count: 12, limit: 30 },
+    // 見出しは最大15本まで入れられる。本数が多いほど組み合わせの学習が効くので上限まで出す
+    headline: { field: "見出し", count: 15, limit: 30 },
     description: { field: "説明文", count: 4, limit: 90 },
     keywords: true,
     source: "Google 広告ヘルプ（レスポンシブ検索広告）",
@@ -46,7 +47,7 @@ export const AD_SPECS: AdSpec[] = [
     label: "Yahoo!検索広告（レスポンシブ検索広告）",
     match: /yahoo.*(検索|search)|検索.*yahoo/i,
     count: "半角換算",
-    headline: { field: "タイトル", count: 12, limit: 30 },
+    headline: { field: "タイトル", count: 15, limit: 30 },
     description: { field: "説明文", count: 4, limit: 90 },
     keywords: true,
     source: "Yahoo!広告ヘルプ（レスポンシブ検索広告）",
@@ -94,6 +95,18 @@ export const AD_SPECS: AdSpec[] = [
     long: { field: "長い見出し", count: 5, limit: 90 },
     keywords: false,
     source: "運用者（鈴木）提供・2026-09",
+  },
+  {
+    id: "pmax",
+    label: "Google P-MAX（アセットグループ）",
+    match: /p-?max|パフォーマンス\s*(マックス|最大化)|performance\s*max/i,
+    count: "半角換算",
+    // 見出しは最大15本・長い見出しは最大5本・説明文は最大5本（うち1本は全角30文字以内が必要）
+    headline: { field: "見出し", count: 15, limit: 30 },
+    description: { field: "説明文", count: 5, limit: 90 },
+    long: { field: "長い見出し", count: 5, limit: 90 },
+    keywords: false,
+    source: "Google 広告ヘルプ（P-MAX キャンペーンのアセット要件）。説明文のうち1本は全角30文字以内",
   },
   {
     id: "google-display",

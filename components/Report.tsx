@@ -10,6 +10,8 @@ import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
 import type { CompetitorScan } from "@/lib/competitors";
 import type { TacticPlan } from "@/lib/tactics";
+import { snsPlatformsIn, type SnsPlan } from "@/lib/sns-plan";
+import { AdStructureTable, MissingSectionsBanner, RebuildAdPlanNote, SnsCampaignCard, SnsChannelBlock } from "./ReportExtras";
 import { adWidth, type AdOps } from "@/lib/ad-ops";
 import { lengthIn, limitLabel, specFor, type CountMode } from "@/lib/ad-specs";
 import type { MeoScan } from "@/lib/meo";
@@ -120,6 +122,7 @@ export function Report({
   id,
   gsc,
   ga4,
+  snsPlan = null,
 }: {
   d: Diagnosis;
   copies: BannerCopy[];
@@ -155,6 +158,7 @@ export function Report({
   id: string;
   gsc: GscData | null;
   ga4: Ga4Data | null;
+  snsPlan?: SnsPlan | null;
 }) {
   const [picked, setPicked] = useState<number[]>(copies.map((_, i) => i).slice(0, 3));
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "google-lb"]);
@@ -446,6 +450,8 @@ export function Report({
         {kpi && <button className={tab === "measures" ? "on" : ""} onClick={() => setTab("measures")}>施策</button>}
         <button className={tab === "overview" ? "on" : ""} onClick={() => setTab("overview")}>分析データ</button>
       </div>
+
+      {!isGuest && <MissingSectionsBanner id={id} />}
 
       {tab === "inputs" && (
         <Inputs
@@ -1132,6 +1138,12 @@ export function Report({
             <span className="rule" />
           </div>
 
+          {adOps.plan && adOps.plan.length > 0 ? (
+            <AdStructureTable plan={adOps.plan} />
+          ) : (
+            !isGuest && <RebuildAdPlanNote id={id} />
+          )}
+
           {adOps.tags.length > 0 && (
             <>
               <div className="rows measure">
@@ -1175,11 +1187,20 @@ export function Report({
                   <b>{c.name}</b>
                   <span className="tag">{c.channel}</span>
                 </div>
+                {c.purpose && <p className="purpose">{c.purpose}</p>}
+                {c.budget && <p className="budget">{c.budget}</p>}
                 {c.bidStrategy && <p className="bid">入札戦略：{c.bidStrategy}</p>}
+
+                {(c.campaignNegatives?.length ?? 0) > 0 && (
+                  <details className="flags">
+                    <summary>キャンペーン除外キーワード（{c.campaignNegatives!.length}件・全広告グループに効く）</summary>
+                    <div className="chips">{c.campaignNegatives!.map((k, i) => <span className="chip ng" key={i}>{k}</span>)}</div>
+                  </details>
+                )}
 
                 {c.settings?.length > 0 && (
                   <details className="flags">
-                    <summary>ターゲティング設定（{c.settings.length}項目）</summary>
+                    <summary>キャンペーン設定（{c.settings.length}項目）</summary>
                     <div className="rows" style={{ margin: 0 }}>
                       {c.settings.map((st, i) => (
                         <div className="r" key={i}>
@@ -1199,7 +1220,28 @@ export function Report({
                       <span className="ic">◆</span>
                       <b>{g.name}</b>
                     </div>
+                    {g.purpose && <p className="purpose">{g.purpose}</p>}
                     {g.targeting && <p>{g.targeting}</p>}
+
+                    {(g.audience?.length ?? 0) > 0 && (
+                      <details className="flags">
+                        <summary>{spec.id === "pmax" ? "オーディエンスシグナル・配信設定" : "配信対象の設定"}（{g.audience!.length}項目）</summary>
+                        <div className="rows" style={{ margin: 0 }}>
+                          {g.audience!.map((st, i) => (
+                            <div className="r" key={i}>
+                              <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 400 }}>{st.label}</b></div>
+                              <span className="tag">{st.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                    {(g.searchThemes?.length ?? 0) > 0 && (
+                      <details className="flags">
+                        <summary>検索テーマ（{g.searchThemes!.length}件）</summary>
+                        <div className="chips">{g.searchThemes!.map((k, i) => <span className="chip" key={i}>{k}</span>)}</div>
+                      </details>
+                    )}
 
                     {g.keywords?.length > 0 && (
                       <details className="flags">
@@ -1312,18 +1354,46 @@ export function Report({
             <span className="rule" />
           </div>
           <div className="measure" style={{ display: "grid", gap: 12 }}>
-            {tactics.items.map((t, i) => (
-              <div className="tactic" key={i}>
-                <div className="top">
-                  <b>{t.area}</b>
-                  {t.kpi && <span className="kpi">見る数字：{t.kpi}</span>}
-                </div>
-                <p>{t.summary}</p>
-                <ul>
-                  {t.actions?.map((a, k) => <li key={k}>{a}</li>)}
-                </ul>
-              </div>
-            ))}
+            {(() => {
+              // SNSの運用プランは、施策の見出しに出てくる媒体の下に入れる。
+              // 見出しに無い媒体（施策では触れていないがプランを作った媒体）は、SNSの施策の後ろにまとめて出す
+              const channels = snsPlan?.channels ?? [];
+              const used = new Set<string>();
+              const blocks = tactics.items.map((t, i) => {
+                const mine = channels.filter((c) => !used.has(c.platform) && snsPlatformsIn(`${t.area} ${t.summary}`).includes(c.platform));
+                mine.forEach((c) => used.add(c.platform));
+                return (
+                  <div className="tactic" key={i}>
+                    <div className="top">
+                      <b>{t.area}</b>
+                      {t.kpi && <span className="kpi">見る数字：{t.kpi}</span>}
+                    </div>
+                    <p>{t.summary}</p>
+                    <ul>
+                      {t.actions?.map((a, k) => <li key={k}>{a}</li>)}
+                    </ul>
+                    {mine.map((c) => <SnsChannelBlock key={c.platform} c={c} />)}
+                  </div>
+                );
+              });
+              const rest = channels.filter((c) => !used.has(c.platform));
+              return (
+                <>
+                  {blocks}
+                  {rest.length > 0 && (
+                    <div className="tactic">
+                      <div className="top"><b>SNSオーガニック運用</b></div>
+                      <p>広告費をかけずに育てるSNSの、媒体ごとの運用プランです。</p>
+                      {rest.map((c) => <SnsChannelBlock key={c.platform} c={c} />)}
+                    </div>
+                  )}
+                  {snsPlan?.campaign && <SnsCampaignCard c={snsPlan.campaign} />}
+                  {snsPlan?.error && channels.length === 0 && (
+                    <div className="note"><i className="i">i</i><span>SNSの運用プランを作れませんでした（{snsPlan.error}）</span></div>
+                  )}
+                </>
+              );
+            })()}
           </div>
 
           {socialInsights && socialInsights.items.length > 0 && (
@@ -1508,7 +1578,9 @@ export function Report({
                 <table className="kw">
                   <thead>
                     <tr>
-                      <th>キーワード</th><th>種別</th><th>難易度</th><th>優先度</th>
+                      <th>キーワード</th><th>種別</th>
+                      {keywords.rows.some((r) => r.volume) && <th>月間検索数（推定）</th>}
+                      <th>難易度</th><th>優先度</th>
                       <th>表示回数</th><th>掲載順位</th><th>やること</th>
                     </tr>
                   </thead>
@@ -1517,6 +1589,7 @@ export function Report({
                       <tr key={i}>
                         <td><b>{r.keyword}</b></td>
                         <td><span className="tag">{r.kind}</span></td>
+                        {keywords.rows.some((x) => x.volume) && <td className="num">{r.volume ?? "—"}</td>}
                         <td>{r.difficulty}</td>
                         <td>{r.priority}</td>
                         <td className="num">{r.impressions !== null ? r.impressions.toLocaleString() : "—"}</td>
@@ -1532,7 +1605,9 @@ export function Report({
                 <span>
                   {keywords.hasRealData
                     ? "表示回数・掲載順位は Search Console の直近28日の実測です。連携前の語は「—」にしています。"
-                    : "月間検索数は推測して載せていません。Search Console を連携すると、実際に検索されている語の表示回数と掲載順位が入ります。"}
+                    : "Search Console を連携すると、実際に検索されている語の表示回数と掲載順位が入ります。"}
+                  {keywords.rows.some((r) => r.volume) &&
+                    " 月間検索数（推定）は、企業規模・地域の人口・業種の市場規模からAIが見積もった5段階の目安です。実測ではありません。"}
                 </span>
               </div>
 
@@ -1708,6 +1783,14 @@ export function Report({
                 <div className="tactic measure" style={{ marginTop: 12 }}>
                   <div className="top"><b>PRで出せる話</b></div>
                   <ul>{outreach.prThemes.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                </div>
+              )}
+
+              {(outreach.negatives?.length ?? 0) > 0 && (
+                <div className="tactic measure" style={{ marginTop: 12 }}>
+                  <div className="top"><b>ネガティブ対策</b></div>
+                  <p>悪い評判や誤解が広がったときに備えて、先にやっておくことです。</p>
+                  <ul>{outreach.negatives!.map((x, i) => <li key={i}>{x}</li>)}</ul>
                 </div>
               )}
             </>
