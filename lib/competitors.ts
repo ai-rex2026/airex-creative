@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { currentProvider, recordAiCall } from "./ai-context";
+import { geminiGenerate } from "./gemini";
 import type { Diagnosis } from "./types";
 
 /**
@@ -42,6 +44,24 @@ ${own ? `自社サイト: ${own}（これは競合に含めない）` : ""}
 最後に STRICT JSON のみを出力（前置き・コードフェンス不要）:
 {"keywords":["",""],"items":[{"keyword":"","rank":1,"name":"","url":"https://...","note":""}]}`;
 
+  const text = currentProvider() === "gemini" ? await searchGemini(prompt) : await searchClaude(prompt);
+  const m = text.match(/\{[\s\S]*\}/);
+  let parsed: { keywords?: string[]; items?: Competitor[] } = {};
+  try {
+    parsed = m ? JSON.parse(m[0]) : {};
+  } catch {
+    parsed = {};
+  }
+
+  const items = (parsed.items ?? [])
+    .filter((x) => x?.url && x?.name && typeof x.rank === "number")
+    .filter((x) => !own || !x.url.includes(own))
+    .slice(0, 6);
+
+  return { keywords: parsed.keywords ?? [], items, searchedAt: new Date().toISOString() };
+}
+
+async function searchClaude(prompt: string): Promise<string> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const res = await client.messages.create({
     model: MODEL,
@@ -57,19 +77,22 @@ ${own ? `自社サイト: ${own}（これは競合に含めない）` : ""}
     messages: [{ role: "user", content: prompt }],
   });
 
-  const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
-  const m = text.match(/\{[\s\S]*\}/);
-  let parsed: { keywords?: string[]; items?: Competitor[] } = {};
-  try {
-    parsed = m ? JSON.parse(m[0]) : {};
-  } catch {
-    parsed = {};
-  }
+  recordAiCall({
+    model: MODEL,
+    input_tokens: res.usage?.input_tokens ?? 0,
+    output_tokens: res.usage?.output_tokens ?? 0,
+    searches: res.usage?.server_tool_use?.web_search_requests ?? 0,
+  });
+  return res.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+}
 
-  const items = (parsed.items ?? [])
-    .filter((x) => x?.url && x?.name && typeof x.rank === "number")
-    .filter((x) => !own || !x.url.includes(own))
-    .slice(0, 6);
-
-  return { keywords: parsed.keywords ?? [], items, searchedAt: new Date().toISOString() };
+/** Gemini は Google 検索連携で同じ調査をする */
+async function searchGemini(prompt: string): Promise<string> {
+  const g = await geminiGenerate({
+    system: "あなたは日本の広告運用のリサーチャーです。Google検索で実際に調べた結果だけを使って答えます。",
+    parts: [{ text: prompt }],
+    maxTokens: 3000,
+    search: true,
+  });
+  return g.text;
 }

@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { currentProvider, recordAiCall } from "./ai-context";
+import { geminiGenerate } from "./gemini";
 import type { Diagnosis } from "./types";
 import { readSocialAccount, type SocialAccount } from "./social";
 
@@ -55,22 +57,7 @@ ${own ? `自社サイト: ${own}（この運営元のアカウントは競合に
 最後に STRICT JSON のみを出力（前置き・コードフェンス不要）:
 {"items":[{"platform":"YouTube","url":"https://www.youtube.com/@..."},{"platform":"X","url":"https://x.com/..."}]}`;
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const res = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1500,
-    tools: [
-      {
-        type: "web_search_20250305",
-        name: "web_search",
-        max_uses: 3,
-        user_location: { type: "approximate", country: "JP", city: "Tokyo", timezone: "Asia/Tokyo" },
-      },
-    ],
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+  const text = currentProvider() === "gemini" ? await searchGemini(prompt) : await searchClaude(prompt);
   const m = text.match(/\{[\s\S]*\}/);
   let parsed: { items?: { platform?: string; url?: string }[] } = {};
   try {
@@ -96,4 +83,40 @@ ${own ? `自社サイト: ${own}（この運営元のアカウントは競合に
 
   // 実測できなかった（＝フォロワー数などが取れなかった）候補は、比較材料にならないので落とす
   return { items: accounts.filter((x) => x.account.readable), searchedAt: new Date().toISOString() };
+}
+
+async function searchClaude(prompt: string): Promise<string> {
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const res = await client.messages.create({
+    model: MODEL,
+    max_tokens: 1500,
+    tools: [
+      {
+        type: "web_search_20250305",
+        name: "web_search",
+        max_uses: 3,
+        user_location: { type: "approximate", country: "JP", city: "Tokyo", timezone: "Asia/Tokyo" },
+      },
+    ],
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  recordAiCall({
+    model: MODEL,
+    input_tokens: res.usage?.input_tokens ?? 0,
+    output_tokens: res.usage?.output_tokens ?? 0,
+    searches: res.usage?.server_tool_use?.web_search_requests ?? 0,
+  });
+  return res.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+}
+
+/** Gemini は Google 検索連携で同じ調査をする */
+async function searchGemini(prompt: string): Promise<string> {
+  const g = await geminiGenerate({
+    system: "あなたは日本の広告運用のリサーチャーです。Google検索で実際に調べた結果だけを使って答えます。",
+    parts: [{ text: prompt }],
+    maxTokens: 1500,
+    search: true,
+  });
+  return g.text;
 }

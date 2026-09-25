@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { currentProvider, recordAiCall } from "./ai-context";
+import { geminiGenerate } from "./gemini";
 
 /**
  * 判断・生成が要る処理は品質側、機械的な抽出・分類は低コスト側に振る。
@@ -31,6 +33,16 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
   const model = opts.model ?? MODEL;
 
   const call = async (extra: string, maxTokens: number) => {
+    if (currentProvider() === "gemini") {
+      const g = await geminiGenerate({
+        system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。" + extra,
+        parts: [{ text: user }],
+        maxTokens,
+        json: true,
+        timeoutMs: opts.timeoutMs,
+      });
+      return { text: stripFence(g.text), stop: g.truncated ? "max_tokens" : "end_turn" };
+    }
     const res = await client().messages.create(
       {
         model,
@@ -49,6 +61,7 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
       input_tokens: res.usage.input_tokens,
       output_tokens: res.usage.output_tokens,
     });
+    recordAiCall({ model, input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens });
     return { text: stripFence(res.content.map((b) => (b.type === "text" ? b.text : "")).join("")), stop: res.stop_reason };
   };
 
@@ -101,6 +114,19 @@ export async function askJsonWithImages<T>(
   const model = opts.model ?? MODEL_FAST;
 
   const call = async (maxTokens: number, extraSystem: string) => {
+    if (currentProvider() === "gemini") {
+      const g = await geminiGenerate({
+        system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。" + extraSystem,
+        parts: [
+          ...images.flatMap((im, i) => [{ text: `画像 ${i}` }, { inline_data: { mime_type: im.media, data: im.base64 } }]),
+          { text: user },
+        ],
+        maxTokens,
+        json: true,
+        timeoutMs: opts.timeoutMs ?? 90_000,
+      });
+      return { text: stripFence(g.text), stop: g.truncated ? "max_tokens" : "end_turn" };
+    }
     const res = await client().messages.create(
       {
         model,
@@ -125,6 +151,7 @@ export async function askJsonWithImages<T>(
       { timeout: opts.timeoutMs ?? 90_000, maxRetries: 1 }
     );
     opts.meter?.({ model, input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens });
+    recordAiCall({ model, input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens });
     return { text: stripFence(res.content.map((b) => (b.type === "text" ? b.text : "")).join("")), stop: res.stop_reason };
   };
 

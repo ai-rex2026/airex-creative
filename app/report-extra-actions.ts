@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAnthropic } from "@/lib/anthropic";
 import { processAnalysis } from "@/lib/worker";
+import { withAi, type AiProvider } from "@/lib/ai-context";
 import { generateSnsPlan } from "@/lib/sns-plan";
 import { generateNegatives, type OutreachPlan, type SuggestScan } from "@/lib/outreach";
 import { estimateKeywordVolumes, type KeywordPlan } from "@/lib/deep";
@@ -45,11 +46,12 @@ export async function missingSections(id: string): Promise<string[]> {
 
 /** 足りない項目を作る。AI を数回呼ぶので、応答を返したあとに走らせる */
 export async function addMissingSections(id: string) {
-  const { row } = await ownedRow(id, "status, diagnosis, social, sns_plan, outreach, suggests, keywords");
+  const { row } = await ownedRow(id, "status, diagnosis, social, sns_plan, outreach, suggests, keywords, ai_provider");
   if (row.status !== "done" || !row.diagnosis) throw new Error("レポートが完成してから追加できます");
   const d = row.diagnosis as Diagnosis;
 
-  after(async () => {
+  const provider = ((row.ai_provider as AiProvider | null) ?? "anthropic");
+  after(() => withAi(provider, async () => {
     // 本人の確認は済んでいるので、書き込みは service role で行う（after の中ではセッションが切れていることがある）
     // 失敗した項目は保存しない（保存すると「追加する」が出なくなり、やり直せなくなるため）
     const admin = createAdminClient();
@@ -86,7 +88,7 @@ export async function addMissingSections(id: string) {
     }
     await Promise.all(tasks);
     if (Object.keys(patch).length) await admin.from("analyses").update(patch).eq("id", id);
-  });
+  }));
 }
 
 /**

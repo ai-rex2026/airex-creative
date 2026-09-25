@@ -21,6 +21,8 @@ import { generateMeasures, type Measure } from "./measures";
 import { fetchGa4, fetchSearchConsole, fetchYoutubeAnalytics, hasGoogleApp, type Ga4Data, type GscData, type YoutubeAnalyticsData } from "./google";
 import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
+import { addUsage, withAi, type AiProvider, type AiUsageTotal } from "./ai-context";
+import { hasGemini } from "./gemini";
 
 /** 本番と同じ見た目の短いID（英数20文字） */
 export function newAnalysisId() {
@@ -87,6 +89,10 @@ export type Analysis = {
   ga4: Ga4Data | null;
   /** YouTube Studio相当の非公開指標。Google連携があり自チャンネルを検出できた場合だけ入る */
   social_yt_analytics: YoutubeAnalyticsData | null;
+  /** このレポートを作るAI。未設定なら最初の工程で連携の有無から決める */
+  ai_provider: AiProvider | null;
+  /** 使ったAIの量と費用（料金表からの計算値） */
+  ai_usage: AiUsageTotal | null;
   created_at: string;
 };
 
@@ -104,7 +110,38 @@ function failedChapter<T extends object>(empty: T) {
   return (e: unknown): T => ({ ...empty, error: e instanceof Error ? e.message : String(e) });
 }
 
+/**
+ * 連携（Google・広告アカウント・Meta・Googleビジネスプロフィール）がひとつも無い利用者のレポートは、
+ * 実データが無く精度の上限も低いので、費用を優先して Gemini で作る。
+ */
+export async function chooseProvider(sb: SupabaseClient, ownerId: string): Promise<AiProvider> {
+  if (!hasGemini()) return "anthropic";
+  for (const table of ["google_connections", "ad_connections", "meta_connections", "gbp_connections"]) {
+    const { count } = await sb.from(table).select("user_id", { count: "exact", head: true }).eq("user_id", ownerId);
+    if ((count ?? 0) > 0) return "anthropic";
+  }
+  return "gemini";
+}
+
 export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
+  const { data: head } = await sb.from("analyses").select("owner_id, status, ai_provider").eq("id", id).single();
+  if (!head || head.status === "done" || head.status === "failed") return tickStep(sb, id);
+  let provider = head.ai_provider as AiProvider | null;
+  if (!provider) {
+    provider = await chooseProvider(sb, head.owner_id as string);
+    await sb.from("analyses").update({ ai_provider: provider }).eq("id", id);
+  }
+  const { result, calls } = await withAi(provider, () => tickStep(sb, id));
+  if (calls.length) {
+    const { data: u } = await sb.from("analyses").select("ai_usage").eq("id", id).single();
+    const ai_usage = addUsage((u?.ai_usage as AiUsageTotal | null) ?? null, provider, calls);
+    await sb.from("analyses").update({ ai_usage }).eq("id", id);
+    return { ...result, ai_usage };
+  }
+  return result;
+}
+
+async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
   const { data, error } = await sb.from("analyses").select("*").eq("id", id).single();
   if (error || !data) throw new Error("分析が見つかりません");
   const a = data as Analysis;
