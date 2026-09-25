@@ -1,6 +1,8 @@
 {
   "crons": [
     { "path": "/api/cron/worker", "schedule": "* * * * *" },
-    { "path": "/api/cron/ad-tokens", "schedule": "0 18 * * 1" }
+    { "path": "/api/cron/ad-tokens", "schedule": "0 18 * * 1" },
+    { "path": "/api/cron/meo-daily", "schedule": "5 19 * * *" },
+    { "path": "/api/cron/meo-ai-search", "schedule": "*/10 * * * *" }
   ]
 }

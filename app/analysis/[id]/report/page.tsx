@@ -28,7 +28,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
   if (a.mode === "meo") {
     return (
       <Shell active="analysis">
-        <MeoReport meo={a.meo} site={a.site} url={a.url} />
+        <MeoReport id={a.id} meo={a.meo} site={a.site} url={a.url} />
       </Shell>
     );
   }

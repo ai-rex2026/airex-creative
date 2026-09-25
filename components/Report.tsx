@@ -14,6 +14,7 @@ import { adWidth, type AdOps } from "@/lib/ad-ops";
 import { lengthIn, limitLabel, specFor, type CountMode } from "@/lib/ad-specs";
 import type { MeoScan } from "@/lib/meo";
 import { MeoStoreList, scorePct } from "./MeoStores";
+import { MeoEntryCard } from "./meo/MeoEntryCard";
 import { Toc } from "./Toc";
 import { MainPrice } from "./MainPrice";
 import { BANNER_CASE_WARNING, looksLikeCasePhoto } from "@/lib/case-photo";
@@ -963,6 +964,8 @@ export function Report({
             </div>
             <span className="rule" />
           </div>
+
+          <MeoEntryCard analysisId={id} address={meo.self?.address} />
 
           {!meo.self ? (
             <div className="note">

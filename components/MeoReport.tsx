@@ -1,12 +1,13 @@
 import type { MeoScan } from "@/lib/meo";
 import { MeoStoreList, scorePct } from "./MeoStores";
+import { MeoEntryCard } from "./meo/MeoEntryCard";
 import type { SiteScan } from "@/lib/site-scan";
 
 /**
  * MEO だけを見に来た人向けの画面。
  * レポート一式は作らないので、Googleマップの実測とその読み方だけを出す。
  */
-export function MeoReport({ meo, site, url }: { meo: MeoScan | null; site: SiteScan | null; url: string | null }) {
+export function MeoReport({ id, meo, site, url }: { id: string; meo: MeoScan | null; site: SiteScan | null; url: string | null }) {
   const host = url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "";
 
   return (
@@ -14,6 +15,10 @@ export function MeoReport({ meo, site, url }: { meo: MeoScan | null; site: SiteS
       <div className="rhead">
         <h2>{host}</h2>
         <span className="tag">MEO</span>
+      </div>
+
+      <div className="wrap">
+        <MeoEntryCard analysisId={id} address={meo?.self?.address} />
       </div>
 
       {!meo?.self ? (
