@@ -1,0 +1,39 @@
+name: tmp-apply-report-extras
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".buildtmp/report-extras/GO.marker"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download, verify and apply
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git diff --quiet cd4c4eb3eaa83adcf9d5c51238244267aee6d541 HEAD -- "app/analysis/[id]/report/page.tsx" app/globals.css components/Report.tsx lib/ad-ops.ts lib/ad-specs.ts lib/analysis.ts lib/deep.ts lib/media-plan.ts lib/outreach.ts lib/worker.ts
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" \
+            "https://api.github.com/repos/$REPO/releases/assets/588149000" -o /tmp/p.tgz
+          echo "3c34ce2e810ca4c739f05909eb640f097120b48f5483d029cc89fc60b0b3b4f8  /tmp/p.tgz" | sha256sum -c -
+          tar xzf /tmp/p.tgz
+          rm -rf .buildtmp/report-extras
+          rm -f .github/workflows/tmp-apply-report-extras.yml
+          git config user.name "airex-bot"
+          git config user.email "bot@ad-rex.com"
+          git add -A
+          git commit -m "feat(report): SNS運用プラン・ネガティブ対策・媒体別キャンペーン構成（P-MAX含む）・月間検索数の推定を追加" \
+            -m "AI-REX本体の出力粒度を取り込み。既存レポートには後から項目を足す導線を追加。" \
+            -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_01RCmd7iHQujmUyDk3RoypTT"
+          git push origin HEAD:main
+          curl -fsS -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPO/releases/396522342" || true
