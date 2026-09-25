@@ -1,5 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
-
 /**
  * レポート1本の中で、どのAI（Claude / Gemini）を使うかと、使った量の記録。
  *
@@ -33,7 +31,24 @@ export type AiUsageTotal = {
 
 type Ctx = { provider: AiProvider; calls: AiCall[] };
 
-const store = new AsyncLocalStorage<Ctx>();
+type Als<T> = { getStore(): T | undefined; run<R>(store: T, fn: () => R): R };
+
+/**
+ * AsyncLocalStorage はサーバー（Node）でだけ使う。このファイルは画面側の部品からも
+ * 間接的に読み込まれるため、node: モジュールを静的に import するとクライアントのビルドが落ちる。
+ * 実行時に取り出し、無い環境（ブラウザ）では何もしない入れ物にする。
+ */
+function makeStore(): Als<Ctx> {
+  const g = globalThis as unknown as {
+    AsyncLocalStorage?: new () => Als<Ctx>;
+    process?: { getBuiltinModule?: (id: string) => { AsyncLocalStorage?: new () => Als<Ctx> } | undefined };
+  };
+  const Ctor = g.process?.getBuiltinModule?.("node:async_hooks")?.AsyncLocalStorage ?? g.AsyncLocalStorage;
+  if (Ctor) return new Ctor();
+  return { getStore: () => undefined, run: (_s, fn) => fn() };
+}
+
+const store = makeStore();
 
 export function currentProvider(): AiProvider {
   return store.getStore()?.provider ?? "anthropic";
