@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { currentProvider, recordAiCall } from "./ai-context";
-import { geminiGenerate } from "./gemini";
+import { geminiOrFallback } from "./gemini";
 
 /**
  * 判断・生成が要る処理は品質側、機械的な抽出・分類は低コスト側に振る。
@@ -34,14 +34,14 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
 
   const call = async (extra: string, maxTokens: number) => {
     if (currentProvider() === "gemini") {
-      const g = await geminiGenerate({
+      const g = await geminiOrFallback({
         system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。" + extra,
         parts: [{ text: user }],
         maxTokens,
         json: true,
         timeoutMs: opts.timeoutMs,
       });
-      return { text: stripFence(g.text), stop: g.truncated ? "max_tokens" : "end_turn" };
+      if (g) return { text: stripFence(g.text), stop: g.truncated ? "max_tokens" : "end_turn" };
     }
     const res = await client().messages.create(
       {
@@ -115,7 +115,7 @@ export async function askJsonWithImages<T>(
 
   const call = async (maxTokens: number, extraSystem: string) => {
     if (currentProvider() === "gemini") {
-      const g = await geminiGenerate({
+      const g = await geminiOrFallback({
         system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。" + extraSystem,
         parts: [
           ...images.flatMap((im, i) => [{ text: `画像 ${i}` }, { inline_data: { mime_type: im.media, data: im.base64 } }]),
@@ -125,7 +125,7 @@ export async function askJsonWithImages<T>(
         json: true,
         timeoutMs: opts.timeoutMs ?? 90_000,
       });
-      return { text: stripFence(g.text), stop: g.truncated ? "max_tokens" : "end_turn" };
+      if (g) return { text: stripFence(g.text), stop: g.truncated ? "max_tokens" : "end_turn" };
     }
     const res = await client().messages.create(
       {

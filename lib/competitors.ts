@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { currentProvider, recordAiCall } from "./ai-context";
-import { geminiGenerate } from "./gemini";
+import { geminiOrFallback } from "./gemini";
 import type { Diagnosis } from "./types";
 
 /**
@@ -44,7 +44,7 @@ ${own ? `自社サイト: ${own}（これは競合に含めない）` : ""}
 最後に STRICT JSON のみを出力（前置き・コードフェンス不要）:
 {"keywords":["",""],"items":[{"keyword":"","rank":1,"name":"","url":"https://...","note":""}]}`;
 
-  const text = currentProvider() === "gemini" ? await searchGemini(prompt) : await searchClaude(prompt);
+  const text = (currentProvider() === "gemini" ? await searchGemini(prompt) : null) ?? (await searchClaude(prompt));
   const m = text.match(/\{[\s\S]*\}/);
   let parsed: { keywords?: string[]; items?: Competitor[] } = {};
   try {
@@ -87,12 +87,12 @@ async function searchClaude(prompt: string): Promise<string> {
 }
 
 /** Gemini は Google 検索連携で同じ調査をする */
-async function searchGemini(prompt: string): Promise<string> {
-  const g = await geminiGenerate({
+async function searchGemini(prompt: string): Promise<string | null> {
+  const g = await geminiOrFallback({
     system: "あなたは日本の広告運用のリサーチャーです。Google検索で実際に調べた結果だけを使って答えます。",
     parts: [{ text: prompt }],
     maxTokens: 3000,
     search: true,
   });
-  return g.text;
+  return g ? g.text : null;
 }

@@ -26,10 +26,12 @@ export type AiUsageTotal = {
   searches: number;
   /** 料金表からの計算値（USD） */
   cost_usd: number;
+  /** Gemini が使えず Claude で作った工程があったか */
+  fell_back?: boolean;
   by_model: Record<string, { calls: number; input_tokens: number; output_tokens: number; thinking_tokens: number }>;
 };
 
-type Ctx = { provider: AiProvider; calls: AiCall[] };
+type Ctx = { provider: AiProvider; calls: AiCall[]; fellBack?: boolean };
 
 type Als<T> = { getStore(): T | undefined; run<R>(store: T, fn: () => R): R };
 
@@ -54,15 +56,30 @@ export function currentProvider(): AiProvider {
   return store.getStore()?.provider ?? "anthropic";
 }
 
+/**
+ * Gemini が使えない（残高切れ・上限・障害）ときは、この工程の残りを Claude に切り替える。
+ * レポートを失敗させるより、費用が高くても作り切るほうを優先する。
+ */
+export function fallbackToAnthropic() {
+  const ctx = store.getStore();
+  if (ctx) {
+    ctx.provider = "anthropic";
+    ctx.fellBack = true;
+  }
+}
+
 export function recordAiCall(c: AiCall) {
   store.getStore()?.calls.push(c);
 }
 
 /** fn の中で呼ばれた AI を provider に切り替え、使った量を返す */
-export async function withAi<T>(provider: AiProvider, fn: () => Promise<T>): Promise<{ result: T; calls: AiCall[] }> {
+export async function withAi<T>(
+  provider: AiProvider,
+  fn: () => Promise<T>
+): Promise<{ result: T; calls: AiCall[]; fellBack: boolean }> {
   const ctx: Ctx = { provider, calls: [] };
   const result = await store.run(ctx, fn);
-  return { result, calls: ctx.calls };
+  return { result, calls: ctx.calls, fellBack: !!ctx.fellBack };
 }
 
 // 100万トークンあたりの単価（USD）。料金改定時はここを直す

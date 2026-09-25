@@ -131,10 +131,11 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
     provider = await chooseProvider(sb, head.owner_id as string);
     await sb.from("analyses").update({ ai_provider: provider }).eq("id", id);
   }
-  const { result, calls } = await withAi(provider, () => tickStep(sb, id));
+  const { result, calls, fellBack } = await withAi(provider, () => tickStep(sb, id));
   if (calls.length) {
     const { data: u } = await sb.from("analyses").select("ai_usage").eq("id", id).single();
     const ai_usage = addUsage((u?.ai_usage as AiUsageTotal | null) ?? null, provider, calls);
+    if (fellBack) ai_usage.fell_back = true;
     await sb.from("analyses").update({ ai_usage }).eq("id", id);
     return { ...result, ai_usage };
   }

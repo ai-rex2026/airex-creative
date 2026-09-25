@@ -1,4 +1,4 @@
-import { recordAiCall } from "./ai-context";
+import { fallbackToAnthropic, recordAiCall } from "./ai-context";
 
 /**
  * Gemini API（REST）の最小クライアント。
@@ -12,6 +12,9 @@ export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 export function hasGemini() {
   return !!process.env.GEMINI_API_KEY;
 }
+
+/** 残高切れ・利用上限・キー不正など、待っても直らない（または当面直らない）失敗 */
+export class GeminiUnavailableError extends Error {}
 
 type Part = { text?: string; thought?: boolean; inline_data?: { mime_type: string; data: string } };
 
@@ -34,7 +37,7 @@ export async function geminiGenerate(opts: {
   timeoutMs?: number;
 }): Promise<GeminiResult> {
   const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("GEMINI_API_KEY が未設定です");
+  if (!key) throw new GeminiUnavailableError("GEMINI_API_KEY が未設定です");
 
   const body = (withThinking: boolean) => ({
     system_instruction: { parts: [{ text: opts.system }] },
@@ -78,7 +81,11 @@ export async function geminiGenerate(opts: {
         }
         throw new Error(`Gemini 400: ${t.slice(0, 300)}`);
       }
-      if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      if (!res.ok) {
+        const t = (await res.text()).slice(0, 300);
+        if ([401, 402, 403, 429, 500, 503].includes(res.status)) throw new GeminiUnavailableError(`Gemini ${res.status}: ${t}`);
+        throw new Error(`Gemini ${res.status}: ${t}`);
+      }
 
       resolvedModel = model;
       const j = (await res.json()) as {
@@ -101,5 +108,22 @@ export async function geminiGenerate(opts: {
       return { text, truncated: c?.finishReason === "MAX_TOKENS" };
     }
   }
-  throw new Error(`Gemini: 利用できるモデルが見つかりません（${lastErr}）`);
+  throw new GeminiUnavailableError(`Gemini: 利用できるモデルが見つかりません（${lastErr}）`);
+}
+
+/**
+ * Gemini で生成し、使えなければ null を返して呼び出し元に Claude で作らせる。
+ * 一度使えなかったら、その工程の残りは Claude に切り替える（毎回失敗を待たない）。
+ */
+export async function geminiOrFallback(opts: Parameters<typeof geminiGenerate>[0]): Promise<GeminiResult | null> {
+  try {
+    return await geminiGenerate(opts);
+  } catch (e) {
+    if (e instanceof GeminiUnavailableError) {
+      console.error("[gemini] fallback to anthropic:", e.message);
+      fallbackToAnthropic();
+      return null;
+    }
+    throw e;
+  }
 }
