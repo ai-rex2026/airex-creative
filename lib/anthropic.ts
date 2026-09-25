@@ -28,6 +28,71 @@ function stripFence(raw: string) {
     .trim();
 }
 
+
+/**
+ * 指示の「出力:」に書いた JSON の外枠と、返ってきた JSON の外枠がずれたときに合わせる。
+ * 軽いモデルほど {"items":[...]} を [...] で返したり、別の名前で包んだりしやすく、
+ * そのままだと中身があるのに空として扱われてしまう。
+ */
+function exampleOf(prompt: string): Record<string, unknown> | null {
+  const i = prompt.lastIndexOf("出力");
+  if (i < 0) return null;
+  const start = prompt.indexOf("{", i);
+  if (start < 0) return null;
+  let depth = 0;
+  for (let j = start; j < prompt.length; j++) {
+    const ch = prompt[j];
+    if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0) {
+      try {
+        const v = JSON.parse(prompt.slice(start, j + 1));
+        return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+export function conformToExample<T>(parsed: unknown, system: string, user: string): T {
+  const ex = exampleOf(user) ?? exampleOf(system);
+  if (!ex) return parsed as T;
+  const exKeys = Object.keys(ex);
+  const arrayKeys = exKeys.filter((k) => Array.isArray(ex[k]));
+  // [...] だけが返ってきた
+  if (Array.isArray(parsed)) {
+    if (arrayKeys.length === 1) {
+      console.warn("[ai] wrapped bare array into", arrayKeys[0]);
+      return { [arrayKeys[0]]: parsed } as T;
+    }
+    return parsed as T;
+  }
+  if (!parsed || typeof parsed !== "object") return parsed as T;
+  let obj = parsed as Record<string, unknown>;
+  // {"result": {...本来の中身...}} のように1段余計に包まれている
+  const own = Object.keys(obj);
+  if (!exKeys.some((k) => k in obj) && own.length === 1) {
+    const inner = obj[own[0]];
+    if (Array.isArray(inner) && arrayKeys.length === 1) {
+      console.warn("[ai] renamed", own[0], "to", arrayKeys[0]);
+      return { [arrayKeys[0]]: inner } as T;
+    }
+    if (inner && typeof inner === "object" && exKeys.some((k) => k in (inner as object))) {
+      console.warn("[ai] unwrapped", own[0]);
+      obj = inner as Record<string, unknown>;
+    }
+  }
+  // 配列のキー名だけが違う（"items" の代わりに "plans" など）
+  const missing = arrayKeys.filter((k) => !(k in obj));
+  const extra = Object.keys(obj).filter((k) => !exKeys.includes(k) && Array.isArray(obj[k]));
+  if (missing.length === 1 && extra.length === 1) {
+    console.warn("[ai] renamed", extra[0], "to", missing[0]);
+    obj = { ...obj, [missing[0]]: obj[extra[0]] };
+  }
+  return obj as T;
+}
+
 /** JSON だけを返させる。壊れた出力は最初の { … } / [ … ] を拾って救済する */
 export async function askJson<T>(system: string, user: string, opts: AskOpts = {}): Promise<T> {
   const model = opts.model ?? MODEL;
@@ -77,7 +142,7 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
 
   const first = await call("", opts.maxTokens ?? 4000);
   try {
-    return parse(first.text);
+    return conformToExample<T>(parse(first.text), system, user);
   } catch {
     // 途中で切れた JSON は救済できない。max_tokens に当たっているなら枠を広げ、
     // そうでなければ短く書き直させて、もう一度だけ試す。
@@ -90,7 +155,7 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
       Math.min(Math.round((opts.maxTokens ?? 4000) * 1.5), 8000)
     );
     try {
-      return parse(retry.text);
+      return conformToExample<T>(parse(retry.text), system, user);
     } catch {
       throw new Error(
         truncated
