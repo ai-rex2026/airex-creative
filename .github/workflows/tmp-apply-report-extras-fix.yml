@@ -1,0 +1,38 @@
+name: tmp-apply-report-extras-fix
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".buildtmp/report-extras-fix/GO.marker"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download, verify and apply
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git diff --quiet e4392c96a1bd4239f16b9ecaefae25afad54c6e4 HEAD -- app/report-extra-actions.ts components/ReportExtras.tsx
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" \
+            "https://api.github.com/repos/$REPO/releases/assets/588160811" -o /tmp/p.tgz
+          echo "a6f838329335663cb82530d3dd3590b03ea46661289540df4349aa4e8a518a4c  /tmp/p.tgz" | sha256sum -c -
+          tar xzf /tmp/p.tgz
+          rm -rf .buildtmp/report-extras-fix
+          rm -f .github/workflows/tmp-apply-report-extras-fix.yml
+          git config user.name "airex-bot"
+          git config user.email "bot@ad-rex.com"
+          git add -A
+          git commit -m "fix(report): 項目の後追加でAI生成に失敗したときは保存せず、やり直せるようにする" \
+            -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_01RCmd7iHQujmUyDk3RoypTT"
+          git push origin HEAD:main
+          curl -fsS -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPO/releases/396526556" || true
