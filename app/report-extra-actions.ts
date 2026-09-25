@@ -51,25 +51,40 @@ export async function addMissingSections(id: string) {
 
   after(async () => {
     // 本人の確認は済んでいるので、書き込みは service role で行う（after の中ではセッションが切れていることがある）
+    // 失敗した項目は保存しない（保存すると「追加する」が出なくなり、やり直せなくなるため）
     const admin = createAdminClient();
     const patch: Record<string, unknown> = {};
+    const tasks: Promise<void>[] = [];
     if (!row.sns_plan) {
-      patch.sns_plan = await generateSnsPlan(d, (row.social as SocialScan | null) ?? null).catch((e) => ({
-        channels: [],
-        campaign: null,
-        error: e instanceof Error ? e.message : String(e),
-      }));
+      tasks.push(
+        generateSnsPlan(d, (row.social as SocialScan | null) ?? null)
+          .then((p) => {
+            if (p.channels.length || p.campaign) patch.sns_plan = p;
+          })
+          .catch(() => undefined)
+      );
     }
     const o = row.outreach as OutreachPlan | null;
     if (o && !o.negatives) {
-      const negatives = await generateNegatives(d, (row.suggests as SuggestScan | null) ?? null).catch(() => [] as string[]);
-      patch.outreach = { ...o, negatives };
+      tasks.push(
+        generateNegatives(d, (row.suggests as SuggestScan | null) ?? null)
+          .then((negatives) => {
+            if (negatives.length) patch.outreach = { ...o, negatives };
+          })
+          .catch(() => undefined)
+      );
     }
     const k = row.keywords as KeywordPlan | null;
     if (k && k.rows.length > 0 && k.rows.every((r) => r.volume === undefined)) {
-      const rows = await estimateKeywordVolumes(d, k.rows).catch(() => k.rows.map((r) => ({ ...r, volume: null })));
-      patch.keywords = { ...k, rows };
+      tasks.push(
+        estimateKeywordVolumes(d, k.rows)
+          .then((rows) => {
+            if (rows.some((r) => r.volume)) patch.keywords = { ...k, rows };
+          })
+          .catch(() => undefined)
+      );
     }
+    await Promise.all(tasks);
     if (Object.keys(patch).length) await admin.from("analyses").update(patch).eq("id", id);
   });
 }

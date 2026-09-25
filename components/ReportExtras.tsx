@@ -196,6 +196,7 @@ export function RebuildAdPlanNote({ id }: { id: string }) {
 export function MissingSectionsBanner({ id }: { id: string }) {
   const [missing, setMissing] = useState<string[]>([]);
   const [state, setState] = useState<"idle" | "working" | "error">("idle");
+  const [started, setStarted] = useState(0);
 
   useEffect(() => {
     missingSections(id).then(setMissing).catch(() => setMissing([]));
@@ -207,13 +208,13 @@ export function MissingSectionsBanner({ id }: { id: string }) {
     const t = setInterval(() => {
       missingSections(id)
         .then((m) => {
-          if (m.length === 0) window.location.reload();
-          else setMissing(m);
+          if (m.length < missing.length) window.location.reload();
+          else if (Date.now() - started > 240_000) setState("error");
         })
         .catch(() => undefined);
     }, 20000);
     return () => clearInterval(t);
-  }, [id, state]);
+  }, [id, state, missing.length, started]);
 
   if (missing.length === 0) return null;
   return (
@@ -226,12 +227,13 @@ export function MissingSectionsBanner({ id }: { id: string }) {
           disabled={state === "working"}
           onClick={() => {
             setState("working");
+            setStarted(Date.now());
             addMissingSections(id).catch(() => setState("error"));
           }}
         >
           {state === "working" ? "作成しています（1〜2分）…" : "追加する"}
         </button>
-        {state === "error" && <small style={{ display: "block", color: "var(--ng)" }}>追加を開始できませんでした。時間をおいてお試しください。</small>}
+        {state === "error" && <small style={{ display: "block", color: "var(--ng)" }}>一部またはすべての項目を作れませんでした（AIの利用上限・混雑など）。時間をおいてもう一度お試しください。</small>}
       </span>
     </div>
   );
