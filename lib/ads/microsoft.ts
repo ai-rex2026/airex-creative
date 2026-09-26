@@ -260,8 +260,9 @@ export async function microsoftSearchAccounts(accessToken: string, userId: strin
     .filter((a) => a.id);
   if (accounts.length === 0) {
     const fault = faultMessage(xml);
-    // 調査用：GetUser同様、原因切り分けのため生レスポンスを一時的にエラーメッセージへ含める
-    if (fault) throw new Error(`${fault} ｜RAW(200): ${rawDetail(xml)}`);
+    // 調査用：GetUserが返したUserIdの実際の値（機密情報ではない数値ID）を併記し、
+    // 広告管理画面のuid（既知の実在UserId）と一致するかを確認する
+    if (fault) throw new Error(`${fault}（検索対象UserId=${userId}）｜RAW(200): ${rawDetail(xml)}`);
   }
   return accounts.map((a) => ({ id: a.id, name: a.name || a.id, parentCustomerId: a.parentCustomerId }));
 }
