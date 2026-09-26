@@ -260,7 +260,8 @@ export async function microsoftSearchAccounts(accessToken: string, userId: strin
     .filter((a) => a.id);
   if (accounts.length === 0) {
     const fault = faultMessage(xml);
-    if (fault) throw new Error(fault);
+    // 調査用：GetUser同様、原因切り分けのため生レスポンスを一時的にエラーメッセージへ含める
+    if (fault) throw new Error(`${fault} ｜RAW(200): ${rawDetail(xml)}`);
   }
   return accounts.map((a) => ({ id: a.id, name: a.name || a.id, parentCustomerId: a.parentCustomerId }));
 }
@@ -296,7 +297,8 @@ async function microsoftCampaignList(
   }
   if (out.size === 0) {
     const fault = faultMessage(xml);
-    if (fault) throw new Error(fault);
+    // 調査用：GetUser/SearchAccounts同様、原因切り分けのため生レスポンスを一時的にエラーメッセージへ含める
+    if (fault) throw new Error(`${fault} ｜RAW(200): ${rawDetail(xml)}`);
   }
   return out;
 }
