@@ -59,8 +59,9 @@
  * エラーメッセージ（HTTPステータスやSOAP Faultの内容）を見て、このファイルを調整する。
  *
  * 2026-09 追記（一時的な調査用ログ）：GetUser が "The user id not found.（1310）" で失敗する事象を
- * 調査するため、microsoftUserId の失敗時のみ、生SOAPレスポンス（AuthenticationToken・
- * DeveloperTokenは redact 済み）をエラーメッセージ末尾に一時的に含めている。原因判明後に削除する。
+ * 調査するため、soapCall / soapCallWithCustomer のHTTPエラー時、および microsoftUserId 個別の
+ * 失敗時に、生SOAPレスポンス（AuthenticationToken・DeveloperTokenは redact 済み）をエラー
+ * メッセージ末尾に一時的に含めている。原因判明後に削除する。
  */
 
 import JSZip from "jszip";
@@ -120,6 +121,12 @@ function redactSecrets(xml: string): string {
     .replace(/(<DeveloperToken[^>]*>)[^<]*(<\/DeveloperToken>)/gi, "$1[redacted]$2");
 }
 
+/** 調査用：生レスポンス（redact済み・切り詰め済み）をエラーメッセージに含める文字列を作る */
+function rawDetail(xml: string): string {
+  const redacted = redactSecrets(xml);
+  return redacted.length > 1500 ? redacted.slice(0, 1500) + "…(truncated)" : redacted;
+}
+
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -157,7 +164,8 @@ async function soapCall(operation: string, accessToken: string, bodyXml: string)
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(faultMessage(text) ?? `Microsoft 広告 API エラー（HTTP ${res.status}）`);
+    const msg = faultMessage(text) ?? `Microsoft 広告 API エラー（HTTP ${res.status}）`;
+    throw new Error(`${msg} ｜RAW(HTTP ${res.status}): ${rawDetail(text)}`);
   }
   return text;
 }
@@ -202,7 +210,8 @@ async function soapCallWithCustomer(
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(faultMessage(text) ?? `Microsoft 広告 API エラー（HTTP ${res.status}）`);
+    const msg = faultMessage(text) ?? `Microsoft 広告 API エラー（HTTP ${res.status}）`;
+    throw new Error(`${msg} ｜RAW(HTTP ${res.status}): ${rawDetail(text)}`);
   }
   return text;
 }
@@ -218,9 +227,7 @@ export async function microsoftUserId(accessToken: string): Promise<{ id: string
   if (!id) {
     // 調査用：原因（アカウント種別の不一致か、コードのパースミスか）を切り分けるため、
     // 生レスポンス（redact済み）を一時的にエラーメッセージに含める
-    const redacted = redactSecrets(xml);
-    const detail = redacted.length > 1500 ? redacted.slice(0, 1500) + "…(truncated)" : redacted;
-    throw new Error(`${faultMessage(xml) ?? "ユーザー情報を取得できませんでした"} ｜RAW: ${detail}`);
+    throw new Error(`${faultMessage(xml) ?? "ユーザー情報を取得できませんでした"} ｜RAW(200): ${rawDetail(xml)}`);
   }
   return { id, customerId: tag(xml, "CustomerId") ?? "" };
 }
