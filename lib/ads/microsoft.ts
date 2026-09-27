@@ -1,41 +1,41 @@
 /**
- * Microsoft 広告（Bing Ads）API v13 の最小クライアント（アカウント一覧の発見・分析対象アカウントの
- * 選択・キャンペーン別実績の取得に使う）。
+ * Microsoft 広告（Bing Ads）API v13 の最小クライアント(アカウント一覧の発見・分析対象アカウントの
+ * 選択・キャンペーン別実績の取得に使う)。
  *
- * 3つのサービスをすべて SOAP で直接叩く（REST 版のない Customer Management Service に合わせて、
- * 他の2つも他のクライアント（lib/ads/google.ts・lib/ads/yahoo.ts）と同じく外部SDKを使わず
- * fetch + 文字列テンプレートで組み立てる方針）：
+ * 3つのサービスをすべて SOAP で直接叩く(REST 版のない Customer Management Service に合わせて、
+ * 他の2つも他のクライアント(lib/ads/google.ts・lib/ads/yahoo.ts)と同じく外部SDKを使わず
+ * fetch + 文字列テンプレートで組み立てる方針):
  *
- * 1) Customer Management Service（ユーザー・アカウント情報）
- *    GetUser（UserId 省略でトークンに紐づくユーザーを取る。レスポンスの CustomerId も併せて取る）
- *    → SearchAccounts（UserId 条件でアクセスできる広告アカウントをフラットな一覧で取る。
- *      Google/ヤフーLINE広告と違い MCC 配下を辿る必要がない＝AdvertiserAccount がそのまま
+ * 1) Customer Management Service(ユーザー・アカウント情報)
+ *    GetUser(UserId 省略でトークンに紐づくユーザーを取る。レスポンスの CustomerId も併せて取る)
+ *    → SearchAccounts(UserId 条件でアクセスできる広告アカウントをフラットな一覧で取る。
+ *      Google/ヤフーLINE広告と違い MCC 配下を辿る必要がない=AdvertiserAccount がそのまま
  *      「今すぐ実績を取れるアカウント」の一覧。各アカウントの ParentCustomerId が、実績取得で
- *      使う CustomerId ヘッダーの値になる）
- * 2) Campaign Management Service（キャンペーンの名前・ステータス）
+ *      使う CustomerId ヘッダーの値になる)
+ * 2) Campaign Management Service(キャンペーンの名前・ステータス)
  *    GetCampaignsByAccountId
- * 3) Reporting Service（実績データ。非同期）
- *    SubmitGenerateReport → PollGenerateReport → ダウンロードURLをGET（ZIPファイル。jszipで展開）
+ * 3) Reporting Service(実績データ。非同期)
+ *    SubmitGenerateReport → PollGenerateReport → ダウンロードURLをGET(ZIPファイル。jszipで展開)
  *
  * SOAP ヘッダーは3サービス共通で、操作名を示す <Action mustUnderstand="1">{operation}</Action> が
- * 必須（Microsoft Learn の GetUser/SearchAccounts/GetCampaignsByAccountId 等の各リファレンスで
- * 確認、2026-09）。これが無いと HTTP 200 は返らず「ContractFilter mismatch at the
+ * 必須(Microsoft Learn の GetUser/SearchAccounts/GetCampaignsByAccountId 等の各リファレンスで
+ * 確認、2026-09)。これが無いと HTTP 200 は返らず「ContractFilter mismatch at the
  * EndpointDispatcher」という WCF 側のディスパッチ失敗になる。
  *
- * さらに、HTTP の SOAPAction ヘッダー（SOAP本文とは別のHTTPヘッダー）は、ネームスペース付きURIでは
- * なく**操作名だけをダブルクオートで囲んだ値**（例: `"GetUser"`）でなければならない（SOAP 1.1仕様
+ * さらに、HTTP の SOAPAction ヘッダー(SOAP本文とは別のHTTPヘッダー)は、ネームスペース付きURIでは
+ * なく**操作名だけをダブルクオートで囲んだ値**(例: `"GetUser"`)でなければならない(SOAP 1.1仕様
  * どおり。以前は `${NS}/CustomerManagementService/${operation}` のようなURI形式で送っていたため、
  * ヘッダー自体は存在してもWCF側で操作を解決できず同じ ContractFilter mismatch になっていた。
- * 実際に稼働している SOAP クライアント（Ruby Savon 製、Bing Ads Campaign Management Service 宛）の
+ * 実際に稼働している SOAP クライアント(Ruby Savon 製、Bing Ads Campaign Management Service 宛)の
  * 生ワイヤーログで SOAPAction: "GetAdExtensionsAssociations" という単純な形式を確認して特定・修正、
- * 2026-09）。Campaign Management Service・Reporting Service は Action に加えて CustomerAccountId・
- * CustomerId も必須（CustomerAccountId
+ * 2026-09)。Campaign Management Service・Reporting Service は Action に加えて CustomerAccountId・
+ * CustomerId も必須(CustomerAccountId
  * には対象の広告アカウント自身のID、CustomerId にはその ParentCustomerId を渡す。Google広告の
- * login-customer-id（MCC）＋customer-id（対象）や、ヤフーLINE広告の x-z-base-account-id（base
- * account）＋body の accountId（対象）のような「ヘッダーは別のID」パターンとは違い、Microsoft は
- * ヘッダーのCustomerAccountIdが対象アカウント自身のIDでよい）。Customer Management Service
- * （GetUser・SearchAccounts）はこの2つ（CustomerAccountId・CustomerId）を使わない（というより
- * まだ持っていない＝これから発見する呼び出しのため）。
+ * login-customer-id(MCC)+customer-id(対象)や、ヤフーLINE広告の x-z-base-account-id(base
+ * account)+body の accountId(対象)のような「ヘッダーは別のID」パターンとは違い、Microsoft は
+ * ヘッダーのCustomerAccountIdが対象アカウント自身のIDでよい)。Customer Management Service
+ * (GetUser・SearchAccounts)はこの2つ(CustomerAccountId・CustomerId)を使わない(というより
+ * まだ持っていない=これから発見する呼び出しのため)。
  *
  * 参照:
  * - https://learn.microsoft.com/en-us/advertising/guides/get-started?view=bingads-13
@@ -49,19 +49,27 @@
  * - https://learn.microsoft.com/en-us/advertising/guides/reports?view=bingads-13
  * - https://learn.microsoft.com/en-us/advertising/guides/web-service-addresses?view=bingads-13
  *
- * 未検証の注意（2026-09時点。実際の開発者トークン・認証情報での疎通確認の途中）：
- * - GetUser/SearchAccounts のレスポンスのXMLタグ構成（アカウント一覧の発見のみ、以前から未検証）
- * - ダウンロードしたレポートファイルが標準的なZIP形式（PKヘッダー）であること
- * - TimePeriod（日付列）の実際の文字列フォーマット（"M/D/YYYY" を想定して正規化している。
- *   違う形式で返ってきた場合、日別実績の日付が正しく表示されない）
- * 失敗しても discoverAccounts の呼び出し元（lib/ads/accounts.ts）が例外を捕まえるので、連携
- * （トークン保存）自体は失敗しない。実績取得（fetchCampaignMetrics）で失敗した場合は、本番の
- * エラーメッセージ（HTTPステータスやSOAP Faultの内容）を見て、このファイルを調整する。
+ * 未検証の注意(2026-09時点。実際の開発者トークン・認証情報での疎通確認の途中):
+ * - ダウンロードしたレポートファイルが標準的なZIP形式(PKヘッダー)であること
+ * - TimePeriod(日付列)の実際の文字列フォーマット("M/D/YYYY" を想定して正規化している。
+ *   違う形式で返ってきた場合、日別実績の日付が正しく表示されない)
+ * 失敗しても discoverAccounts の呼び出し元(lib/ads/accounts.ts)が例外を捕まえるので、連携
+ * (トークン保存)自体は失敗しない。実績取得(fetchCampaignMetrics)で失敗した場合は、本番の
+ * エラーメッセージ(HTTPステータスやSOAP Faultの内容)を見て、このファイルを調整する。
  *
- * 2026-09 追記（一時的な調査用ログ）：GetUser が "The user id not found.（1310）" で失敗する事象を
- * 調査するため、soapCall / soapCallWithCustomer のHTTPエラー時、および microsoftUserId 個別の
- * 失敗時に、生SOAPレスポンス（AuthenticationToken・DeveloperTokenは redact 済み）をエラー
- * メッセージ末尾に一時的に含めている。原因判明後に削除する。
+ * 2026-09 追記(一時的な調査用ログ。真因判明後の現在も、しばらく本番での再発確認用に残している。
+ * 確認が取れ次第、soapCall / soapCallWithCustomer・各関数の RAW(...) 付きエラーメッセージは
+ * 削除してよい。TrackingId を faultMessage() に含める部分はサポート問い合わせに汎用的に使えるため
+ * 恒久的に残す):
+ * "The user id not found.（1310）" で GetUser 以降が失敗し続けていた真因は、tag(xml, "Id") が
+ * 文書中で最初に一致した <Id> をそのまま返す実装だったこと。Microsoft Learn の WSDL 定義上、
+ * User 型は ContactInfo → ...(アルファベット順)→ Id、AdvertiserAccount 型は BusinessAddress →
+ * ...→ Id の順で XML にシリアライズされ、ContactInfo(Address)自身も "Id" という名前のフィールド
+ * (住所/連絡先レコード自身のID。ユーザーIDでも広告アカウントIDでもない)を持つため、素朴な
+ * 「最初の <Id> を拾う」実装は本来欲しい User.Id / AdvertiserAccount.Id より先に出現する
+ * ContactInfo.Id / BusinessAddress.Id を誤って拾ってしまっていた。stripBlock() でこれらの
+ * ネストした複合型を先に取り除いてから Id を検索するよう修正済み(microsoftUserId・
+ * microsoftSearchAccounts)。
  */
 
 import JSZip from "jszip";
@@ -83,13 +91,13 @@ function escapeXml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** 単純タグの中身を取り出す（ネストなし前提）。名前空間プレフィックス有無どちらにも対応 */
+/** 単純タグの中身を取り出す(ネストなし前提)。名前空間プレフィックス有無どちらにも対応 */
 function tag(xml: string, name: string): string | null {
   const m = xml.match(new RegExp(`<(?:\\w+:)?${name}[^>]*>([^<]*)<\\/(?:\\w+:)?${name}>`));
   return m ? m[1] : null;
 }
 
-/** name というタグで囲まれたブロックをまるごと切り出す（AdvertiserAccount・Campaign の繰り返し用） */
+/** name というタグで囲まれたブロックをまるごと切り出す(AdvertiserAccount・Campaign の繰り返し用) */
 function blocks(xml: string, name: string): string[] {
   const re = new RegExp(`<(?:\\w+:)?${name}[^>]*>([\\s\\S]*?)<\\/(?:\\w+:)?${name}>`, "g");
   const out: string[] = [];
@@ -99,9 +107,31 @@ function blocks(xml: string, name: string): string[] {
 }
 
 /**
+ * ネストした複合型(内部に紛らわしい同名タグ、特に Id を持つもの)を丸ごと取り除いてから
+ * 検索できるようにする。
+ *
+ * 根本原因(2026-09 判明): Microsoft Learn の WSDL 定義上のフィールド順で、User 型は
+ * ContactInfo → ...(アルファベット順)→ Id、AdvertiserAccount 型は BusinessAddress → ...→ Id
+ * という順で XML にシリアライズされる。ContactInfo(Address)自身も "Id" という名前の
+ * フィールド(住所/連絡先レコード自身のID。ユーザーIDでも広告アカウントIDでもない)を持つため、
+ * tag(xml, "Id") のような「最初に見つかった <Id> を拾う」素朴な実装は、本来欲しい
+ * User.Id / AdvertiserAccount.Id より先に出現する ContactInfo.Id / BusinessAddress.Id を
+ * 誤って拾ってしまう。これが GetUser の Id が常に実在しないユーザーIDになり、後続の
+ * SearchAccounts が "The user id not found.（1310）" で失敗し続けていた真因。
+ * 参照:
+ * - https://learn.microsoft.com/en-us/advertising/customer-management-service/user?view=bingads-13
+ * - https://learn.microsoft.com/en-us/advertising/customer-management-service/contactinfo?view=bingads-13
+ * - https://learn.microsoft.com/en-us/advertising/customer-management-service/advertiseraccount?view=bingads-13
+ * - https://learn.microsoft.com/en-us/advertising/customer-management-service/address?view=bingads-13
+ */
+function stripBlock(xml: string, name: string): string {
+  return xml.replace(new RegExp(`<(?:\\w+:)?${name}[^>]*>[\\s\\S]*?<\\/(?:\\w+:)?${name}>`, "g"), "");
+}
+
+/**
  * SOAP Fault からメッセージを拾う。Customer Management は AdApiFaultDetail/ApiFault が
  * 直下に Message/ErrorCode を持つが、Campaign Management/Reporting は OperationErrors/BatchErrors
- * の配列の中に1段深く入る（Microsoft Learn 2026-09 確認）。深さに依存しないよう、本文全体から
+ * の配列の中に1段深く入る(Microsoft Learn 2026-09 確認)。深さに依存しないよう、本文全体から
  * 最初に見つかった Message/ErrorCode をフラットに拾う。TrackingId も併せて拾い、サポート問い合わせ
  * 時に使えるようにする。
  */
@@ -121,7 +151,7 @@ function redactSecrets(xml: string): string {
     .replace(/(<DeveloperToken[^>]*>)[^<]*(<\/DeveloperToken>)/gi, "$1[redacted]$2");
 }
 
-/** 調査用：生レスポンス（redact済み・切り詰め済み）をエラーメッセージに含める文字列を作る */
+/** 調査用:生レスポンス(redact済み・切り詰め済み)をエラーメッセージに含める文字列を作る */
 function rawDetail(xml: string): string {
   const redacted = redactSecrets(xml);
   return redacted.length > 1500 ? redacted.slice(0, 1500) + "…(truncated)" : redacted;
@@ -132,12 +162,12 @@ async function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Customer Management Service 用の SOAP 呼び出し。ヘッダーに Action（操作名。mustUnderstand="1"）
- * ・AuthenticationToken・DeveloperToken が必須（CustomerAccountId・CustomerId は不要＝まだ発見前）。
- * HTTP の SOAPAction ヘッダーは操作名だけをダブルクオートで囲んだ値（例: `"GetUser"`）。
+ * Customer Management Service 用の SOAP 呼び出し。ヘッダーに Action(操作名。mustUnderstand="1")
+ * ・AuthenticationToken・DeveloperToken が必須(CustomerAccountId・CustomerId は不要=まだ発見前)。
+ * HTTP の SOAPAction ヘッダーは操作名だけをダブルクオートで囲んだ値(例: `"GetUser"`)。
  * 以前は SOAP本文の Action ヘッダー省略・HTTP SOAPAction のURI形式誤りの2つが重なっていたため、
  * HTTPステータスは返るものの WCF 側で操作を解決できず「ContractFilter mismatch at the
- * EndpointDispatcher」で失敗していた（2026-09、実トークンでの疎通確認で発覚・修正）。
+ * EndpointDispatcher」で失敗していた(2026-09、実トークンでの疎通確認で発覚・修正)。
  */
 async function soapCall(operation: string, accessToken: string, bodyXml: string): Promise<string> {
   const xml = `<?xml version="1.0" encoding="utf-8"?>
@@ -172,8 +202,8 @@ async function soapCall(operation: string, accessToken: string, bodyXml: string)
 
 /**
  * Campaign Management Service・Reporting Service 共通の SOAP 呼び出し。
- * この2サービスは Customer Management と違い、ヘッダーに Action（操作名）・CustomerAccountId
- * （対象の広告アカウント自身のID）・CustomerId（その ParentCustomerId）が必須。
+ * この2サービスは Customer Management と違い、ヘッダーに Action(操作名)・CustomerAccountId
+ * (対象の広告アカウント自身のID)・CustomerId(その ParentCustomerId)が必須。
  */
 async function soapCallWithCustomer(
   url: string,
@@ -223,18 +253,21 @@ async function soapCallWithCustomer(
 export async function microsoftUserId(accessToken: string): Promise<{ id: string; customerId: string }> {
   const body = `<GetUserRequest xmlns="${NS}"><UserId i:nil="true" xmlns:i="http://www.w3.org/2001/XMLSchema-instance" /></GetUserRequest>`;
   const xml = await soapCall("GetUser", accessToken, body);
-  const id = tag(xml, "Id");
+  // ContactInfo は User 自身の Id より先にシリアライズされ、かつ自分自身の Id フィールドを
+  // 持つため、先に取り除いてから検索する(stripBlock のコメント参照)。
+  const cleaned = stripBlock(xml, "ContactInfo");
+  const id = tag(cleaned, "Id");
   if (!id) {
-    // 調査用：原因（アカウント種別の不一致か、コードのパースミスか）を切り分けるため、
-    // 生レスポンス（redact済み）を一時的にエラーメッセージに含める
+    // 調査用:原因(アカウント種別の不一致か、コードのパースミスか)を切り分けるため、
+    // 生レスポンス(redact済み)を一時的にエラーメッセージに含める
     throw new Error(`${faultMessage(xml) ?? "ユーザー情報を取得できませんでした"} ｜RAW(200): ${rawDetail(xml)}`);
   }
-  return { id, customerId: tag(xml, "CustomerId") ?? "" };
+  return { id, customerId: tag(cleaned, "CustomerId") ?? "" };
 }
 
 export type MicrosoftAccount = { id: string; name: string; /** 実績取得の CustomerId ヘッダーに使う */ parentCustomerId: string };
 
-/** このユーザーがアクセスできる広告アカウント（最大100件、1ページぶん）。MCC配下の展開は不要 */
+/** このユーザーがアクセスできる広告アカウント(最大100件、1ページぶん)。MCC配下の展開は不要 */
 export async function microsoftSearchAccounts(accessToken: string, userId: string): Promise<MicrosoftAccount[]> {
   const body = `<SearchAccountsRequest xmlns="${NS}">
   <Predicates xmlns:a="${NS}/Entities" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
@@ -252,16 +285,22 @@ export async function microsoftSearchAccounts(accessToken: string, userId: strin
 </SearchAccountsRequest>`;
   const xml = await soapCall("SearchAccounts", accessToken, body);
   const accounts = blocks(xml, "AdvertiserAccount")
-    .map((b) => ({
-      id: tag(b, "Id") ?? "",
-      name: tag(b, "Name") ?? tag(b, "AccountName") ?? "",
-      parentCustomerId: tag(b, "ParentCustomerId") ?? "",
-    }))
+    .map((b) => {
+      // BusinessAddress は AdvertiserAccount 自身の Id より先にシリアライズされ、かつ
+      // 自分自身の Id フィールドを持つため、先に取り除いてから検索する(GetUser の
+      // ContactInfo と同じ問題。stripBlock のコメント参照)。
+      const cleaned = stripBlock(b, "BusinessAddress");
+      return {
+        id: tag(cleaned, "Id") ?? "",
+        name: tag(b, "Name") ?? tag(b, "AccountName") ?? "",
+        parentCustomerId: tag(b, "ParentCustomerId") ?? "",
+      };
+    })
     .filter((a) => a.id);
   if (accounts.length === 0) {
     const fault = faultMessage(xml);
-    // 調査用：GetUserが返したUserIdの実際の値（機密情報ではない数値ID）を併記し、
-    // 広告管理画面のuid（既知の実在UserId）と一致するかを確認する
+    // 調査用:GetUserが返したUserIdの実際の値(機密情報ではない数値ID)を併記し、
+    // 広告管理画面のuid(既知の実在UserId)と一致するかを確認する
     if (fault) throw new Error(`${fault}（検索対象UserId=${userId}）｜RAW(200): ${rawDetail(xml)}`);
   }
   return accounts.map((a) => ({ id: a.id, name: a.name || a.id, parentCustomerId: a.parentCustomerId }));
@@ -298,14 +337,14 @@ async function microsoftCampaignList(
   }
   if (out.size === 0) {
     const fault = faultMessage(xml);
-    // 調査用：GetUser/SearchAccounts同様、原因切り分けのため生レスポンスを一時的にエラーメッセージへ含める
+    // 調査用:GetUser/SearchAccounts同様、原因切り分けのため生レスポンスを一時的にエラーメッセージへ含める
     if (fault) throw new Error(`${fault} ｜RAW(200): ${rawDetail(xml)}`);
   }
   return out;
 }
 
 /* ------------------------------------------------------------------
- * Reporting Service：キャンペーン別実績（非同期）
+ * Reporting Service：キャンペーン別実績(非同期)
  * ------------------------------------------------------------------ */
 
 export type MicrosoftCampaignMetric = {
@@ -428,7 +467,7 @@ async function pollGenerateReport(
   throw new Error("レポートの生成に時間がかかっています。しばらくしてからもう一度お試しください。");
 }
 
-/** ダウンロードURLをGETし、ZIPを展開して中の1ファイルをテキストとして返す（認証不要。取得後すぐに使う） */
+/** ダウンロードURLをGETし、ZIPを展開して中の1ファイルをテキストとして返す(認証不要。取得後すぐに使う) */
 async function downloadAndUnzipReport(url: string): Promise<string> {
   const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
   if (!res.ok) throw new Error(`レポートのダウンロードに失敗しました（HTTP ${res.status}）`);
@@ -445,7 +484,7 @@ function parseNumber(v: string | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** "M/D/YYYY" 形式の日付を "YYYY-MM-DD" に正規化する（TimePeriod の実際の書式は未検証。他の形式ならそのまま返す） */
+/** "M/D/YYYY" 形式の日付を "YYYY-MM-DD" に正規化する(TimePeriod の実際の書式は未検証。他の形式ならそのまま返す) */
 function normalizeDate(s: string): string {
   const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return s;
@@ -453,7 +492,7 @@ function normalizeDate(s: string): string {
   return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
 }
 
-/** 1行分のCSVをセルの配列にする（ダブルクオート囲み・""エスケープに対応。キャンペーン名にカンマが入りうるため単純split不可） */
+/** 1行分のCSVをセルの配列にする(ダブルクオート囲み・""エスケープに対応。キャンペーン名にカンマが入りうるため単純split不可) */
 function parseCsvLine(line: string): string[] {
   const out: string[] = [];
   let cur = "";
@@ -484,7 +523,7 @@ function parseCsvLine(line: string): string[] {
   return out;
 }
 
-/** CSV（1行目がヘッダー。ExcludeReportHeader/ExcludeReportFooterをtrueにして送るので前後の付随情報はない）をパースする */
+/** CSV(1行目がヘッダー。ExcludeReportHeader/ExcludeReportFooterをtrueにして送るので前後の付随情報はない)をパースする */
 function parseCsv(text: string): Record<string, string>[] {
   const lines = text.split(/\r?\n/).filter((l) => l.length > 0);
   if (lines.length === 0) return [];
@@ -502,13 +541,13 @@ function parseCsv(text: string): Record<string, string>[] {
 }
 
 /**
- * 指定した広告アカウント1件のキャンペーン別実績・日別実績を取る（読み取りのみ）。
+ * 指定した広告アカウント1件のキャンペーン別実績・日別実績を取る(読み取りのみ)。
  * accountId は広告アカウント自身のID。customerId はその ParentCustomerId
- * （app/ad-actions.ts の saveMicrosoftSelection で保存時に Microsoft 側から取り直したもの）。
- * from / to は YYYY-MM-DD（両端を含む）。
+ * (app/ad-actions.ts の saveMicrosoftSelection で保存時に Microsoft 側から取り直したもの)。
+ * from / to は YYYY-MM-DD(両端を含む)。
  *
- * 1) GetCampaignsByAccountId でキャンペーンの名前・ステータスを取る（同期）。
- * 2) SubmitGenerateReport → PollGenerateReport → ダウンロードでCSVを取る（非同期。ZIP形式）。
+ * 1) GetCampaignsByAccountId でキャンペーンの名前・ステータスを取る(同期)。
+ * 2) SubmitGenerateReport → PollGenerateReport → ダウンロードでCSVを取る(非同期。ZIP形式)。
  * 3) CampaignId で突き合わせて、キャンペーン別・日別に集計する。
  */
 export async function fetchCampaignMetrics(
