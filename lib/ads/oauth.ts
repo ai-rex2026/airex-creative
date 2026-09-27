@@ -97,6 +97,12 @@ export function buildAuthUrl(platform: Exclude<AdPlatform, "x">, redirectUri: st
       u.searchParams.set("response_type", "code");
       u.searchParams.set("scope", "https://ads.microsoft.com/msads.manage offline_access");
       u.searchParams.set("state", state);
+      // 2026-09 追記：ブラウザに既存のMicrosoftセッション（別のMicrosoftアカウント実体）が
+      // 残っていると、common エンドポイントがそれをサイレントに再利用してしまい、
+      // Bing Ads側に登録されている本来のアカウントと異なるユーザーIDでサインインしてしまう
+      // 事象を確認（The user id not found. エラーの原因）。毎回アカウント選択画面を
+      // 強制的に出すことで、正しいMicrosoftアカウントを都度明示的に選ばせる。
+      u.searchParams.set("prompt", "select_account");
       return u.toString();
     }
     case "tiktok": {
