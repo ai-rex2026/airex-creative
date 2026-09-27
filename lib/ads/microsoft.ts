@@ -71,6 +71,15 @@
  * - https://learn.microsoft.com/en-us/advertising/customer-management-service/contactinfo?view=bingads-13
  * - https://learn.microsoft.com/en-us/advertising/customer-management-service/advertiseraccount?view=bingads-13
  * - https://learn.microsoft.com/en-us/advertising/customer-management-service/address?view=bingads-13
+ *
+ * 2026-09 修正済み(2件目): 対象期間に実績データが1件も無いアカウント(新規連携直後など)で、
+ * 「レポートのダウンロードURLが取得できませんでした」という致命的エラーになっていた事象を修正。
+ * Microsoft Learn の ReportRequestStatus 定義に、ReportDownloadUrl は Status=Success でも
+ * 「対象期間にデータが無ければ nil になりうる」と明記されている。つまり実績ゼロという正常な
+ * ケースを誤ってエラー扱いしていた。pollGenerateReport の戻り値を string | null にし、
+ * fetchCampaignMetrics 側で null なら実績ゼロの結果を返すよう修正(Google広告・ヤフーLINE広告が
+ * 0件レスポンスを空配列として扱うのと同じ挙動に揃えた)。
+ * 参照: https://learn.microsoft.com/en-us/advertising/reporting-service/reportrequeststatus?view=bingads-13
  */
 
 import JSZip from "jszip";
@@ -412,13 +421,21 @@ async function submitGenerateReport(
   return id;
 }
 
-/** ジョブが Success になるまでポーリングし、ダウンロードURLを返す */
+/**
+ * ジョブが Success になるまでポーリングし、ダウンロードURLを返す。
+ *
+ * Microsoft Learn の ReportRequestStatus 定義上、ReportDownloadUrl は Status が Success でも
+ * 「対象期間にデータが1件もない場合は nil になりうる」と明記されている（2026-09 確認）。
+ * つまり Success かつ ReportDownloadUrl 無し＝レポート取得の失敗ではなく「実績データなし」を
+ * 意味する正常なケース。呼び出し元（fetchCampaignMetrics）はこれを空の実績として扱う。
+ * 参照: https://learn.microsoft.com/en-us/advertising/reporting-service/reportrequeststatus?view=bingads-13
+ */
 async function pollGenerateReport(
   accessToken: string,
   accountId: string,
   customerId: string,
   reportRequestId: string
-): Promise<string> {
+): Promise<string | null> {
   const MAX_ATTEMPTS = 20;
   const INTERVAL_MS = 3000;
   const body = `<PollGenerateReportRequest xmlns="${REPORTING_NS}"><ReportRequestId i:nil="false">${escapeXml(
@@ -438,9 +455,8 @@ async function pollGenerateReport(
     );
     const status = tag(xml, "Status");
     if (status === "Success") {
-      const url = tag(xml, "ReportDownloadUrl");
-      if (!url) throw new Error("レポートのダウンロードURLが取得できませんでした");
-      return url;
+      // 対象期間に実績データが無いアカウント（新規連携直後など）では nil になりうる（上記コメント参照）
+      return tag(xml, "ReportDownloadUrl");
     }
     if (status === "Error") {
       throw new Error(faultMessage(xml) ?? "レポートの生成に失敗しました");
@@ -550,6 +566,24 @@ export async function fetchCampaignMetrics(
   ]);
 
   const downloadUrl = await pollGenerateReport(accessToken, accountId, customerId, reportRequestId);
+  if (!downloadUrl) {
+    // 対象期間に実績データが無い（新規連携直後など）。エラーではなく、キャンペーン名だけ
+    // わかっている状態で実績ゼロとして返す（Google/ヤフーLINE広告が0件レスポンスを
+    // 空配列として扱うのと同じ挙動に揃える）。
+    return {
+      campaigns: [...campaigns.entries()].map(([id, c]) => ({
+        id,
+        name: c.name,
+        status: c.status,
+        cost: 0,
+        impressions: 0,
+        clicks: 0,
+        conversions: 0,
+        conversionsValue: 0,
+      })),
+      daily: [],
+    };
+  }
   const csvText = await downloadAndUnzipReport(downloadUrl);
   const rows = parseCsv(csvText);
 
