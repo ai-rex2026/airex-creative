@@ -19,6 +19,11 @@ import {
   type MicrosoftCampaignMetric,
   type MicrosoftDailyMetric,
 } from "@/lib/ads/microsoft";
+import {
+  fetchCampaignMetrics as fetchMetaCampaignMetrics,
+  type MetaCampaignMetric,
+  type MetaDailyMetric,
+} from "@/lib/ads/meta";
 
 /**
  * Google 広告：選んだアカウントのキャンペーン別実績（読み取りのみ）。
@@ -173,6 +178,57 @@ export async function microsoftPerformance(
         return { account: acc, ...m };
       } catch (e) {
         return { account: acc, campaigns: [], daily: [], error: e instanceof Error ? e.message : String(e) };
+      }
+    })
+  );
+  return { results };
+}
+
+/**
+ * Meta 広告：選んだアカウントのキャンペーン別実績（読み取りのみ）。
+ * 選択は ad_connections.meta.selected（saveMetaSelection で検証済みのもの）だけを使う。
+ * account.id は act_ プレフィックス付きの広告アカウントID（lib/ads/meta.ts の
+ * fetchCampaignMetrics にそのまま渡せば Graph API の insights エンドポイントを呼べる）。
+ */
+
+export type MetaAdPerformance = {
+  account: { id: string; name: string };
+  campaigns: MetaCampaignMetric[];
+  daily: MetaDailyMetric[];
+  error?: string;
+};
+
+export async function metaPerformance(
+  from: string,
+  to: string
+): Promise<{ results: MetaAdPerformance[]; error?: string }> {
+  if (!DATE_RE.test(from) || !DATE_RE.test(to)) return { results: [], error: "期間の形式が正しくありません" };
+  const days = (Date.parse(to) - Date.parse(from)) / 86_400_000 + 1;
+  if (!(days >= 1)) return { results: [], error: "終了日は開始日以降にしてください" };
+  if (days > MAX_RANGE_DAYS) return { results: [], error: `期間は${MAX_RANGE_DAYS}日以内にしてください` };
+
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user || user.is_anonymous) return { results: [], error: "ログインしてください" };
+  const creds = await getAdCredentials(user.id, "meta");
+  if (!creds) return { results: [], error: "Meta 広告と連携してください" };
+
+  const raw = (creds.meta as { selected?: unknown }).selected;
+  const selected = (Array.isArray(raw) ? raw : []).filter(
+    (x): x is { id: string; name: string } =>
+      !!x && typeof (x as { id?: unknown }).id === "string" && (x as { id: string }).id.length > 0
+  );
+  if (selected.length === 0) return { results: [], error: "分析する広告アカウントを選んで保存してください" };
+
+  const results = await Promise.all(
+    selected.map(async (account): Promise<MetaAdPerformance> => {
+      try {
+        const m = await fetchMetaCampaignMetrics(creds.accessToken, account.id, from, to);
+        return { account, ...m };
+      } catch (e) {
+        return { account, campaigns: [], daily: [], error: e instanceof Error ? e.message : String(e) };
       }
     })
   );

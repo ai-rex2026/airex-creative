@@ -12,6 +12,7 @@ import {
 } from "@/lib/ads/google";
 import { yahooChildAccounts } from "@/lib/ads/yahoo";
 import { microsoftUserId, microsoftSearchAccounts } from "@/lib/ads/microsoft";
+import { metaAdAccounts } from "@/lib/ads/meta";
 
 /** 画面に出してよい形。トークンは含めない */
 export type AdConnectionView = {
@@ -392,6 +393,89 @@ export async function saveMicrosoftSelection(
       .update({ meta, updated_at: new Date().toISOString() })
       .eq("user_id", m.user.id)
       .eq("platform", "microsoft");
+    if (error) return { error: `保存できませんでした：${error.message}` };
+    return { selected: out };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/* ------------------------------------------------------------------
+ * Meta 広告：分析する広告アカウントの選択
+ * me/adaccounts（lib/ads/meta.ts の metaAdAccounts）が、このユーザーの長期トークンで
+ * アクセスできる広告アカウントをすでにフラットな一覧で返すため、Microsoft と同様
+ * 「MCC を開いて配下を辿る」操作は無く、一覧から直接チェックして保存するだけでよい。
+ * act_ プレフィックス付きの ID をそのままインサイト取得に渡せるので、Microsoft の
+ * customerId のような追加の識別子も不要。
+ * ------------------------------------------------------------------ */
+
+export type MetaPickerAccount = { id: string; name: string };
+export type MetaSelection = { id: string; name: string };
+
+const MAX_SELECTED_META = 50;
+
+async function metaCreds() {
+  const user = await currentUser();
+  if (!user || user.is_anonymous) return null;
+  const creds = await getAdCredentials(user.id, "meta");
+  return creds ? { user, creds } : null;
+}
+
+function readMetaSelected(meta: Record<string, unknown>): MetaSelection[] {
+  const v = meta.selected;
+  return Array.isArray(v)
+    ? v.filter(
+        (x): x is MetaSelection => !!x && typeof (x as MetaSelection).id === "string" && (x as MetaSelection).id.length > 0
+      )
+    : [];
+}
+
+/** 選択画面の一覧（本人がアクセスできる広告アカウント、フラット）と、保存済みの選択 */
+export async function metaAccountPicker(): Promise<
+  | { connected: false }
+  | { connected: true; accounts: MetaPickerAccount[]; selected: MetaSelection[]; error?: string }
+> {
+  const m = await metaCreds();
+  if (!m) return { connected: false };
+  const selected = readMetaSelected(m.creds.meta);
+  try {
+    const accounts = await metaAdAccounts(m.creds.accessToken);
+    return { connected: true, accounts, selected };
+  } catch (e) {
+    return { connected: true, accounts: [], selected, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** 選んだアカウントを保存する。Meta から一覧を取り直して含まれるか確かめてから保存 */
+export async function saveMetaSelection(
+  picks: { id: string }[]
+): Promise<{ selected: MetaSelection[] } | { error: string }> {
+  const m = await metaCreds();
+  if (!m) return { error: "Meta 広告と連携してください" };
+  if (!Array.isArray(picks) || picks.length > MAX_SELECTED_META) {
+    return { error: `選べるのは${MAX_SELECTED_META}件までです` };
+  }
+  for (const p of picks) {
+    if (typeof p?.id !== "string" || !p.id) return { error: "アカウントIDが正しくありません" };
+  }
+
+  try {
+    const accounts = await metaAdAccounts(m.creds.accessToken);
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+    const out: MetaSelection[] = [];
+    for (const p of picks) {
+      const a = byId.get(p.id);
+      if (!a) return { error: `アクセスできないアカウントが含まれています（${p.id}）` };
+      out.push({ id: a.id, name: a.name });
+    }
+
+    const admin = createAdminClient();
+    const meta = { ...m.creds.meta, selected: out };
+    const { error } = await admin
+      .from("ad_connections")
+      .update({ meta, updated_at: new Date().toISOString() })
+      .eq("user_id", m.user.id)
+      .eq("platform", "meta");
     if (error) return { error: `保存できませんでした：${error.message}` };
     return { selected: out };
   } catch (e) {
