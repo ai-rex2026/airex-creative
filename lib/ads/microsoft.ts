@@ -57,19 +57,20 @@
  * (トークン保存)自体は失敗しない。実績取得(fetchCampaignMetrics)で失敗した場合は、本番の
  * エラーメッセージ(HTTPステータスやSOAP Faultの内容)を見て、このファイルを調整する。
  *
- * 2026-09 追記(一時的な調査用ログ。真因判明後の現在も、しばらく本番での再発確認用に残している。
- * 確認が取れ次第、soapCall / soapCallWithCustomer・各関数の RAW(...) 付きエラーメッセージは
- * 削除してよい。TrackingId を faultMessage() に含める部分はサポート問い合わせに汎用的に使えるため
- * 恒久的に残す):
- * "The user id not found.（1310）" で GetUser 以降が失敗し続けていた真因は、tag(xml, "Id") が
- * 文書中で最初に一致した <Id> をそのまま返す実装だったこと。Microsoft Learn の WSDL 定義上、
- * User 型は ContactInfo → ...(アルファベット順)→ Id、AdvertiserAccount 型は BusinessAddress →
- * ...→ Id の順で XML にシリアライズされ、ContactInfo(Address)自身も "Id" という名前のフィールド
- * (住所/連絡先レコード自身のID。ユーザーIDでも広告アカウントIDでもない)を持つため、素朴な
- * 「最初の <Id> を拾う」実装は本来欲しい User.Id / AdvertiserAccount.Id より先に出現する
- * ContactInfo.Id / BusinessAddress.Id を誤って拾ってしまっていた。stripBlock() でこれらの
+ * 2026-09 修正済み: "The user id not found.（1310）" で GetUser 以降が失敗し続けていた真因は、
+ * tag(xml, "Id") が文書中で最初に一致した <Id> をそのまま返す実装だったこと。Microsoft Learn の
+ * WSDL 定義上、User 型は ContactInfo → ...(アルファベット順)→ Id、AdvertiserAccount 型は
+ * BusinessAddress → ...→ Id の順で XML にシリアライズされ、ContactInfo(Address)自身も "Id" と
+ * いう名前のフィールド(住所/連絡先レコード自身のID。ユーザーIDでも広告アカウントIDでもない)を
+ * 持つため、素朴な「最初の <Id> を拾う」実装は本来欲しい User.Id / AdvertiserAccount.Id より先に
+ * 出現する ContactInfo.Id / BusinessAddress.Id を誤って拾ってしまっていた。stripBlock() でこれらの
  * ネストした複合型を先に取り除いてから Id を検索するよう修正済み(microsoftUserId・
- * microsoftSearchAccounts)。
+ * microsoftSearchAccounts）。実アカウントでの再接続で解消を確認済み。
+ * 参照:
+ * - https://learn.microsoft.com/en-us/advertising/customer-management-service/user?view=bingads-13
+ * - https://learn.microsoft.com/en-us/advertising/customer-management-service/contactinfo?view=bingads-13
+ * - https://learn.microsoft.com/en-us/advertising/customer-management-service/advertiseraccount?view=bingads-13
+ * - https://learn.microsoft.com/en-us/advertising/customer-management-service/address?view=bingads-13
  */
 
 import JSZip from "jszip";
@@ -144,19 +145,6 @@ function faultMessage(xml: string): string | null {
   return trackingId ? `${withCode} [TrackingId: ${trackingId}]` : withCode;
 }
 
-/** ログ・エラーメッセージに含める前に、認証情報を redact する */
-function redactSecrets(xml: string): string {
-  return xml
-    .replace(/(<AuthenticationToken[^>]*>)[^<]*(<\/AuthenticationToken>)/gi, "$1[redacted]$2")
-    .replace(/(<DeveloperToken[^>]*>)[^<]*(<\/DeveloperToken>)/gi, "$1[redacted]$2");
-}
-
-/** 調査用:生レスポンス(redact済み・切り詰め済み)をエラーメッセージに含める文字列を作る */
-function rawDetail(xml: string): string {
-  const redacted = redactSecrets(xml);
-  return redacted.length > 1500 ? redacted.slice(0, 1500) + "…(truncated)" : redacted;
-}
-
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -195,7 +183,7 @@ async function soapCall(operation: string, accessToken: string, bodyXml: string)
   const text = await res.text();
   if (!res.ok) {
     const msg = faultMessage(text) ?? `Microsoft 広告 API エラー（HTTP ${res.status}）`;
-    throw new Error(`${msg} ｜RAW(HTTP ${res.status}): ${rawDetail(text)}`);
+    throw new Error(msg);
   }
   return text;
 }
@@ -241,7 +229,7 @@ async function soapCallWithCustomer(
   const text = await res.text();
   if (!res.ok) {
     const msg = faultMessage(text) ?? `Microsoft 広告 API エラー（HTTP ${res.status}）`;
-    throw new Error(`${msg} ｜RAW(HTTP ${res.status}): ${rawDetail(text)}`);
+    throw new Error(msg);
   }
   return text;
 }
@@ -258,9 +246,7 @@ export async function microsoftUserId(accessToken: string): Promise<{ id: string
   const cleaned = stripBlock(xml, "ContactInfo");
   const id = tag(cleaned, "Id");
   if (!id) {
-    // 調査用:原因(アカウント種別の不一致か、コードのパースミスか)を切り分けるため、
-    // 生レスポンス(redact済み)を一時的にエラーメッセージに含める
-    throw new Error(`${faultMessage(xml) ?? "ユーザー情報を取得できませんでした"} ｜RAW(200): ${rawDetail(xml)}`);
+    throw new Error(faultMessage(xml) ?? "ユーザー情報を取得できませんでした");
   }
   return { id, customerId: tag(cleaned, "CustomerId") ?? "" };
 }
@@ -299,9 +285,7 @@ export async function microsoftSearchAccounts(accessToken: string, userId: strin
     .filter((a) => a.id);
   if (accounts.length === 0) {
     const fault = faultMessage(xml);
-    // 調査用:GetUserが返したUserIdの実際の値(機密情報ではない数値ID)を併記し、
-    // 広告管理画面のuid(既知の実在UserId)と一致するかを確認する
-    if (fault) throw new Error(`${fault}（検索対象UserId=${userId}）｜RAW(200): ${rawDetail(xml)}`);
+    if (fault) throw new Error(fault);
   }
   return accounts.map((a) => ({ id: a.id, name: a.name || a.id, parentCustomerId: a.parentCustomerId }));
 }
@@ -337,8 +321,7 @@ async function microsoftCampaignList(
   }
   if (out.size === 0) {
     const fault = faultMessage(xml);
-    // 調査用:GetUser/SearchAccounts同様、原因切り分けのため生レスポンスを一時的にエラーメッセージへ含める
-    if (fault) throw new Error(`${fault} ｜RAW(200): ${rawDetail(xml)}`);
+    if (fault) throw new Error(fault);
   }
   return out;
 }
