@@ -22,6 +22,8 @@ import { MainPrice } from "./MainPrice";
 import { BANNER_CASE_WARNING, looksLikeCasePhoto } from "@/lib/case-photo";
 import { cropImageToDataUrl } from "@/lib/crop-image";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
+import type { SeoArticleSet } from "@/lib/seoArticles";
+import { INDUSTRY_VERTICAL_LABEL, type IndustryVertical } from "@/lib/industryMatrix";
 import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
 import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
 import type { SpeedScan } from "@/lib/pagespeed";
@@ -102,6 +104,8 @@ export function Report({
   meo,
   lpo,
   keywords,
+  seoArticles = null,
+  industryVertical = null,
   linePlan,
   suggests,
   outreach,
@@ -138,6 +142,8 @@ export function Report({
   meo: MeoScan | null;
   lpo: LpoPlan | null;
   keywords: KeywordPlan | null;
+  seoArticles?: SeoArticleSet | null;
+  industryVertical?: IndustryVertical | null;
   linePlan: LinePlan | null;
   suggests: SuggestScan | null;
   outreach: OutreachPlan | null;
@@ -404,8 +410,9 @@ export function Report({
           <button
             className="icon-btn"
             onClick={() => {
-              // 畳んだ指摘が閉じたまま印刷されると中身が落ちるので、先に全部開く
-              document.querySelectorAll("details.flags").forEach((d) => ((d as HTMLDetailsElement).open = true));
+              // 畳んだ指摘・折り畳み（SEO記事設計の見出し構成など）が閉じたまま印刷されると
+              // 中身が落ちるので、先に全部開く
+              document.querySelectorAll("details").forEach((d) => ((d as HTMLDetailsElement).open = true));
               window.print();
             }}
           >
@@ -417,6 +424,11 @@ export function Report({
       <div className="rep-hero">
         {url && <div className="u">{url}</div>}
         <h2>{url ? url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入力テキストから分析"}</h2>
+        {industryVertical && (
+          <span className="tag" style={{ marginTop: 8, display: "inline-block" }}>
+            {INDUSTRY_VERTICAL_LABEL[industryVertical]}
+          </span>
+        )}
       </div>
 
       {cards.length > 0 && (
@@ -1464,6 +1476,7 @@ export function Report({
             const broken = [
               { name: "LP改善", err: lpo?.error },
               { name: "キーワード", err: keywords?.error },
+              { name: "SEO記事設計", err: seoArticles?.error },
               { name: "LINE", err: linePlan?.error },
               { name: "検索サジェスト", err: suggests?.error },
               { name: "外部施策", err: outreach?.error },
@@ -1625,6 +1638,57 @@ export function Report({
                   ))}
                 </div>
               )}
+            </>
+          )}
+
+          {seoArticles && seoArticles.articles.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">✎</span>
+                <div>
+                  <h2 id="sec-seoart">SEO記事設計</h2>
+                  <div className="sub">構成案（H2/H3）。詳細を開くと見出しと要旨が見られます</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="measure" style={{ display: "grid", gap: 12 }}>
+                {seoArticles.articles.map((a, i) => (
+                  <details className="tactic seoart" key={i}>
+                    <summary>
+                      {a.title}　<span className="tag">{a.targetKeyword}</span>
+                    </summary>
+                    <div style={{ marginTop: 12 }}>
+                      <p className="sub">{a.intent}</p>
+                      <p style={{ color: "var(--muted)" }}>meta description：{a.metaDescription}</p>
+                      <p style={{ color: "var(--muted)" }}>目安文字数：約{a.estimatedChars.toLocaleString()}字</p>
+                      <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+                        {a.headings.map((h, j) => (
+                          <div key={j}>
+                            <b>H2：{h.h2}</b>
+                            <p style={{ margin: "4px 0" }}>{h.summary}</p>
+                            {h.h3?.length > 0 && (
+                              <ul style={{ marginTop: 4 }}>
+                                {h.h3.map((x, k) => (
+                                  <li key={k}>H3：{x}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {a.flags && a.flags.length > 0 && (
+                        <div className="alert" style={{ marginTop: 10 }}>
+                          {a.flags.map((f, j) => (
+                            <div key={j}>
+                              {f.law}「{f.text}」：{f.reason}（言い換え：{f.suggestion}）
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                ))}
+              </div>
             </>
           )}
 
