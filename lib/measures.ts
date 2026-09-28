@@ -152,7 +152,8 @@ export async function generateMeasures(
   pricing: PriceScan | null,
   extra: { platform: string; url: string }[] = [],
   doneTitles: string[] = [],
-  social: SocialScan | null = null
+  social: SocialScan | null = null,
+  priorityNote?: string
 ): Promise<MeasurePlan> {
   const res = await askJson<MeasurePlan>(
     `あなたは集客の実務者です。下のKPIに効く施策を設計します。
@@ -160,7 +161,8 @@ export async function generateMeasures(
 ${RULES}
 - items は6〜9件
 - **node を1つに集中させない。** 上のノードのうち少なくとも3つに散らす。
-  「問い合わせを増やす」だけでなく、来院率・単価・リピートを動かす施策も考える`,
+  「問い合わせを増やす」だけでなく、来院率・単価・リピートを動かす施策も考える
+${priorityNote ? `\n${priorityNote}` : ""}`,
     `${facts(d, site, meo, pricing, extra, doneTitles, social)}
 
 【追うKPI】
