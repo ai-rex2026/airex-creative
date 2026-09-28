@@ -23,6 +23,8 @@ import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Su
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 import { addUsage, withAi, type AiProvider, type AiUsageTotal } from "./ai-context";
 import { hasGemini } from "./gemini";
+import { generateSeoArticles, type SeoArticleSet } from "./seoArticles";
+import { classifyIndustryVertical, buildPriorityInstruction, type IndustryVertical, type SectionKey } from "./industryMatrix";
 
 /** 本番と同じ見た目の短いID（英数20文字） */
 export function newAnalysisId() {
@@ -62,6 +64,8 @@ export type Analysis = {
   meo: MeoScan | null;
   lpo: LpoPlan | null;
   keywords: KeywordPlan | null;
+  /** SEO記事設計（H2/H3構成の記事案2本）。古い分析には無い */
+  seo_articles: SeoArticleSet | null;
   line_plan: LinePlan | null;
   suggests: SuggestScan | null;
   pricing: PriceScan | null;
@@ -93,6 +97,8 @@ export type Analysis = {
   ai_provider: AiProvider | null;
   /** 使ったAIの量と費用（料金表からの計算値） */
   ai_usage: AiUsageTotal | null;
+  /** 17業種別・優先度マトリックスでの分類。診断が終わった時点で決定的に判定する。古い分析には無い */
+  industry_vertical: IndustryVertical | null;
   created_at: string;
 };
 
@@ -108,6 +114,11 @@ export type Analysis = {
  */
 function failedChapter<T extends object>(empty: T) {
   return (e: unknown): T => ({ ...empty, error: e instanceof Error ? e.message : String(e) });
+}
+
+/** 17業種別・優先度マトリックスから、その章向けの指示文を作る。分類が未確定（古い分析）なら何も足さない */
+function priorityNoteFor(a: Analysis, section: SectionKey): string | undefined {
+  return a.industry_vertical ? buildPriorityInstruction(a.industry_vertical, section) : undefined;
 }
 
 /**
@@ -177,7 +188,13 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
     if (!a.diagnosis) {
       await save({ status: "running", step: "サイトを読んでいます", progress: 15 });
       const d = await diagnose({ url: a.url ?? undefined, text: a.input_text ?? undefined });
-      return await save({ diagnosis: d, step: "広告手法を選んでいます", progress: 45 });
+      const industry_vertical = classifyIndustryVertical({
+        industry: d.industry,
+        product: d.product,
+        audience: d.audience,
+        title: a.site?.title ?? "",
+      });
+      return await save({ diagnosis: d, industry_vertical, step: "広告手法を選んでいます", progress: 45 });
     }
     // Google 連携があれば実データを取り込む。無ければ何もしない
     if (a.url && hasGoogleApp() && a.gsc === null && a.ga4 === null) {
@@ -250,7 +267,7 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       return await save({ competitors: comp, step: "広告手法を選んでいます", progress: 50 });
     }
     if (!a.media_plan) {
-      const plan = await generateMediaPlan(a.diagnosis, a.site, a.budget);
+      const plan = await generateMediaPlan(a.diagnosis, a.site, a.budget, priorityNoteFor(a, "media_plan"));
       return await save({ media_plan: plan, step: "広告の運用設計を書いています", progress: 55 });
     }
     // 広告運用設計。媒体ごとに「構成（キャンペーン・広告グループの骨組み）」→「キャンペーン1本ずつの中身」の順に作る。
@@ -335,18 +352,28 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       return await save({ kpi, step: "施策を組み立てています", progress: 68 });
     }
     if (!a.measures) {
-      const plan = await generateMeasures(a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social);
+      const plan = await generateMeasures(
+        a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social,
+        priorityNoteFor(a, "measures")
+      );
       return await save({ measures: plan.items ?? [], step: "LP改善を書いています", progress: 71 });
     }
     if (!a.lpo) {
-      const lpo = await generateLpo(a.diagnosis, a.site).catch(failedChapter<LpoPlan>({ groups: [] }));
+      const lpo = await generateLpo(a.diagnosis, a.site, priorityNoteFor(a, "lpo")).catch(failedChapter<LpoPlan>({ groups: [] }));
       return await save({ lpo, step: "キーワードを選んでいます", progress: 70 });
     }
     if (!a.keywords) {
-      const keywords = await generateKeywords(a.diagnosis, a.site, a.gsc, a.meo).catch(
+      const keywords = await generateKeywords(a.diagnosis, a.site, a.gsc, a.meo, priorityNoteFor(a, "keywords")).catch(
         failedChapter<KeywordPlan>({ rows: [], hasRealData: false, technical: [], content: [], meo: [] })
       );
-      return await save({ keywords, step: "LINEの設計を書いています", progress: 74 });
+      return await save({ keywords, step: "SEO記事の設計を書いています", progress: 75 });
+    }
+    // SEO記事設計（H2/H3構成の記事案2本）。対策キーワードが決まった直後に作る
+    if (!a.seo_articles) {
+      const seo_articles = await generateSeoArticles(a.diagnosis, a.site, a.keywords, priorityNoteFor(a, "seo_articles")).catch(
+        failedChapter<SeoArticleSet>({ articles: [] })
+      );
+      return await save({ seo_articles, step: "LINEの設計を書いています", progress: 76 });
     }
     if (!a.line_plan) {
       const line_plan = await generateLine(a.diagnosis, a.site).catch(
