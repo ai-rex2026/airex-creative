@@ -5,17 +5,53 @@ import { tick } from "./analysis";
 // 広告運用設計のようにAIの1工程が2分を超えることがあるので、実行中の工程を二重に走らせない長さにする
 const STALE_MS = 200_000;
 
+/** 自己継続（下記 triggerContinue）を許す最大回数。壊れて完了しない分析を延々と連打しないための安全弁 */
+const MAX_CHAIN_ATTEMPTS = 6; // 240秒 x 6 ≈ 24分。それでも終わらなければ cron の安全網（processPending）に任せる
+
+/**
+ * 1バーストが時間切れになった直後に、cron の巡回（最大1分＋stale判定200秒）を待たず
+ * 自分で次のバーストを呼び出す。
+ *
+ * Vercel の1回のサーバーレス実行には上限があるので、同じ関数の中でループし続けることはできない。
+ * かわりに自分自身の API ルートに1本 fetch を投げて「次の実行」を新しく起動する。
+ * 応答本体は待たず、送り出せたかどうかだけ短いタイムアウトで確認する（それ以上待つと
+ * 呼び出し元の時間予算を圧迫するため）。
+ *
+ * VERCEL_URL が無い（ローカル開発など）場合は何もしない。cron の安全網がそのまま効く。
+ */
+async function triggerContinue(id: string, attempt: number) {
+  if (attempt > MAX_CHAIN_ATTEMPTS) return;
+  const host = process.env.VERCEL_URL;
+  if (!host) return;
+  const base = `https://${host}`;
+  try {
+    await fetch(`${base}/api/analysis/${id}/continue?attempt=${attempt}`, {
+      method: "POST",
+      headers: process.env.CRON_SECRET ? { authorization: `Bearer ${process.env.CRON_SECRET}` } : undefined,
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    // 送り出せなくても cron の安全網（processPending）が最後には拾う
+  }
+}
+
 /**
  * 1件の分析を、完了するか時間切れになるまで進める。
- * 画面ではなくサーバー（after / cron）から呼ぶ。
+ * 画面ではなくサーバー（after / cron / continue）から呼ぶ。
+ *
+ * 時間切れで終わるときは、cron の巡回を待たずに次のバーストを自分で起動する
+ * （attempt は起動の連鎖回数。呼び出し元が付けなければ0＝新規の分析として数える）。
  */
-export async function processAnalysis(id: string, budgetMs = 240_000) {
+export async function processAnalysis(id: string, budgetMs = 240_000, attempt = 0) {
   const sb = createAdminClient();
   const deadline = Date.now() + budgetMs;
   for (;;) {
     const a = await tick(sb, id);
     if (a.status === "done" || a.status === "failed") return a.status;
-    if (Date.now() > deadline) return "timeout";
+    if (Date.now() > deadline) {
+      await triggerContinue(id, attempt + 1);
+      return "timeout";
+    }
   }
 }
 
