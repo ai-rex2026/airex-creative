@@ -9,7 +9,10 @@ import { withAi, type AiProvider } from "@/lib/ai-context";
 import { generateSnsPlan } from "@/lib/sns-plan";
 import { generateNegatives, type OutreachPlan, type SuggestScan } from "@/lib/outreach";
 import { estimateKeywordVolumes, type KeywordPlan } from "@/lib/deep";
+import { generateSeoArticles, type SeoArticleSet } from "@/lib/seoArticles";
+import { classifyIndustryVertical, buildPriorityInstruction, type IndustryVertical } from "@/lib/industryMatrix";
 import type { Diagnosis } from "@/lib/types";
+import type { SiteScan } from "@/lib/site-scan";
 import type { SocialScan } from "@/lib/social";
 
 /**
@@ -17,6 +20,8 @@ import type { SocialScan } from "@/lib/social";
  * - SNSオーガニック運用・SNSキャンペーン企画（sns_plan）
  * - ネガティブ対策（outreach.negatives）
  * - 対策キーワードの月間検索数の推定（keywords.rows[].volume）
+ * - 業種別優先度の判定（industry_vertical）
+ * - SEO記事設計（seo_articles）
  */
 
 async function ownedRow(id: string, columns: string) {
@@ -33,7 +38,7 @@ async function ownedRow(id: string, columns: string) {
 
 /** 足りない項目の一覧。画面の「新しい項目を追加」ボタンの出し分けに使う */
 export async function missingSections(id: string): Promise<string[]> {
-  const { row } = await ownedRow(id, "status, diagnosis, sns_plan, outreach, keywords");
+  const { row } = await ownedRow(id, "status, diagnosis, sns_plan, outreach, keywords, seo_articles, industry_vertical");
   if (row.status !== "done" || !row.diagnosis) return [];
   const out: string[] = [];
   if (!row.sns_plan) out.push("SNSオーガニック運用・SNSキャンペーン企画");
@@ -41,14 +46,20 @@ export async function missingSections(id: string): Promise<string[]> {
   if (o && !o.negatives) out.push("ネガティブ対策");
   const k = row.keywords as KeywordPlan | null;
   if (k && k.rows.length > 0 && k.rows.every((r) => r.volume === undefined)) out.push("月間検索数の推定");
+  if (!row.industry_vertical) out.push("業種別優先度の判定");
+  if (!row.seo_articles) out.push("SEO記事設計");
   return out;
 }
 
 /** 足りない項目を作る。AI を数回呼ぶので、応答を返したあとに走らせる */
 export async function addMissingSections(id: string) {
-  const { row } = await ownedRow(id, "status, diagnosis, social, sns_plan, outreach, suggests, keywords, ai_provider");
+  const { row } = await ownedRow(
+    id,
+    "status, diagnosis, site, social, sns_plan, outreach, suggests, keywords, seo_articles, industry_vertical, ai_provider"
+  );
   if (row.status !== "done" || !row.diagnosis) throw new Error("レポートが完成してから追加できます");
   const d = row.diagnosis as Diagnosis;
+  const site = (row.site as SiteScan | null) ?? null;
 
   const provider = ((row.ai_provider as AiProvider | null) ?? "anthropic");
   after(() => withAi(provider, async () => {
@@ -82,6 +93,28 @@ export async function addMissingSections(id: string) {
         estimateKeywordVolumes(d, k.rows)
           .then((rows) => {
             if (rows.some((r) => r.volume)) patch.keywords = { ...k, rows };
+          })
+          .catch(() => undefined)
+      );
+    }
+    // 業種別優先度はAIを呼ばず決定的に分類できるので、他のタスクを待たず先に確定させる
+    // （SEO記事設計がこの分類結果を優先度指示として使うため）
+    let vertical: IndustryVertical | null = (row.industry_vertical as IndustryVertical | null) ?? null;
+    if (!vertical) {
+      vertical = classifyIndustryVertical({
+        industry: d.industry,
+        product: d.product,
+        audience: d.audience,
+        title: site?.title ?? "",
+      });
+      patch.industry_vertical = vertical;
+    }
+    if (!row.seo_articles && k && k.rows.length > 0) {
+      const priorityNote = vertical ? buildPriorityInstruction(vertical, "seo_articles") : undefined;
+      tasks.push(
+        generateSeoArticles(d, site, k, priorityNote)
+          .then((articles: SeoArticleSet) => {
+            if (articles.articles.length) patch.seo_articles = articles;
           })
           .catch(() => undefined)
       );
