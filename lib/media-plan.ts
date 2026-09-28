@@ -10,7 +10,8 @@ import type { SiteScan } from "./site-scan";
 export async function generateMediaPlan(
   d: Diagnosis,
   site: SiteScan | null,
-  budget?: BudgetBand | null
+  budget?: BudgetBand | null,
+  priorityNote?: string
 ): Promise<MediaPlanItem[]> {
   const b = budgetOf(budget);
   const res = await askJson<{ items: MediaPlanItem[] }>(
@@ -32,7 +33,8 @@ export async function generateMediaPlan(
 ${b ? `- 月間予算は ${b.label}。この規模で**学習が回る本数**に媒体を絞ること。
   予算を薄く広げると、どの媒体もデータが溜まらず判断できなくなる。
   月100万円未満なら2〜3媒体まで。1媒体あたりの月額が10万円を割る配分は作らない
-  （この場合は3〜5件の下限より、予算の制約を優先する）` : ""}`,
+  （この場合は3〜5件の下限より、予算の制約を優先する）` : ""}
+${priorityNote ? `\n${priorityNote}` : ""}`,
     `商材: ${d.product}
 ターゲット: ${d.audience}
 業種: ${d.industry}
