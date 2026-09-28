@@ -17,7 +17,7 @@ export type LpoGroup = {
 };
 export type LpoPlan = { groups: LpoGroup[]; /** 生成に失敗したときの理由。章を空で出す代わりに事実を残す */ error?: string };
 
-export async function generateLpo(d: Diagnosis, site: SiteScan | null): Promise<LpoPlan> {
+export async function generateLpo(d: Diagnosis, site: SiteScan | null, priorityNote?: string): Promise<LpoPlan> {
   // セキュリティと表示速度は実測があるので、AI に推測させずこちらで作る
   const measured: LpoGroup[] = [];
   if (site) {
@@ -44,7 +44,8 @@ export async function generateLpo(d: Diagnosis, site: SiteScan | null): Promise<
   悪い例：「ファーストビューを分かりやすくする」
   良い例：「症例数5,000件という実績を、ファーストビューの見出し直下に置く」
 - 「体制を整える」「最適化する」のようなプロセス語は禁止。何を・どこに・どう変えるかを書く
-- 効果を断定する表現は書かない`,
+- 効果を断定する表現は書かない
+${priorityNote ? `\n${priorityNote}` : ""}`,
     `商材: ${d.product}
 ターゲット: ${d.audience}
 業種: ${d.industry}
@@ -94,7 +95,8 @@ export async function generateKeywords(
   d: Diagnosis,
   site: SiteScan | null,
   gsc: GscData | null,
-  meo: MeoScan | null
+  meo: MeoScan | null,
+  priorityNote?: string
 ): Promise<KeywordPlan> {
   const real = (gsc?.queries ?? []).filter((q) => q.impressions > 0);
 
@@ -115,7 +117,8 @@ export async function generateKeywords(
 - action は「何のページをどう作る・直す」を1文で。「対策する」「強化する」だけは不可
 - technical / content は各4〜5件。この商材の事実に紐付けて書く
 - meo は${meo?.self ? "4〜5件" : "3件"}。${meo?.self ? "下に渡す実測値を根拠に書く" : "Googleビジネスプロフィールの状態が不明なので、まず確認することから書く"}
-- 効果を断定する表現は書かない`,
+- 効果を断定する表現は書かない
+${priorityNote ? `\n${priorityNote}` : ""}`,
     `商材: ${d.product}
 ターゲット: ${d.audience}
 業種: ${d.industry}
