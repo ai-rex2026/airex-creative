@@ -5,6 +5,8 @@ import { addInput, replanForBudget, setSocialFollowers } from "@/app/actions";
 import { BUDGETS, type BudgetBand } from "@/lib/types";
 import type { SiteScan } from "@/lib/site-scan";
 import type { SocialScan } from "@/lib/social";
+import { breakEvenCpa, type PriceScan } from "@/lib/pricing";
+import { MainPrice } from "./MainPrice";
 import { Spinner } from "./Loading";
 
 /**
@@ -87,6 +89,8 @@ export function Inputs({
   extra,
   hasGoogle,
   social,
+  pricing,
+  onPricing,
 }: {
   id: string;
   url: string | null;
@@ -98,6 +102,8 @@ export function Inputs({
   extra: { platform: string; url: string }[] | null;
   hasGoogle: boolean;
   social: SocialScan | null;
+  pricing: PriceScan | null;
+  onPricing: (p: PriceScan) => void;
 }) {
   const [list, setList] = useState(extra ?? []);
   const [platform, setPlatform] = useState(PLATFORMS[0]);
@@ -284,6 +290,68 @@ export function Inputs({
             </button>
           </span>
         </div>
+      )}
+
+      {pricing?.main && (
+        <>
+          <div className="sec-head">
+            <span className="ic">¥</span>
+            <div>
+              <h2 id="sec-cpa">CPAはいくらまで出せるか</h2>
+              <div className="sub">サイトに載っている価格から計算しています</div>
+            </div>
+            <span className="rule" />
+          </div>
+
+          <div className="cpa measure">
+            <div className="be">
+              <small>損益分岐CPA</small>
+              <b>{breakEvenCpa(pricing.main.yen, margin).toLocaleString()}<i>円</i></b>
+              <span>1件あたりこれを超えると赤字です</span>
+            </div>
+            <div className="src">
+              <MainPrice id={id} pricing={pricing} onChange={onPricing} />
+              <div className="mg">
+                <span>粗利率</span>
+                <div className="opts">
+                  {[0.3, 0.4, 0.5, 0.6, 0.7, 0.8].map((m) => (
+                    <button key={m} className={Math.abs(margin - m) < 0.001 ? "on" : ""} onClick={() => onMargin(m)}>
+                      {Math.round(m * 100)}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <details className="flags measure">
+            <summary>この数字の出どころ（掲載価格 {pricing.items.length}件）</summary>
+            <p className="note" style={{ marginTop: 0 }}>
+              <i className="i">i</i>
+              <span>
+                {pricing.reason}
+                {pricing.source && <> 取得元：<a href={pricing.source} target="_blank" rel="noreferrer noopener">{pricing.source.replace(/^https?:\/\//, "")}</a></>}
+              </span>
+            </p>
+            <div className="rows" style={{ margin: "12px 0 0" }}>
+              {pricing.items.slice(0, 12).map((x, i) => (
+                <div className="r" key={i}>
+                  <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 400 }}>{x.name}</b></div>
+                  <span className="tag">{x.yen.toLocaleString()}円</span>
+                </div>
+              ))}
+            </div>
+          </details>
+
+          <div className="note">
+            <i className="i">i</i>
+            <span>
+              粗利率は業種のめやすを初期値にしています。<b style={{ fontWeight: 600 }}>実際の粗利率に合わせて押し直してください。</b>
+              いまいくらで獲得できているか（実際のCPA）は、広告費とコンバージョン数が要るためこちらでは測れません。
+              Google Analytics 4 を連携すると、コンバージョン数から実測できます。
+            </span>
+          </div>
+        </>
       )}
     </>
   );
