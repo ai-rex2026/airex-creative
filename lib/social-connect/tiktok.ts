@@ -37,11 +37,13 @@ function checkOk(j: { error?: TikTokError }, label: string) {
 }
 
 export async function fetchTikTokProfile(accessToken: string): Promise<TikTokProfile> {
+  // 注意: "username" は user.info.profile スコープが要る（この連携は読み取り専用の
+  // user.info.basic / user.info.stats / video.list だけを要求しているので入れない）。
+  // 権限外のフィールドを1つでも混ぜると、TikTok は全体を401 scope_not_authorized で拒否する。
   const fields = [
     "open_id",
     "avatar_url",
     "display_name",
-    "username",
     "follower_count",
     "following_count",
     "likes_count",
@@ -57,7 +59,7 @@ export async function fetchTikTokProfile(accessToken: string): Promise<TikTokPro
   const u = j.data?.user ?? {};
   return {
     openId: u.open_id,
-    username: u.username ?? null,
+    username: null,
     displayName: u.display_name ?? null,
     avatarUrl: u.avatar_url ?? null,
     followerCount: typeof u.follower_count === "number" ? u.follower_count : null,
