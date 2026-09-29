@@ -396,6 +396,9 @@ table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sa
 @page{size:A4;margin:16mm 14mm}
 @media print{
   .side-nav,.app-top,.guest,.app-foot,.rep-top,.note,.wall,.rtoc,input[type="checkbox"]{display:none!important}
+  /* 帳票として読ませたいので、画面操作用のUI（タブ切替・もっと見る・作り直す等のボタン）は紙に出さない。
+     バナー書き出し・リンク先LPの2節は丸ごと不要（.no-print、Report.tsx側で付与） */
+  .tabs,.more,.linkbtn,.no-print{display:none!important}
   .app{display:block}
   .app-main{background:#fff}
   .app-body{padding:0}
@@ -413,6 +416,16 @@ table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sa
   .rep-hero{background:#1F1E1B!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;break-after:avoid}
   .bar span,.hit-sev,.tag{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body{font-size:11pt}
+}
+
+/* 印刷（PDF出力）専用の目次。表紙の次のページにまとめて出す。画面では出さない */
+.print-toc{display:none}
+@media print{
+  .print-toc{display:block;break-after:page;margin:8px 0 0}
+  .print-toc h2{font-size:15px;margin:0 0 14px;font-weight:900}
+  .print-toc ol{list-style:none;margin:0;padding:0;columns:2;column-gap:32px}
+  .print-toc li{padding:6px 0;border-bottom:1px dotted var(--line);font-size:12px;break-inside:avoid}
+  .print-toc a{color:inherit;text-decoration:none}
 }
 
 /* ── レポート内の目次（章送り）── */

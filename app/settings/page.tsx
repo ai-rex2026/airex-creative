@@ -3,14 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/Shell";
 import { SignOutButton } from "@/components/SignOutButton";
 import { GoogleConnect } from "@/components/GoogleConnect";
-import { MetaConnect } from "@/components/MetaConnect";
 import { AdConnections } from "@/components/AdConnections";
 import { SnsConnections } from "@/components/SnsConnections";
-import { googleConnection, metaConnection } from "@/app/actions";
+import { googleConnection } from "@/app/actions";
 import { adConnections } from "@/app/ad-actions";
 import { snsConnections } from "@/app/social-actions";
 import { hasGoogleApp } from "@/lib/google";
-import { hasMetaApp } from "@/lib/meta";
 
 export const metadata = { title: "設定｜AI-REX Studio" };
 
@@ -26,7 +24,6 @@ export default async function SettingsPage({
   if (!user) redirect("/login?callbackUrl=%2Fsettings");
 
   const conn = await googleConnection();
-  const metaConn = await metaConnection();
   const adConns = await adConnections();
   const snsConns = await snsConnections();
 
@@ -79,21 +76,6 @@ export default async function SettingsPage({
               <span className="tag warn">未設定</span>
             )}
           </div>
-          <div className="r">
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <b>Instagram / Facebook</b>
-              <small>
-                {metaConn
-                  ? `連携済み（${new Date(metaConn.connected_at).toLocaleDateString("ja-JP")}）。${metaConn.ig_username ? `@${metaConn.ig_username}` : metaConn.page_name ?? ""}`
-                  : "連携すると、フォロワー数・投稿数・到達数など非公開の実データをレポートに反映できます。"}
-              </small>
-            </div>
-            {hasMetaApp() ? (
-              <MetaConnect connected={!!metaConn} />
-            ) : (
-              <span className="tag warn">未設定</span>
-            )}
-          </div>
         </div>
 
         {!hasGoogleApp() && (
@@ -101,15 +83,6 @@ export default async function SettingsPage({
             <i className="i">i</i>
             <span>
               Google連携には <code>GOOGLE_CLIENT_ID</code> と <code>GOOGLE_CLIENT_SECRET</code> の設定が必要です。
-            </span>
-          </p>
-        )}
-        {!hasMetaApp() && (
-          <p className="note">
-            <i className="i">i</i>
-            <span>
-              Instagram / Facebook連携には <code>META_APP_ID</code> と <code>META_APP_SECRET</code> の設定が必要です。
-              Meta社の審査（App Review）が通るまでは、開発者として登録した本人のアカウントでのみ連携できます。
             </span>
           </p>
         )}

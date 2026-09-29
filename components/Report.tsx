@@ -1903,7 +1903,7 @@ export function Report({
       <>
 
       {!isGuest && chosen.length > 0 && (
-        <section className="block">
+        <section className="block no-print">
           <div className="sec-head" style={{ marginTop: 0 }}>
             <span className="ic">▤</span>
             <div>
@@ -2294,7 +2294,7 @@ export function Report({
       )}
 
       {!isGuest && chosen.length > 0 && (
-        <section className="block">
+        <section className="block no-print">
           <div className="sec-head" style={{ marginTop: 0 }}>
             <span className="ic">▣</span>
             <div>
