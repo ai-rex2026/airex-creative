@@ -290,6 +290,10 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
     // それぞれフェーズ内で残りぶんをまとめて並列生成する（1本ずつ待つと媒体数・本数ぶん往復が積み上がるため）。
     // まとめて生成すると1リクエストの実行時間に収まらないおそれがあるフェーズ単位までは保ち、フェーズの中だけ並列化する
     if (!a.ad_ops?.done) {
+      // a.diagnosis は直前までのガードで非nullだが、TSはコールバック（.map内）を跨ぐと
+      // プロパティアクセスの絞り込みを保持しないため、ローカル変数に写して明示的に渡す
+      const diagnosis = a.diagnosis;
+      if (!diagnosis) throw new Error("診断結果が見つかりません");
       const targets = opsTargets(a.media_plan);
       const built = a.ad_ops?.campaigns ?? [];
       const structures = a.ad_ops?.plan ?? [];
@@ -297,7 +301,7 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
 
       const missingChannels = targets.filter((t) => !structures.some((s) => s.channel === t.channel));
       if (missingChannels.length > 0) {
-        const newStructures = await Promise.all(missingChannels.map((t) => planChannel(a.diagnosis, a.site, t)));
+        const newStructures = await Promise.all(missingChannels.map((t) => planChannel(diagnosis, a.site, t)));
         const ops: AdOps = { done: false, plan: [...structures, ...newStructures], campaigns: built, ...empty };
         return await save({
           ad_ops: ops,
@@ -312,7 +316,7 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       });
       const missing = skeletons.filter((k) => !built.some((b) => b.channel === k.item.channel && b.name === k.c.name));
       if (missing.length > 0) {
-        const newCampaigns = await Promise.all(missing.map((k) => generateCampaign(a.diagnosis, a.site, k.item, k.c, a.budget)));
+        const newCampaigns = await Promise.all(missing.map((k) => generateCampaign(diagnosis, a.site, k.item, k.c, a.budget)));
         const ops: AdOps = { done: false, plan: structures, campaigns: [...built, ...newCampaigns], ...empty };
         return await save({
           ad_ops: ops,
