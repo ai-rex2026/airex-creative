@@ -394,6 +394,11 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       return await save({ social_insights: si, step: "施策を組み立てています", progress: 81 });
     }
     if (!a.measures) {
+      // 通常ここには来ない（直前のまとめ生成で必ず埋まる）が、型の安全のための保険
+      if (!a.kpi) {
+        const kpi = await generateKpi(a.diagnosis, a.site, a.pricing, a.meo, a.gsc, a.ga4);
+        return await save({ kpi, step: "施策を組み立てています", progress: 82 });
+      }
       const plan = await generateMeasures(
         a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social,
         priorityNoteFor(a, "measures")
@@ -408,6 +413,13 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       return await save({ seo_articles, step: "外部露出の施策を書いています", progress: 85 });
     }
     if (!a.outreach) {
+      // 通常ここには来ない（直前のまとめ生成で必ず埋まる）が、型の安全のための保険
+      if (!a.suggests) {
+        const suggests = await scanSuggests(a.diagnosis, a.site, []).catch(
+          failedChapter<SuggestScan>({ rows: [], queried: [], fetchedAt: new Date().toISOString() })
+        );
+        return await save({ suggests, step: "勝ち筋を採点しています", progress: 87 });
+      }
       const outreach = await generateOutreach(a.diagnosis, a.suggests, a.competitors).catch(
         failedChapter<OutreachPlan>({
           citations: [],
