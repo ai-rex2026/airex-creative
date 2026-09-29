@@ -285,22 +285,24 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       const plan = await generateMediaPlan(a.diagnosis, a.site, a.budget, priorityNoteFor(a, "media_plan"));
       return await save({ media_plan: plan, step: "広告の運用設計を書いています", progress: 55 });
     }
-    // 広告運用設計。媒体ごとに「構成（キャンペーン・広告グループの骨組み）」→「キャンペーン1本ずつの中身」の順に作る。
-    // まとめて生成すると1リクエストの実行時間に収まらず、何も保存されないまま再試行を繰り返して進捗が止まる
+    // 広告運用設計。媒体ごとの「構成（キャンペーン・広告グループの骨組み）」は互いに独立、
+    // 構成が決まった後の「キャンペーン1本ずつの中身」も互いに独立なので、
+    // それぞれフェーズ内で残りぶんをまとめて並列生成する（1本ずつ待つと媒体数・本数ぶん往復が積み上がるため）。
+    // まとめて生成すると1リクエストの実行時間に収まらないおそれがあるフェーズ単位までは保ち、フェーズの中だけ並列化する
     if (!a.ad_ops?.done) {
       const targets = opsTargets(a.media_plan);
       const built = a.ad_ops?.campaigns ?? [];
       const structures = a.ad_ops?.plan ?? [];
       const empty = { tags: [], overLength: [], guard: { level: "green" as const, hits: [] }, flagged: [] };
 
-      const nextChannel = targets.find((t) => !structures.some((s) => s.channel === t.channel));
-      if (nextChannel) {
-        const st = await planChannel(a.diagnosis, a.site, nextChannel);
-        const ops: AdOps = { done: false, plan: [...structures, st], campaigns: built, ...empty };
+      const missingChannels = targets.filter((t) => !structures.some((s) => s.channel === t.channel));
+      if (missingChannels.length > 0) {
+        const newStructures = await Promise.all(missingChannels.map((t) => planChannel(a.diagnosis, a.site, t)));
+        const ops: AdOps = { done: false, plan: [...structures, ...newStructures], campaigns: built, ...empty };
         return await save({
           ad_ops: ops,
-          step: `広告の運用設計を書いています（${nextChannel.channel}の構成）`,
-          progress: 55 + Math.round((2 * (structures.length + 1)) / targets.length),
+          step: `広告の運用設計を書いています（${missingChannels.map((t) => t.channel).join("・")}の構成）`,
+          progress: 57,
         });
       }
 
@@ -308,41 +310,76 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
         const item = targets.find((t) => t.channel === s.channel);
         return item ? s.campaigns.map((c) => ({ item, c })) : [];
       });
-      const next = skeletons.find((k) => !built.some((b) => b.channel === k.item.channel && b.name === k.c.name));
-      if (next) {
-        const c = await generateCampaign(a.diagnosis, a.site, next.item, next.c, a.budget);
-        const doneCount = built.length + 1;
-        const ops: AdOps = { done: false, plan: structures, campaigns: [...built, c], ...empty };
+      const missing = skeletons.filter((k) => !built.some((b) => b.channel === k.item.channel && b.name === k.c.name));
+      if (missing.length > 0) {
+        const newCampaigns = await Promise.all(missing.map((k) => generateCampaign(a.diagnosis, a.site, k.item, k.c, a.budget)));
+        const ops: AdOps = { done: false, plan: structures, campaigns: [...built, ...newCampaigns], ...empty };
         return await save({
           ad_ops: ops,
-          step: `広告の運用設計を書いています（${doneCount}/${skeletons.length}：${next.c.name}）`,
-          progress: 57 + Math.round((5 * doneCount) / Math.max(skeletons.length, 1)),
+          step: `広告の運用設計を書いています（広告文 ${newCampaigns.length}本）`,
+          progress: 60,
         });
       }
       const ops = await finishAdOps(built, a.site, a.media_plan, a.diagnosis.industry, structures);
       return await save({ ad_ops: ops, step: "広告以外の施策を整理しています", progress: 62 });
     }
-    // YouTube・Xはアカウント情報（登録者数・直近の投稿）が実測できている場合だけ、
-    // 競合アカウントを探して実測し直す。実測が無い媒体は探しに行くだけ無駄になる
-    if (!a.social_competitors) {
+    // ここから先の章（SNS競合調査・広告以外の施策・SNS運用プラン・KPI・LP改善・キーワード・
+    // LINE設計・コピー・検索サジェスト）は、互いの出力を必要としない。
+    // 1本ずつ待つと章数ぶん往復が積み上がるので、まだ無いぶんをまとめて並列に生成する。
+    // どれか1本が失敗すると（既存の.catchが無い generateTactics・generateKpi・generateCopies は特に）
+    // このひとまとめ全体が保存されずやり直しになるが、失敗時に分析ごと止まる挙動自体はこれまでと同じ
+    if (
+      a.ad_ops?.done &&
+      (!a.social_competitors || !a.tactics || !a.sns_plan || !a.kpi || !a.lpo || !a.keywords || !a.line_plan || !a.copies || !a.suggests)
+    ) {
       const readableTargets = (["YouTube", "X"] as const).filter((p) =>
         (a.social?.accounts ?? []).some((acc) => acc.readable && (p === "YouTube" ? /youtube/i : /twitter/i).test(acc.platform))
       );
-      if (readableTargets.length === 0) {
-        return await save({
-          social_competitors: { items: [], searchedAt: new Date().toISOString() },
-          step: "広告以外の施策を整理しています",
-          progress: 63,
-        });
-      }
-      let sc: SocialCompetitorScan = { items: [], searchedAt: new Date().toISOString() };
-      try {
-        sc = await findSocialCompetitors(a.diagnosis, a.url, readableTargets);
-      } catch {
-        // Web検索が失敗しても止めない。取れなければ自社の実測値だけで分析結果を作る
-      }
-      return await save({ social_competitors: sc, step: "広告以外の施策を整理しています", progress: 64 });
+      const addr = a.meo?.self?.address ?? "";
+      const ward = addr.match(/[都道府県](.*?[市区町村])/)?.[1] ?? "";
+      const town = addr.match(/[市区町村]([^\d\s]{2,6})/)?.[1]?.replace(/[東西南北]$/, "") ?? "";
+      const areas = [town, ward].filter(Boolean);
+
+      const [social_competitors, tactics, sns_plan, kpi, lpo, keywords, line_plan, copies, suggests] = await Promise.all([
+        a.social_competitors ??
+          (readableTargets.length === 0
+            ? Promise.resolve<SocialCompetitorScan>({ items: [], searchedAt: new Date().toISOString() })
+            : findSocialCompetitors(a.diagnosis, a.url, readableTargets).catch(
+                () => ({ items: [], searchedAt: new Date().toISOString() }) as SocialCompetitorScan
+              )),
+        a.tactics ?? generateTactics(a.diagnosis, a.site, a.social),
+        a.sns_plan ?? generateSnsPlan(a.diagnosis, a.social).catch(failedChapter<SnsPlan>({ channels: [], campaign: null })),
+        a.kpi ?? generateKpi(a.diagnosis, a.site, a.pricing, a.meo, a.gsc, a.ga4),
+        a.lpo ?? generateLpo(a.diagnosis, a.site, priorityNoteFor(a, "lpo")).catch(failedChapter<LpoPlan>({ groups: [] })),
+        a.keywords ??
+          generateKeywords(a.diagnosis, a.site, a.gsc, a.meo, priorityNoteFor(a, "keywords")).catch(
+            failedChapter<KeywordPlan>({ rows: [], hasRealData: false, technical: [], content: [], meo: [] })
+          ),
+        a.line_plan ??
+          generateLine(a.diagnosis, a.site).catch(failedChapter<LinePlan>({ skip: null, richMenu: [], steps: [], segments: [] })),
+        a.copies ?? generateCopies(a.diagnosis, 2),
+        a.suggests ??
+          scanSuggests(a.diagnosis, a.site, areas).catch(
+            failedChapter<SuggestScan>({ rows: [], queried: [], fetchedAt: new Date().toISOString() })
+          ),
+      ]);
+
+      return await save({
+        social_competitors,
+        tactics,
+        sns_plan,
+        kpi,
+        lpo,
+        keywords,
+        line_plan,
+        copies,
+        suggests,
+        step: "訴求軸ごとにコピーを書いています",
+        progress: 80,
+      });
     }
+    // YouTube・Xはアカウント情報（登録者数・直近の投稿）が実測できている場合だけ、
+    // 競合アカウントを探して実測し直す。実測が無い媒体は探しに行くだけ無駄になる
     if (!a.social_insights) {
       let si: SocialInsightPlan = { items: [] };
       try {
@@ -350,64 +387,21 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       } catch {
         // 作れなくても分析全体は止めない。その媒体の分析結果が空のまま先に進む
       }
-      return await save({ social_insights: si, step: "広告以外の施策を整理しています", progress: 65 });
-    }
-    if (!a.tactics) {
-      const t = await generateTactics(a.diagnosis, a.site, a.social);
-      return await save({ tactics: t, step: "SNSの運用プランを書いています", progress: 66 });
-    }
-    // SNSオーガニック運用とSNSキャンペーン企画。「広告以外の施策」の各SNSの下に出す
-    if (!a.sns_plan) {
-      const sns_plan = await generateSnsPlan(a.diagnosis, a.social).catch(failedChapter<SnsPlan>({ channels: [], campaign: null }));
-      return await save({ sns_plan, step: "訴求軸ごとにコピーを書いています", progress: 67 });
-    }
-    // 施策はKPIに効くものだけを出す。だからKPIの仮説を先に立てる
-    if (!a.kpi) {
-      const kpi = await generateKpi(a.diagnosis, a.site, a.pricing, a.meo, a.gsc, a.ga4);
-      return await save({ kpi, step: "施策を組み立てています", progress: 68 });
+      return await save({ social_insights: si, step: "施策を組み立てています", progress: 81 });
     }
     if (!a.measures) {
       const plan = await generateMeasures(
         a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social,
         priorityNoteFor(a, "measures")
       );
-      return await save({ measures: plan.items ?? [], step: "LP改善を書いています", progress: 71 });
-    }
-    if (!a.lpo) {
-      const lpo = await generateLpo(a.diagnosis, a.site, priorityNoteFor(a, "lpo")).catch(failedChapter<LpoPlan>({ groups: [] }));
-      return await save({ lpo, step: "キーワードを選んでいます", progress: 70 });
-    }
-    if (!a.keywords) {
-      const keywords = await generateKeywords(a.diagnosis, a.site, a.gsc, a.meo, priorityNoteFor(a, "keywords")).catch(
-        failedChapter<KeywordPlan>({ rows: [], hasRealData: false, technical: [], content: [], meo: [] })
-      );
-      return await save({ keywords, step: "SEO記事の設計を書いています", progress: 75 });
+      return await save({ measures: plan.items ?? [], step: "SEO記事の設計を書いています", progress: 83 });
     }
     // SEO記事設計（H2/H3構成の記事案2本）。対策キーワードが決まった直後に作る
     if (!a.seo_articles) {
       const seo_articles = await generateSeoArticles(a.diagnosis, a.site, a.keywords, priorityNoteFor(a, "seo_articles")).catch(
         failedChapter<SeoArticleSet>({ articles: [] })
       );
-      return await save({ seo_articles, step: "LINEの設計を書いています", progress: 76 });
-    }
-    if (!a.line_plan) {
-      const line_plan = await generateLine(a.diagnosis, a.site).catch(
-        failedChapter<LinePlan>({ skip: null, richMenu: [], steps: [], segments: [] })
-      );
-      return await save({ line_plan, step: "訴求軸ごとにコピーを書いています", progress: 78 });
-    }
-    // サジェストは Google の公開エンドポイントから実測する。AI は使わないので速い
-    if (!a.suggests) {
-      // 地名は MEO の実測住所から。町名まで細かいとサジェストが返らないので、
-      // 「渋谷区」と方角を落とした町名（恵比寿西→恵比寿）の両方を候補にする
-      const addr = a.meo?.self?.address ?? "";
-      const ward = addr.match(/[都道府県](.*?[市区町村])/)?.[1] ?? "";
-      const town = addr.match(/[市区町村]([^\d\s]{2,6})/)?.[1]?.replace(/[東西南北]$/, "") ?? "";
-      const areas = [town, ward].filter(Boolean);
-      const suggests = await scanSuggests(a.diagnosis, a.site, areas).catch(
-        failedChapter<SuggestScan>({ rows: [], queried: [], fetchedAt: new Date().toISOString() })
-      );
-      return await save({ suggests, step: "外部露出の施策を書いています", progress: 79 });
+      return await save({ seo_articles, step: "外部露出の施策を書いています", progress: 85 });
     }
     if (!a.outreach) {
       const outreach = await generateOutreach(a.diagnosis, a.suggests, a.competitors).catch(
@@ -418,9 +412,10 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
           prThemes: [],
         })
       );
-      return await save({ outreach, step: "訴求軸ごとにコピーを書いています", progress: 82 });
+      return await save({ outreach, step: "勝ち筋を採点しています", progress: 88 });
     }
     if (!a.copies) {
+      // 通常ここには来ない（直前のまとめ生成で必ず埋まる）が、型の安全のための保険
       const copies = await generateCopies(a.diagnosis, 2);
       return await save({ copies, step: "勝ち筋を採点しています", progress: 86 });
     }
