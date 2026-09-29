@@ -5,8 +5,10 @@ import { SignOutButton } from "@/components/SignOutButton";
 import { GoogleConnect } from "@/components/GoogleConnect";
 import { MetaConnect } from "@/components/MetaConnect";
 import { AdConnections } from "@/components/AdConnections";
+import { SnsConnections } from "@/components/SnsConnections";
 import { googleConnection, metaConnection } from "@/app/actions";
 import { adConnections } from "@/app/ad-actions";
+import { snsConnections } from "@/app/social-actions";
 import { hasGoogleApp } from "@/lib/google";
 import { hasMetaApp } from "@/lib/meta";
 
@@ -26,6 +28,7 @@ export default async function SettingsPage({
   const conn = await googleConnection();
   const metaConn = await metaConnection();
   const adConns = await adConnections();
+  const snsConns = await snsConnections();
 
   const sp = await searchParams;
   const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
@@ -116,6 +119,13 @@ export default async function SettingsPage({
           canConnect={!user.is_anonymous}
           ok={first(sp.ad_ok)}
           error={first(sp.ad_error)}
+        />
+
+        <SnsConnections
+          connections={snsConns}
+          canConnect={!user.is_anonymous}
+          ok={first(sp.sns_ok)}
+          error={first(sp.sns_error)}
         />
 
         {user.is_anonymous && (

@@ -1,4 +1,8 @@
 import type { SiteScan } from "./site-scan";
+import { isSnsPlatform, type SnsPlatform } from "./social-connect/platforms";
+import { getSnsCredentials } from "./social-connect/tokens";
+import { fetchXProfile, fetchXRecentPosts } from "./social-connect/x";
+import { fetchTikTokProfile, fetchTikTokVideos } from "./social-connect/tiktok";
 
 /**
  * サイトから辿れた公式SNSを、実際に見に行って測る。
@@ -22,8 +26,8 @@ export type SocialAccount = {
   bio: string | null;
   /** 総再生回数など、媒体固有の実測。取れたものだけ入れる */
   views: number | null;
-  /** 何で測ったか。公式APIか、公開ページか、Grok(xAI)経由か、利用者の手入力かを画面に出す */
-  via: "公式API" | "公開ページ" | "Grok(xAI)" | "手入力" | null;
+  /** 何で測ったか。公式APIか、本人のOAuth連携（公式連携）か、公開ページか、Grok(xAI)経由か、利用者の手入力かを画面に出す */
+  via: "公式API" | "公式連携" | "公開ページ" | "Grok(xAI)" | "手入力" | null;
   /** 読めなかった理由 */
   reason: string | null;
   /**
@@ -46,7 +50,7 @@ const meta = (html: string, prop: string) =>
   html.match(new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${prop}["']`, "i"))?.[1] ??
   null;
 
-/** 「1.2万」「12.3K」「1,234」をすべて数に直す */
+/** 「1.2万」　12.3K」「1,234」をすべて数に直す */
 function toNum(raw: string): number | null {
   const s = raw.replace(/,/g, "").trim();
   const m = s.match(/^([\d.]+)\s*(万|億|[KkMm])?$/);
@@ -262,7 +266,7 @@ x_search だけではフォロワー数が読み取れない場合は、続け�
 - 表示名
 - プロフィール文（bio、100文字以内）
 - 直近の投稿の話題（recentTopics）。実際に見つかった直近の投稿から、何についての投稿かを
-  3〜5件、それぞれ20文字以内の見出しで要約してください（例：「新商品の告知」「来店キャンペーン」）。
+  3～5件、それぞれ20文字以内の見出しで要約してください（例：「新商品の告知」「来店キャンペーン」）。
   **投稿本文をそのまま書き写さない**こと。話題が分からない・投稿が見つからない場合は空配列でよい
 
 found を false にするのは、あらゆる手段を試してもこのアカウントの存在自体を確認できない・
@@ -295,7 +299,7 @@ JSONのみで回答してください（前置き・コードフェンス無し�
           { type: "web_search", enable_image_understanding: true },
         ],
       }),
-      // x_search は実測で40〜50秒かかることがある。web_search へのフォールバックが
+      // x_search は実測で40～50秒かかることがある。web_search へのフォールバックが
       // 追加で走る分の余裕を見て、外側より短いタイムアウトで打ち切って理由を残す
       signal: AbortSignal.timeout(110_000),
     });
@@ -340,15 +344,100 @@ JSONのみで回答してください（前置き・コードフェンス無し�
 }
 
 /**
+ * サイトから検出した公式SNSが、分析の依頼主が /settings で連携済みの
+ * 公式SNSアカウント（OAuth。lib/social-connect/*）と同じ媒体なら、それを最優先で使う。
+ * スクレイピングやGrok推定と違い、本人の許可を得て公式APIを直接叛くので、
+ * フォロワー数・投稿ごとのエンゲージメントとも実数がそのまま取れる。
+ *
+ * 連携が無い、または呼び出し取得に失敗した場合は null を返し、
+ * 呼び出し元（readSocialAccount）が既存のフォールバック（Grok/公開ページ）に進む。
+ */
+async function readOfficialAccount(
+  ownerId: string,
+  platform: SnsPlatform,
+  base: SocialAccount
+): Promise<SocialAccount | null> {
+  try {
+    const creds = await getSnsCredentials(ownerId, platform);
+    if (!creds) return null;
+
+    const shorten = (s: string) => (s.length > 30 ? `${s.slice(0, 30)}…` : s);
+
+    if (platform === "x") {
+      const profile = await fetchXProfile(creds.accessToken);
+      let recentContent: string[] | null = null;
+      try {
+        const posts = await fetchXRecentPosts(creds.accessToken, profile.id, 5);
+        recentContent = posts.length ? posts.map((p) => shorten(p.text)) : null;
+      } catch {
+        recentContent = null;
+      }
+      return {
+        ...base,
+        readable: true,
+        followers: profile.followers,
+        posts: profile.tweetCount,
+        via: "公式連携",
+        title: profile.name,
+        recentContent,
+        reason: null,
+      };
+    }
+
+    // tiktok
+    const profile = await fetchTikTokProfile(creds.accessToken);
+    let recentContent: string[] | null = null;
+    let views: number | null = null;
+    try {
+      const videos = await fetchTikTokVideos(creds.accessToken, 5);
+      if (videos.length) {
+        recentContent = videos.map((v) => (v.title ? shorten(v.title) : "（無題の動画）"));
+        views = videos.reduce((sum, v) => sum + (v.viewCount ?? 0), 0);
+      }
+    } catch {
+      recentContent = null;
+    }
+    return {
+      ...base,
+      readable: true,
+      followers: profile.followerCount,
+      posts: profile.videoCount,
+      views,
+      via: "公式連携",
+      title: profile.displayName,
+      recentContent,
+      reason: null,
+    };
+  } catch {
+    // 連携はあるが読めなかった（トークン失効など）。既存のフォールバックに譲る
+    return null;
+  }
+}
+
+/**
  * 媒体を1件、実際に見に行って測る。自社アカウントの巡回（scanSocial）だけでなく、
  * SNS競合の実測（social-competitors.ts）からも同じロジックを使い回すため公開している。
  * どちらも「AIの知識で数字を書かない、実測できたものだけを返す」原則は共通のため。
+ *
+ * ownerId を渡すと（＝自社アカウントの巡回のときだけ。競合の実測では渡さない）、
+ * まずその人が /settings で連携済みの公式SNSアカウントを優先して使う。
  */
-export async function readSocialAccount(a: { platform: string; url: string; handle: string }): Promise<SocialAccount> {
+export async function readSocialAccount(
+  a: { platform: string; url: string; handle: string },
+  ownerId?: string
+): Promise<SocialAccount> {
   const base: SocialAccount = {
     ...a, readable: false, followers: null, posts: null, views: null, via: null, title: null, bio: null, reason: null,
     recentContent: null,
   };
+
+  if (ownerId) {
+    const snsPlatform: SnsPlatform | null = /twitter/i.test(a.platform) ? "x" : /tiktok/i.test(a.platform) ? "tiktok" : null;
+    if (snsPlatform && isSnsPlatform(snsPlatform)) {
+      const official = await readOfficialAccount(ownerId, snsPlatform, base);
+      if (official) return official;
+    }
+  }
 
   // YouTube だけは公式APIで正規に取れる
   if (/youtube/i.test(a.platform)) return readYouTube(a, base);
@@ -398,10 +487,10 @@ export async function readSocialAccount(a: { platform: string; url: string; hand
   };
 }
 
-export async function scanSocial(site: SiteScan | null): Promise<SocialScan> {
+export async function scanSocial(site: SiteScan | null, ownerId?: string): Promise<SocialScan> {
   const list = (site?.social ?? []).slice(0, 8);
   // 媒体ごとに独立しているので並行で取る。1件が遅くても全体は止めない
-  const accounts = await Promise.all(list.map(readSocialAccount));
+  const accounts = await Promise.all(list.map((a) => readSocialAccount(a, ownerId)));
   return { accounts, fetchedAt: new Date().toISOString() };
 }
 

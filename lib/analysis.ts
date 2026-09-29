@@ -23,10 +23,8 @@ import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Su
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 import { addUsage, withAi, type AiProvider, type AiUsageTotal } from "./ai-context";
 import { hasGemini } from "./gemini";
-import { generateSeoArticles, type SeoArticleSet } from "./seoArticles";
-import { classifyIndustryVertical, buildPriorityInstruction, type IndustryVertical, type SectionKey } from "./industryMatrix";
 
-/** 本番と同じ見た目の短いID（英数20文字） */
+/** 本番と同じ見た目の短いID（英数字20文字） */
 export function newAnalysisId() {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const buf = new Uint8Array(20);
@@ -64,8 +62,6 @@ export type Analysis = {
   meo: MeoScan | null;
   lpo: LpoPlan | null;
   keywords: KeywordPlan | null;
-  /** SEO記事設計（H2/H3構成の記事案2本）。古い分析には無い */
-  seo_articles: SeoArticleSet | null;
   line_plan: LinePlan | null;
   suggests: SuggestScan | null;
   pricing: PriceScan | null;
@@ -97,8 +93,6 @@ export type Analysis = {
   ai_provider: AiProvider | null;
   /** 使ったAIの量と費用（料金表からの計算値） */
   ai_usage: AiUsageTotal | null;
-  /** 17業種別・優先度マトリックスでの分類。診断が終わった時点で決定的に判定する。古い分析には無い */
-  industry_vertical: IndustryVertical | null;
   created_at: string;
 };
 
@@ -108,7 +102,7 @@ export type Analysis = {
  * 「全部やる」ではなく「1歩進めて返す」を繰り返す形にしている。
  */
 /**
- * 章ひとつの生成が壊れても、レポート全体を落とさない。
+ * 章ひとつの生成が壊れても、レポート全体を落ささない。
  * 1回のJSON崩れで8分ぶんの分析が丸ごと消えるのは割に合わない。
  * 代わりに「この章は作れなかった」という事実を値の中に残して先へ進む。
  */
@@ -116,33 +110,15 @@ function failedChapter<T extends object>(empty: T) {
   return (e: unknown): T => ({ ...empty, error: e instanceof Error ? e.message : String(e) });
 }
 
-/** 17業種別・優先度マトリックスから、その章向けの指示文を作る。分類が未確定（古い分析）なら何も足さない */
-function priorityNoteFor(a: Analysis, section: SectionKey): string | undefined {
-  return a.industry_vertical ? buildPriorityInstruction(a.industry_vertical, section) : undefined;
-}
-
 /**
- * Google連携・Meta連携・Googleビジネスプロフィール連携は、繋いだ時点でそのアカウントを
- * 使う前提なので「接続の有無」で判定する。
- *
- * 広告アカウントだけは「連携しているか」ではなく、実際に広告アカウントを選択しているか
- * （ad_connections.meta.selected が空でないか）で判定する。連携しただけで具体的な
- * アカウントを選んでいない利用者まで一律Anthropicに固定すると、費用を優先して
- * Geminiを使うという意図に反するため（連携＝広告出稿中とは限らない）。
- *
- * これらが何も無い利用者のレポートは、実データが無く精度の上限も低いので、
- * 費用を優先して Gemini で作る。
+ * 連携（Google・広告アカウント・Meta・Googleビジネスプロフィール）がひとつも無い利用者のレポートは、
+ * 実データが無く精度の上限も低いので、費用を優先して Gemini で作る。
  */
 export async function chooseProvider(sb: SupabaseClient, ownerId: string): Promise<AiProvider> {
   if (!hasGemini()) return "anthropic";
-  for (const table of ["google_connections", "meta_connections", "gbp_connections"]) {
+  for (const table of ["google_connections", "ad_connections", "meta_connections", "gbp_connections"]) {
     const { count } = await sb.from(table).select("user_id", { count: "exact", head: true }).eq("user_id", ownerId);
     if ((count ?? 0) > 0) return "anthropic";
-  }
-  const { data: adRows } = await sb.from("ad_connections").select("meta").eq("user_id", ownerId);
-  for (const row of adRows ?? []) {
-    const selected = (row.meta as { selected?: unknown[] } | null)?.selected;
-    if (Array.isArray(selected) && selected.length > 0) return "anthropic";
   }
   return "gemini";
 }
@@ -186,7 +162,9 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
     }
     // サイトから辿れた公式SNSを実際に見に行く。X（Grok経由）だけは数十秒かかることがある
     if (a.site && !a.social && (a.site.social ?? []).length > 0) {
-      const social = await scanSocial(a.site);
+      // owner_id を渡すと、依頼主が /settings で連携済みの公式SNSアカウント（OAuth）があれば
+      // それを最優先で使う（lib/social.ts の readOfficialAccount）
+      const social = await scanSocial(a.site, a.owner_id);
       return await save({ social, step: "サイトを読んでいます", progress: 20 });
     }
     if (a.url && hasPlacesApi() && !a.meo) {
@@ -201,13 +179,7 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
     if (!a.diagnosis) {
       await save({ status: "running", step: "サイトを読んでいます", progress: 15 });
       const d = await diagnose({ url: a.url ?? undefined, text: a.input_text ?? undefined });
-      const industry_vertical = classifyIndustryVertical({
-        industry: d.industry,
-        product: d.product,
-        audience: d.audience,
-        title: a.site?.title ?? "",
-      });
-      return await save({ diagnosis: d, industry_vertical, step: "広告手法を選んでいます", progress: 45 });
+      return await save({ diagnosis: d, step: "広告手法を選んでいます", progress: 45 });
     }
     // Google 連携があれば実データを取り込む。無ければ何もしない
     if (a.url && hasGoogleApp() && a.gsc === null && a.ga4 === null) {
@@ -280,7 +252,7 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       return await save({ competitors: comp, step: "広告手法を選んでいます", progress: 50 });
     }
     if (!a.media_plan) {
-      const plan = await generateMediaPlan(a.diagnosis, a.site, a.budget, priorityNoteFor(a, "media_plan"));
+      const plan = await generateMediaPlan(a.diagnosis, a.site, a.budget);
       return await save({ media_plan: plan, step: "広告の運用設計を書いています", progress: 55 });
     }
     // 広告運用設計。媒体ごとに「構成（キャンペーン・広告グループの骨組み）」→「キャンペーン1本ずつの中身」の順に作る。
@@ -359,34 +331,24 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       const sns_plan = await generateSnsPlan(a.diagnosis, a.social).catch(failedChapter<SnsPlan>({ channels: [], campaign: null }));
       return await save({ sns_plan, step: "訴求軸ごとにコピーを書いています", progress: 67 });
     }
-    // 施策はKPIに効くものだけを出す。だからKPIの仮説を先に立てる
+    // 施策はKPIに効くものだけを出す。だからKPIの仈説を先に立てる
     if (!a.kpi) {
       const kpi = await generateKpi(a.diagnosis, a.site, a.pricing, a.meo, a.gsc, a.ga4);
       return await save({ kpi, step: "施策を組み立てています", progress: 68 });
     }
     if (!a.measures) {
-      const plan = await generateMeasures(
-        a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social,
-        priorityNoteFor(a, "measures")
-      );
+      const plan = await generateMeasures(a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social);
       return await save({ measures: plan.items ?? [], step: "LP改善を書いています", progress: 71 });
     }
     if (!a.lpo) {
-      const lpo = await generateLpo(a.diagnosis, a.site, priorityNoteFor(a, "lpo")).catch(failedChapter<LpoPlan>({ groups: [] }));
+      const lpo = await generateLpo(a.diagnosis, a.site).catch(failedChapter<LpoPlan>({ groups: [] }));
       return await save({ lpo, step: "キーワードを選んでいます", progress: 70 });
     }
     if (!a.keywords) {
-      const keywords = await generateKeywords(a.diagnosis, a.site, a.gsc, a.meo, priorityNoteFor(a, "keywords")).catch(
+      const keywords = await generateKeywords(a.diagnosis, a.site, a.gsc, a.meo).catch(
         failedChapter<KeywordPlan>({ rows: [], hasRealData: false, technical: [], content: [], meo: [] })
       );
-      return await save({ keywords, step: "SEO記事の設計を書いています", progress: 75 });
-    }
-    // SEO記事設計（H2/H3構成の記事案2本）。対策キーワードが決まった直後に作る
-    if (!a.seo_articles) {
-      const seo_articles = await generateSeoArticles(a.diagnosis, a.site, a.keywords, priorityNoteFor(a, "seo_articles")).catch(
-        failedChapter<SeoArticleSet>({ articles: [] })
-      );
-      return await save({ seo_articles, step: "LINEの設計を書いています", progress: 76 });
+      return await save({ keywords, step: "LINEの設計を書いています", progress: 74 });
     }
     if (!a.line_plan) {
       const line_plan = await generateLine(a.diagnosis, a.site).catch(
