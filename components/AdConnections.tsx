@@ -1,11 +1,17 @@
-import { AD_PLATFORMS, missingEnv } from "@/lib/ads/platforms";
+import { AD_PLATFORMS, missingEnv, type AdPlatform } from "@/lib/ads/platforms";
 import type { AdConnectionView } from "@/app/ad-actions";
 import { AdDisconnectButton } from "./AdDisconnectButton";
 
 /**
  * 設定画面の「広告アカウント連携」。媒体ごとに状態と操作を1行で出す。
  * 連携は <a> で /api/ads/{媒体}/start に飛ばす（媒体の認可画面へ画面ごと遷移するため）。
+ *
+ * TikTok広告・X広告はまだ未実装（環境変数も未設定）のため、「未設定」ではなく
+ * 「対応予定」の固定表示にして、未設定を促す注意書きも出さない。
+ * 実装を始めるときは COMING_SOON からこの2つを外すこと。
  */
+const COMING_SOON: AdPlatform[] = ["tiktok", "x"];
+
 export function AdConnections({
   connections,
   canConnect,
@@ -18,7 +24,9 @@ export function AdConnections({
   error?: string;
 }) {
   const okName = AD_PLATFORMS.find((p) => p.id === ok)?.name;
-  const unset = AD_PLATFORMS.map((p) => ({ p, missing: missingEnv(p) })).filter((x) => x.missing.length > 0);
+  const unset = AD_PLATFORMS.map((p) => ({ p, missing: missingEnv(p) })).filter(
+    (x) => x.missing.length > 0 && !COMING_SOON.includes(x.p.id)
+  );
 
   return (
     <>
@@ -42,6 +50,7 @@ export function AdConnections({
           const missing = missingEnv(def);
           const shown = conn?.accounts.slice(0, 3).map((a) => `${a.name === a.id ? a.id : `${a.name}（${a.id}）`}${a.manager ? "［MCC］" : ""}`) ?? [];
           const rest = (conn?.accounts.length ?? 0) - shown.length;
+          const comingSoon = COMING_SOON.includes(def.id);
 
           return (
             <div className="r" key={def.id}>
@@ -57,7 +66,9 @@ export function AdConnections({
                     : `連携すると、${def.media}の実績（費用・クリック・CV・CPA・ROAS）を読み取って分析できます。このツールは実績の読み取りにだけ使い、広告の変更はしません。`}
                 </small>
               </div>
-              {conn ? (
+              {comingSoon ? (
+                <span className="tag">対応予定</span>
+              ) : conn ? (
                 <AdDisconnectButton platform={def.id} />
               ) : missing.length > 0 ? (
                 <span className="tag warn">未設定</span>
