@@ -18,14 +18,13 @@ import type { MeoScan } from "@/lib/meo";
 import { MeoStoreList, scorePct } from "./MeoStores";
 import { MeoEntryCard } from "./meo/MeoEntryCard";
 import { Toc } from "./Toc";
-import { MainPrice } from "./MainPrice";
 import { BANNER_CASE_WARNING, looksLikeCasePhoto } from "@/lib/case-photo";
 import { cropImageToDataUrl } from "@/lib/crop-image";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
 import type { SeoArticleSet } from "@/lib/seoArticles";
 import { INDUSTRY_VERTICAL_LABEL, type IndustryVertical } from "@/lib/industryMatrix";
 import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
-import { MARGIN, breakEvenCpa, type PriceScan } from "@/lib/pricing";
+import { MARGIN, type PriceScan } from "@/lib/pricing";
 import type { SpeedScan } from "@/lib/pagespeed";
 import type { SocialScan } from "@/lib/social";
 import type { SocialInsightPlan } from "@/lib/social-insights";
@@ -477,6 +476,8 @@ export function Report({
           extra={extraInputs}
           hasGoogle={!!(gsc || ga4)}
           social={social}
+          pricing={pricing}
+          onPricing={setPricing}
         />
       )}
 
@@ -725,48 +726,36 @@ export function Report({
         </>
       )}
 
-      {site && (
+      {adOps && adOps.tags && adOps.tags.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">⛨</span>
+            <span className="ic">▣</span>
             <div>
-              <h2 id="sec-security">セキュリティチェック</h2>
-              <div className="sub">セキュリティヘッダー検査結果</div>
+              <h2 id="sec-tags">計測タグの導入状況</h2>
+              <div className="sub">サイトを実際に読んで判定しています</div>
             </div>
             <span className="rule" />
           </div>
-
-          <div className="score">
-            <div style={{ textAlign: "center" }}>
-              <div className="n">{site.passed}</div>
-              <div className="of">/ {site.total} 通過</div>
-              <span className={`tag ${site.passed >= 8 ? "ok" : site.passed >= 5 ? "warn" : "ng"}`} style={{ marginTop: 8 }}>
-                {site.passed >= 8 ? "良好" : site.passed >= 5 ? "要確認" : "要対応"}
-              </span>
-            </div>
-            <div className="body">
-              <div className="bar"><span style={{ width: `${(site.passed / site.total) * 100}%` }} /></div>
-              <p>HTTPS・セキュリティヘッダー・robots.txt・sitemap.xml・構造化データの設定状況を実際に取得して調べました。</p>
-            </div>
-          </div>
-
-          <div className="rows">
-            <div className="rh">セキュリティヘッダー</div>
-            {site.headers.map((h) => (
-              <div className="r" key={h.key}>
-                <span className="st" style={{ color: h.pass ? "var(--ok)" : "var(--ng)" }}>{h.pass ? "✓" : "✕"}</span>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <b>{h.label}</b>
-                  <small>{h.desc}</small>
-                  {h.value && (
-                    <code style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginTop: 4, wordBreak: "break-all" }}>
-                      {h.value.slice(0, 120)}
-                    </code>
-                  )}
+          <div className="rows measure">
+            {adOps.tags.map((t, i) => (
+              <div className="r" key={i}>
+                <span className="st" style={{ color: t.status === "導入済み" ? "var(--ok)" : t.status === "要確認" ? "var(--warn)" : "var(--ng)" }}>
+                  {t.status === "導入済み" ? "✓" : t.status === "要確認" ? "?" : "✕"}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <b>{t.name}</b>
+                  <small>{t.note}</small>
                 </div>
-                <span className={`pill ${h.pass ? "ok" : "ng"}`}>{h.pass ? "通過" : "要対応"}</span>
+                <span className={`tag${t.need === "必須" && t.status === "未導入" ? " warn" : ""}`}>{t.need}</span>
               </div>
             ))}
+          </div>
+          <div className="note">
+            <i className="i">i</i>
+            <span>
+              「要確認」は<b style={{ fontWeight: 600 }}>未導入という意味ではありません</b>。
+              Google タグマネージャーはタグを表示時に差し込むため、HTMLを読むだけでは有無を判定できません。GTMの管理画面でご確認ください。
+            </span>
           </div>
         </>
       )}
@@ -1217,68 +1206,6 @@ export function Report({
         </>
       )}
 
-      {pricing?.main && (
-        <>
-          <div className="sec-head">
-            <span className="ic">¥</span>
-            <div>
-              <h2 id="sec-cpa">CPAはいくらまで出せるか</h2>
-              <div className="sub">サイトに載っている価格から計算しています</div>
-            </div>
-            <span className="rule" />
-          </div>
-
-          <div className="cpa measure">
-            <div className="be">
-              <small>損益分岐CPA</small>
-              <b>{breakEvenCpa(pricing.main.yen, margin).toLocaleString()}<i>円</i></b>
-              <span>1件あたりこれを超えると赤字です</span>
-            </div>
-            <div className="src">
-              <MainPrice id={id} pricing={pricing} onChange={setPricing} />
-              <div className="mg">
-                <span>粗利率</span>
-                <div className="opts">
-                  {[0.3, 0.4, 0.5, 0.6, 0.7, 0.8].map((m) => (
-                    <button key={m} className={Math.abs(margin - m) < 0.001 ? "on" : ""} onClick={() => pickMargin(m)}>
-                      {Math.round(m * 100)}%
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <details className="flags measure">
-            <summary>この数字の出どころ（掲載価格 {pricing.items.length}件）</summary>
-            <p className="note" style={{ marginTop: 0 }}>
-              <i className="i">i</i>
-              <span>
-                {pricing.reason}
-                {pricing.source && <> 取得元：<a href={pricing.source} target="_blank" rel="noreferrer noopener">{pricing.source.replace(/^https?:\/\//, "")}</a></>}
-              </span>
-            </p>
-            <div className="rows" style={{ margin: "12px 0 0" }}>
-              {pricing.items.slice(0, 12).map((x, i) => (
-                <div className="r" key={i}>
-                  <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 400 }}>{x.name}</b></div>
-                  <span className="tag">{x.yen.toLocaleString()}円</span>
-                </div>
-              ))}
-            </div>
-          </details>
-
-          <div className="note">
-            <i className="i">i</i>
-            <span>
-              粗利率は業種のめやすを初期値にしています。<b style={{ fontWeight: 600 }}>実際の粗利率に合わせて押し直してください。</b>
-              いまいくらで獲得できているか（実際のCPA）は、広告費とコンバージョン数が要るためこちらでは測れません。
-              Google Analytics 4 を連携すると、コンバージョン数から実測できます。
-            </span>
-          </div>
-        </>
-      )}
-
       {adOps?.done && adOps.campaigns.length > 0 && (
         <>
           <div className="sec-head">
@@ -1294,33 +1221,6 @@ export function Report({
             <AdStructureTable plan={adOps.plan} />
           ) : (
             !isGuest && <RebuildAdPlanNote id={id} />
-          )}
-
-          {adOps.tags.length > 0 && (
-            <>
-              <div className="rows measure">
-                <div className="rh">計測タグの導入状況<small>サイトを実際に読んで判定しています</small></div>
-                {adOps.tags.map((t, i) => (
-                  <div className="r" key={i}>
-                    <span className="st" style={{ color: t.status === "導入済み" ? "var(--ok)" : t.status === "要確認" ? "var(--warn)" : "var(--ng)" }}>
-                      {t.status === "導入済み" ? "✓" : t.status === "要確認" ? "?" : "✕"}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <b>{t.name}</b>
-                      <small>{t.note}</small>
-                    </div>
-                    <span className={`tag${t.need === "必須" && t.status === "未導入" ? " warn" : ""}`}>{t.need}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="note">
-                <i className="i">i</i>
-                <span>
-                  「要確認」は<b style={{ fontWeight: 600 }}>未導入という意味ではありません</b>。
-                  Google タグマネージャーはタグを表示時に差し込むため、HTMLを読むだけでは有無を判定できません。GTMの管理画面でご確認ください。
-                </span>
-              </div>
-            </>
           )}
 
           {adOps.overLength.length > 0 && (
@@ -1487,13 +1387,100 @@ export function Report({
           </div>
           <div className="measure" style={{ display: "grid", gap: 12 }}>
             {(() => {
-              // SNSの運用プランは、施策の見出しに出てくる媒体の下に入れる。
-              // 見出しに無い媒体（施策では触れていないがプランを作った媒体）は、SNSの施策の後ろにまとめて出す
+              // SNSの運用プラン・YouTube/Xの分析・LINE公式アカウントは、
+              // 施策の見出しに出てくる媒体の下にそのまま追記する。
+              // 見出しに無い媒体は、SNSの施策の後ろ（LINEは末尾）にまとめて出す
               const channels = snsPlan?.channels ?? [];
               const used = new Set<string>();
-              const blocks = tactics.items.map((t, i) => {
-                const mine = channels.filter((c) => !used.has(c.platform) && snsPlatformsIn(`${t.area} ${t.summary}`).includes(c.platform));
+              const siItems = socialInsights?.items ?? [];
+              const usedSI = new Set<string>();
+
+              const renderSI = (si: (typeof siItems)[number]) => (
+                <div key={si.platform} style={{ marginTop: 10 }}>
+                  <p className="eyebrow">{si.platform}の分析</p>
+                  {si.findings.length > 0 && (
+                    <ul>{si.findings.map((f, k) => <li key={k}>{f}</li>)}</ul>
+                  )}
+                  {si.measures.map((m, k) => (
+                    <div key={k} style={{ marginTop: 10 }}>
+                      <div className="top">
+                        <b>{m.title}</b>
+                        {m.kpi && <span className="kpi">見る数字：{m.kpi}</span>}
+                      </div>
+                      <p>{m.why}</p>
+                      <ul>{m.steps?.map((s, j) => <li key={j}>{s}</li>)}</ul>
+                      <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <span className="chip">担当：{m.owner}</span>
+                        <span className="chip">{m.effort}</span>
+                      </div>
+                      {m.flags && m.flags.length > 0 && (
+                        <div className="alert" style={{ marginTop: 10 }}>
+                          {m.flags.map((f, j) => (
+                            <div key={j}>{f.law}「{f.text}」：{f.reason}（言い換え：{f.suggestion}）</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+
+              const renderLine = () =>
+                linePlan && (
+                  <div style={{ marginTop: 10 }}>
+                    {linePlan.skip ? (
+                      <p style={{ fontSize: 13.5, color: "var(--muted)" }}>{linePlan.skip}</p>
+                    ) : (
+                      <>
+                        {linePlan.richMenu?.length > 0 && (
+                          <div className="rich measure" style={{ marginTop: 10 }}>
+                            {linePlan.richMenu.map((m, i) => (
+                              <div className="cell" key={i}>
+                                <b>{m.label}</b>
+                                <small>{m.goes}</small>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {linePlan.steps?.length > 0 && (
+                          <div className="steps measure" style={{ marginTop: 10 }}>
+                            {linePlan.steps.map((st, i) => (
+                              <div className="s" key={i}>
+                                <div className="h">
+                                  <span className="n">{i + 1}</span>
+                                  <div>
+                                    <b>{st.title}</b>
+                                    <small>{st.when}</small>
+                                  </div>
+                                </div>
+                                <p>{st.body}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {linePlan.segments?.length > 0 && (
+                          <div className="tactic measure" style={{ marginTop: 12 }}>
+                            <div className="top"><b>出し分けの例</b></div>
+                            <ul>{linePlan.segments.map((x, k) => <li key={k}>{x}</li>)}</ul>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+
+              // MEO（Googleマップ）は専用章（MEO対策）で扱うため、ここでは表示しない
+              const visible = tactics.items.filter((t) => !/MEO|Googleマップ/i.test(t.area));
+              let lineUsed = false;
+
+              const blocks = visible.map((t, i) => {
+                const text = `${t.area} ${t.summary}`;
+                const mine = channels.filter((c) => !used.has(c.platform) && snsPlatformsIn(text).includes(c.platform));
                 mine.forEach((c) => used.add(c.platform));
+                const mySI = siItems.filter((si) => !usedSI.has(si.platform) && snsPlatformsIn(text).includes(si.platform));
+                mySI.forEach((si) => usedSI.add(si.platform));
+                const isLine = /LINE/i.test(text);
+                if (isLine) lineUsed = true;
                 return (
                   <div className="tactic" key={i}>
                     <div className="top">
@@ -1505,91 +1492,38 @@ export function Report({
                       {t.actions?.map((a, k) => <li key={k}>{a}</li>)}
                     </ul>
                     {mine.map((c) => <SnsChannelBlock key={c.platform} c={c} />)}
+                    {mySI.map((si) => renderSI(si))}
+                    {isLine && renderLine()}
                   </div>
                 );
               });
               const rest = channels.filter((c) => !used.has(c.platform));
+              const restSI = siItems.filter((si) => !usedSI.has(si.platform));
               return (
                 <>
                   {blocks}
-                  {rest.length > 0 && (
+                  {(rest.length > 0 || restSI.length > 0) && (
                     <div className="tactic">
                       <div className="top"><b>SNSオーガニック運用</b></div>
                       <p>広告費をかけずに育てるSNSの、媒体ごとの運用プランです。</p>
                       {rest.map((c) => <SnsChannelBlock key={c.platform} c={c} />)}
+                      {restSI.map((si) => renderSI(si))}
                     </div>
                   )}
                   {snsPlan?.campaign && <SnsCampaignCard c={snsPlan.campaign} />}
                   {snsPlan?.error && channels.length === 0 && (
                     <div className="note"><i className="i">i</i><span>SNSの運用プランを作れませんでした（{snsPlan.error}）</span></div>
                   )}
+                  {!lineUsed && linePlan && (
+                    <div className="tactic">
+                      <div className="top"><b>LINE公式アカウント</b></div>
+                      {renderLine()}
+                    </div>
+                  )}
                 </>
               );
             })()}
           </div>
-
-          {socialInsights && socialInsights.items.length > 0 && (
-            <div style={{ marginTop: 24 }}>
-              <div className="sec-head" style={{ marginTop: 0 }}>
-                <span className="ic">▶</span>
-                <div>
-                  <h2 id="sec-social-insights">YouTube・Xの分析</h2>
-                  <div className="sub">
-                    アカウント情報が実測できた媒体だけ、自社の投稿内容を競合の実測値と比べています
-                  </div>
-                </div>
-                <span className="rule" />
-              </div>
-              {socialInsights.items.map((si, i) => (
-                <div key={i} style={{ marginTop: i === 0 ? 0 : 22 }}>
-                  <p className="eyebrow">{si.platform}</p>
-                  {si.findings.length > 0 && (
-                    <div className="tactic" style={{ marginTop: 10 }}>
-                      <div className="top">
-                        <b>分析結果</b>
-                      </div>
-                      <ul>
-                        {si.findings.map((f, k) => (
-                          <li key={k}>{f}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {si.measures.length > 0 && (
-                    <div className="measure" style={{ display: "grid", gap: 12, marginTop: 12 }}>
-                      {si.measures.map((m, k) => (
-                        <div className="tactic" key={k}>
-                          <div className="top">
-                            <b>{m.title}</b>
-                            {m.kpi && <span className="kpi">見る数字：{m.kpi}</span>}
-                          </div>
-                          <p>{m.why}</p>
-                          <ul>
-                            {m.steps?.map((s, j) => (
-                              <li key={j}>{s}</li>
-                            ))}
-                          </ul>
-                          <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            <span className="chip">担当：{m.owner}</span>
-                            <span className="chip">{m.effort}</span>
-                          </div>
-                          {m.flags && m.flags.length > 0 && (
-                            <div className="alert" style={{ marginTop: 10 }}>
-                              {m.flags.map((f, j) => (
-                                <div key={j}>
-                                  {f.law}「{f.text}」：{f.reason}（言い換え：{f.suggestion}）
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
 
           {/* 作れなかった章は黙って消さない。無いのか、作れなかったのかで読み方が変わる */}
           {(() => {
@@ -1610,92 +1544,100 @@ export function Report({
             );
           })()}
 
-          {speed && speed.score === null && speed.field.length === 0 && speed.reason && (
-            <div className="note warn">
-              <i className="i">!</i>
-              <span>表示速度を測定できませんでした。{speed.reason}</span>
-            </div>
-          )}
-
-          {speed && (speed.score !== null || speed.field.length > 0) && (
-            <>
-              <div className="sec-head">
-                <span className="ic">⚡</span>
-                <div>
-                  <h2 id="sec-speed">表示速度（実測）</h2>
-                  <div className="sub">PageSpeed Insights・モバイル。推測ではなく計測値です</div>
+          {(() => {
+            const hasLpo = !!lpo && lpo.groups.length > 0;
+            const hasSpeedMissing = !!speed && speed.score === null && speed.field.length === 0 && !!speed.reason;
+            const hasSpeedData = !!speed && (speed.score !== null || speed.field.length > 0);
+            if (!hasLpo && !hasSpeedMissing && !hasSpeedData) return null;
+            return (
+              <>
+                <div className="sec-head">
+                  <span className="ic">▤</span>
+                  <div>
+                    <h2 id="sec-lpo">LP改善（受け皿の直し方）</h2>
+                    <div className="sub">広告を出す前に直すと、同じ予算で獲得数が変わります</div>
+                  </div>
+                  <span className="rule" />
                 </div>
-                <span className="rule" />
-              </div>
-
-              <div className="speed measure">
-                {speed.score !== null && (
-                  <div className="gauge">
-                    <b>{speed.score}</b>
-                    <small>/ 100</small>
-                    <span className={speed.score >= 90 ? "ok" : speed.score >= 50 ? "warn" : "ng"}>
-                      {speed.score >= 90 ? "良好" : speed.score >= 50 ? "改善が必要" : "不良"}
-                    </span>
+                {hasLpo && (
+                  <div className="measure" style={{ display: "grid", gap: 12 }}>
+                    {lpo!.groups.map((g, i) => (
+                      <div className="tactic" key={i}>
+                        <div className="top"><b>{g.area}</b></div>
+                        <ul>{g.items?.map((x, k) => <li key={k}>{x}</li>)}</ul>
+                      </div>
+                    ))}
                   </div>
                 )}
-                <div className="kpis">
-                  {(speed.field.length > 0 ? speed.field : speed.lab).map((m) => (
-                    <div className="kpi" key={m.id}>
-                      <b>{m.value}</b>
-                      <small>{m.label}</small>
-                      {m.rating && <i className={m.rating === "良好" ? "ok" : m.rating === "不良" ? "ng" : "warn"}>{m.rating}</i>}
-                    </div>
-                  ))}
-                </div>
-              </div>
 
-              <div className="note">
-                <i className="i">i</i>
-                <span>
-                  {speed.field.length > 0
-                    ? "上の数字は実際にこのサイトを見た人の計測値（Chrome ユーザーエクスペリエンスレポート）です。"
-                    : speed.reason}
-                  {speed.testedUrl && <> 測定URL：{speed.testedUrl.replace(/^https?:\/\//, "")}</>}
-                </span>
-              </div>
-
-              {speed.opportunities.length > 0 && (
-                <div className="rows measure">
-                  <div className="rh">短縮の見込みがある改善<small>PageSpeed Insights の試算</small></div>
-                  {speed.opportunities.map((o, i) => (
-                    <div className="r" key={i}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <b>{o.title}</b>
-                        <small>{o.detail}</small>
-                      </div>
-                      <span className="tag warn">−{(o.savingsMs / 1000).toFixed(1)}秒</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {lpo && lpo.groups.length > 0 && (
-            <>
-              <div className="sec-head">
-                <span className="ic">▤</span>
-                <div>
-                  <h2 id="sec-lpo">LP改善（受け皿の直し方）</h2>
-                  <div className="sub">広告を出す前に直すと、同じ予算で獲得数が変わります</div>
-                </div>
-                <span className="rule" />
-              </div>
-              <div className="measure" style={{ display: "grid", gap: 12 }}>
-                {lpo.groups.map((g, i) => (
-                  <div className="tactic" key={i}>
-                    <div className="top"><b>{g.area}</b></div>
-                    <ul>{g.items?.map((x, k) => <li key={k}>{x}</li>)}</ul>
+                {hasSpeedMissing && (
+                  <div className="note warn" style={{ marginTop: hasLpo ? 14 : 0 }}>
+                    <i className="i">!</i>
+                    <span>表示速度を測定できませんでした。{speed!.reason}</span>
                   </div>
-                ))}
-              </div>
-            </>
-          )}
+                )}
+
+                {hasSpeedData && (
+                  <>
+                    <div className="sec-head" style={{ marginTop: hasLpo || hasSpeedMissing ? 24 : 0 }}>
+                      <span className="ic">⚡</span>
+                      <div>
+                        <h2 id="sec-speed">表示速度（実測）</h2>
+                        <div className="sub">PageSpeed Insights・モバイル。推測ではなく計測値です</div>
+                      </div>
+                      <span className="rule" />
+                    </div>
+
+                    <div className="speed measure">
+                      {speed!.score !== null && (
+                        <div className="gauge">
+                          <b>{speed!.score}</b>
+                          <small>/ 100</small>
+                          <span className={speed!.score >= 90 ? "ok" : speed!.score >= 50 ? "warn" : "ng"}>
+                            {speed!.score >= 90 ? "良好" : speed!.score >= 50 ? "改善が必要" : "不良"}
+                          </span>
+                        </div>
+                      )}
+                      <div className="kpis">
+                        {(speed!.field.length > 0 ? speed!.field : speed!.lab).map((m) => (
+                          <div className="kpi" key={m.id}>
+                            <b>{m.value}</b>
+                            <small>{m.label}</small>
+                            {m.rating && <i className={m.rating === "良好" ? "ok" : m.rating === "不良" ? "ng" : "warn"}>{m.rating}</i>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="note">
+                      <i className="i">i</i>
+                      <span>
+                        {speed!.field.length > 0
+                          ? "上の数字は実際にこのサイトを見た人の計測値（Chrome ユーザーエクスペリエンスレポート）です。"
+                          : speed!.reason}
+                        {speed!.testedUrl && <> 測定URL：{speed!.testedUrl.replace(/^https?:\/\//, "")}</>}
+                      </span>
+                    </div>
+
+                    {speed!.opportunities.length > 0 && (
+                      <div className="rows measure">
+                        <div className="rh">短縮の見込みがある改善<small>PageSpeed Insights の試算</small></div>
+                        {speed!.opportunities.map((o, i) => (
+                          <div className="r" key={i}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <b>{o.title}</b>
+                              <small>{o.detail}</small>
+                            </div>
+                            <span className="tag warn">−{(o.savingsMs / 1000).toFixed(1)}秒</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            );
+          })()}
 
           {keywords && keywords.rows.length > 0 && (
             <>
@@ -1808,57 +1750,6 @@ export function Report({
                   </details>
                 ))}
               </div>
-            </>
-          )}
-
-          {linePlan && (
-            <>
-              <div className="sec-head">
-                <span className="ic">◒</span>
-                <div>
-                  <h2 id="sec-line">LINE公式アカウント</h2>
-                  <div className="sub">{linePlan.skip ? "この商材での向き不向き" : "リッチメニューと、送る文面そのもの"}</div>
-                </div>
-                <span className="rule" />
-              </div>
-              {linePlan.skip ? (
-                <div className="note"><i className="i">i</i><span>{linePlan.skip}</span></div>
-              ) : (
-                <>
-                  {linePlan.richMenu?.length > 0 && (
-                    <div className="rich measure">
-                      {linePlan.richMenu.map((m, i) => (
-                        <div className="cell" key={i}>
-                          <b>{m.label}</b>
-                          <small>{m.goes}</small>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {linePlan.steps?.length > 0 && (
-                    <div className="steps measure">
-                      {linePlan.steps.map((st, i) => (
-                        <div className="s" key={i}>
-                          <div className="h">
-                            <span className="n">{i + 1}</span>
-                            <div>
-                              <b>{st.title}</b>
-                              <small>{st.when}</small>
-                            </div>
-                          </div>
-                          <p>{st.body}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {linePlan.segments?.length > 0 && (
-                    <div className="tactic measure" style={{ marginTop: 12 }}>
-                      <div className="top"><b>出し分けの例</b></div>
-                      <ul>{linePlan.segments.map((x, k) => <li key={k}>{x}</li>)}</ul>
-                    </div>
-                  )}
-                </>
-              )}
             </>
           )}
 
