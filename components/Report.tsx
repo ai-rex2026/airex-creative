@@ -847,7 +847,7 @@ export function Report({
               <div className="note measure">
                 <i className="i">i</i>
                 <span>
-                  {new Date(competitors.searchedAt).toLocaleString("ja-JP")}時点の検索結果です。
+                  {new Date(competitors.searchedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}時点の検索結果です。
                   順位は検索する場所・端末・時期で変わります。
                   <b style={{ fontWeight: 600 }}>訪問数や類似度は取得していないため出していません。</b>
                 </span>

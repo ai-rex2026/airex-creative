@@ -64,7 +64,7 @@ export function AnalysisList({ rows }: { rows: Analysis[] }) {
                   <b style={{ fontSize: 15 }}>{site}</b>
                   <span className={`tag ${cls === "ok" ? "ok" : cls === "ng" ? "ng" : ""}`}>{text}</span>
                   <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--faint)" }}>
-                    {new Date(a.created_at).toLocaleDateString("ja-JP")}
+                    {new Date(a.created_at).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })}
                   </span>
                 </div>
 
