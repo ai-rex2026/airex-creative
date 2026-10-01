@@ -8,6 +8,14 @@
  * この同期 stats エンドポイントは一度に渡せる entity_ids が最大20件という制限があるため、
  * キャンペーンが多いアカウントではチャンクに分けて呼ぶ。
  *
+ * granularity=DAY のとき、start_time/end_time は「アカウントの設定タイムゾーンでの0時」
+ * ちょうどを表す瞬間でないと `Expect time to be midnight in the account's local timezone
+ * for day granularity` で拒否される（UTCの0時ではない）。そのためリクエスト前に
+ * GET /accounts/{id} でアカウントのタイムゾーン（IANA名。例: Asia/Tokyo）を取り、
+ * その現地時間の0時に対応するUTC時刻を算出して渡す（tzOffsetMinutes/localMidnightUTC）。
+ * 日別内訳のラベル（dates）自体はタイムゾーンに関係ないカレンダー日数なので、従来通り
+ * UTC基準で日数を数えて問題ない（DSTで1日の実時間が23/25時間になっても日数は変わらない）。
+ *
  * コンバージョン（Webサイトのコンバージョンタグ等）はアカウントの計測設定に形が強く依存し、
  * 本番の実アカウントで検証できていないため、v1 では費用・表示回数・クリックのみを扱い、
  * CV・CV値は 0 として返す（画面側は Meta 広告などと同じ表示で、CPA は「—」になる）。
@@ -34,6 +42,43 @@ export async function xAdAccounts(accessToken: string, tokenSecret: string): Pro
   if (!res.ok) throw new Error(apiError(j, res));
   const rows: { id: string; name?: string }[] = j.data ?? [];
   return rows.map((r) => ({ id: r.id, name: r.name ?? r.id }));
+}
+
+/** アカウントの設定タイムゾーン（IANA名。例: "Asia/Tokyo"）。取れなければ UTC 扱い */
+async function accountTimezone(accountId: string, tokens: XTokens): Promise<string> {
+  const res = await xSignedGet(`${X_ADS_BASE}/accounts/${accountId}`, tokens);
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(apiError(j, res));
+  const tz = (j.data as { timezone?: string } | undefined)?.timezone;
+  return tz && typeof tz === "string" ? tz : "UTC";
+}
+
+/** 指定した IANA タイムゾーンでの、ある瞬間のUTCからのオフセット（分。「現地時刻 = UTC + offset」） */
+function tzOffsetMinutes(timeZone: string, date: Date): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = dtf.formatToParts(date);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const asUTC = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return Math.round((asUTC - date.getTime()) / 60_000);
+}
+
+/** YYYY-MM-DD の、指定タイムゾーンでの「その日の0時」に対応するUTC時刻（ISO文字列、末尾Z） */
+function localMidnightUTC(ymd: string, timeZone: string): string {
+  const guess = new Date(`${ymd}T00:00:00Z`);
+  const offset1 = tzOffsetMinutes(timeZone, guess);
+  const adjusted = new Date(guess.getTime() - offset1 * 60_000);
+  // DST境界をまたぐケースに備えて、調整後の瞬間でオフセットを取り直して再計算する
+  const offset2 = tzOffsetMinutes(timeZone, adjusted);
+  return new Date(guess.getTime() - offset2 * 60_000).toISOString();
 }
 
 type XCampaign = { id: string; name: string };
@@ -132,9 +177,14 @@ export async function fetchCampaignMetrics(
   const campaigns = await listCampaigns(accountId, tokens);
   if (campaigns.length === 0) return { campaigns: [], daily: [] };
 
-  const startTime = `${from}T00:00:00Z`;
-  const endTime = `${addDay(to)}T00:00:00Z`;
-  const dayCount = Math.max(1, Math.round((Date.parse(endTime) - Date.parse(startTime)) / 86_400_000));
+  const timezone = await accountTimezone(accountId, tokens);
+  const startTime = localMidnightUTC(from, timezone);
+  const endTime = localMidnightUTC(addDay(to), timezone);
+  // 日数・日別ラベルはタイムゾーンに関係ないカレンダー日数（UTC基準で数えて問題ない）
+  const dayCount = Math.max(
+    1,
+    Math.round((Date.parse(`${addDay(to)}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
+  );
   const dates = Array.from({ length: dayCount }, (_, i) => {
     const d = new Date(`${from}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + i);
