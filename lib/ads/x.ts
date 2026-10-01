@@ -13,6 +13,9 @@
  * for day granularity` で拒否される（UTCの0時ではない）。そのためリクエスト前に
  * GET /accounts/{id} でアカウントのタイムゾーン（IANA名。例: Asia/Tokyo）を取り、
  * その現地時間の0時に対応するUTC時刻を算出して渡す（tzOffsetMinutes/localMidnightUTC）。
+ * さらに X の Time 型はミリ秒無しの "YYYY-MM-DDTHH:mm:ssZ" しか受け付けない
+ * （Date#toISOString() はミリ秒付きで返すため、localMidnightUTC 内でミリ秒部分を落としている。
+ * `Expected Time, got "...000Z" for start_time` で分かった）。
  * 日別内訳のラベル（dates）自体はタイムゾーンに関係ないカレンダー日数なので、従来通り
  * UTC基準で日数を数えて問題ない（DSTで1日の実時間が23/25時間になっても日数は変わらない）。
  *
@@ -71,14 +74,16 @@ function tzOffsetMinutes(timeZone: string, date: Date): number {
   return Math.round((asUTC - date.getTime()) / 60_000);
 }
 
-/** YYYY-MM-DD の、指定タイムゾーンでの「その日の0時」に対応するUTC時刻（ISO文字列、末尾Z） */
+/** YYYY-MM-DD の、指定タイムゾーンでの「その日の0時」に対応するUTC時刻（ミリ秒無しのISO文字列、末尾Z） */
 function localMidnightUTC(ymd: string, timeZone: string): string {
   const guess = new Date(`${ymd}T00:00:00Z`);
   const offset1 = tzOffsetMinutes(timeZone, guess);
   const adjusted = new Date(guess.getTime() - offset1 * 60_000);
   // DST境界をまたぐケースに備えて、調整後の瞬間でオフセットを取り直して再計算する
   const offset2 = tzOffsetMinutes(timeZone, adjusted);
-  return new Date(guess.getTime() - offset2 * 60_000).toISOString();
+  const iso = new Date(guess.getTime() - offset2 * 60_000).toISOString();
+  // X の Time 型はミリ秒を受け付けないため、".000Z" を "Z" に落とす
+  return iso.replace(/\.\d{3}Z$/, "Z");
 }
 
 type XCampaign = { id: string; name: string };
