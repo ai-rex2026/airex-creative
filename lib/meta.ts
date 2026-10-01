@@ -6,8 +6,20 @@
  * fb_exchange_token に交換して60日間の長期トークンにしてから保存する
  * （長期トークンは期限が来る前に同じ交換を繰り返せば延長できる＝実質のrefresh）。
  *
- * 権限は最小限（pages_show_list / pages_read_engagement / instagram_basic /
- * instagram_manage_insights）。App Review はリクエストする権限が少ないほど通りやすい。
+ * 権限は pages_show_list / pages_read_engagement / instagram_basic /
+ * instagram_manage_insights に加えて business_management を使う（理由は下記）。
+ *
+ * 【2026/10 に特定した重要な注意点】
+ * Business Portfolio（Business Manager）配下のページ・Instagramアカウントは、
+ * OAuth同意画面で正しくページ選択を行っても /me/accounts が常に空配列を返すことがある
+ * （Facebook Login for Business の config_id 方式で「アクセスするページを選択」まで
+ * 完了させても再現した。Graph API Explorerで直接 /me/accounts を叩いても同じ）。
+ * 一方でページIDを直接指定した取得（/{page_id}）は常に成功する。
+ *
+ * 正しい発見経路は /me/businesses → /{business_id}/owned_pages で、ここには
+ * business_management 権限が要る。discoverMetaPages はまず /me/accounts を試し、
+ * 空だった場合にこの経路へフォールバックする（個人ページ・Business配下ページの
+ * どちらでも動くようにするため）。
  */
 
 const GRAPH = "https://graph.facebook.com/v21.0";
@@ -17,6 +29,7 @@ export const META_SCOPES = [
   "pages_read_engagement",
   "instagram_basic",
   "instagram_manage_insights",
+  "business_management",
 ].join(",");
 
 export function hasMetaApp() {
@@ -49,33 +62,81 @@ export type MetaPageCandidate = {
   igUsername: string | null;
 };
 
-/**
- * ユーザーの長期トークンから、管理しているPageと紐づくInstagramビジネスアカウントを列挙する
- * Page個別のアクセストークンは、ユーザートークンが長期であれば同様に長期になる
- * （ユーザーがPage管理者であり続ける限り、明示的に無効化されない）。
- */
-export async function discoverMetaPages(userAccessToken: string): Promise<MetaPageCandidate[]> {
-  const res = await fetch(
-    `${GRAPH}/me/accounts?fields=${encodeURIComponent("id,name,access_token,instagram_business_account{id,username}")}&access_token=${encodeURIComponent(userAccessToken)}`,
-    { signal: AbortSignal.timeout(15000) }
-  );
-  const j = await res.json();
-  if (!res.ok) throw new Error(j.error?.message ?? "Facebook Pageの取得に失敗しました");
+type RawPage = {
+  id: string;
+  name: string;
+  access_token: string;
+  instagram_business_account?: { id: string; username?: string };
+};
 
-  const data: {
-    id: string;
-    name: string;
-    access_token: string;
-    instagram_business_account?: { id: string; username?: string };
-  }[] = j.data ?? [];
+const PAGE_FIELDS = "id,name,access_token,instagram_business_account{id,username}";
 
-  return data.map((p) => ({
+function toCandidate(p: RawPage): MetaPageCandidate {
+  return {
     pageId: p.id,
     pageName: p.name,
     pageAccessToken: p.access_token,
     igBusinessId: p.instagram_business_account?.id ?? null,
     igUsername: p.instagram_business_account?.username ?? null,
-  }));
+  };
+}
+
+/** 個人アカウントとして管理しているページ（Business Portfolio配下ではないページ）を列挙する */
+async function listPagesViaMeAccounts(userAccessToken: string): Promise<MetaPageCandidate[]> {
+  const res = await fetch(
+    `${GRAPH}/me/accounts?fields=${encodeURIComponent(PAGE_FIELDS)}&access_token=${encodeURIComponent(userAccessToken)}`,
+    { signal: AbortSignal.timeout(15000) }
+  );
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error?.message ?? "Facebook Pageの取得に失敗しました");
+  const data: RawPage[] = j.data ?? [];
+  return data.map(toCandidate);
+}
+
+/**
+ * Business Portfolio配下のページを列挙する（/me/accounts では取得できないページ用の経路）。
+ * business_management 権限が要る。
+ */
+async function listPagesViaBusinesses(userAccessToken: string): Promise<MetaPageCandidate[]> {
+  const bizRes = await fetch(
+    `${GRAPH}/me/businesses?access_token=${encodeURIComponent(userAccessToken)}`,
+    { signal: AbortSignal.timeout(15000) }
+  );
+  const bizJson = await bizRes.json();
+  if (!bizRes.ok) return []; // business_management が無い等。空扱いにして呼び出し元のエラーに委ねる
+  const businesses: { id: string }[] = bizJson.data ?? [];
+
+  const pagesByBusiness = await Promise.all(
+    businesses.map(async (b) => {
+      const res = await fetch(
+        `${GRAPH}/${b.id}/owned_pages?fields=${encodeURIComponent(PAGE_FIELDS)}&access_token=${encodeURIComponent(userAccessToken)}`,
+        { signal: AbortSignal.timeout(15000) }
+      );
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) return [];
+      const data: RawPage[] = j.data ?? [];
+      return data.map(toCandidate);
+    })
+  );
+
+  return pagesByBusiness.flat();
+}
+
+/**
+ * ユーザーの長期トークンから、管理しているPageと紐づくInstagramビジネスアカウントを列挙する。
+ * まず /me/accounts を試し、空であれば Business Portfolio 経由（/me/businesses →
+ * owned_pages）にフォールバックする。
+ * Page個別のアクセストークンは、ユーザートークンが長期であれば同様に長期になる
+ * （ユーザーがPage管理者であり続ける限り、明示的に無効化されない）。
+ */
+export async function discoverMetaPages(userAccessToken: string): Promise<MetaPageCandidate[]> {
+  const direct = await listPagesViaMeAccounts(userAccessToken);
+  if (direct.length > 0) return direct;
+
+  const viaBusiness = await listPagesViaBusinesses(userAccessToken);
+  if (viaBusiness.length > 0) return viaBusiness;
+
+  return [];
 }
 
 /** Instagramビジネスアカウントの基本情報（フォロワー数・投稿数）。実測のみ、無ければnull */
