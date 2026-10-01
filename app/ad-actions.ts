@@ -13,6 +13,7 @@ import {
 import { yahooChildAccounts } from "@/lib/ads/yahoo";
 import { microsoftUserId, microsoftSearchAccounts } from "@/lib/ads/microsoft";
 import { metaAdAccounts } from "@/lib/ads/meta";
+import { xAdAccounts } from "@/lib/ads/x";
 
 /** 画面に出してよい形。トークンは含めない */
 export type AdConnectionView = {
@@ -476,6 +477,93 @@ export async function saveMetaSelection(
       .update({ meta, updated_at: new Date().toISOString() })
       .eq("user_id", m.user.id)
       .eq("platform", "meta");
+    if (error) return { error: `保存できませんでした：${error.message}` };
+    return { selected: out };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/* ------------------------------------------------------------------
+ * X 広告：分析する広告アカウントの選択
+ * Ads API の /accounts（lib/ads/x.ts の xAdAccounts）が、このユーザーのトークンで
+ * アクセスできる広告アカウントをすでにフラットな一覧で返すため、Microsoft・Meta と同様
+ * 「MCC を開いて配下を辿る」操作は無く、一覧から直接チェックして保存するだけでよい。
+ * Ads API は OAuth 1.0a で、getAdCredentials が返す tokenSecret（他媒体には無いフィールド）も
+ * あわせて必要になる点だけが他の媒体と異なる。
+ * ------------------------------------------------------------------ */
+
+export type XPickerAccount = { id: string; name: string };
+export type XSelection = { id: string; name: string };
+
+const MAX_SELECTED_X = 50;
+
+async function xCreds() {
+  const user = await currentUser();
+  if (!user || user.is_anonymous) return null;
+  const creds = await getAdCredentials(user.id, "x");
+  return creds ? { user, creds } : null;
+}
+
+function readXSelected(meta: Record<string, unknown>): XSelection[] {
+  const v = meta.selected;
+  return Array.isArray(v)
+    ? v.filter(
+        (x): x is XSelection => !!x && typeof (x as XSelection).id === "string" && (x as XSelection).id.length > 0
+      )
+    : [];
+}
+
+/** 選択画面の一覧（本人がアクセスできる広告アカウント、フラット）と、保存済みの選択 */
+export async function xAccountPicker(): Promise<
+  | { connected: false }
+  | { connected: true; accounts: XPickerAccount[]; selected: XSelection[]; error?: string }
+> {
+  const x = await xCreds();
+  if (!x) return { connected: false };
+  const selected = readXSelected(x.creds.meta);
+  if (!x.creds.tokenSecret) {
+    return { connected: true, accounts: [], selected, error: "連携情報が壊れています。お手数ですが、もう一度連携し直してください" };
+  }
+  try {
+    const accounts = await xAdAccounts(x.creds.accessToken, x.creds.tokenSecret);
+    return { connected: true, accounts, selected };
+  } catch (e) {
+    return { connected: true, accounts: [], selected, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** 選んだアカウントを保存する。X から一覧を取り直して含まれるか確かめてから保存 */
+export async function saveXSelection(
+  picks: { id: string }[]
+): Promise<{ selected: XSelection[] } | { error: string }> {
+  const x = await xCreds();
+  if (!x) return { error: "X 広告と連携してください" };
+  if (!x.creds.tokenSecret) return { error: "連携情報が壊れています。お手数ですが、もう一度連携し直してください" };
+  if (!Array.isArray(picks) || picks.length > MAX_SELECTED_X) {
+    return { error: `選べるのは${MAX_SELECTED_X}件までです` };
+  }
+  for (const p of picks) {
+    if (typeof p?.id !== "string" || !p.id) return { error: "アカウントIDが正しくありません" };
+  }
+
+  try {
+    const accounts = await xAdAccounts(x.creds.accessToken, x.creds.tokenSecret);
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+    const out: XSelection[] = [];
+    for (const p of picks) {
+      const a = byId.get(p.id);
+      if (!a) return { error: `アクセスできないアカウントが含まれています（${p.id}）` };
+      out.push({ id: a.id, name: a.name });
+    }
+
+    const admin = createAdminClient();
+    const meta = { ...x.creds.meta, selected: out };
+    const { error } = await admin
+      .from("ad_connections")
+      .update({ meta, updated_at: new Date().toISOString() })
+      .eq("user_id", x.user.id)
+      .eq("platform", "x");
     if (error) return { error: `保存できませんでした：${error.message}` };
     return { selected: out };
   } catch (e) {

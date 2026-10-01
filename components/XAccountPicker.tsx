@@ -2,36 +2,37 @@
 
 import { useEffect, useState, useTransition } from "react";
 import {
-  microsoftAccountPicker,
-  saveMicrosoftSelection,
-  type MicrosoftPickerAccount,
-  type MicrosoftSelection,
+  xAccountPicker,
+  saveXSelection,
+  type XPickerAccount,
+  type XSelection,
 } from "@/app/ad-actions";
-import { MicrosoftPerformance } from "./MicrosoftPerformance";
+import { XPerformance } from "./XPerformance";
 
 /**
- * Microsoft 広告：分析する広告アカウントの選択。
- * SearchAccounts（lib/ads/microsoft.ts）がアクセスできる広告アカウントをすでにフラットな一覧で
- * 返すため、Google（components/AdAccountPicker.tsx）やヤフーLINE広告（YahooAccountPicker.tsx）の
- * ような「MCC を開いて配下を辿る」操作は無く、一覧から直接チェックして保存するだけでよい。
+ * X 広告：分析する広告アカウントの選択。
+ * Ads API の /accounts（lib/ads/x.ts の xAdAccounts）が、このユーザーのトークンでアクセスできる
+ * 広告アカウントをすでにフラットな一覧で返すため、Google（AdAccountPicker.tsx）やヤフーLINE広告
+ * （YahooAccountPicker.tsx）のような「MCC を開いて配下を辿る」操作は無く、一覧から直接
+ * チェックして保存するだけでよい（Microsoft・Meta 広告と同じ考え方）。
  *
- * 広告実績（MicrosoftPerformance）は、構造的にはこの「広告アカウントの選択」に従属する内容なので、
+ * 広告実績（XPerformance）は、構造的にはこの「広告アカウントの選択」に従属する内容なので、
  * 別セクションとして並べるのではなく同じ .rows カード内に一続きのサブセクションとして
  * 埋め込む（他媒体の *AccountPicker.tsx も同じ構成。app/analysis/new/page.tsx 側では
  * 対応する *Performance は個別に描画しない）。
  */
 
-export function MicrosoftAccountPicker() {
+export function XAccountPicker() {
   const [state, setState] = useState<"loading" | "off" | "ready">("loading");
-  const [accounts, setAccounts] = useState<MicrosoftPickerAccount[]>([]);
-  const [picked, setPicked] = useState<Map<string, MicrosoftSelection>>(new Map());
+  const [accounts, setAccounts] = useState<XPickerAccount[]>([]);
+  const [picked, setPicked] = useState<Map<string, XSelection>>(new Map());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, startSave] = useTransition();
 
   useEffect(() => {
-    microsoftAccountPicker().then((r) => {
+    xAccountPicker().then((r) => {
       if (!r.connected) return setState("off");
       setAccounts(r.accounts);
       setPicked(new Map(r.selected.map((s) => [s.id, s])));
@@ -40,13 +41,12 @@ export function MicrosoftAccountPicker() {
     });
   }, []);
 
-  function toggle(a: MicrosoftPickerAccount) {
+  function toggle(a: XPickerAccount) {
     setSaved(false);
     setPicked((cur) => {
       const m = new Map(cur);
       if (m.has(a.id)) m.delete(a.id);
-      // customerId はサーバー側で保存時に Microsoft から取り直すので、ここでは空でよい
-      else m.set(a.id, { id: a.id, name: a.name, customerId: "" });
+      else m.set(a.id, { id: a.id, name: a.name });
       return m;
     });
   }
@@ -55,7 +55,7 @@ export function MicrosoftAccountPicker() {
     setErr(null);
     setSaved(false);
     startSave(async () => {
-      const r = await saveMicrosoftSelection([...picked.values()].map((s) => ({ id: s.id })));
+      const r = await saveXSelection([...picked.values()].map((s) => ({ id: s.id })));
       if ("error" in r) setErr(r.error);
       else setSaved(true);
     });
@@ -65,7 +65,7 @@ export function MicrosoftAccountPicker() {
 
   return (
     <div className="rows" style={{ maxWidth: 960, margin: "32px auto 0" }}>
-      <div className="rh">広告アカウントの選択（Microsoft 広告）</div>
+      <div className="rh">広告アカウントの選択（X 広告）</div>
       {state === "loading" && (
         <div className="r">
           <small>アカウントを読み込み中…</small>
@@ -109,7 +109,7 @@ export function MicrosoftAccountPicker() {
           </button>
         </div>
       )}
-      <MicrosoftPerformance />
+      <XPerformance />
     </div>
   );
 }

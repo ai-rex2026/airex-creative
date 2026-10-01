@@ -122,29 +122,16 @@ function priorityNoteFor(a: Analysis, section: SectionKey): string | undefined {
 }
 
 /**
- * Google連携・Meta連携・Googleビジネスプロフィール連携は、繋いだ時点でそのアカウントを
- * 使う前提なので「接続の有無」で判定する。
- *
- * 広告アカウントだけは「連携しているか」ではなく、実際に広告アカウントを選択しているか
- * （ad_connections.meta.selected が空でないか）で判定する。連携しただけで具体的な
- * アカウントを選んでいない利用者まで一律Anthropicに固定すると、費用を優先して
- * Geminiを使うという意図に反するため（連携＝広告出稿中とは限らない）。
- *
- * これらが何も無い利用者のレポートは、実データが無く精度の上限も低いので、
- * 費用を優先して Gemini で作る。
+ * 費用を優先して、使えるなら常に Gemini で作る。
+ * Google連携・Meta連携・GBP連携・広告アカウント選択の有無では切り替えない
+ * （以前はこれらがあるとAnthropicに固定していたが、連携済みの利用者でも
+ * Geminiを使いたいという要望のため撤廃）。
+ * Gemini が使えない環境（APIキー未設定等）でのみ Anthropic にフォールバックする。
  */
 export async function chooseProvider(sb: SupabaseClient, ownerId: string): Promise<AiProvider> {
-  if (!hasGemini()) return "anthropic";
-  for (const table of ["google_connections", "meta_connections", "gbp_connections"]) {
-    const { count } = await sb.from(table).select("user_id", { count: "exact", head: true }).eq("user_id", ownerId);
-    if ((count ?? 0) > 0) return "anthropic";
-  }
-  const { data: adRows } = await sb.from("ad_connections").select("meta").eq("user_id", ownerId);
-  for (const row of adRows ?? []) {
-    const selected = (row.meta as { selected?: unknown[] } | null)?.selected;
-    if (Array.isArray(selected) && selected.length > 0) return "anthropic";
-  }
-  return "gemini";
+  void sb;
+  void ownerId;
+  return hasGemini() ? "gemini" : "anthropic";
 }
 
 export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {

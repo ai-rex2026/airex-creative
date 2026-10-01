@@ -6,11 +6,12 @@ import { AdDisconnectButton } from "./AdDisconnectButton";
  * 設定画面の「広告アカウント連携」。媒体ごとに状態と操作を1行で出す。
  * 連携は <a> で /api/ads/{媒体}/start に飛ばす（媒体の認可画面へ画面ごと遷移するため）。
  *
- * TikTok広告・X広告はまだ未実装（環境変数も未設定）のため、「未設定」ではなく
+ * TikTok広告はまだ未実装（環境変数も未設定）のため、「未設定」ではなく
  * 「対応予定」の固定表示にして、未設定を促す注意書きも出さない。
- * 実装を始めるときは COMING_SOON からこの2つを外すこと。
+ * 実装を始めるときは COMING_SOON からこれも外すこと。
+ * X広告は実装済み（2026-10〜。X_API_KEY/X_API_SECRET の設定が必要）。
  */
-const COMING_SOON: AdPlatform[] = ["tiktok", "x"];
+const COMING_SOON: AdPlatform[] = ["tiktok"];
 
 export function AdConnections({
   connections,
@@ -51,6 +52,15 @@ export function AdConnections({
           const shown = conn?.accounts.slice(0, 3).map((a) => `${a.name === a.id ? a.id : `${a.name}（${a.id}）`}${a.manager ? "［MCC］" : ""}`) ?? [];
           const rest = (conn?.accounts.length ?? 0) - shown.length;
           const comingSoon = COMING_SOON.includes(def.id);
+          // 連携直後に一度だけ取得した結果（discoverAccounts）がそのまま accounts に入っている。
+          // 0件かつ note も無ければ「取得はできたが広告アカウントが無かった」ということなので、
+          // 「選びます」ではなく「見つかりませんでした」と出す。note がある（取得失敗）ときは
+          // note だけで理由を説明する。
+          const accountStatus = shown.length
+            ? `対象アカウント：${shown.join("、")}${rest > 0 ? ` ほか${rest}件` : ""}`
+            : conn?.note
+              ? null
+              : "この連携では広告アカウントが見つかりませんでした。";
 
           return (
             <div className="r" key={def.id}>
@@ -59,9 +69,7 @@ export function AdConnections({
                 <small>
                   {conn
                     ? `連携済み（${new Date(conn.connected_at).toLocaleDateString("ja-JP")}）。${
-                        shown.length
-                          ? `対象アカウント：${shown.join("、")}${rest > 0 ? ` ほか${rest}件` : ""}`
-                          : "対象アカウントは、分析を始めるときに選びます。"
+                        accountStatus ?? ""
                       }${conn.note ? ` ※${conn.note}` : ""}`
                     : `連携すると、${def.media}の実績（費用・クリック・CV・CPA・ROAS）を読み取って分析できます。このツールは実績の読み取りにだけ使い、広告の変更はしません。`}
                 </small>

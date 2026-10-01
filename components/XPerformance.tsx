@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { metaPerformance, type MetaAdPerformance as Perf } from "@/app/ad-performance-actions";
+import { xPerformance, type XAdPerformance as Perf } from "@/app/ad-performance-actions";
 
 const ymd = (d: Date) => {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -16,11 +16,11 @@ const CELL = { padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" } a
 const HEAD = { ...CELL, fontSize: 12, color: "var(--muted)", fontWeight: 500 } as const;
 
 /**
- * 選んだ Meta 広告アカウントの、キャンペーン別の実績（読み取りのみ）。期間は初期値が直近30日。
- * 「広告アカウントの選択」に従属するサブセクションとして、MetaAccountPicker.tsx の
+ * 選んだ X 広告アカウントの、キャンペーン別の実績（読み取りのみ）。期間は初期値が直近30日。
+ * 「広告アカウントの選択」に従属するサブセクションとして、XAccountPicker.tsx の
  * .rows カードの中から描画される（単独の <section> としては置かない）。
  */
-export function MetaPerformance() {
+export function XPerformance() {
   const today = new Date();
   const start = new Date();
   start.setDate(today.getDate() - 29);
@@ -29,11 +29,11 @@ export function MetaPerformance() {
   const [data, setData] = useState<{ results: Perf[]; error?: string } | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const load = () => startTransition(async () => setData(await metaPerformance(from, to)));
+  const load = () => startTransition(async () => setData(await xPerformance(from, to)));
 
   return (
     <>
-      <div className="rh">広告実績（Meta 広告・キャンペーン別）</div>
+      <div className="rh">広告実績（X 広告・キャンペーン別）</div>
       <div className="r" style={{ display: "block" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
           <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
@@ -144,8 +144,8 @@ export function MetaPerformance() {
           );
         })}
         <p style={{ fontSize: 11.5, color: "var(--faint)" }}>
-          読み取りのみ（ads_read のみ使用。キャンペーンの設定は変更しません）。金額は各アカウントの通貨のままの数値です。
-          CV・CV値は購入・リード系のアクションを合算した簡易集計のため、Meta 広告マネージャの表示と完全には一致しないことがあります。
+          読み取りのみ（Ads API のアカウント・実績の参照のみ使用。キャンペーンの設定は変更しません）。金額は各アカウントの通貨のままの数値です。
+          CV・CV値は、X 側のコンバージョン計測の対応状況が未検証のため、現時点では常に 0（CPAは「—」）になります。
         </p>
       </div>
     </>

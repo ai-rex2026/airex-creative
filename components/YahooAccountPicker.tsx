@@ -8,12 +8,18 @@ import {
   type YahooPickerAccount,
   type YahooSelection,
 } from "@/app/ad-actions";
+import { YahooPerformance } from "./YahooPerformance";
 
 /**
  * ヤフーLINE広告：分析する広告アカウントの選択。
  * Google（components/AdAccountPicker.tsx）と同じく、MCC（管理者アカウント）は
  * 一覧に「MCC」と表示し、「配下を開く」で配下の広告アカウントを取得できる。
  * MCC そのものは選べない（実績を持たないため）。選べるのは配下のアカウントだけ。
+ *
+ * 広告実績（YahooPerformance）は、構造的にはこの「広告アカウントの選択」に従属する内容なので、
+ * 別セクションとして並べるのではなく同じ .rows カード内に一続きのサブセクションとして
+ * 埋め込む（他媒体の *AccountPicker.tsx も同じ構成。app/analysis/new/page.tsx 側では
+ * 対応する *Performance は個別に描画しない）。
  */
 
 type Node = YahooPickerAccount & {
@@ -155,7 +161,7 @@ export function YahooAccountPicker() {
   );
 
   return (
-    <div className="rows" style={{ maxWidth: 620, margin: "32px auto 0" }}>
+    <div className="rows" style={{ maxWidth: 960, margin: "32px auto 0" }}>
       <div className="rh">広告アカウントの選択（ヤフーLINE広告）</div>
       {state === "loading" && (
         <div className="r">
@@ -184,6 +190,7 @@ export function YahooAccountPicker() {
           </button>
         </div>
       )}
+      <YahooPerformance />
     </div>
   );
 }

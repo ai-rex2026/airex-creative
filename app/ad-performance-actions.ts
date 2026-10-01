@@ -24,6 +24,11 @@ import {
   type MetaCampaignMetric,
   type MetaDailyMetric,
 } from "@/lib/ads/meta";
+import {
+  fetchCampaignMetrics as fetchXCampaignMetrics,
+  type XCampaignMetric,
+  type XDailyMetric,
+} from "@/lib/ads/x";
 
 /**
  * Google 広告：選んだアカウントのキャンペーン別実績（読み取りのみ）。
@@ -226,6 +231,59 @@ export async function metaPerformance(
     selected.map(async (account): Promise<MetaAdPerformance> => {
       try {
         const m = await fetchMetaCampaignMetrics(creds.accessToken, account.id, from, to);
+        return { account, ...m };
+      } catch (e) {
+        return { account, campaigns: [], daily: [], error: e instanceof Error ? e.message : String(e) };
+      }
+    })
+  );
+  return { results };
+}
+
+/**
+ * X 広告：選んだアカウントのキャンペーン別実績（読み取りのみ）。
+ * 選択は ad_connections.meta.selected（saveXSelection で検証済みのもの）だけを使う。
+ * Ads API は OAuth 1.0a で、lib/ads/x.ts の fetchCampaignMetrics には getAdCredentials が
+ * 返す tokenSecret（他媒体には無いフィールド）もあわせて渡す必要がある。
+ */
+
+export type XAdPerformance = {
+  account: { id: string; name: string };
+  campaigns: XCampaignMetric[];
+  daily: XDailyMetric[];
+  error?: string;
+};
+
+export async function xPerformance(
+  from: string,
+  to: string
+): Promise<{ results: XAdPerformance[]; error?: string }> {
+  if (!DATE_RE.test(from) || !DATE_RE.test(to)) return { results: [], error: "期間の形式が正しくありません" };
+  const days = (Date.parse(to) - Date.parse(from)) / 86_400_000 + 1;
+  if (!(days >= 1)) return { results: [], error: "終了日は開始日以降にしてください" };
+  if (days > MAX_RANGE_DAYS) return { results: [], error: `期間は${MAX_RANGE_DAYS}日以内にしてください` };
+
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user || user.is_anonymous) return { results: [], error: "ログインしてください" };
+  const creds = await getAdCredentials(user.id, "x");
+  if (!creds) return { results: [], error: "X 広告と連携してください" };
+  if (!creds.tokenSecret) return { results: [], error: "連携情報が壊れています。お手数ですが、もう一度連携し直してください" };
+
+  const raw = (creds.meta as { selected?: unknown }).selected;
+  const selected = (Array.isArray(raw) ? raw : []).filter(
+    (x): x is { id: string; name: string } =>
+      !!x && typeof (x as { id?: unknown }).id === "string" && (x as { id: string }).id.length > 0
+  );
+  if (selected.length === 0) return { results: [], error: "分析する広告アカウントを選んで保存してください" };
+
+  const tokenSecret = creds.tokenSecret;
+  const results = await Promise.all(
+    selected.map(async (account): Promise<XAdPerformance> => {
+      try {
+        const m = await fetchXCampaignMetrics(creds.accessToken, tokenSecret, account.id, from, to);
         return { account, ...m };
       } catch (e) {
         return { account, campaigns: [], daily: [], error: e instanceof Error ? e.message : String(e) };
