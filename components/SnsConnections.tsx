@@ -7,9 +7,8 @@ import { SnsDisconnectButton } from "./SnsDisconnectButton";
  * 連携は <a> で /api/social/{媒体}/start に飛ばす（media側の認可画面へ画面ごと遷移するため）。
  * components/AdConnections.tsx と同じ形。
  *
- * X・TikTokは実装済みで実際に動作するので、通常どおり連携／解除ボタンを出す。
- * Instagram / Facebookはまだ対応していないため、末尾に固定の「対応予定」行を1つ足す
- * （components/MetaConnect.tsx を使った実装に対応するときは、この固定行を外すこと）。
+ * X・TikTok・Meta（Instagram/Facebook）とも実装済みで実際に動作するので、通常どおり
+ * 連携／解除ボタンを出す（SNS_PLATFORMS に無い媒体を足すときだけ、ここに固定行を足す）。
  */
 export function SnsConnections({
   connections,
@@ -52,7 +51,7 @@ export function SnsConnections({
                 <b>{def.name}</b>
                 <small>
                   {conn
-                    ? `連携済み（${new Date(conn.connected_at).toLocaleDateString("ja-JP")}）${conn.label ? `：@${conn.label}` : ""}${
+                    ? `連携済み（${new Date(conn.connected_at).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })}）${conn.label ? `：@${conn.label}` : ""}${
                         conn.followers !== null ? `・フォロワー${conn.followers.toLocaleString()}人` : ""
                       }`
                     : `連携すると、自社（またはクライアント）の${def.name}アカウントの${def.media}をレポートに反映できます。このツールは実績の読み取りにだけ使い、投稿や設定の変更はしません。`}
@@ -74,14 +73,6 @@ export function SnsConnections({
             </div>
           );
         })}
-
-        <div className="r">
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <b>Instagram / Facebook</b>
-            <small>連携すると、フォロワー数・投稿数・到達数など非公開の実データをレポートに反映できるようになります。</small>
-          </div>
-          <span className="tag">対応予定</span>
-        </div>
       </div>
 
       {unset.map(({ p, missing }) => (

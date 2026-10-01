@@ -2,14 +2,19 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { isSnsPlatform } from "@/lib/social-connect/platforms";
-import { exchangeCode, redirectUriFor } from "@/lib/social-connect/oauth";
+import { exchangeCode, redirectUriFor, type SnsTokenSet } from "@/lib/social-connect/oauth";
 import { saveSnsConnection } from "@/lib/social-connect/tokens";
 import { fetchXProfile } from "@/lib/social-connect/x";
 import { fetchTikTokProfile } from "@/lib/social-connect/tiktok";
+import { fetchMetaProfileAndToken } from "@/lib/social-connect/meta";
 
 /**
  * 各SNSの認可画面から戻ってくる先。コードをトークンに換えてプロフィールを取得・保存し、
  * 設定画面へ返す（app/api/ads/[platform]/callback と同じ形）。
+ *
+ * Meta（Instagram/Facebook）だけは exchangeCode が返すのがユーザーの長期トークンで、
+ * 実際に保存するPageアクセストークン・Instagramプロフィールへの変換は
+ * fetchMetaProfileAndToken（lib/social-connect/meta.ts）でもう一段行う。
  */
 export async function GET(req: Request, ctx: { params: Promise<{ platform: string }> }) {
   const { platform } = await ctx.params;
@@ -49,9 +54,20 @@ export async function GET(req: Request, ctx: { params: Promise<{ platform: strin
 
   try {
     const tokens = await exchangeCode(platform, code, redirectUriFor(platform, req.url), saved.verifier);
-    const profile =
-      platform === "x" ? await fetchXProfile(tokens.accessToken) : await fetchTikTokProfile(tokens.accessToken);
-    await saveSnsConnection(user.id, platform, tokens, profile as unknown as Record<string, unknown>);
+
+    let finalTokens: SnsTokenSet = tokens;
+    let profile: Record<string, unknown>;
+    if (platform === "x") {
+      profile = (await fetchXProfile(tokens.accessToken)) as unknown as Record<string, unknown>;
+    } else if (platform === "tiktok") {
+      profile = (await fetchTikTokProfile(tokens.accessToken)) as unknown as Record<string, unknown>;
+    } else {
+      const r = await fetchMetaProfileAndToken(tokens.accessToken);
+      finalTokens = r.tokens;
+      profile = r.profile;
+    }
+
+    await saveSnsConnection(user.id, platform, finalTokens, profile);
   } catch (e) {
     return fail(e instanceof Error ? e.message : String(e));
   }

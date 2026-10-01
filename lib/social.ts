@@ -3,6 +3,7 @@ import { isSnsPlatform, type SnsPlatform } from "./social-connect/platforms";
 import { getSnsCredentials } from "./social-connect/tokens";
 import { fetchXProfile, fetchXRecentPosts } from "./social-connect/x";
 import { fetchTikTokProfile, fetchTikTokVideos } from "./social-connect/tiktok";
+import { fetchInstagramProfile, fetchInstagramRecentMedia } from "./meta";
 
 /**
  * サイトから辿れた公式SNSを、実際に見に行って測る。
@@ -384,6 +385,31 @@ async function readOfficialAccount(
       };
     }
 
+    if (platform === "meta") {
+      // 保存してあるのはPageのアクセストークンと、連携時に見つけたInstagramビジネスアカウントID
+      const igBusinessId = (creds.profile as { igBusinessId?: string }).igBusinessId;
+      if (!igBusinessId) return null;
+      const profile = await fetchInstagramProfile(creds.accessToken, igBusinessId);
+      if (!profile) return null;
+      let recentContent: string[] | null = null;
+      try {
+        const media = await fetchInstagramRecentMedia(creds.accessToken, igBusinessId, 5);
+        recentContent = media.length ? media.map((m) => (m.caption ? shorten(m.caption) : "（キャプションなし）")) : null;
+      } catch {
+        recentContent = null;
+      }
+      return {
+        ...base,
+        readable: true,
+        followers: profile.followersCount,
+        posts: profile.mediaCount,
+        via: "公式連携",
+        title: profile.username,
+        recentContent,
+        reason: null,
+      };
+    }
+
     // tiktok
     const profile = await fetchTikTokProfile(creds.accessToken);
     let recentContent: string[] | null = null;
@@ -432,7 +458,13 @@ export async function readSocialAccount(
   };
 
   if (ownerId) {
-    const snsPlatform: SnsPlatform | null = /twitter/i.test(a.platform) ? "x" : /tiktok/i.test(a.platform) ? "tiktok" : null;
+    const snsPlatform: SnsPlatform | null = /twitter/i.test(a.platform)
+      ? "x"
+      : /tiktok/i.test(a.platform)
+        ? "tiktok"
+        : /instagram/i.test(a.platform) || /facebook/i.test(a.platform)
+          ? "meta"
+          : null;
     if (snsPlatform && isSnsPlatform(snsPlatform)) {
       const official = await readOfficialAccount(ownerId, snsPlatform, base);
       if (official) return official;

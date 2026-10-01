@@ -139,3 +139,34 @@ export async function fetchInstagramInsights(pageAccessToken: string, igBusiness
     profileViews: sum("profile_views"),
   };
 }
+
+export type InstagramMedia = {
+  id: string;
+  caption: string | null;
+  timestamp: string | null;
+  likeCount: number | null;
+  commentsCount: number | null;
+};
+
+/** 直近の投稿（キャプション・いいね・コメント数）。instagram_basic の範囲で読める */
+export async function fetchInstagramRecentMedia(pageAccessToken: string, igBusinessId: string, limit = 5): Promise<InstagramMedia[]> {
+  const res = await fetch(
+    `${GRAPH}/${igBusinessId}/media?` +
+      new URLSearchParams({
+        fields: "id,caption,timestamp,like_count,comments_count",
+        limit: String(Math.min(Math.max(limit, 1), 20)),
+        access_token: pageAccessToken,
+      }),
+    { signal: AbortSignal.timeout(15000) }
+  );
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error?.message ?? `HTTP ${res.status}`);
+  const rows: { id: string; caption?: string; timestamp?: string; like_count?: number; comments_count?: number }[] = j.data ?? [];
+  return rows.map((r) => ({
+    id: r.id,
+    caption: r.caption ?? null,
+    timestamp: r.timestamp ?? null,
+    likeCount: typeof r.like_count === "number" ? r.like_count : null,
+    commentsCount: typeof r.comments_count === "number" ? r.comments_count : null,
+  }));
+}

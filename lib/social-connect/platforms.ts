@@ -9,7 +9,7 @@
  * ここの id は DB（sns_connections.platform）と URL（/api/social/{id}/start）にそのまま使う。
  */
 
-export type SnsPlatform = "x" | "tiktok";
+export type SnsPlatform = "x" | "tiktok" | "meta";
 
 export type SnsPlatformDef = {
   id: SnsPlatform;
@@ -32,6 +32,14 @@ export const SNS_PLATFORMS: SnsPlatformDef[] = [
     name: "TikTok",
     media: "プロフィール（フォロワー数・総いいね数）と、動画ごとの再生・いいね・コメント・シェア数",
     env: ["TIKTOK_LOGIN_CLIENT_KEY", "TIKTOK_LOGIN_CLIENT_SECRET"],
+  },
+  {
+    id: "meta",
+    name: "Instagram / Facebook",
+    // Facebookページに連携済みのInstagramビジネス/クリエイターアカウントが対象（連携前にInstagram側の
+    // 設定からFacebookページへの連携が必要）。投稿ごとの到達数など深い指標は App Review 後に拡張予定
+    media: "Instagramプロフィール（フォロワー数・投稿数）と、投稿ごとのいいね・コメント数",
+    env: ["META_APP_ID", "META_APP_SECRET"],
   },
 ];
 

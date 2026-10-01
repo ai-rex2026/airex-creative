@@ -1,4 +1,5 @@
 import { randomBytes, createHash } from "crypto";
+import { META_SCOPES, exchangeLongLivedToken } from "@/lib/meta";
 import type { SnsPlatform } from "./platforms";
 
 /**
@@ -6,9 +7,13 @@ import type { SnsPlatform } from "./platforms";
  *
  * - X … OAuth 2.0 + PKCE（confidential client）。スコープ tweet.read users.read offline.access
  * - TikTok … Login Kit の OAuth 2.0。スコープ user.info.basic,user.info.stats,video.list
+ * - Meta（Instagram/Facebook） … Facebook Login の OAuth 2.0。スコープは lib/meta.ts の
+ *   META_SCOPES（pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_insights）。
+ *   ここで交換するのはユーザーの長期トークンまで。実際に保存するPageアクセストークンと
+ *   Instagramプロフィールの紐付けは lib/social-connect/meta.ts（callbackから呼ぶ）で行う。
  *
- * どちらもトークンに期限があり refresh_token で更新できる（lib/ads/oauth.ts の
- * TikTok/X 広告連携＝期限なしとは別の仕様）。
+ * X・TikTokはトークンに期限があり refresh_token で更新できる。Metaは refresh_token が無く、
+ * 短期トークンを60日の長期トークンに交換する方式（lib/ads/oauth.ts のMeta広告連携と同じ仕様）。
  */
 
 export type SnsTokenSet = {
@@ -36,7 +41,7 @@ function b64url(buf: Buffer): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** PKCE の code_verifier / code_challenge（X のみで使う。TikTok は使わない） */
+/** PKCE の code_verifier / code_challenge（X のみで使う。TikTok・Meta は使わない） */
 export function pkcePair(): { verifier: string; challenge: string } {
   const verifier = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
@@ -54,6 +59,15 @@ export function buildAuthUrl(platform: SnsPlatform, redirectUri: string, state: 
     u.searchParams.set("state", state);
     u.searchParams.set("code_challenge", pkceChallenge ?? "");
     u.searchParams.set("code_challenge_method", "S256");
+    return u.toString();
+  }
+  if (platform === "meta") {
+    const u = new URL("https://www.facebook.com/v21.0/dialog/oauth");
+    u.searchParams.set("client_id", env("META_APP_ID"));
+    u.searchParams.set("redirect_uri", redirectUri);
+    u.searchParams.set("response_type", "code");
+    u.searchParams.set("scope", META_SCOPES);
+    u.searchParams.set("state", state);
     return u.toString();
   }
   // tiktok
@@ -94,6 +108,27 @@ export async function exchangeCode(
     return { accessToken: j.access_token, refreshToken: j.refresh_token ?? null, expiresAt: inSeconds(j.expires_in), scope: j.scope ?? null };
   }
 
+  if (platform === "meta") {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/oauth/access_token?` +
+        new URLSearchParams({
+          client_id: env("META_APP_ID"),
+          client_secret: env("META_APP_SECRET"),
+          redirect_uri: redirectUri,
+          code,
+        }),
+      { signal: AbortSignal.timeout(15000) }
+    );
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.access_token) {
+      throw new Error(`Meta のトークン取得に失敗しました：${j.error?.message ?? `HTTP ${res.status}`}`);
+    }
+    // 数時間で切れる短期トークンを、60日の長期トークン（ユーザートークン）に換える。
+    // 実際にInstagramデータの取得に使うPageトークンへの変換は callback 側（lib/social-connect/meta.ts）で行う
+    const long = await exchangeLongLivedToken(j.access_token as string);
+    return { accessToken: long.accessToken, expiresAt: long.expiresAt, scope: META_SCOPES };
+  }
+
   // tiktok
   const res = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
     method: "POST",
@@ -120,7 +155,11 @@ export async function exchangeCode(
   };
 }
 
-/** 期限が近いトークンを更新する。refresh_token が無ければ null */
+/**
+ * 期限が近いトークンを更新する。refresh_token が無ければ null。
+ * Meta は refresh_token を保存しない（Pageトークンは、ユーザーがPage管理者であり続ける限り
+ * 明示的に無効化されない＝lib/ads/oauth.ts のMeta広告連携と同じ考え方）ため、ここには来ない。
+ */
 export async function refreshTokens(
   platform: SnsPlatform,
   current: { accessToken: string; refreshToken: string | null }
