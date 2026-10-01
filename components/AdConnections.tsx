@@ -52,6 +52,15 @@ export function AdConnections({
           const shown = conn?.accounts.slice(0, 3).map((a) => `${a.name === a.id ? a.id : `${a.name}（${a.id}）`}${a.manager ? "［MCC］" : ""}`) ?? [];
           const rest = (conn?.accounts.length ?? 0) - shown.length;
           const comingSoon = COMING_SOON.includes(def.id);
+          // 連携直後に一度だけ取得した結果（discoverAccounts）がそのまま accounts に入っている。
+          // 0件かつ note も無ければ「取得はできたが広告アカウントが無かった」ということなので、
+          // 「選びます」ではなく「見つかりませんでした」と出す。note がある（取得失敗）ときは
+          // note だけで理由を説明する。
+          const accountStatus = shown.length
+            ? `対象アカウント：${shown.join("、")}${rest > 0 ? ` ほか${rest}件` : ""}`
+            : conn?.note
+              ? null
+              : "この連携では広告アカウントが見つかりませんでした。";
 
           return (
             <div className="r" key={def.id}>
@@ -60,9 +69,7 @@ export function AdConnections({
                 <small>
                   {conn
                     ? `連携済み（${new Date(conn.connected_at).toLocaleDateString("ja-JP")}）。${
-                        shown.length
-                          ? `対象アカウント：${shown.join("、")}${rest > 0 ? ` ほか${rest}件` : ""}`
-                          : "対象アカウントは、分析を始めるときに選びます。"
+                        accountStatus ?? ""
                       }${conn.note ? ` ※${conn.note}` : ""}`
                     : `連携すると、${def.media}の実績（費用・クリック・CV・CPA・ROAS）を読み取って分析できます。このツールは実績の読み取りにだけ使い、広告の変更はしません。`}
                 </small>
