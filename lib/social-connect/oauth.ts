@@ -7,8 +7,14 @@ import type { SnsPlatform } from "./platforms";
  *
  * - X … OAuth 2.0 + PKCE（confidential client）。スコープ tweet.read users.read offline.access
  * - TikTok … Login Kit の OAuth 2.0。スコープ user.info.basic,user.info.stats,video.list
- * - Meta（Instagram/Facebook） … Facebook Login の OAuth 2.0。スコープは lib/meta.ts の
- *   META_SCOPES（pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_insights）。
+ * - Meta（Instagram/Facebook） … Facebook Login for Business の OAuth 2.0（config_id 方式）。
+ *   旧来の scope 指定のみの認可URLだと、ページがビジネスポートフォリオ所有の場合に
+ *   「どのページへのアクセスを許可するか」を選ぶ画面が出ず、スコープ自体は許可されていても
+ *   /me/accounts が常に空配列を返す問題があった（2026/10 に実際に発生・特定）。
+ *   developers.facebook.com の「ビジネス向けFacebookログイン」→「設定」で作成した
+ *   ログイン設定(Configuration)のIDを META_LOGIN_CONFIG_ID に入れることで、
+ *   認可時にページ選択ダイアログが出るようになり解決する。
+ *   META_LOGIN_CONFIG_ID が未設定の環境では、従来の scope 指定にフォールバックする。
  *   ここで交換するのはユーザーの長期トークンまで。実際に保存するPageアクセストークンと
  *   Instagramプロフィールの紐付けは lib/social-connect/meta.ts（callbackから呼ぶ）で行う。
  *
@@ -66,7 +72,14 @@ export function buildAuthUrl(platform: SnsPlatform, redirectUri: string, state: 
     u.searchParams.set("client_id", env("META_APP_ID"));
     u.searchParams.set("redirect_uri", redirectUri);
     u.searchParams.set("response_type", "code");
-    u.searchParams.set("scope", META_SCOPES);
+    const configId = env("META_LOGIN_CONFIG_ID");
+    if (configId) {
+      // Facebook Login for Business: config_id がページ選択ダイアログを有効にする
+      u.searchParams.set("config_id", configId);
+    } else {
+      // フォールバック（config_id 未設定時の従来挙動）
+      u.searchParams.set("scope", META_SCOPES);
+    }
     u.searchParams.set("state", state);
     return u.toString();
   }
