@@ -7,6 +7,7 @@ import {
   type MetaPickerAccount,
   type MetaSelection,
 } from "@/app/ad-actions";
+import { MetaPerformance } from "./MetaPerformance";
 
 /**
  * Meta 広告：分析する広告アカウントの選択。
@@ -14,6 +15,11 @@ import {
  * すでにフラットな一覧で返すため、Google（components/AdAccountPicker.tsx）やヤフーLINE広告
  * （YahooAccountPicker.tsx）のような「MCC を開いて配下を辿る」操作は無く、一覧から直接
  * チェックして保存するだけでよい（Microsoft 広告と同じ考え方）。
+ *
+ * 広告実績（MetaPerformance）は、構造的にはこの「広告アカウントの選択」に従属する内容なので、
+ * 別セクションとして並べるのではなく同じ .rows カード内に一続きのサブセクションとして
+ * 埋め込む（他媒体の *AccountPicker.tsx も同じ構成。app/analysis/new/page.tsx 側では
+ * 対応する *Performance は個別に描画しない）。
  */
 
 const badge: React.CSSProperties = {
@@ -70,7 +76,7 @@ export function MetaAccountPicker() {
   if (state === "off") return null;
 
   return (
-    <div className="rows" style={{ maxWidth: 620, margin: "32px auto 0" }}>
+    <div className="rows" style={{ maxWidth: 960, margin: "32px auto 0" }}>
       <div className="rh">
         広告アカウントの選択（Meta 広告）
         <span style={badge}>本番未検証</span>
@@ -118,6 +124,7 @@ export function MetaAccountPicker() {
           </button>
         </div>
       )}
+      <MetaPerformance />
     </div>
   );
 }

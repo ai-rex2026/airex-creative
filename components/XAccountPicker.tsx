@@ -7,6 +7,7 @@ import {
   type XPickerAccount,
   type XSelection,
 } from "@/app/ad-actions";
+import { XPerformance } from "./XPerformance";
 
 /**
  * X 広告：分析する広告アカウントの選択。
@@ -14,19 +15,12 @@ import {
  * 広告アカウントをすでにフラットな一覧で返すため、Google（AdAccountPicker.tsx）やヤフーLINE広告
  * （YahooAccountPicker.tsx）のような「MCC を開いて配下を辿る」操作は無く、一覧から直接
  * チェックして保存するだけでよい（Microsoft・Meta 広告と同じ考え方）。
+ *
+ * 広告実績（XPerformance）は、構造的にはこの「広告アカウントの選択」に従属する内容なので、
+ * 別セクションとして並べるのではなく同じ .rows カード内に一続きのサブセクションとして
+ * 埋め込む（他媒体の *AccountPicker.tsx も同じ構成。app/analysis/new/page.tsx 側では
+ * 対応する *Performance は個別に描画しない）。
  */
-
-const badge: React.CSSProperties = {
-  display: "inline-block",
-  marginLeft: 8,
-  padding: "1px 8px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 600,
-  background: "var(--accent-soft, #e8f0fe)",
-  color: "var(--accent, #1a56db)",
-  verticalAlign: "middle",
-};
 
 export function XAccountPicker() {
   const [state, setState] = useState<"loading" | "off" | "ready">("loading");
@@ -70,11 +64,8 @@ export function XAccountPicker() {
   if (state === "off") return null;
 
   return (
-    <div className="rows" style={{ maxWidth: 620, margin: "32px auto 0" }}>
-      <div className="rh">
-        広告アカウントの選択（X 広告）
-        <span style={badge}>本番未検証</span>
-      </div>
+    <div className="rows" style={{ maxWidth: 960, margin: "32px auto 0" }}>
+      <div className="rh">広告アカウントの選択（X 広告）</div>
       {state === "loading" && (
         <div className="r">
           <small>アカウントを読み込み中…</small>
@@ -118,6 +109,7 @@ export function XAccountPicker() {
           </button>
         </div>
       )}
+      <XPerformance />
     </div>
   );
 }

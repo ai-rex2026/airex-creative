@@ -7,12 +7,18 @@ import {
   type MicrosoftPickerAccount,
   type MicrosoftSelection,
 } from "@/app/ad-actions";
+import { MicrosoftPerformance } from "./MicrosoftPerformance";
 
 /**
  * Microsoft 広告：分析する広告アカウントの選択。
  * SearchAccounts（lib/ads/microsoft.ts）がアクセスできる広告アカウントをすでにフラットな一覧で
  * 返すため、Google（components/AdAccountPicker.tsx）やヤフーLINE広告（YahooAccountPicker.tsx）の
  * ような「MCC を開いて配下を辿る」操作は無く、一覧から直接チェックして保存するだけでよい。
+ *
+ * 広告実績（MicrosoftPerformance）は、構造的にはこの「広告アカウントの選択」に従属する内容なので、
+ * 別セクションとして並べるのではなく同じ .rows カード内に一続きのサブセクションとして
+ * 埋め込む（他媒体の *AccountPicker.tsx も同じ構成。app/analysis/new/page.tsx 側では
+ * 対応する *Performance は個別に描画しない）。
  */
 
 const badge: React.CSSProperties = {
@@ -70,7 +76,7 @@ export function MicrosoftAccountPicker() {
   if (state === "off") return null;
 
   return (
-    <div className="rows" style={{ maxWidth: 620, margin: "32px auto 0" }}>
+    <div className="rows" style={{ maxWidth: 960, margin: "32px auto 0" }}>
       <div className="rh">
         広告アカウントの選択（Microsoft 広告）
         <span style={badge}>本番未検証</span>
@@ -118,6 +124,7 @@ export function MicrosoftAccountPicker() {
           </button>
         </div>
       )}
+      <MicrosoftPerformance />
     </div>
   );
 }

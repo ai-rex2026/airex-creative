@@ -8,11 +8,17 @@ import {
   type AdPickerAccount,
   type AdSelection,
 } from "@/app/ad-actions";
+import { AdPerformance } from "./AdPerformance";
 
 /**
  * Google 広告：分析する広告アカウントの選択。
  * MCC（管理者アカウント）は一覧に「MCC」と表示し、開くと配下のアカウントが出る。
  * MCC そのものは選べない（実績を持たないため）。選べるのは配下のアカウントだけ。
+ *
+ * 広告実績（AdPerformance）は、構造的にはこの「広告アカウントの選択」に従属する内容なので、
+ * 別セクションとして並べるのではなく同じ .rows カード内に一続きのサブセクションとして
+ * 埋め込む（他媒体の *AccountPicker.tsx も同じ構成。app/analysis/new/page.tsx 側では
+ * 対応する *Performance は個別に描画しない）。
  */
 
 type Node = AdPickerAccount & {
@@ -145,7 +151,7 @@ export function AdAccountPicker() {
   );
 
   return (
-    <div className="rows" style={{ maxWidth: 620, margin: "32px auto 0" }}>
+    <div className="rows" style={{ maxWidth: 960, margin: "32px auto 0" }}>
       <div className="rh">広告アカウントの選択（Google 広告）</div>
       {state === "loading" && (
         <div className="r">
@@ -183,6 +189,7 @@ export function AdAccountPicker() {
           </button>
         </div>
       )}
+      <AdPerformance />
     </div>
   );
 }

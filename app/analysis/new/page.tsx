@@ -1,15 +1,10 @@
 import { Shell } from "@/components/Shell";
 import { NewAnalysisForm } from "@/components/NewAnalysisForm";
 import { AdAccountPicker } from "@/components/AdAccountPicker";
-import { AdPerformance } from "@/components/AdPerformance";
 import { YahooAccountPicker } from "@/components/YahooAccountPicker";
-import { YahooPerformance } from "@/components/YahooPerformance";
 import { MicrosoftAccountPicker } from "@/components/MicrosoftAccountPicker";
-import { MicrosoftPerformance } from "@/components/MicrosoftPerformance";
 import { MetaAccountPicker } from "@/components/MetaAccountPicker";
-import { MetaPerformance } from "@/components/MetaPerformance";
 import { XAccountPicker } from "@/components/XAccountPicker";
-import { XPerformance } from "@/components/XPerformance";
 import { adConnections } from "@/app/ad-actions";
 
 export const metadata = { title: "新規分析｜AI-REX Studio" };
@@ -26,36 +21,11 @@ export default async function NewAnalysisPage({
   return (
     <Shell active="new">
       <NewAnalysisForm initialUrl={url ?? ""} />
-      {ads.some((c) => c.platform === "google") && (
-        <>
-          <AdAccountPicker />
-          <AdPerformance />
-        </>
-      )}
-      {ads.some((c) => c.platform === "yahoo") && (
-        <>
-          <YahooAccountPicker />
-          <YahooPerformance />
-        </>
-      )}
-      {ads.some((c) => c.platform === "microsoft") && (
-        <>
-          <MicrosoftAccountPicker />
-          <MicrosoftPerformance />
-        </>
-      )}
-      {ads.some((c) => c.platform === "meta") && (
-        <>
-          <MetaAccountPicker />
-          <MetaPerformance />
-        </>
-      )}
-      {ads.some((c) => c.platform === "x") && (
-        <>
-          <XAccountPicker />
-          <XPerformance />
-        </>
-      )}
+      {ads.some((c) => c.platform === "google") && <AdAccountPicker />}
+      {ads.some((c) => c.platform === "yahoo") && <YahooAccountPicker />}
+      {ads.some((c) => c.platform === "microsoft") && <MicrosoftAccountPicker />}
+      {ads.some((c) => c.platform === "meta") && <MetaAccountPicker />}
+      {ads.some((c) => c.platform === "x") && <XAccountPicker />}
     </Shell>
   );
 }
