@@ -5,12 +5,18 @@
  * 無いため更新処理は無い（lib/ads/tokens.ts の refreshAllAdTokens で x は明示的に除外されている）。
  *
  * 実績は /stats/accounts/{account_id}（CAMPAIGN エンティティ、granularity=DAY）から取る。
- * この同期 stats エンドポイントは一度に渡せる entity_ids が最大20件という制限があるため、
- * キャンペーンが多いアカウントではチャンクに分けて呼ぶ。
+ * この同期 stats エンドポイントには2つの制限があり、両方ともチャンクに分けて対応している。
+ *   1. entity_ids は一度に最大20件まで（listCampaigns の結果を20件ずつに分割）
+ *   2. start_time〜end_time は最大 7日+1時間 まで（`end_time can be a maximum of
+ *      7.days+1.hours after the start_time` で拒否される）。そのため日付範囲も
+ *      7日ごとの窓（dateWindows）に分割し、エンティティIDのチャンクとの二重ループで呼ぶ。
+ *      キャンペーン別の合計・日別の値は、窓をまたいで同じキャンペーンID／同じ日付に
+ *      積み上げる（campaignTotals は Map で蓄積、dailyTotals は窓の開始インデックスに
+ *      オフセットして加算）。
  *
- * granularity=DAY のとき、start_time/end_time は「アカウントの設定タイムゾーンでの0時」
- * ちょうどを表す瞬間でないと `Expect time to be midnight in the account's local timezone
- * for day granularity` で拒否される（UTCの0時ではない）。そのためリクエスト前に
+ * granularity=DAY のとき、各窓の start_time/end_time は「アカウントの設定タイムゾーンでの
+ * 0時」ちょうどを表す瞬間でないと `Expect time to be midnight in the account's local
+ * timezone for day granularity` で拒否される（UTCの0時ではない）。そのためリクエスト前に
  * GET /accounts/{id} でアカウントのタイムゾーン（IANA名。例: Asia/Tokyo）を取り、
  * その現地時間の0時に対応するUTC時刻を算出して渡す（tzOffsetMinutes/localMidnightUTC）。
  * さらに X の Time 型はミリ秒無しの "YYYY-MM-DDTHH:mm:ssZ" しか受け付けない
@@ -166,6 +172,9 @@ async function fetchStatsChunk(
   return (j.data ?? []) as StatsRow[];
 }
 
+/** 同期 stats エンドポイントが許す最大期間（7日+1時間）に収まるよう、日単位でこの件数ごとに窓を分ける */
+const MAX_WINDOW_DAYS = 7;
+
 /**
  * キャンペーン別（期間合計）と、アカウント合計の日別。accountId は xAdAccounts が返す ID そのまま。
  * tokenSecret は OAuth 1.0a のトークンシークレット（getAdCredentials の戻り値の tokenSecret。
@@ -183,8 +192,7 @@ export async function fetchCampaignMetrics(
   if (campaigns.length === 0) return { campaigns: [], daily: [] };
 
   const timezone = await accountTimezone(accountId, tokens);
-  const startTime = localMidnightUTC(from, timezone);
-  const endTime = localMidnightUTC(addDay(to), timezone);
+
   // 日数・日別ラベルはタイムゾーンに関係ないカレンダー日数（UTC基準で数えて問題ない）
   const dayCount = Math.max(
     1,
@@ -196,11 +204,17 @@ export async function fetchCampaignMetrics(
     return d.toISOString().slice(0, 10);
   });
 
-  const chunks: XCampaign[][] = [];
-  for (let i = 0; i < campaigns.length; i += 20) chunks.push(campaigns.slice(i, i + 20));
+  // 7日+1時間の上限に収まるよう、日付レンジを7日ごとの窓に分割
+  const dateWindows: { startIdx: number; days: string[] }[] = [];
+  for (let i = 0; i < dates.length; i += MAX_WINDOW_DAYS) {
+    dateWindows.push({ startIdx: i, days: dates.slice(i, i + MAX_WINDOW_DAYS) });
+  }
+
+  const idChunks: XCampaign[][] = [];
+  for (let i = 0; i < campaigns.length; i += 20) idChunks.push(campaigns.slice(i, i + 20));
 
   const nameById = new Map(campaigns.map((c) => [c.id, c.name]));
-  const campaignOut: XCampaignMetric[] = [];
+  const campaignTotals = new Map<string, XCampaignMetric>();
   const dailyTotals: XDailyMetric[] = dates.map((date) => ({
     date,
     cost: 0,
@@ -210,32 +224,44 @@ export async function fetchCampaignMetrics(
     conversionsValue: 0,
   }));
 
-  for (const chunk of chunks) {
-    const rows = await fetchStatsChunk(accountId, chunk.map((c) => c.id), tokens, startTime, endTime);
-    for (const row of rows) {
-      const metrics = row.id_data?.[0]?.metrics ?? {};
-      const impressions = metrics.impressions ?? [];
-      const clicks = metrics.clicks ?? [];
-      const billed = metrics.billed_charge_local_micro ?? [];
-      campaignOut.push({
-        id: row.id,
-        name: nameById.get(row.id) ?? row.id,
-        cost: sumSeries(billed) / 1_000_000,
-        impressions: sumSeries(impressions),
-        clicks: sumSeries(clicks),
-        conversions: 0,
-        conversionsValue: 0,
-      });
-      dates.forEach((_, i) => {
-        dailyTotals[i].cost += numOf(billed?.[i]) / 1_000_000;
-        dailyTotals[i].impressions += numOf(impressions?.[i]);
-        dailyTotals[i].clicks += numOf(clicks?.[i]);
-      });
+  for (const win of dateWindows) {
+    const startTime = localMidnightUTC(win.days[0], timezone);
+    const endTime = localMidnightUTC(addDay(win.days[win.days.length - 1]), timezone);
+
+    for (const idChunk of idChunks) {
+      const rows = await fetchStatsChunk(accountId, idChunk.map((c) => c.id), tokens, startTime, endTime);
+      for (const row of rows) {
+        const metrics = row.id_data?.[0]?.metrics ?? {};
+        const impressions = metrics.impressions ?? [];
+        const clicks = metrics.clicks ?? [];
+        const billed = metrics.billed_charge_local_micro ?? [];
+
+        const prev = campaignTotals.get(row.id) ?? {
+          id: row.id,
+          name: nameById.get(row.id) ?? row.id,
+          cost: 0,
+          impressions: 0,
+          clicks: 0,
+          conversions: 0,
+          conversionsValue: 0,
+        };
+        prev.cost += sumSeries(billed) / 1_000_000;
+        prev.impressions += sumSeries(impressions);
+        prev.clicks += sumSeries(clicks);
+        campaignTotals.set(row.id, prev);
+
+        win.days.forEach((_, i) => {
+          const idx = win.startIdx + i;
+          dailyTotals[idx].cost += numOf(billed?.[i]) / 1_000_000;
+          dailyTotals[idx].impressions += numOf(impressions?.[i]);
+          dailyTotals[idx].clicks += numOf(clicks?.[i]);
+        });
+      }
     }
   }
 
   return {
-    campaigns: campaignOut.sort((a, b) => b.cost - a.cost),
+    campaigns: Array.from(campaignTotals.values()).sort((a, b) => b.cost - a.cost),
     daily: dailyTotals,
   };
 }
