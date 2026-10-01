@@ -6,11 +6,12 @@ import { AdDisconnectButton } from "./AdDisconnectButton";
  * 設定画面の「広告アカウント連携」。媒体ごとに状態と操作を1行で出す。
  * 連携は <a> で /api/ads/{媒体}/start に飛ばす（媒体の認可画面へ画面ごと遷移するため）。
  *
- * TikTok広告・X広告はまだ未実装（環境変数も未設定）のため、「未設定」ではなく
+ * TikTok広告はまだ未実装（環境変数も未設定）のため、「未設定」ではなく
  * 「対応予定」の固定表示にして、未設定を促す注意書きも出さない。
- * 実装を始めるときは COMING_SOON からこの2つを外すこと。
+ * 実装を始めるときは COMING_SOON からこれも外すこと。
+ * X広告は実装済み（2026-10〜。X_API_KEY/X_API_SECRET の設定が必要）。
  */
-const COMING_SOON: AdPlatform[] = ["tiktok", "x"];
+const COMING_SOON: AdPlatform[] = ["tiktok"];
 
 export function AdConnections({
   connections,

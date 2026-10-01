@@ -8,6 +8,8 @@ import { MicrosoftAccountPicker } from "@/components/MicrosoftAccountPicker";
 import { MicrosoftPerformance } from "@/components/MicrosoftPerformance";
 import { MetaAccountPicker } from "@/components/MetaAccountPicker";
 import { MetaPerformance } from "@/components/MetaPerformance";
+import { XAccountPicker } from "@/components/XAccountPicker";
+import { XPerformance } from "@/components/XPerformance";
 import { adConnections } from "@/app/ad-actions";
 
 export const metadata = { title: "新規分析｜AI-REX Studio" };
@@ -46,6 +48,12 @@ export default async function NewAnalysisPage({
         <>
           <MetaAccountPicker />
           <MetaPerformance />
+        </>
+      )}
+      {ads.some((c) => c.platform === "x") && (
+        <>
+          <XAccountPicker />
+          <XPerformance />
         </>
       )}
     </Shell>
