@@ -21,18 +21,6 @@ import { MicrosoftPerformance } from "./MicrosoftPerformance";
  * 対応する *Performance は個別に描画しない）。
  */
 
-const badge: React.CSSProperties = {
-  display: "inline-block",
-  marginLeft: 8,
-  padding: "1px 8px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 600,
-  background: "var(--accent-soft, #e8f0fe)",
-  color: "var(--accent, #1a56db)",
-  verticalAlign: "middle",
-};
-
 export function MicrosoftAccountPicker() {
   const [state, setState] = useState<"loading" | "off" | "ready">("loading");
   const [accounts, setAccounts] = useState<MicrosoftPickerAccount[]>([]);
@@ -77,10 +65,7 @@ export function MicrosoftAccountPicker() {
 
   return (
     <div className="rows" style={{ maxWidth: 960, margin: "32px auto 0" }}>
-      <div className="rh">
-        広告アカウントの選択（Microsoft 広告）
-        <span style={badge}>本番未検証</span>
-      </div>
+      <div className="rh">広告アカウントの選択（Microsoft 広告）</div>
       {state === "loading" && (
         <div className="r">
           <small>アカウントを読み込み中…</small>
