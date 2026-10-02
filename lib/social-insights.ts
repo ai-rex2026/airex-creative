@@ -2,20 +2,24 @@ import { askJson } from "./anthropic";
 import { checkGuard } from "./guardrail";
 import type { Diagnosis, GuardHit, Industry } from "./types";
 import type { SocialAccount, SocialScan } from "./social";
-import type { SocialCompetitorScan } from "./social-competitors";
+import type { SocialCompetitorPlatform, SocialCompetitorScan } from "./social-competitors";
 import type { YoutubeAnalyticsData } from "./google";
 
 /**
- * YouTube・Xの「分析結果」と「施策詳細」。
+ * YouTube・X・TikTok・Instagramの「分析結果」と「施策詳細」。
  *
  * アカウント情報（登録者数・直近の投稿内容など）が実測できている媒体についてだけ作る。
  * 実測が無いのに書くと、取れていない数字を前提にした一般論になってしまうため
  * （このリポジトリ全体の「取れなかったことを取れなかったと書く」原則と同じ）。
+ * TikTok・Instagramは、自社アカウントがApify経由で実測できるようになったことに合わせて
+ * 対象に追加した（lib/social.ts）。
  *
  * 「広告以外の施策（tactics.ts）」は媒体をまたいだ4〜6件の大づかみな施策だが、
  * こちらは実測できている媒体1つずつについて、自社の実際の投稿内容と競合の実測値を
  * 突き合わせた「分析結果」と、そこから導く「施策詳細」（手順・担当・完了条件つき）を出す。
  */
+
+export type SocialInsightPlatform = SocialCompetitorPlatform;
 
 export type SocialInsightMeasure = {
   title: string;
@@ -30,7 +34,7 @@ export type SocialInsightMeasure = {
 };
 
 export type SocialInsight = {
-  platform: "YouTube" | "X";
+  platform: SocialInsightPlatform;
   /** 自社の実測値と競合の実測値を突き合わせて分かったこと */
   findings: string[];
   measures: SocialInsightMeasure[];
@@ -38,15 +42,19 @@ export type SocialInsight = {
 
 export type SocialInsightPlan = { items: SocialInsight[] };
 
-const PLATFORM_RE: Record<"YouTube" | "X", RegExp> = {
+const PLATFORM_RE: Record<SocialInsightPlatform, RegExp> = {
   YouTube: /youtube/i,
   X: /twitter|^x$/i,
+  TikTok: /tiktok/i,
+  Instagram: /instagram/i,
 };
 
+const PLATFORMS: SocialInsightPlatform[] = ["YouTube", "X", "TikTok", "Instagram"];
+
 /** 実測できている（readable）自社アカウントだけを対象にする */
-function ownAccountsByPlatform(social: SocialScan | null): Partial<Record<"YouTube" | "X", SocialAccount>> {
-  const out: Partial<Record<"YouTube" | "X", SocialAccount>> = {};
-  for (const p of ["YouTube", "X"] as const) {
+function ownAccountsByPlatform(social: SocialScan | null): Partial<Record<SocialInsightPlatform, SocialAccount>> {
+  const out: Partial<Record<SocialInsightPlatform, SocialAccount>> = {};
+  for (const p of PLATFORMS) {
     const a = (social?.accounts ?? []).find((x) => PLATFORM_RE[p].test(x.platform) && x.readable);
     if (a) out[p] = a;
   }
@@ -102,7 +110,7 @@ export async function generateSocialInsights(
   ytAnalytics: YoutubeAnalyticsData | null = null
 ): Promise<SocialInsightPlan> {
   const own = ownAccountsByPlatform(social);
-  const targets = (["YouTube", "X"] as const).filter((p) => own[p]);
+  const targets = PLATFORMS.filter((p) => own[p]);
   if (targets.length === 0) return { items: [] };
 
   const blocks = targets.map((p) => {
@@ -118,7 +126,7 @@ export async function generateSocialInsights(
   });
 
   const res = await askJson<SocialInsightPlan>(
-    `あなたはSNS運用の実務者です。実測できているYouTube・Xのアカウントについて、
+    `あなたはSNS運用の実務者です。実測できているYouTube・X・TikTok・Instagramのアカウントについて、
 「分析結果（findings）」と、そこから導く「施策詳細（measures）」を媒体ごとに作ります。
 
 守ること:

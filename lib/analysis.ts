@@ -13,7 +13,7 @@ import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } f
 import { scanPrices, type PriceScan } from "./pricing";
 import { scanSpeed, type SpeedScan } from "./pagespeed";
 import { scanSocial, type SocialScan } from "./social";
-import { findSocialCompetitors, type SocialCompetitorScan } from "./social-competitors";
+import { findSocialCompetitors, type SocialCompetitorPlatform, type SocialCompetitorScan } from "./social-competitors";
 import { generateSocialInsights, type SocialInsightPlan } from "./social-insights";
 import { checkImages, type ImageScan } from "./image-check";
 import { generateKpi, type KpiTree } from "./kpi";
@@ -153,6 +153,14 @@ export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
   return result;
 }
 
+/** 自社SNSの readable な媒体を、SNS競合探し（findSocialCompetitors）・分析結果（generateSocialInsights）の対象にする判定に使う */
+const SOCIAL_COMPETITOR_PLATFORM_RE: Record<SocialCompetitorPlatform, RegExp> = {
+  YouTube: /youtube/i,
+  X: /twitter|^x$/i,
+  TikTok: /tiktok/i,
+  Instagram: /instagram/i,
+};
+
 async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
   const { data, error } = await sb.from("analyses").select("*").eq("id", id).single();
   if (error || !data) throw new Error("分析が見つかりません");
@@ -171,7 +179,7 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       const site = await scanSite(a.url);
       return await save({ site, seo: estimateSeo(site), step: "サイトを読んでいます", progress: 18 });
     }
-    // サイトから辿れた公式SNSを実際に見に行く。X（Grok経由）だけは数十秒かかることがある
+    // サイトから辿れた公式SNSを実際に見に行く。公式連携が無い媒体はApify Actor経由になることがあり、数十秒かかることがある
     if (a.site && !a.social && (a.site.social ?? []).length > 0) {
       // owner_id を渡すと、依頼主が /settings で連携済みの公式SNSアカウント（OAuth）があれば
       // それを最優先で使う（lib/social.ts の readOfficialAccount）
@@ -323,8 +331,10 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       a.ad_ops?.done &&
       (!a.social_competitors || !a.tactics || !a.sns_plan || !a.kpi || !a.lpo || !a.keywords || !a.line_plan || !a.copies || !a.suggests)
     ) {
-      const readableTargets = (["YouTube", "X"] as const).filter((p) =>
-        (a.social?.accounts ?? []).some((acc) => acc.readable && (p === "YouTube" ? /youtube/i : /twitter/i).test(acc.platform))
+      // YouTube・X・TikTok・Instagramは、自社アカウント情報（登録者数・直近の投稿）が
+      // 実測できている場合だけ競合アカウントを探して実測し直す。実測が無い媒体は探しに行くだけ無駄になる
+      const readableTargets = (["YouTube", "X", "TikTok", "Instagram"] as const).filter((p) =>
+        (a.social?.accounts ?? []).some((acc) => acc.readable && SOCIAL_COMPETITOR_PLATFORM_RE[p].test(acc.platform))
       );
       const addr = a.meo?.self?.address ?? "";
       const ward = addr.match(/[都道府県](.*?[市区町村])/)?.[1] ?? "";
@@ -369,7 +379,7 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
         progress: 80,
       });
     }
-    // YouTube・Xはアカウント情報（登録者数・直近の投稿）が実測できている場合だけ、
+    // YouTube・X・TikTok・Instagramはアカウント情報（登録者数・直近の投稿）が実測できている場合だけ、
     // 競合アカウントを探して実測し直す。実測が無い媒体は探しに行くだけ無駄になる
     if (!a.social_insights) {
       let si: SocialInsightPlan = { items: [] };

@@ -7,14 +7,18 @@ import { readSocialAccount, type SocialAccount } from "./social";
 /**
  * SNS競合の実測。
  *
- * findCompetitors（サイトの競合）と同じ考え方で、YouTube・Xに絞って同業のアカウントを
- * Web検索で探す。ただしフォロワー数などの数字はAIの知識やスナップショットの記憶に
- * 頼らせない。見つけたアカウントのURLだけをAIに特定させ、数字は readSocialAccount で
- * 実際に測り直す（自社アカウントの実測と同じ経路・同じ「取れなかったら書かない」原則）。
+ * findCompetitors（サイトの競合）と同じ考え方で、YouTube・X・TikTok・Instagramに絞って
+ * 同業のアカウントをWeb検索で探す（TikTok・Instagramは、自社アカウントがApify経由で
+ * 実測できるようになったことに合わせて対象に追加した）。ただしフォロワー数などの数字は
+ * AIの知識やスナップショットの記憶に頼らせない。見つけたアカウントのURLだけをAIに
+ * 特定させ、数字は readSocialAccount で実際に測り直す（自社アカウントの実測と同じ経路・
+ * 同じ「取れなかったら書かない」原則）。
  */
 
+export type SocialCompetitorPlatform = "YouTube" | "X" | "TikTok" | "Instagram";
+
 export type CompetitorSocial = {
-  platform: "YouTube" | "X";
+  platform: SocialCompetitorPlatform;
   account: SocialAccount;
 };
 
@@ -28,7 +32,7 @@ const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";
 export async function findSocialCompetitors(
   d: Diagnosis,
   ownUrl: string | null,
-  platforms: ("YouTube" | "X")[]
+  platforms: SocialCompetitorPlatform[]
 ): Promise<SocialCompetitorScan> {
   if (platforms.length === 0) return { items: [], searchedAt: new Date().toISOString() };
 
@@ -77,7 +81,7 @@ ${own ? `自社サイト: ${own}（この運営元のアカウントは競合に
     candidates.map(async (c) => {
       const handle = c.url.match(/(?:@|\/)([\w.\-]+)\/?$/)?.[1] ?? "";
       const account = await readSocialAccount({ platform: c.platform, url: c.url, handle });
-      return { platform: c.platform as "YouTube" | "X", account };
+      return { platform: c.platform as SocialCompetitorPlatform, account };
     })
   );
 

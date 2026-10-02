@@ -27,8 +27,8 @@ export type SocialAccount = {
   bio: string | null;
   /** 総再生回数など、媒体固有の実測。取れたものだけ入れる */
   views: number | null;
-  /** 何で測ったか。公式APIか、本人のOAuth連携（公式連携）か、公開ページか、Grok(xAI)経由か、利用者の手入力かを画面に出す */
-  via: "公式API" | "公式連携" | "公開ページ" | "Grok(xAI)" | "手入力" | null;
+  /** 何で測ったか。公式APIか、本人のOAuth連携（公式連携）か、公開ページか、Apify経由か、利用者の手入力かを画面に出す */
+  via: "公式API" | "公式連携" | "公開ページ" | "Grok(xAI)" | "Apify" | "手入力" | null;
   /** 読めなかった理由 */
   reason: string | null;
   /**
@@ -78,6 +78,8 @@ function fromDescription(desc: string): { followers: number | null; posts: numbe
   return { followers: f ? toNum(f) : null, posts: p ? toNum(p) : null };
 }
 
+/** 直近の投稿本文を見出し表示用に短くする。via=公式連携・Apify のどちらからでも使う */
+const shorten = (s: string) => (s.length > 30 ? `${s.slice(0, 30)}…` : s);
 
 /**
  * YouTube は公式APIで公開情報が取れる。
@@ -182,176 +184,161 @@ async function readYouTube(a: { platform: string; url: string; handle: string },
 }
 
 /**
- * X（旧Twitter）はログイン無しでは公開ページの指標がほぼ読めないので、
- * xAI の Grok（x_search ツール）を使う。スクレイピングではなく、
- * xAI が提供している公式APIへのリクエストで、対象アカウントを
- * allowed_x_handles で1件に絞って読みに行かせる。
+ * X・TikTok・Instagram はログイン無しでは公開ページの指標がほぼ読めないため、
+ * Apify（https://apify.com）の既製Actorを使って取得する。
  *
- * x_search はドキュメント上も「投稿（ポスト）を検索する」ツールで、
- * allowed_x_handles は「このハンドルの“投稿”に絞る」という意味しか持たない。
- * プロフィールページそのものを直接取得するAPIではないため、見つかった投稿や
- * プロフィールのスナップショットにフォロワー数が写っていなければ、
- * アカウント自体は見つかって（found:true）もフォロワー数だけ読めない
- * （followers:null）ことが仕様上ある。以前はポスト検索のクエリだけを
- * 指示しており、さらに前回はプロフィール取得を優先する指示に変え、
- * web_search による二次情報の探索と画像理解も足したが、それでも小規模・
- * ニッチなアカウントではフォロワー数が写ったスナップショットや二次情報に
- * 一度も当たらないケースが残った（xAI側の検索カバレッジの限界）。
+ * 以前はXだけ xAI の Grok（x_search）経由で推定していたが、
+ * 「Apifyに一本化」という依頼主の方針により、Grok経由の取得（readX）は廃止し、
+ * X・TikTok・Instagramの3媒体ともApify Actor経由に統一した。
+ * Actorは「公式アカウントのハンドルを渡すと、その公開プロフィールの実測値を返す」
+ * 既製のスクレイピングActorで、いずれもAPIキー（トークン）はApifyの個人アカウントのもの。
  *
- * そのため、この関数での自動取得に加えて、入力タブから利用者が実際の
- * 数値を直接入力できる手段（setSocialFollowers）を別途用意している。
- * 自動取得が失敗しても、利用者が数字を知っていればレポートに反映できる。
+ * 呼び出すActor（公開情報は変わりうるため、環境変数で上書きできるようにしてある）:
+ * - X: apidojo/twitter-scraper-lite
+ * - TikTok: clockworks/tiktok-profile-scraper
+ * - Instagram: apify/instagram-profile-scraper
  */
-function xaiKey() {
-  return process.env.XAI_API_KEY;
+function apifyToken() {
+  return process.env.APIFY_API_TOKEN;
 }
 
-type XaiOutputItem = {
-  type?: string;
-  content?: { type?: string; text?: string }[];
-};
-type XaiResponse = {
-  output?: XaiOutputItem[];
-  error?: { message?: string };
-};
-type XaiFacts = {
-  found?: boolean;
-  followers?: number | null;
-  posts?: number | null;
-  displayName?: string | null;
-  bio?: string | null;
-  /** 直近の投稿の話題を要約した見出し（原文の引用ではない） */
-  recentTopics?: string[] | null;
-};
+type ApifyDatasetItem = Record<string, unknown>;
 
-function parseXaiFacts(text: string): XaiFacts | null {
-  const stripped = text.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
-  try {
-    return JSON.parse(stripped);
-  } catch {
-    const m = stripped.match(/\{[\s\S]*\}/);
-    if (!m) return null;
-    try {
-      return JSON.parse(m[0]);
-    } catch {
-      return null;
-    }
+/**
+ * Apify の Actor を同期実行し、データセットの中身をそのまま受け取る。
+ * run-sync-get-dataset-items は、Actorの実行が終わるまでこのリクエスト自体が
+ * 待つ仕様（別途ポーリングが要らない）。待っても数十秒程度で終わるActorだけに使う。
+ */
+async function runApifyActor(actorId: string, input: object, timeoutMs = 90_000): Promise<ApifyDatasetItem[]> {
+  const token = apifyToken();
+  if (!token) throw new Error("Apify APIトークンが未設定です");
+  // Apify の REST API は Actor ID の "/" を "~" に置き換えた形でパスに使う仕様
+  const safeId = actorId.replace("/", "~");
+  const res = await fetch(`https://api.apify.com/v2/acts/${safeId}/run-sync-get-dataset-items?token=${token}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => "");
+    throw new Error(`Apify Actorの呼び出しに失敗しました（HTTP ${res.status}）${bodyText ? `: ${bodyText.slice(0, 200)}` : ""}`);
   }
+  return (await res.json()) as ApifyDatasetItem[];
 }
 
-async function readX(a: { platform: string; url: string; handle: string }, base: SocialAccount): Promise<SocialAccount> {
-  const key = xaiKey();
-  if (!key) return { ...base, reason: "xAI(Grok)のAPIキーが未設定のため取得していません" };
+async function readXApify(a: { platform: string; url: string; handle: string }, base: SocialAccount): Promise<SocialAccount> {
+  if (!apifyToken()) return { ...base, reason: "Apify APIトークンが未設定のため取得していません" };
   if (!a.handle) return { ...base, reason: "アカウントのハンドルをURLから取り出せませんでした" };
 
-  const prompt = `Xのアカウント「@${a.handle}」の公開プロフィール情報を調べてください
-（allowed_x_handles で対象は既にこのアカウント1件に絞ってあります）。
-
-まず x_search ツールで、このアカウントのユーザープロフィールそのもの（個々のポストの検索ではなく
-プロフィールページ）を取得することを優先してください。プロフィールがスクリーンショットのような
-画像として返ってきた場合は、画像の中に表示されているフォロワー数・フォロー数・投稿数の数字を
-必ず読み取ってください（数字が見えているのに null にしないこと）。
-
-x_search だけではフォロワー数が読み取れない場合は、続けて web_search ツールで
-「${a.handle} X フォロワー」「${a.handle} followers」のようなクエリを試し、検索結果のスニペットや
-キャッシュされたプロフィールページ、SNS分析サイトなど公開されている二次情報に表示されている
-フォロワー数を探してください。検索結果に画像（プロフィールのスクリーンショット等）が含まれる
-場合は、その画像の数字も読み取って構いません。
-
-それでも見つからない場合のみ、検索クエリに「${a.handle}」や「${a.handle} profile」を使って
-ポストを検索し、そこから分かる範囲で補ってください。
-
-取得できた情報から、次を答えてください。
-- フォロワー数（実際に表示・記載されている実数。推測や概算は禁止）
-- 投稿数（表示されている実数）
-- 表示名
-- プロフィール文（bio、100文字以内）
-- 直近の投稿の話題（recentTopics）。実際に見つかった直近の投稿から、何についての投稿かを
-  3～5件、それぞれ20文字以内の見出しで要約してください（例：「新商品の告知」「来店キャンペーン」）。
-  **投稿本文をそのまま書き写さない**こと。話題が分からない・投稿が見つからない場合は空配列でよい
-
-found を false にするのは、あらゆる手段を試してもこのアカウントの存在自体を確認できない・
-アカウントが凍結／鍵アカウントである場合だけにしてください。アカウントは見つかったが
-フォロワー数など一部の数値だけ読み取れない場合は found を true にして、わかる項目だけ埋めてください
-（他の項目は null で構いません）。
-似た名前の別アカウントの数値と混同しないでください。
-
-JSONのみで回答してください（前置き・コードフェンス無し）:
-{"found":true,"followers":12345,"posts":678,"displayName":"...","bio":"...","recentTopics":["",""]}
-見つからない場合: {"found":false}`;
-
-  let json: XaiResponse;
   try {
-    const res = await fetch("https://api.x.ai/v1/responses", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        model: process.env.XAI_MODEL || "grok-4.6",
-        // xAIの仕様は input を配列（role/content）で受け取る形。文字列のままでも
-        // 通ることはあるが、x_search が正しく起動しないケースがあったため、
-        // 公式ドキュメント通りの形に合わせる
-        input: [{ role: "user", content: prompt }],
-        // x_search はプロフィール画像の中身まで読ませるため enable_image_understanding を付ける。
-        // 単体では足りないケースがあったため、web_search も追加して二次情報からも探させる。
-        // （web_search 側の enable_image_understanding は x_search 側にも及ぶ仕様だが、
-        // 意図を明示するため両方に付けている）
-        tools: [
-          { type: "x_search", allowed_x_handles: [a.handle], enable_image_understanding: true },
-          { type: "web_search", enable_image_understanding: true },
-        ],
-      }),
-      // x_search は実測で40～50秒かかることがある。web_search へのフォールバックが
-      // 追加で走る分の余裕を見て、外側より短いタイムアウトで打ち切って理由を残す
-      signal: AbortSignal.timeout(110_000),
-    });
-    json = (await res.json()) as XaiResponse;
-    if (!res.ok) {
-      return { ...base, reason: `xAI(Grok)を呼べませんでした（${json.error?.message ?? res.status}）` };
-    }
-  } catch (e) {
+    const actorId = process.env.APIFY_ACTOR_X || "apidojo/twitter-scraper-lite";
+    const items = await runApifyActor(actorId, { twitterHandles: [a.handle], maxItems: 5, sort: "Latest" });
+    if (!items.length) return { ...base, reason: "このアカウントをXで確認できませんでした（非公開・削除済みの可能性）" };
+
+    const author = (items[0] as { author?: Record<string, unknown> }).author ?? {};
+    const followers = typeof author.followers === "number" ? Math.round(author.followers) : null;
+    const recentContent = items
+      .map((it) => (it as { text?: unknown }).text)
+      .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+      .slice(0, 5)
+      .map(shorten);
+
     return {
       ...base,
-      reason:
-        e instanceof Error && e.name === "TimeoutError"
-          ? "xAI(Grok)の応答が時間内に返らなかったため取得できませんでした"
-          : "xAI(Grok)に接続できませんでした",
+      readable: followers !== null || recentContent.length > 0,
+      followers,
+      posts: null,
+      via: "Apify",
+      title: typeof author.name === "string" ? author.name : null,
+      recentContent: recentContent.length ? recentContent : null,
+      reason: followers === null ? "フォロワー数を確認できませんでした" : null,
     };
+  } catch (e) {
+    return { ...base, reason: `Apify経由の取得に失敗しました（X）: ${e instanceof Error ? e.message : String(e)}` };
   }
+}
 
-  const message = [...(json.output ?? [])].reverse().find((o) => o.type === "message");
-  const text = (message?.content ?? []).map((c) => c.text ?? "").join("");
-  const facts = text ? parseXaiFacts(text) : null;
+async function readTikTokApify(a: { platform: string; url: string; handle: string }, base: SocialAccount): Promise<SocialAccount> {
+  if (!apifyToken()) return { ...base, reason: "Apify APIトークンが未設定のため取得していません" };
+  if (!a.handle) return { ...base, reason: "アカウントのハンドルをURLから取り出せませんでした" };
 
-  if (!facts) return { ...base, reason: "xAI(Grok)の応答を読み取れませんでした" };
-  if (!facts.found) return { ...base, reason: "このアカウントをXで確認できませんでした（非公開・削除済みの可能性）" };
+  try {
+    const actorId = process.env.APIFY_ACTOR_TIKTOK || "clockworks/tiktok-profile-scraper";
+    const items = await runApifyActor(actorId, { profiles: [a.handle] });
+    if (!items.length) return { ...base, reason: "このアカウントをTikTokで確認できませんでした（非公開・削除済みの可能性）" };
 
-  const followers = typeof facts.followers === "number" && Number.isFinite(facts.followers) ? Math.round(facts.followers) : null;
-  const posts = typeof facts.posts === "number" && Number.isFinite(facts.posts) ? Math.round(facts.posts) : null;
-  const recentContent = Array.isArray(facts.recentTopics)
-    ? facts.recentTopics.filter((t): t is string => typeof t === "string" && t.trim().length > 0).slice(0, 5)
-    : null;
+    // このActorはプロフィールの統計（フォロワー数等）を各動画アイテムの authorMeta に載せて返す仕様。
+    // authorMeta を持つ最初のアイテムからプロフィール統計を、動画本文（text）を持つアイテムから
+    // 直近の投稿内容と再生回数を拾う
+    const withMeta = items.find((it) => it.authorMeta && typeof it.authorMeta === "object");
+    const authorMeta = (withMeta?.authorMeta ?? {}) as Record<string, unknown>;
+    const followers = typeof authorMeta.fans === "number" ? Math.round(authorMeta.fans) : null;
+    const postsCount = typeof authorMeta.video === "number" ? Math.round(authorMeta.video) : null;
 
-  return {
-    ...base,
-    readable: followers !== null || posts !== null,
-    followers,
-    posts,
-    via: "Grok(xAI)",
-    title: facts.displayName ?? null,
-    bio: facts.bio ? facts.bio.slice(0, 160) : null,
-    recentContent: recentContent && recentContent.length > 0 ? recentContent : null,
-    reason: followers === null ? "フォロワー数を確認できませんでした" : null,
-  };
+    const videos = items.filter((it) => typeof it.text === "string" || typeof it.playCount === "number");
+    const recentContent = videos
+      .slice(0, 5)
+      .map((v) => (typeof v.text === "string" && v.text.trim() ? shorten(v.text) : "（無題の動画）"));
+    const viewsSum = videos.reduce((sum, v) => sum + (typeof v.playCount === "number" ? v.playCount : 0), 0);
+
+    return {
+      ...base,
+      readable: followers !== null || recentContent.length > 0,
+      followers,
+      posts: postsCount,
+      views: viewsSum > 0 ? viewsSum : null,
+      via: "Apify",
+      title: typeof authorMeta.nickName === "string" ? authorMeta.nickName : null,
+      recentContent: recentContent.length ? recentContent : null,
+      reason: followers === null ? "フォロワー数を確認できませんでした" : null,
+    };
+  } catch (e) {
+    return { ...base, reason: `Apify経由の取得に失敗しました（TikTok）: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+async function readInstagramApify(a: { platform: string; url: string; handle: string }, base: SocialAccount): Promise<SocialAccount> {
+  if (!apifyToken()) return { ...base, reason: "Apify APIトークンが未設定のため取得していません" };
+  if (!a.handle) return { ...base, reason: "アカウントのハンドルをURLから取り出せませんでした" };
+
+  try {
+    const actorId = process.env.APIFY_ACTOR_INSTAGRAM || "apify/instagram-profile-scraper";
+    const items = await runApifyActor(actorId, { usernames: [a.handle] });
+    const profile = items[0] as Record<string, unknown> | undefined;
+    if (!profile) return { ...base, reason: "このアカウントをInstagramで確認できませんでした（非公開・削除済みの可能性）" };
+
+    const followers = typeof profile.followersCount === "number" ? Math.round(profile.followersCount) : null;
+    const posts = typeof profile.postsCount === "number" ? Math.round(profile.postsCount) : null;
+    const latestPosts = Array.isArray(profile.latestPosts) ? (profile.latestPosts as Record<string, unknown>[]) : [];
+    const recentContent = latestPosts
+      .slice(0, 5)
+      .map((p) => (typeof p.caption === "string" && p.caption.trim() ? shorten(p.caption) : "（キャプションなし）"));
+
+    return {
+      ...base,
+      readable: followers !== null || posts !== null,
+      followers,
+      posts,
+      via: "Apify",
+      title: typeof profile.fullName === "string" ? profile.fullName : null,
+      bio: typeof profile.biography === "string" ? profile.biography.slice(0, 160) : null,
+      recentContent: recentContent.length ? recentContent : null,
+      reason: followers === null ? "フォロワー数を確認できませんでした" : null,
+    };
+  } catch (e) {
+    return { ...base, reason: `Apify経由の取得に失敗しました（Instagram）: ${e instanceof Error ? e.message : String(e)}` };
+  }
 }
 
 /**
  * サイトから検出した公式SNSが、分析の依頼主が /settings で連携済みの
  * 公式SNSアカウント（OAuth。lib/social-connect/*）と同じ媒体なら、それを最優先で使う。
- * スクレイピングやGrok推定と違い、本人の許可を得て公式APIを直接叛くので、
+ * スクレイピングやApify経由の取得と違い、本人の許可を得て公式APIを直接叩くので、
  * フォロワー数・投稿ごとのエンゲージメントとも実数がそのまま取れる。
  *
  * 連携が無い、または呼び出し取得に失敗した場合は null を返し、
- * 呼び出し元（readSocialAccount）が既存のフォールバック（Grok/公開ページ）に進む。
+ * 呼び出し元（readSocialAccount）が既存のフォールバック（Apify/公開ページ）に進む。
  */
 async function readOfficialAccount(
   ownerId: string,
@@ -361,8 +348,6 @@ async function readOfficialAccount(
   try {
     const creds = await getSnsCredentials(ownerId, platform);
     if (!creds) return null;
-
-    const shorten = (s: string) => (s.length > 30 ? `${s.slice(0, 30)}…` : s);
 
     if (platform === "x") {
       const profile = await fetchXProfile(creds.accessToken);
@@ -489,7 +474,7 @@ export async function readSocialAccount(
   };
 
   if (ownerId) {
-    const snsPlatform: SnsPlatform | null = /twitter/i.test(a.platform)
+    const snsPlatform: SnsPlatform | null = /twitter|^x$/i.test(a.platform)
       ? "x"
       : /tiktok/i.test(a.platform)
         ? "tiktok"
@@ -505,8 +490,11 @@ export async function readSocialAccount(
   // YouTube だけは公式APIで正規に取れる
   if (/youtube/i.test(a.platform)) return readYouTube(a, base);
 
-  // X（旧Twitter）はログイン無しでは公開ページが読めないため、Grok(xAI) 経由で見に行く
-  if (/twitter/i.test(a.platform)) return readX(a, base);
+  // X・TikTok・Instagram は公式連携が無い場合、Apify Actor経由で見に行く
+  // （「X」表記のみ・ドメインのみ等のゆれも拾えるよう twitter|^x$ で判定）
+  if (/twitter|^x$/i.test(a.platform)) return readXApify(a, base);
+  if (/tiktok/i.test(a.platform)) return readTikTokApify(a, base);
+  if (/instagram/i.test(a.platform)) return readInstagramApify(a, base);
 
   // LINE公式アカウントは友だち数を公開しないので、取りに行くだけ無駄になる
   if (/line/i.test(a.platform)) {
