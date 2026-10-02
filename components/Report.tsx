@@ -705,7 +705,7 @@ export function Report({
                   {m?.posts != null && (
                     <span className="tag">{/youtube/i.test(x.platform) ? "動画" : "投稿"} {m.posts.toLocaleString()}</span>
                   )}
-                  {m?.views != null && <span className="tag">再生 {m.views.toLocaleString()}</span>}
+                  {m?.views != null && <span className="tag">{/facebook/i.test(x.platform) ? "リーチ" : "再生"} {m.views.toLocaleString()}</span>}
                   {m?.via && <span className="tag">{m.via}</span>}
                   <a className="tag" href={x.url} target="_blank" rel="noreferrer noopener">開く</a>
                 </div>
