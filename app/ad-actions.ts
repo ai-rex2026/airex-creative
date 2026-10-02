@@ -60,7 +60,7 @@ export async function adConnections(): Promise<AdConnectionView[]> {
   }
 }
 
-/** 連携を解除する（保存したトークンを削除）。媒体側のアカセス許可は各媒体の設定から取り消せる */
+/** 連携を解除する（保存したトークンを削除）。媒体側のアクセス許可は各媒体の設定から取り消せる */
 export async function disconnectAd(platform: string) {
   const user = await currentUser();
   if (!user || !isAdPlatform(platform)) return;
@@ -93,7 +93,7 @@ function readSelected(meta: Record<string, unknown>): AdSelection[] {
     : [];
 }
 
-/** 選択画面の最初の一覧（直接アカセスできるアカウント）と、保存済みの選択 */
+/** 選択画面の最初の一覧（直接アクセスできるアカウント）と、保存済みの選択 */
 export async function googleAccountPicker(): Promise<
   | { connected: false }
   | {
@@ -163,7 +163,7 @@ export async function saveGoogleSelection(
         out.push({ id: a.id, name: a.name, loginCustomerId: null });
       } else {
         if (!directById.get(p.loginCustomerId)?.manager) {
-          return { error: `MCC にアカセスできません（${p.loginCustomerId}）` };
+          return { error: `MCC にアクセスできません（${p.loginCustomerId}）` };
         }
         byLogin.set(p.loginCustomerId, [...(byLogin.get(p.loginCustomerId) ?? []), p.id]);
       }
@@ -284,7 +284,7 @@ export async function saveYahooSelection(
       if (a.manager) return { error: `MCC（管理者アカウント）は選べません。配下のアカウントを選んでください（${a.name}）` };
       out.push({ id: a.id, name: a.name, mccId: null });
     } else {
-      if (!byId.get(p.mccId)?.manager) return { error: `MCCにアカセスできません（${p.mccId}）` };
+      if (!byId.get(p.mccId)?.manager) return { error: `MCCにアクセスできません（${p.mccId}）` };
       byMcc.set(p.mccId, [...(byMcc.get(p.mccId) ?? []), p.id]);
     }
   }
@@ -317,7 +317,7 @@ export async function saveYahooSelection(
 
 /* ------------------------------------------------------------------
  * Microsoft 広告：分析する広告アカウントの選択
- * SearchAccounts（lib/ads/microsoft.ts）が、このユーザーがアカセスできる広告アカウントを
+ * SearchAccounts（lib/ads/microsoft.ts）が、このユーザーがアクセスできる広告アカウントを
  * すでにフラットな一覧で返す（MCC配下の展開が要らない）ため、Google/ヤフーLINE広告のような
  * 「MCC を開いて配下を辿る」操作は持たせず、一覧から直接チェックして保存するだけにする。
  * 実績取得（GetCampaignsByAccountId・Reporting Service）の CustomerId ヘッダーに使う
