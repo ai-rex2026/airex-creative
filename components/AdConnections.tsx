@@ -70,7 +70,7 @@ export function AdConnections({
                     ? `連携済み（${new Date(conn.connected_at).toLocaleDateString("ja-JP")}）。${
                         accountStatus ?? ""
                       }${conn.note ? ` ※${conn.note}` : ""}`
-                    : `連携すると、${def.media}の実績（費用・キリキ・CV・CPA・ROAS）を読み取って分析できます。このツールは実績の読み取りにだけ使い、広告の変更はしません。`}
+                    : `連携すると、${def.media}の実績（費用・クリック・CV・CPA・ROAS）を読み取って分析できます。このツールは実績の読み取りにだけ使い、広告の変更はしません。`}
                 </small>
               </div>
               {comingSoon ? (
