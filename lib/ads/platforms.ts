@@ -4,6 +4,9 @@
  * ここの id は DB（ad_connections.platform）と URL（/api/ads/{id}/start）にそのまま使う。
  * 分析用の Google / Meta 連携（Search Console・GA4・Instagram）は別物で、
  * こちらは「広告アカウントの運用実績」を読むための連携。
+ *
+ * 並べ残（AD_PLATFORMS の定義順）は settings 画面（AdConnections.tsx）と
+ * 新規分析画面（app/analysis/new/page.tsx）で両方がここの順番に揃う。
  */
 
 export type AdPlatform = "google" | "yahoo" | "meta" | "microsoft" | "tiktok" | "x";
@@ -22,7 +25,7 @@ export const AD_PLATFORMS: AdPlatformDef[] = [
     id: "google",
     name: "Google 広告",
     media: "検索・ディスプレイ・P-MAX・YouTube 広告",
-    // GOOGLE_ADS_DEVELOPER_TOKEN は任意。Google がクラウド管理のアクセスに移行中で、
+    // GOOGLE_ADS_DEVELOPER_TOKEN は任意。Google がクリスド管理のアクセスに移行中で、
     // 移行済みのアカウントでは不要。あれば API 呼び出しに付ける
     env: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
   },
@@ -34,28 +37,28 @@ export const AD_PLATFORMS: AdPlatformDef[] = [
     env: ["YAHOO_ADS_CLIENT_ID", "YAHOO_ADS_CLIENT_SECRET"],
   },
   {
-    id: "meta",
-    name: "Meta 広告",
-    media: "Facebook・Instagram 広告",
-    env: ["META_APP_ID", "META_APP_SECRET"],
-  },
-  {
     id: "microsoft",
     name: "Microsoft 広告",
     media: "Bing・Microsoft Audience Network",
     env: ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "MICROSOFT_DEVELOPER_TOKEN"],
   },
   {
-    id: "tiktok",
-    name: "TikTok 広告",
-    media: "TikTok For Business",
-    env: ["TIKTOK_APP_ID", "TIKTOK_SECRET"],
+    id: "meta",
+    name: "Meta 広告",
+    media: "Facebook・Instagram 広告",
+    env: ["META_APP_ID", "META_APP_SECRET"],
   },
   {
     id: "x",
     name: "X 広告",
     media: "X（旧 Twitter）広告（Ads API の利用承認が別途必要）",
     env: ["X_API_KEY", "X_API_SECRET"],
+  },
+  {
+    id: "tiktok",
+    name: "TikTok 広告",
+    media: "TikTok For Business",
+    env: ["TIKTOK_APP_ID", "TIKTOK_SECRET"],
   },
 ];
 
