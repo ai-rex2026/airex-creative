@@ -7,7 +7,8 @@
  * （長期トークンは期限が来る前に同じ交換を繰り返せば延長できる＝実質のrefresh）。
  *
  * 権限は pages_show_list / pages_read_engagement / instagram_basic /
- * instagram_manage_insights に加えて business_management を使う（理由は下記）。
+ * instagram_manage_insights / business_management に加えて read_insights を使う
+ * （Facebookページ自体のインサイト取得に必要。下記参照）。
  *
  * 【2026/10 に特定した重要な注意点】
  * Business Portfolio（Business Manager）配下のページ・Instagramアカウントは、
@@ -20,6 +21,16 @@
  * business_management 権限が要る。discoverMetaPages はまず /me/accounts を試し、
  * 空だった場合にこの経路へフォールバックする（個人ページ・Business配下ページの
  * どちらでも動くようにするため）。
+ *
+ * 【2026/10 追記】Facebookページ自体のデータ（Instagramとは別物）
+ * 連携時に見つかるのはあくまで「Instagramビジネスアカウントが紐づいたFacebookページ」
+ * だが、このページ自体のファン数・投稿・インサイトはこれまで取得していなかった
+ * （設定画面・連携ロジックともInstagram側の数値しか見ていなかった）。
+ * Facebookページのファン数・投稿一覧は pages_read_engagement の範囲で取得できるが、
+ * ページ単位のインサイト（到達数など。/{page_id}/insights）は read_insights が要る。
+ * fetchFacebookPageProfile / fetchFacebookPageRecentPosts / fetchFacebookPageInsights
+ * がFacebookページ側の実装で、lib/social.ts の readOfficialAccount から、サイトで
+ * 検出されたリンクが Facebook のものか Instagram のものかで呼び分けている。
  */
 
 const GRAPH = "https://graph.facebook.com/v21.0";
@@ -30,6 +41,7 @@ export const META_SCOPES = [
   "instagram_basic",
   "instagram_manage_insights",
   "business_management",
+  "read_insights",
 ].join(",");
 
 export function hasMetaApp() {
@@ -230,4 +242,107 @@ export async function fetchInstagramRecentMedia(pageAccessToken: string, igBusin
     likeCount: typeof r.like_count === "number" ? r.like_count : null,
     commentsCount: typeof r.comments_count === "number" ? r.comments_count : null,
   }));
+}
+
+/** Facebookページ自体の基本情報（ファン数・フォロワー数）。Instagramとは別のGraphノード */
+export type FacebookPageProfile = {
+  name: string | null;
+  fanCount: number | null;
+  followersCount: number | null;
+  category: string | null;
+};
+
+export async function fetchFacebookPageProfile(pageAccessToken: string, pageId: string): Promise<FacebookPageProfile | null> {
+  const res = await fetch(
+    `${GRAPH}/${pageId}?fields=${encodeURIComponent("name,fan_count,followers_count,category")}&access_token=${encodeURIComponent(pageAccessToken)}`,
+    { signal: AbortSignal.timeout(15000) }
+  );
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) return null;
+  return {
+    name: j.name ?? null,
+    fanCount: typeof j.fan_count === "number" ? j.fan_count : null,
+    followersCount: typeof j.followers_count === "number" ? j.followers_count : null,
+    category: j.category ?? null,
+  };
+}
+
+export type FacebookPost = {
+  id: string;
+  message: string | null;
+  createdTime: string | null;
+  likeCount: number | null;
+  commentsCount: number | null;
+};
+
+/** Facebookページの直近投稿（本文・いいね・コメント数）。pages_read_engagement の範囲で読める */
+export async function fetchFacebookPageRecentPosts(pageAccessToken: string, pageId: string, limit = 5): Promise<FacebookPost[]> {
+  const res = await fetch(
+    `${GRAPH}/${pageId}/posts?` +
+      new URLSearchParams({
+        fields: "id,message,created_time,likes.summary(true),comments.summary(true)",
+        limit: String(Math.min(Math.max(limit, 1), 20)),
+        access_token: pageAccessToken,
+      }),
+    { signal: AbortSignal.timeout(15000) }
+  );
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error?.message ?? `HTTP ${res.status}`);
+  const rows: {
+    id: string;
+    message?: string;
+    created_time?: string;
+    likes?: { summary?: { total_count?: number } };
+    comments?: { summary?: { total_count?: number } };
+  }[] = j.data ?? [];
+  return rows.map((r) => ({
+    id: r.id,
+    message: r.message ?? null,
+    createdTime: r.created_time ?? null,
+    likeCount: typeof r.likes?.summary?.total_count === "number" ? r.likes.summary.total_count : null,
+    commentsCount: typeof r.comments?.summary?.total_count === "number" ? r.comments.summary.total_count : null,
+  }));
+}
+
+export type FacebookPageInsights = {
+  from: string;
+  to: string;
+  /** 投稿・プロフィール等を含めた到達数（ユニークユーザー数） */
+  reach: number | null;
+  /** いいね・コメント・シェアなどのエンゲージメント数 */
+  engagedActions: number | null;
+};
+
+/** 1つの日次メトリクスを28日分合計する。失敗・未対応メトリクスはnullにして呼び出し元を止めない */
+async function sumPageMetric(pageAccessToken: string, pageId: string, metric: string, since: string, until: string): Promise<number | null> {
+  try {
+    const res = await fetch(
+      `${GRAPH}/${pageId}/insights?` +
+        new URLSearchParams({ metric, period: "day", since, until, access_token: pageAccessToken }),
+      { signal: AbortSignal.timeout(20000) }
+    );
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) return null;
+    const values: { value: number }[] = j.data?.[0]?.values ?? [];
+    return values.length ? values.reduce((a: number, v) => a + (v.value ?? 0), 0) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 直近28日のFacebookページ到達数・エンゲージメント数。read_insights が要る。
+ * メトリクス名はMeta側の都合で変わることがあるため、1メトリクスずつ独立して取得し、
+ * 片方が失敗しても（廃止・未対応等）もう片方は返す。
+ */
+export async function fetchFacebookPageInsights(pageAccessToken: string, pageId: string): Promise<FacebookPageInsights> {
+  const to = new Date();
+  const from = new Date(Date.now() - 28 * 864e5);
+  const since = String(Math.floor(from.getTime() / 1000));
+  const until = String(Math.floor(to.getTime() / 1000));
+  const [reach, engagedActions] = await Promise.all([
+    sumPageMetric(pageAccessToken, pageId, "page_impressions_unique", since, until),
+    sumPageMetric(pageAccessToken, pageId, "page_post_engagements", since, until),
+  ]);
+  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10), reach, engagedActions };
 }
