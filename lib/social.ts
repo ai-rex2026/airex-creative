@@ -3,7 +3,7 @@ import { isSnsPlatform, type SnsPlatform } from "./social-connect/platforms";
 import { getSnsCredentials } from "./social-connect/tokens";
 import { fetchXProfile, fetchXRecentPosts } from "./social-connect/x";
 import { fetchTikTokProfile, fetchTikTokVideos } from "./social-connect/tiktok";
-import { fetchInstagramProfile, fetchInstagramRecentMedia } from "./meta";
+import { fetchInstagramProfile, fetchInstagramRecentMedia, fetchFacebookPageProfile, fetchFacebookPageRecentPosts, fetchFacebookPageInsights } from "./meta";
 
 /**
  * サイトから辿れた公式SNSを、実際に見に行って測る。
@@ -386,8 +386,39 @@ async function readOfficialAccount(
     }
 
     if (platform === "meta") {
-      // 保存してあるのはPageのアクセストークンと、連携時に見つけたInstagramビジネスアカウントID
-      const igBusinessId = (creds.profile as { igBusinessId?: string }).igBusinessId;
+      // 保存してあるのはPageのアクセストークンと、連携時に見つけたPageID・Instagramビジネスアカウント
+      const savedProfile = creds.profile as { igBusinessId?: string; pageId?: string };
+
+      // サイトから検出されたリンクが「Facebookページ」自体のものなら、Instagramとは別物として
+      // Facebookページ自体のデータ（ファン数・投稿・インサイト）を返す。
+      // そうでなければ（Instagramのリンク等）従来どおりInstagram側のデータを返す
+      if (/facebook/i.test(base.platform)) {
+        const pageId = savedProfile.pageId;
+        if (!pageId) return null;
+        const pageProfile = await fetchFacebookPageProfile(creds.accessToken, pageId);
+        if (!pageProfile) return null;
+        let recentContent: string[] | null = null;
+        try {
+          const posts = await fetchFacebookPageRecentPosts(creds.accessToken, pageId, 5);
+          recentContent = posts.length ? posts.map((p) => (p.message ? shorten(p.message) : "（本文なしの投稿）")) : null;
+        } catch {
+          recentContent = null;
+        }
+        const insights = await fetchFacebookPageInsights(creds.accessToken, pageId);
+        return {
+          ...base,
+          readable: true,
+          followers: pageProfile.fanCount ?? pageProfile.followersCount,
+          posts: null,
+          views: insights.reach,
+          via: "公式連携",
+          title: pageProfile.name,
+          recentContent,
+          reason: null,
+        };
+      }
+
+      const igBusinessId = savedProfile.igBusinessId;
       if (!igBusinessId) return null;
       const profile = await fetchInstagramProfile(creds.accessToken, igBusinessId);
       if (!profile) return null;
