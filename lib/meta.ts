@@ -7,8 +7,7 @@
  * （長期トークンは期限が来る前に同じ交換を繰り返せば延長できる＝実質のrefresh）。
  *
  * 権限は pages_show_list / pages_read_engagement / instagram_basic /
- * instagram_manage_insights / business_management に加えて read_insights を使う
- * （Facebookページ自体のインサイト取得に必要。下記参照）。
+ * instagram_manage_insights / business_management を使う。
  *
  * 【2026/10 に特定した重要な注意点】
  * Business Portfolio（Business Manager）配下のページ・Instagramアカウントは、
@@ -26,8 +25,14 @@
  * 連携時に見つかるのはあくまで「Instagramビジネスアカウントが紐づいたFacebookページ」
  * だが、このページ自体のファン数・投稿・インサイトはこれまで取得していなかった
  * （設定画面・連携ロジックともInstagram側の数値しか見ていなかった）。
- * Facebookページのファン数・投稿一覧は pages_read_engagement の範囲で取得できるが、
- * ページ単位のインサイト（到達数など。/{page_id}/insights）は read_insights が要る。
+ * Facebookページのファン数・投稿一覧・ページ単位のインサイト（到達数など）は、いずれも
+ * pages_read_engagement の範囲で読む。当初は旧来の read_insights 権限が別途要ると
+ * 考えていたが、このアプリのFacebook Login for Business設定（ユーザーアクセストークン
+ * 方式）では read_insights は選択肢にそもそも存在しなかった（Meta側で
+ * pages_read_engagement に統合されたとみられる）。そのためインサイト取得
+ * （fetchFacebookPageInsights）はpages_read_engagementの範囲で試み、万一対応して
+ * いない・権限が足りない場合はエラーにせずnullを返す（取れなかった指標だけ
+ * 空欄になる。fetchInstagramInsights 等、既存のエラー処理方針と同じ）。
  * fetchFacebookPageProfile / fetchFacebookPageRecentPosts / fetchFacebookPageInsights
  * がFacebookページ側の実装で、lib/social.ts の readOfficialAccount から、サイトで
  * 検出されたリンクが Facebook のものか Instagram のものかで呼び分けている。
@@ -41,7 +46,6 @@ export const META_SCOPES = [
   "instagram_basic",
   "instagram_manage_insights",
   "business_management",
-  "read_insights",
 ].join(",");
 
 export function hasMetaApp() {
@@ -331,9 +335,9 @@ async function sumPageMetric(pageAccessToken: string, pageId: string, metric: st
 }
 
 /**
- * 直近28日のFacebookページ到達数・エンゲージメント数。read_insights が要る。
- * メトリクス名はMeta側の都合で変わることがあるため、1メトリクスずつ独立して取得し、
- * 片方が失敗しても（廃止・未対応等）もう片方は返す。
+ * 直近28日のFacebookページ到達数・エンゲージメント数。pages_read_engagement の範囲で試みる。
+ * メトリクス名はMeta側の都合で変わる・権限が足りないことがあるため、1メトリクスずつ独立して
+ * 取得し、片方が失敗しても（廃止・未対応・権限不足等）エラーにはせずnullにして、もう片方は返す。
  */
 export async function fetchFacebookPageInsights(pageAccessToken: string, pageId: string): Promise<FacebookPageInsights> {
   const to = new Date();
