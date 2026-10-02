@@ -94,7 +94,7 @@ export async function googlePerformance(
  * MCC自身は選べない仕様なので、ここに来る account.id は必ず配下の広告アカウント自身のID。
  * account.mccId は x-z-base-account-id ヘッダーに使う「直接の base account」を選ぶため必要
  * （MCC配下で選んだ場合はそのMCCのID、直下で選んだ場合は null＝lib/ads/yahoo.ts 側で
- * account.id 自身にフォールブリッドする。詳細は lib/ads/yahoo.ts 冒頭のコメント）。
+ * account.id 自身にフォールブキクする。詳細は lib/ads/yahoo.ts 冒頭のコメント）。
  */
 
 export type YahooAdPerformance = {
@@ -197,7 +197,7 @@ export async function microsoftPerformance(
 /**
  * Meta 広告：選んだアカウントのキャンペーン別実績（読み取りのみ）。
  * 選択は ad_connections.meta.selected（saveMetaSelection で検証済みのもの）だけを使う。
- * account.id は act_ プレフィキス付きの広告アカウントID（lib/ads/meta.ts の
+ * account.id は act_ プレフィックス付きの広告アカウントID（lib/ads/meta.ts の
  * fetchCampaignMetrics にそのまま渡せば Graph API の insights エンドポイントを呼べる）。
  */
 

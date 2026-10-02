@@ -16,7 +16,7 @@ import { metaAdAccounts } from "@/lib/ads/meta";
 import { xAdAccounts } from "@/lib/ads/x";
 import { tiktokAdAccounts } from "@/lib/ads/tiktok";
 
-/** 画面に出してよい形。トークンは含まない */
+/** 画面に出してよい形。トークンは含めない */
 export type AdConnectionView = {
   platform: AdPlatform;
   connected_at: string;
@@ -60,7 +60,7 @@ export async function adConnections(): Promise<AdConnectionView[]> {
   }
 }
 
-/** 連携を解除する（保存したトークンを削除）。媒体側のアキセス許可は各媒体の設定から取り消せる */
+/** 連携を解除する（保存したトークンを削除）。媒体側のアカセス許可は各媒体の設定から取り消せる */
 export async function disconnectAd(platform: string) {
   const user = await currentUser();
   if (!user || !isAdPlatform(platform)) return;
@@ -321,7 +321,7 @@ export async function saveYahooSelection(
  * すでにフラットな一覧で返す（MCC配下の展開が要らない）ため、Google/ヤフーLINE広告のような
  * 「MCC を開いて配下を辿る」操作は持たせず、一覧から直接チェックして保存するだけにする。
  * 実績取得（GetCampaignsByAccountId・Reporting Service）の CustomerId ヘッダーに使う
- * ParentCustomerId は連携時点ではキャッシュしず、保存のたびに Microsoft 側から取り直して
+ * ParentCustomerId は連携時点ではキャッシュせず、保存のたびに Microsoft 側から取り直して
  * 検証する（Google の googleAccountPicker が listAccessibleCustomers を都度呼ぶのと同じ考え方）。
  * ------------------------------------------------------------------ */
 
@@ -407,7 +407,7 @@ export async function saveMicrosoftSelection(
  * me/adaccounts（lib/ads/meta.ts の metaAdAccounts）が、このユーザーの長期トークンで
  * アクセスできる広告アカウントをすでにフラットな一覧で返すため、Microsoft と同様
  * 「MCC を開いて配下を辿る」操作は無く、一覧から直接チェックして保存するだけでよい。
- * act_ プレフィキス付きの ID をそのままインサイト取得に渡せるので、Microsoft の
+ * act_ プレフィックス付きの ID をそのままインサイト取得に渡せるので、Microsoft の
  * customerId のような追加の識別子も不要。
  * ------------------------------------------------------------------ */
 
