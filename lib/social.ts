@@ -1,5 +1,5 @@
 import type { SiteScan } from "./site-scan";
-import { isSnsPlatform, type SnsPlatform } from "./social-connect/platforms";
+import type { SnsPlatform } from "./social-connect/platforms";
 import { getSnsCredentials } from "./social-connect/tokens";
 import { fetchXProfile, fetchXRecentPosts } from "./social-connect/x";
 import { fetchTikTokProfile, fetchTikTokVideos } from "./social-connect/tiktok";
@@ -333,14 +333,24 @@ async function readInstagramApify(a: { platform: string; url: string; handle: st
 
 /**
  * サイトから検出した公式SNSが、分析の依頼主が /settings で連携済みの
- * 公式SNSアカウント（OAuth。lib/social-connect/*）と同じ媒体なら、それを最優先で使う。
+ * 公式SNSアカウント（OAuth。lib/social-connect/*）と同じ媒体なら、それを使う。
  * スクレイピングやApify経由の取得と違い、本人の許可を得て公式APIを直接叩くので、
  * フォロワー数・投稿ごとのエンゲージメントとも実数がそのまま取れる。
  *
  * 連携が無い、または呼び出し取得に失敗した場合は null を返し、
  * 呼び出し元（readSocialAccount）が既存のフォールバック（Apify/公開ページ）に進む。
+ *
+ * 【2026-10時点では呼び出していない】
+ * /settings の連携は依頼主アカウント単位で、分析しているURL（事業）と紐付いているとは
+ * 限らない（広告アカウントのように分析ごとに選べない）。また公式連携で取れるデータは
+ * 投稿本文やプロフィール文などApify実測より乏しい（例: Instagramは本文キャプションが
+ * 取れない）。この2点から、依頼主の方針により、分析ではいったん公式連携を使わず、
+ * LPから拾ったSNSリンクをすべてApify/公開APIで実測する方式に統一した。
+ * この関数自体とOAuth連携の保存ロジックは削除せず残してある。将来、投稿の実施など
+ * 「運用」機能を作る際に、分析対象ごとに連携アカウントを選べるUIと合わせて再検討する想定。
+ * （呼び出し元が無い間も lint の unused エラーにならないよう、あえて export している）
  */
-async function readOfficialAccount(
+export async function readOfficialAccount(
   ownerId: string,
   platform: SnsPlatform,
   base: SocialAccount
@@ -461,31 +471,22 @@ async function readOfficialAccount(
  * SNS競合の実測（social-competitors.ts）からも同じロジックを使い回すため公開している。
  * どちらも「AIの知識で数字を書かない、実測できたものだけを返す」原則は共通のため。
  *
- * ownerId を渡すと（＝自社アカウントの巡回のときだけ。競合の実測では渡さない）、
- * まずその人が /settings で連携済みの公式SNSアカウントを優先して使う。
+ * ownerId は今は使っていない（2026-10時点）。以前はこれを渡すと /settings で連携済みの
+ * 公式SNSアカウント（OAuth）を優先して使っていたが、分析対象のURLと連携アカウントが
+ * 紐付くとは限らない・取れるデータがApify実測より乏しいという理由で、依頼主の方針により
+ * 現在は使わず、LPから拾ったSNSリンクをすべてApify/公開APIで実測する（readOfficialAccount
+ * のコメント参照）。呼び出し元（scanSocial）との引数の形を変えずに済むよう、引数自体は
+ * 残してある。
  */
 export async function readSocialAccount(
   a: { platform: string; url: string; handle: string },
   ownerId?: string
 ): Promise<SocialAccount> {
+  void ownerId;
   const base: SocialAccount = {
     ...a, readable: false, followers: null, posts: null, views: null, via: null, title: null, bio: null, reason: null,
     recentContent: null,
   };
-
-  if (ownerId) {
-    const snsPlatform: SnsPlatform | null = /twitter|^x$/i.test(a.platform)
-      ? "x"
-      : /tiktok/i.test(a.platform)
-        ? "tiktok"
-        : /instagram/i.test(a.platform) || /facebook/i.test(a.platform)
-          ? "meta"
-          : null;
-    if (snsPlatform && isSnsPlatform(snsPlatform)) {
-      const official = await readOfficialAccount(ownerId, snsPlatform, base);
-      if (official) return official;
-    }
-  }
 
   // YouTube だけは公式APIで正規に取れる
   if (/youtube/i.test(a.platform)) return readYouTube(a, base);

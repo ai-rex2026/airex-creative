@@ -179,10 +179,14 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       const site = await scanSite(a.url);
       return await save({ site, seo: estimateSeo(site), step: "サイトを読んでいます", progress: 18 });
     }
-    // サイトから辿れた公式SNSを実際に見に行く。公式連携が無い媒体はApify Actor経由になることがあり、数十秒かかることがある
+    // サイトから辿れた公式SNSを実際に見に行く。YouTubeは公式API、X・TikTok・InstagramはApify
+    // Actor経由で実測する（lib/social.ts）。数十秒かかることがある。
+    // owner_id は引数として残しているだけで、現在は使っていない。以前はこれを渡すと依頼主が
+    // /settings で連携済みの公式SNSアカウント（OAuth）があればそれを最優先で使っていたが、
+    // 連携は分析対象のURL（事業）と紐付くとは限らない・取れるデータがApify実測より乏しいという
+    // 理由で、依頼主の方針により2026-10時点では使わない（lib/social.ts の readOfficialAccount
+    // のコメント参照。将来「運用」機能を作る際に再検討する想定で、関数自体は残してある）
     if (a.site && !a.social && (a.site.social ?? []).length > 0) {
-      // owner_id を渡すと、依頼主が /settings で連携済みの公式SNSアカウント（OAuth）があれば
-      // それを最優先で使う（lib/social.ts の readOfficialAccount）
       const social = await scanSocial(a.site, a.owner_id);
       return await save({ social, step: "サイトを読んでいます", progress: 20 });
     }
