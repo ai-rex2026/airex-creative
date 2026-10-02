@@ -399,6 +399,154 @@ export function Report({
     a.click();
   }
 
+  // SNS関連の表示をまとめる。施策一覧（広告以外の施策）の各カードに紐づく分はそのままカードに残し、
+  // どのカードにも紐付かない「残り」のSNS運用・分析・キャンペーン案・LINEプランだけを、
+  // 公式SNSアカウント（サイト概要の直後）にまとめて表示する
+  const tacticsSns = ((): { blocks: React.ReactNode; leftover: React.ReactNode } => {
+    if (!tactics || !(tactics.items?.length > 0)) return { blocks: null, leftover: null };
+
+    // SNSの運用プラン・YouTube/Xの分析・LINE公式アカウントは、
+    // 施策の見出しに出てくる媒体の下にそのまま追記する。
+    // 見出しに無い媒体は、SNSの施策の後ろ（LINEは末尾）にまとめて出す
+    const channels = snsPlan?.channels ?? [];
+    const used = new Set<string>();
+    const siItems = socialInsights?.items ?? [];
+    const usedSI = new Set<string>();
+
+    const renderSI = (si: (typeof siItems)[number]) => (
+      <div key={si.platform} style={{ marginTop: 10 }}>
+        <p className="eyebrow">{si.platform}の分析</p>
+        {si.findings.length > 0 && (
+          <ul>{si.findings.map((f, k) => <li key={k}>{f}</li>)}</ul>
+        )}
+        {si.measures.map((m, k) => (
+          <div key={k} style={{ marginTop: 10 }}>
+            <div className="top">
+              <b>{m.title}</b>
+              {m.kpi && <span className="kpi">見る数字：{m.kpi}</span>}
+            </div>
+            <p>{m.why}</p>
+            <ul>{m.steps?.map((s, j) => <li key={j}>{s}</li>)}</ul>
+            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <span className="chip">担当：{m.owner}</span>
+              <span className="chip">{m.effort}</span>
+            </div>
+            {m.flags && m.flags.length > 0 && (
+              <div className="alert" style={{ marginTop: 10 }}>
+                {m.flags.map((f, j) => (
+                  <div key={j}>{f.law}「{f.text}」：{f.reason}（言い換え：{f.suggestion}）</div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+
+    const renderLine = () =>
+      linePlan && (
+        <div style={{ marginTop: 10 }}>
+          {linePlan.skip ? (
+            <p style={{ fontSize: 13.5, color: "var(--muted)" }}>{linePlan.skip}</p>
+          ) : (
+            <>
+              {linePlan.richMenu?.length > 0 && (
+                <div className="rich measure" style={{ marginTop: 10 }}>
+                  {linePlan.richMenu.map((m, i) => (
+                    <div className="cell" key={i}>
+                      <b>{m.label}</b>
+                      <small>{m.goes}</small>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {linePlan.steps?.length > 0 && (
+                <div className="steps measure" style={{ marginTop: 10 }}>
+                  {linePlan.steps.map((st, i) => (
+                    <div className="s" key={i}>
+                      <div className="h">
+                        <span className="n">{i + 1}</span>
+                        <div>
+                          <b>{st.title}</b>
+                          <small>{st.when}</small>
+                        </div>
+                      </div>
+                      <p>{st.body}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {linePlan.segments?.length > 0 && (
+                <div className="tactic measure" style={{ marginTop: 12 }}>
+                  <div className="top"><b>出し分けの例</b></div>
+                  <ul>{linePlan.segments.map((x, k) => <li key={k}>{x}</li>)}</ul>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      );
+
+    // MEO（Googleマップ）は専用章（MEO対策）で扱うため、ここでは表示しない
+    const visibleTactics = tactics.items.filter((t) => !/MEO|Googleマップ/i.test(t.area));
+    let lineUsed = false;
+
+    const blocks = visibleTactics.map((t, i) => {
+      const text = `${t.area} ${t.summary}`;
+      const mine = channels.filter((c) => !used.has(c.platform) && snsPlatformsIn(text).includes(c.platform));
+      mine.forEach((c) => used.add(c.platform));
+      const mySI = siItems.filter((si) => !usedSI.has(si.platform) && snsPlatformsIn(text).includes(si.platform));
+      mySI.forEach((si) => usedSI.add(si.platform));
+      const isLine = /LINE/i.test(text);
+      if (isLine) lineUsed = true;
+      return (
+        <div className="tactic" key={i}>
+          <div className="top">
+            <b>{t.area}</b>
+            {t.kpi && <span className="kpi">見る数字：{t.kpi}</span>}
+          </div>
+          <p>{t.summary}</p>
+          <ul>
+            {t.actions?.map((a, k) => <li key={k}>{a}</li>)}
+          </ul>
+          {mine.map((c) => <SnsChannelBlock key={c.platform} c={c} />)}
+          {mySI.map((si) => renderSI(si))}
+          {isLine && renderLine()}
+        </div>
+      );
+    });
+
+    const rest = channels.filter((c) => !used.has(c.platform));
+    const restSI = siItems.filter((si) => !usedSI.has(si.platform));
+    const hasLeftover =
+      rest.length > 0 || restSI.length > 0 || !!snsPlan?.campaign || (!!snsPlan?.error && channels.length === 0) || (!lineUsed && !!linePlan);
+
+    const leftover = hasLeftover ? (
+      <>
+        {(rest.length > 0 || restSI.length > 0) && (
+          <div className="tactic">
+            <div className="top"><b>SNSオーガニック運用</b></div>
+            <p>広告費をかけずに育てるSNSの、媒体ごとの運用プランです。</p>
+            {rest.map((c) => <SnsChannelBlock key={c.platform} c={c} />)}
+            {restSI.map((si) => renderSI(si))}
+          </div>
+        )}
+        {snsPlan?.campaign && <SnsCampaignCard c={snsPlan.campaign} />}
+        {snsPlan?.error && channels.length === 0 && (
+          <div className="note"><i className="i">i</i><span>SNSの運用プランを作れませんでした（{snsPlan.error}）</span></div>
+        )}
+        {!lineUsed && linePlan && (
+          <div className="tactic">
+            <div className="top"><b>LINE公式アカウント</b></div>
+            {renderLine()}
+          </div>
+        )}
+      </>
+    ) : null;
+
+    return { blocks, leftover };
+  })();
+
   return (
     <div>
       {err && <div className="alert">{err}</div>}
@@ -629,7 +777,6 @@ export function Report({
             <span style={{ width: 10, height: 10, borderRadius: 3, background: d.brand.accent, display: "inline-block" }} />
             ブランド色 {d.brand.accent}
           </span>
-          <span className="chip-s">訴求軸 {d.angles.length}本</span>
           <span className="chip-s">コピー {copies.length}案</span>
         </div>
       </div>
@@ -647,9 +794,9 @@ export function Report({
           <div className="label" style={{ marginTop: 18 }}>検出された広告タグ</div>
           <div className="chips">
             {site.adTags.length > 0 ? (
-              site.adTags.map((t) => (
-                <span key={t} className="chip-s" style={{ background: "#FBEDE9", borderColor: "#EFD3CA", color: "var(--ng)" }}>{t}</span>
-              ))
+              <span className="chip-s" style={{ background: "#FBEDE9", borderColor: "#EFD3CA", color: "var(--ng)" }}>
+                {site.adTags.length}件検出（詳細は「計測タグの導入状況」参照）
+              </span>
             ) : (
               <span className="chip-s">
                 {site.tech.includes("Google Tag Manager")
@@ -723,6 +870,13 @@ export function Report({
               「新しく開設する」施策としては出しません。
             </span>
           </div>
+        </>
+      )}
+
+      {tacticsSns.leftover && (
+        <>
+          <p className="eyebrow" style={{ marginTop: 20 }}>SNS運用・分析（つづき）</p>
+          {tacticsSns.leftover}
         </>
       )}
 
@@ -802,6 +956,120 @@ export function Report({
           </div>
         </>
       )}
+
+          {keywords && keywords.rows.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">⌕</span>
+                <div>
+                  <h2 id="sec-kw">対策キーワード</h2>
+                  <div className="sub">検索広告とSEOの両方で使う語です</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="kwwrap measure">
+                <table className="kw">
+                  <thead>
+                    <tr>
+                      <th>キーワード</th><th>種別</th>
+                      {keywords.rows.some((r) => r.volume) && <th>月間検索数（推定）</th>}
+                      <th>難易度</th><th>優先度</th>
+                      <th>表示回数</th><th>掲載順位</th><th>やること</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {keywords.rows.map((r, i) => (
+                      <tr key={i}>
+                        <td><b>{r.keyword}</b></td>
+                        <td><span className="tag">{r.kind}</span></td>
+                        {keywords.rows.some((x) => x.volume) && <td className="num">{r.volume ?? "—"}</td>}
+                        <td>{r.difficulty}</td>
+                        <td>{r.priority}</td>
+                        <td className="num">{r.impressions !== null ? r.impressions.toLocaleString() : "—"}</td>
+                        <td className="num">{r.position !== null ? `${r.position}位` : "—"}</td>
+                        <td className="act">{r.action}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="note">
+                <i className="i">i</i>
+                <span>
+                  {keywords.hasRealData
+                    ? "表示回数・掲載順位は Search Console の直近28日の実測です。連携前の語は「—」にしています。"
+                    : "Search Console を連携すると、実際に検索されている語の表示回数と掲載順位が入ります。"}
+                  {keywords.rows.some((r) => r.volume) &&
+                    " 月間検索数（推定）は、企業規模・地域の人口・業種の市場規模からAIが見積もった5段階の目安です。実測ではありません。"}
+                </span>
+              </div>
+
+              {(keywords.technical.length > 0 || keywords.content.length > 0) && (
+                <div className="measure" style={{ display: "grid", gap: 12, marginTop: 16 }}>
+                  {[
+                    { t: "テクニカルSEO", v: keywords.technical },
+                    { t: "コンテンツSEO", v: keywords.content },
+                  ].filter((x) => x.v.length > 0).map((x, i) => (
+                    <div className="tactic" key={i}>
+                      <div className="top"><b>{x.t}</b></div>
+                      <ul>{x.v.map((y, k) => <li key={k}>{y}</li>)}</ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {seoArticles && seoArticles.articles.length > 0 && (
+            <>
+              <div className="sec-head">
+                <span className="ic">✎</span>
+                <div>
+                  <h2 id="sec-seoart">SEO記事設計</h2>
+                  <div className="sub">構成案（H2/H3）。詳細を開くと見出しと要旨が見られます</div>
+                </div>
+                <span className="rule" />
+              </div>
+              <div className="measure" style={{ display: "grid", gap: 12 }}>
+                {seoArticles.articles.map((a, i) => (
+                  <details className="tactic seoart" key={i}>
+                    <summary>
+                      {a.title}　<span className="tag">{a.targetKeyword}</span>
+                    </summary>
+                    <div style={{ marginTop: 12 }}>
+                      <p className="sub">{a.intent}</p>
+                      <p style={{ color: "var(--muted)" }}>meta description：{a.metaDescription}</p>
+                      <p style={{ color: "var(--muted)" }}>目安文字数：約{a.estimatedChars.toLocaleString()}字</p>
+                      <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+                        {a.headings.map((h, j) => (
+                          <div key={j}>
+                            <b>H2：{h.h2}</b>
+                            <p style={{ margin: "4px 0" }}>{h.summary}</p>
+                            {h.h3?.length > 0 && (
+                              <ul style={{ marginTop: 4 }}>
+                                {h.h3.map((x, k) => (
+                                  <li key={k}>H3：{x}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {a.flags && a.flags.length > 0 && (
+                        <div className="alert" style={{ marginTop: 10 }}>
+                          {a.flags.map((f, j) => (
+                            <div key={j}>
+                              {f.law}「{f.text}」：{f.reason}（言い換え：{f.suggestion}）
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </>
+          )}
 
       </>
       )}
@@ -918,96 +1186,6 @@ export function Report({
           </div>
         </>
       )}
-
-      <div className="sec-head">
-        <span className="ic">✎</span>
-        <div>
-          <h2 id="sec-copies">コピーと法令チェック</h2>
-          <div className="sub">生成と同時に景表法・薬機法を確認しています</div>
-        </div>
-        <span className="rule" />
-      </div>
-      <section>
-        <div className="filters measure">
-          <button className={`sw${hideRed ? " on" : ""}`} onClick={() => setHideRed((v) => !v)}>
-            {hideRed ? "✓ " : ""}要修正を隠す
-          </button>
-          <span>
-            {visible.length} / {copies.length} 案を表示中
-            {redCount > 0 && `（要修正 ${redCount}件）`}
-          </span>
-        </div>
-
-        <div className="measure" style={{ display: "grid", gap: 12 }}>
-          {shown.map(([i, c]) => (
-              <label key={i} className={`card copy-card${picked.includes(i) ? " sel" : ""}`} style={{ display: "block", cursor: "pointer" }}>
-                <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                  <input
-                    type="checkbox"
-                    checked={picked.includes(i)}
-                    onChange={(e) => setPicked((p) => (e.target.checked ? [...p, i] : p.filter((x) => x !== i)))}
-                    style={{ marginTop: 8 }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                      <GuardTag g={c.guard} />
-                      {typeof c.score === "number" && <span className="tag score">勝ち筋 {c.score}</span>}
-                    </div>
-
-                    <div className="hl">{c.headline.join("")}</div>
-                    <p className="body">{c.body}</p>
-
-                    <div className="meta">
-                      {c.ribbonTop && <span className="m"><em>条件</em>{c.ribbonTop}</span>}
-                      {c.ribbonBottom && <span className="m"><em>強調</em>{c.ribbonBottom}</span>}
-                      <span className="m"><em>CTA</em>{c.cta}</span>
-                    </div>
-
-                    {c.scoreReason && <p className="why">{c.scoreReason}</p>}
-
-                    {c.guard && c.guard.hits.length > 0 && (
-                      <details className="flags">
-                        <summary onClick={(e) => e.stopPropagation()}>
-                          法令の指摘 {c.guard.hits.length}件
-                          {c.guard.hits.some((h) => h.severity === "high") && (
-                            <span className="hit-sev high">要修正 {c.guard.hits.filter((h) => h.severity === "high").length}</span>
-                          )}
-                        </summary>
-                        {c.guard.hits.map((h, k) => (
-                          <div key={k} className={`flag ${h.severity ?? "medium"}`}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span className={`hit-sev ${h.severity ?? "medium"}`}>
-                                {h.severity === "high" ? "要修正" : h.severity === "low" ? "参考" : "要確認"}
-                              </span>
-                              <span className="q">「{h.text}」</span>
-                            </div>
-                            <dl>
-                              <dt>根拠</dt>
-                              <dd>{h.law}</dd>
-                              <dt>なぜ</dt>
-                              <dd>{h.reason}</dd>
-                              <dt>言い換え</dt>
-                              <dd className="fix">{h.suggestion}</dd>
-                            </dl>
-                          </div>
-                        ))}
-                      </details>
-                    )}
-                  </div>
-                </div>
-              </label>
-          ))}
-          {!showAllCopies && visible.length > TOP_N && (
-            <button className="more" onClick={() => setShowAllCopies(true)}>
-              残り {visible.length - TOP_N} 案を表示する
-            </button>
-          )}
-        </div>
-        <div className="note">
-          <i className="i">i</i>
-          <span>勝ち筋スコアは案どうしの相対的な順位づけで、クリック率の予測値ではありません。数字より、その下の理由を読んで選んでください。</span>
-        </div>
-      </section>
 
       {plan && plan.length > 0 && (
         <>
@@ -1386,143 +1564,7 @@ export function Report({
             <span className="rule" />
           </div>
           <div className="measure" style={{ display: "grid", gap: 12 }}>
-            {(() => {
-              // SNSの運用プラン・YouTube/Xの分析・LINE公式アカウントは、
-              // 施策の見出しに出てくる媒体の下にそのまま追記する。
-              // 見出しに無い媒体は、SNSの施策の後ろ（LINEは末尾）にまとめて出す
-              const channels = snsPlan?.channels ?? [];
-              const used = new Set<string>();
-              const siItems = socialInsights?.items ?? [];
-              const usedSI = new Set<string>();
-
-              const renderSI = (si: (typeof siItems)[number]) => (
-                <div key={si.platform} style={{ marginTop: 10 }}>
-                  <p className="eyebrow">{si.platform}の分析</p>
-                  {si.findings.length > 0 && (
-                    <ul>{si.findings.map((f, k) => <li key={k}>{f}</li>)}</ul>
-                  )}
-                  {si.measures.map((m, k) => (
-                    <div key={k} style={{ marginTop: 10 }}>
-                      <div className="top">
-                        <b>{m.title}</b>
-                        {m.kpi && <span className="kpi">見る数字：{m.kpi}</span>}
-                      </div>
-                      <p>{m.why}</p>
-                      <ul>{m.steps?.map((s, j) => <li key={j}>{s}</li>)}</ul>
-                      <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <span className="chip">担当：{m.owner}</span>
-                        <span className="chip">{m.effort}</span>
-                      </div>
-                      {m.flags && m.flags.length > 0 && (
-                        <div className="alert" style={{ marginTop: 10 }}>
-                          {m.flags.map((f, j) => (
-                            <div key={j}>{f.law}「{f.text}」：{f.reason}（言い換え：{f.suggestion}）</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              );
-
-              const renderLine = () =>
-                linePlan && (
-                  <div style={{ marginTop: 10 }}>
-                    {linePlan.skip ? (
-                      <p style={{ fontSize: 13.5, color: "var(--muted)" }}>{linePlan.skip}</p>
-                    ) : (
-                      <>
-                        {linePlan.richMenu?.length > 0 && (
-                          <div className="rich measure" style={{ marginTop: 10 }}>
-                            {linePlan.richMenu.map((m, i) => (
-                              <div className="cell" key={i}>
-                                <b>{m.label}</b>
-                                <small>{m.goes}</small>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {linePlan.steps?.length > 0 && (
-                          <div className="steps measure" style={{ marginTop: 10 }}>
-                            {linePlan.steps.map((st, i) => (
-                              <div className="s" key={i}>
-                                <div className="h">
-                                  <span className="n">{i + 1}</span>
-                                  <div>
-                                    <b>{st.title}</b>
-                                    <small>{st.when}</small>
-                                  </div>
-                                </div>
-                                <p>{st.body}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {linePlan.segments?.length > 0 && (
-                          <div className="tactic measure" style={{ marginTop: 12 }}>
-                            <div className="top"><b>出し分けの例</b></div>
-                            <ul>{linePlan.segments.map((x, k) => <li key={k}>{x}</li>)}</ul>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-
-              // MEO（Googleマップ）は専用章（MEO対策）で扱うため、ここでは表示しない
-              const visible = tactics.items.filter((t) => !/MEO|Googleマップ/i.test(t.area));
-              let lineUsed = false;
-
-              const blocks = visible.map((t, i) => {
-                const text = `${t.area} ${t.summary}`;
-                const mine = channels.filter((c) => !used.has(c.platform) && snsPlatformsIn(text).includes(c.platform));
-                mine.forEach((c) => used.add(c.platform));
-                const mySI = siItems.filter((si) => !usedSI.has(si.platform) && snsPlatformsIn(text).includes(si.platform));
-                mySI.forEach((si) => usedSI.add(si.platform));
-                const isLine = /LINE/i.test(text);
-                if (isLine) lineUsed = true;
-                return (
-                  <div className="tactic" key={i}>
-                    <div className="top">
-                      <b>{t.area}</b>
-                      {t.kpi && <span className="kpi">見る数字：{t.kpi}</span>}
-                    </div>
-                    <p>{t.summary}</p>
-                    <ul>
-                      {t.actions?.map((a, k) => <li key={k}>{a}</li>)}
-                    </ul>
-                    {mine.map((c) => <SnsChannelBlock key={c.platform} c={c} />)}
-                    {mySI.map((si) => renderSI(si))}
-                    {isLine && renderLine()}
-                  </div>
-                );
-              });
-              const rest = channels.filter((c) => !used.has(c.platform));
-              const restSI = siItems.filter((si) => !usedSI.has(si.platform));
-              return (
-                <>
-                  {blocks}
-                  {(rest.length > 0 || restSI.length > 0) && (
-                    <div className="tactic">
-                      <div className="top"><b>SNSオーガニック運用</b></div>
-                      <p>広告費をかけずに育てるSNSの、媒体ごとの運用プランです。</p>
-                      {rest.map((c) => <SnsChannelBlock key={c.platform} c={c} />)}
-                      {restSI.map((si) => renderSI(si))}
-                    </div>
-                  )}
-                  {snsPlan?.campaign && <SnsCampaignCard c={snsPlan.campaign} />}
-                  {snsPlan?.error && channels.length === 0 && (
-                    <div className="note"><i className="i">i</i><span>SNSの運用プランを作れませんでした（{snsPlan.error}）</span></div>
-                  )}
-                  {!lineUsed && linePlan && (
-                    <div className="tactic">
-                      <div className="top"><b>LINE公式アカウント</b></div>
-                      {renderLine()}
-                    </div>
-                  )}
-                </>
-              );
-            })()}
+            {tacticsSns.blocks}
           </div>
 
           {/* 作れなかった章は黙って消さない。無いのか、作れなかったのかで読み方が変わる */}
@@ -1638,120 +1680,6 @@ export function Report({
               </>
             );
           })()}
-
-          {keywords && keywords.rows.length > 0 && (
-            <>
-              <div className="sec-head">
-                <span className="ic">⌕</span>
-                <div>
-                  <h2 id="sec-kw">対策キーワード</h2>
-                  <div className="sub">検索広告とSEOの両方で使う語です</div>
-                </div>
-                <span className="rule" />
-              </div>
-              <div className="kwwrap measure">
-                <table className="kw">
-                  <thead>
-                    <tr>
-                      <th>キーワード</th><th>種別</th>
-                      {keywords.rows.some((r) => r.volume) && <th>月間検索数（推定）</th>}
-                      <th>難易度</th><th>優先度</th>
-                      <th>表示回数</th><th>掲載順位</th><th>やること</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {keywords.rows.map((r, i) => (
-                      <tr key={i}>
-                        <td><b>{r.keyword}</b></td>
-                        <td><span className="tag">{r.kind}</span></td>
-                        {keywords.rows.some((x) => x.volume) && <td className="num">{r.volume ?? "—"}</td>}
-                        <td>{r.difficulty}</td>
-                        <td>{r.priority}</td>
-                        <td className="num">{r.impressions !== null ? r.impressions.toLocaleString() : "—"}</td>
-                        <td className="num">{r.position !== null ? `${r.position}位` : "—"}</td>
-                        <td className="act">{r.action}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="note">
-                <i className="i">i</i>
-                <span>
-                  {keywords.hasRealData
-                    ? "表示回数・掲載順位は Search Console の直近28日の実測です。連携前の語は「—」にしています。"
-                    : "Search Console を連携すると、実際に検索されている語の表示回数と掲載順位が入ります。"}
-                  {keywords.rows.some((r) => r.volume) &&
-                    " 月間検索数（推定）は、企業規模・地域の人口・業種の市場規模からAIが見積もった5段階の目安です。実測ではありません。"}
-                </span>
-              </div>
-
-              {(keywords.technical.length > 0 || keywords.content.length > 0) && (
-                <div className="measure" style={{ display: "grid", gap: 12, marginTop: 16 }}>
-                  {[
-                    { t: "テクニカルSEO", v: keywords.technical },
-                    { t: "コンテンツSEO", v: keywords.content },
-                  ].filter((x) => x.v.length > 0).map((x, i) => (
-                    <div className="tactic" key={i}>
-                      <div className="top"><b>{x.t}</b></div>
-                      <ul>{x.v.map((y, k) => <li key={k}>{y}</li>)}</ul>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {seoArticles && seoArticles.articles.length > 0 && (
-            <>
-              <div className="sec-head">
-                <span className="ic">✎</span>
-                <div>
-                  <h2 id="sec-seoart">SEO記事設計</h2>
-                  <div className="sub">構成案（H2/H3）。詳細を開くと見出しと要旨が見られます</div>
-                </div>
-                <span className="rule" />
-              </div>
-              <div className="measure" style={{ display: "grid", gap: 12 }}>
-                {seoArticles.articles.map((a, i) => (
-                  <details className="tactic seoart" key={i}>
-                    <summary>
-                      {a.title}　<span className="tag">{a.targetKeyword}</span>
-                    </summary>
-                    <div style={{ marginTop: 12 }}>
-                      <p className="sub">{a.intent}</p>
-                      <p style={{ color: "var(--muted)" }}>meta description：{a.metaDescription}</p>
-                      <p style={{ color: "var(--muted)" }}>目安文字数：約{a.estimatedChars.toLocaleString()}字</p>
-                      <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-                        {a.headings.map((h, j) => (
-                          <div key={j}>
-                            <b>H2：{h.h2}</b>
-                            <p style={{ margin: "4px 0" }}>{h.summary}</p>
-                            {h.h3?.length > 0 && (
-                              <ul style={{ marginTop: 4 }}>
-                                {h.h3.map((x, k) => (
-                                  <li key={k}>H3：{x}</li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                      {a.flags && a.flags.length > 0 && (
-                        <div className="alert" style={{ marginTop: 10 }}>
-                          {a.flags.map((f, j) => (
-                            <div key={j}>
-                              {f.law}「{f.text}」：{f.reason}（言い換え：{f.suggestion}）
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </>
-          )}
 
           {suggests && suggests.rows.length > 0 && (
             <>
@@ -1901,6 +1829,96 @@ export function Report({
 
       {tab === "overview" && (
       <>
+
+      <div className="sec-head">
+        <span className="ic">✎</span>
+        <div>
+          <h2 id="sec-copies">コピーと法令チェック</h2>
+          <div className="sub">生成と同時に景表法・薬機法を確認しています</div>
+        </div>
+        <span className="rule" />
+      </div>
+      <section>
+        <div className="filters measure">
+          <button className={`sw${hideRed ? " on" : ""}`} onClick={() => setHideRed((v) => !v)}>
+            {hideRed ? "✓ " : ""}要修正を隠す
+          </button>
+          <span>
+            {visible.length} / {copies.length} 案を表示中
+            {redCount > 0 && `（要修正 ${redCount}件）`}
+          </span>
+        </div>
+
+        <div className="measure" style={{ display: "grid", gap: 12 }}>
+          {shown.map(([i, c]) => (
+              <label key={i} className={`card copy-card${picked.includes(i) ? " sel" : ""}`} style={{ display: "block", cursor: "pointer" }}>
+                <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                  <input
+                    type="checkbox"
+                    checked={picked.includes(i)}
+                    onChange={(e) => setPicked((p) => (e.target.checked ? [...p, i] : p.filter((x) => x !== i)))}
+                    style={{ marginTop: 8 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                      <GuardTag g={c.guard} />
+                      {typeof c.score === "number" && <span className="tag score">勝ち筋 {c.score}</span>}
+                    </div>
+
+                    <div className="hl">{c.headline.join("")}</div>
+                    <p className="body">{c.body}</p>
+
+                    <div className="meta">
+                      {c.ribbonTop && <span className="m"><em>条件</em>{c.ribbonTop}</span>}
+                      {c.ribbonBottom && <span className="m"><em>強調</em>{c.ribbonBottom}</span>}
+                      <span className="m"><em>CTA</em>{c.cta}</span>
+                    </div>
+
+                    {c.scoreReason && <p className="why">{c.scoreReason}</p>}
+
+                    {c.guard && c.guard.hits.length > 0 && (
+                      <details className="flags">
+                        <summary onClick={(e) => e.stopPropagation()}>
+                          法令の指摘 {c.guard.hits.length}件
+                          {c.guard.hits.some((h) => h.severity === "high") && (
+                            <span className="hit-sev high">要修正 {c.guard.hits.filter((h) => h.severity === "high").length}</span>
+                          )}
+                        </summary>
+                        {c.guard.hits.map((h, k) => (
+                          <div key={k} className={`flag ${h.severity ?? "medium"}`}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span className={`hit-sev ${h.severity ?? "medium"}`}>
+                                {h.severity === "high" ? "要修正" : h.severity === "low" ? "参考" : "要確認"}
+                              </span>
+                              <span className="q">「{h.text}」</span>
+                            </div>
+                            <dl>
+                              <dt>根拠</dt>
+                              <dd>{h.law}</dd>
+                              <dt>なぜ</dt>
+                              <dd>{h.reason}</dd>
+                              <dt>言い換え</dt>
+                              <dd className="fix">{h.suggestion}</dd>
+                            </dl>
+                          </div>
+                        ))}
+                      </details>
+                    )}
+                  </div>
+                </div>
+              </label>
+          ))}
+          {!showAllCopies && visible.length > TOP_N && (
+            <button className="more" onClick={() => setShowAllCopies(true)}>
+              残り {visible.length - TOP_N} 案を表示する
+            </button>
+          )}
+        </div>
+        <div className="note">
+          <i className="i">i</i>
+          <span>勝ち筋スコアは案どうしの相対的な順位づけで、クリック率の予測値ではありません。数字より、その下の理由を読んで選んでください。</span>
+        </div>
+      </section>
 
       {!isGuest && chosen.length > 0 && (
         <section className="block no-print">
@@ -2298,7 +2316,7 @@ export function Report({
           <div className="sec-head" style={{ marginTop: 0 }}>
             <span className="ic">▣</span>
             <div>
-              <h2 id="sec-lp">リンク先LP</h2>
+              <h2 id="sec-lp">LP生成（ベータ）</h2>
               <div className="sub">広告と同じ訴求軸で着地を作ります</div>
             </div>
             <span className="rule" />
