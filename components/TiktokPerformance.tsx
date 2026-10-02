@@ -75,7 +75,7 @@ export function TiktokPerformance() {
                           <th style={{ ...HEAD, textAlign: "left" }}>キャンペーン</th>
                           <th style={HEAD}>費用</th>
                           <th style={HEAD}>表示回数</th>
-                          <th style={HEAD}>キリキ</th>
+                          <th style={HEAD}>クリック</th>
                           <th style={HEAD}>CTR</th>
                           <th style={HEAD}>CV</th>
                           <th style={HEAD}>CV値</th>
@@ -118,7 +118,7 @@ export function TiktokPerformance() {
                             <th style={{ ...HEAD, textAlign: "left" }}>日付</th>
                             <th style={HEAD}>費用</th>
                             <th style={HEAD}>表示回数</th>
-                            <th style={HEAD}>キリキ</th>
+                            <th style={HEAD}>クリック</th>
                             <th style={HEAD}>CV</th>
                             <th style={HEAD}>CV値</th>
                           </tr>
@@ -144,8 +144,8 @@ export function TiktokPerformance() {
           );
         })}
         <p style={{ fontSize: 11.5, color: "var(--faint)" }}>
-          読み取りのみ（TikTok Marketing API のレガート参照のみ使用。キャンペーンの設定は変更しません）。金額は各広告主の通貨のままの数値です。
-          CV値は TikTok の基本レポートに汎用的な売上指標が無いため常に 0（CPAは「—」）になります。費用・表示回数・キリキ・CVは実アカウントでの実績が出てからの確認が済んでいません（承認直後のため）。
+          読み取りのみ（TikTok Marketing API のレポート参照のみ使用。キャンペーンの設定は変更しません）。金額は各広告主の通貨のままの数値です。
+          CV値は TikTok の基本レポートに汎用的な売上指標が無いため常に 0（CPAは「—」）になります。費用・表示回数・クリック・CVは実アカウントでの実績が出てからの確認が済んでいません（承認直後のため）。
         </p>
       </div>
     </>
