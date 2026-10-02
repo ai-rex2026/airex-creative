@@ -5,7 +5,7 @@
  * 分析用の Google / Meta 連携（Search Console・GA4・Instagram）は別物で、
  * こちらは「広告アカウントの運用実績」を読むための連携。
  *
- * 並べ残（AD_PLATFORMS の定義順）は settings 画面（AdConnections.tsx）と
+ * 並び順（AD_PLATFORMS の定義順）は settings 画面（AdConnections.tsx）と
  * 新規分析画面（app/analysis/new/page.tsx）で両方がここの順番に揃う。
  */
 
@@ -25,7 +25,7 @@ export const AD_PLATFORMS: AdPlatformDef[] = [
     id: "google",
     name: "Google 広告",
     media: "検索・ディスプレイ・P-MAX・YouTube 広告",
-    // GOOGLE_ADS_DEVELOPER_TOKEN は任意。Google がクリスド管理のアクセスに移行中で、
+    // GOOGLE_ADS_DEVELOPER_TOKEN は任意。Google がクラウド管理のアクセスに移行中で、
     // 移行済みのアカウントでは不要。あれば API 呼び出しに付ける
     env: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
   },
