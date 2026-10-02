@@ -37,8 +37,9 @@ export const SNS_PLATFORMS: SnsPlatformDef[] = [
     id: "meta",
     name: "Instagram / Facebook",
     // Facebookページに連携済みのInstagramビジネス/クリエイターアカウントが対象（連携前にInstagram側の
-    // 設定からFacebookページへの連携が必要）。投稿ごとの到達数など深い指標は App Review 後に拡張予定
-    media: "Instagramプロフィール（フォロワー数・投稿数）と、投稿ごとのいいね・コメント数",
+    // 設定からFacebookページへの連携が必要）。1回の連携で、紐づくFacebookページ自体のデータ
+    // （ファン数・投稿・到達数など）も合わせて読む
+    media: "Instagramプロフィール（フォロワー数・投稿数・投稿ごとのいいね・コメント数）と、紐づくFacebookページ（ファン数・投稿・直近28日の到達数）",
     env: ["META_APP_ID", "META_APP_SECRET"],
   },
 ];
