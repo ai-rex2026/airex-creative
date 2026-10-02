@@ -111,13 +111,11 @@ export function NewAnalysisForm({ initialUrl }: { initialUrl: string }) {
             <button type="button" className="btn sm" onClick={addSocialRow}>
               + SNSアカウントを指定（任意）
             </button>
-            {social.length > 0 && (
-              <p style={{ marginTop: 6, fontSize: 12, color: "var(--faint)" }}>
-                LPにリンクが無い場合や、自動検出が間違っている場合の補完・上書きに使います。
-                YouTubeは公式APIで、X・TikTok・Instagramは実際にアカウントを確認したうえで実測します
-                （キーワード検索ではありません）。
-              </p>
-            )}
+            <p style={{ marginTop: 6, fontSize: 12, color: "var(--faint)" }}>
+              LPにリンクが無い場合や、自動検出が間違っている場合の補完・上書きに使います。
+              YouTubeは公式APIで、X・TikTok・Instagramは実際にアカウントを確認したうえで実測します
+              （キーワード検索ではありません）。
+            </p>
           </div>
         </>
       )}
