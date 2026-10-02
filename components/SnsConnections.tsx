@@ -7,8 +7,13 @@ import { SnsDisconnectButton } from "./SnsDisconnectButton";
  * 連携は <a> で /api/social/{媒体}/start に飛ばす（media側の認可画面へ画面ごと遷移するため）。
  * components/AdConnections.tsx と同じ形。
  *
- * X・TikTok・Meta（Instagram/Facebook）とも実装済みで実際に動作するので、通常どおり
- * 連携／解除ボタンを出す（SNS_PLATFORMS に無い媒体を足すときだけ、ここに固定行を足す）。
+ * X・TikTok・Meta（Instagram/Facebook）とも実装自体は済んでいるが、2026-10時点では
+ * 分析（lib/social.ts）側がこの連携を使わない方針になった（分析対象のURLと連携アカウントが
+ * 紐付くとは限らない・取れるデータがApify実測より乏しいため）。そのため新規の連携は
+ * いったん受け付けず、「連携する」ボタンは非活性の「対応予定」表示にしている。
+ * すでに連携済みのアカウントは解除だけできる（SnsDisconnectButton）。
+ * 分析対象ごとに連携アカウントを選べるUIと合わせて「運用」機能を作る際に、
+ * ここを元の「連携する」ボタンに戻す想定（lib/social.ts の readOfficialAccount 参照）。
  */
 export function SnsConnections({
   connections,
@@ -21,6 +26,7 @@ export function SnsConnections({
   ok?: string;
   error?: string;
 }) {
+  void canConnect;
   const okName = SNS_PLATFORMS.find((p) => p.id === ok)?.name;
   const unset = SNS_PLATFORMS.map((p) => ({ p, missing: missingSnsEnv(p) })).filter((x) => x.missing.length > 0);
 
@@ -43,7 +49,6 @@ export function SnsConnections({
         <div className="rh">公式SNSアカウント連携（投稿・動画ごとの実績分析）</div>
         {SNS_PLATFORMS.map((def) => {
           const conn = connections.find((c) => c.platform === def.id);
-          const missing = missingSnsEnv(def);
 
           return (
             <div className="r" key={def.id}>
@@ -54,21 +59,15 @@ export function SnsConnections({
                     ? `連携済み（${new Date(conn.connected_at).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })}）${conn.label ? `：@${conn.label}` : ""}${
                         conn.followers !== null ? `・フォロワー${conn.followers.toLocaleString()}人` : ""
                       }`
-                    : `連携すると、自社（またはクライアント）の${def.name}アカウントの${def.media}をレポートに反映できます。このツールは実績の読み取りにだけ使い、投稿や設定の変更はしません。`}
+                    : `現在、分析では${def.name}のデータをLPのリンクから自動取得しているため、ここでの連携は停止しています。`}
                 </small>
               </div>
               {conn ? (
                 <SnsDisconnectButton platform={def.id} />
-              ) : missing.length > 0 ? (
-                <span className="tag warn">未設定</span>
-              ) : canConnect ? (
-                <a className="btn sm" href={`/api/social/${def.id}/start`}>
-                  連携する
-                </a>
               ) : (
-                <a className="btn ghost sm" href="/login?mode=signup">
-                  本登録が必要
-                </a>
+                <button type="button" className="btn sm" disabled title="分析対象ごとに選べるUIと合わせて今後対応予定です">
+                  対応予定
+                </button>
               )}
             </div>
           );
