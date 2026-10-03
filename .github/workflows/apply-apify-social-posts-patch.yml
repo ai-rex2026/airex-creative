@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - '.buildtmp/apify-social-posts/GO.marker'
+permissions:
+  contents: write
 jobs:
   apply:
     runs-on: ubuntu-latest
@@ -16,7 +18,7 @@ jobs:
         run: |
           git config user.name "ai-rex-bot"
           git config user.email "bot@ai-rex2026.local"
-          git rm -r --cached .buildtmp/apify-social-posts >/dev/null
+          git rm -r --cached --ignore-unmatch .buildtmp/apify-social-posts
           rm -rf .buildtmp/apify-social-posts
           rm -f .github/workflows/apply-apify-social-posts-patch.yml
           git add -A
