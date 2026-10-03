@@ -1,0 +1,27 @@
+name: cleanup-typo-fix2-residue
+on:
+  push:
+    paths:
+      - ".buildtmp/cleanup-residue/GO.marker"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove broken workflow, its buildtmp, and this cleanup workflow itself
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/workflows/apply-typo-fix2.yml
+          git rm -rf .buildtmp/typo-fix2
+          git rm -f .github/workflows/cleanup-typo-fix2-residue.yml
+          git rm -rf .buildtmp/cleanup-residue
+          git commit -m "chore: remove broken temp workflow residue"
+          git push
