@@ -1,0 +1,34 @@
+name: apply-typo-fix3
+on:
+  push:
+    paths:
+      - ".buildtmp/typo-fix3/GO.marker"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fix typo via python one-liner
+        run: python3 -c "import pathlib; p = pathlib.Path('components/Report.tsx'); s = p.read_text(encoding='utf-8'); bad = 'エリーになるため'; good = 'エラーになるため'; n = s.count(bad); assert n == 1, 'expected 1 occurrence, found %d' % n; s = s.replace(bad, good); p.write_text(s, encoding='utf-8')"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add components/Report.tsx
+          git commit -m "fix: comment typo (unicode-escape based fix)"
+          git push
+
+      - name: Remove temporary workflow and buildtmp files
+        run: |
+          git rm -f .github/workflows/apply-typo-fix3.yml
+          git rm -rf .buildtmp/typo-fix3
+          git commit -m "chore: remove temp workflow"
+          git push
