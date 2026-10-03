@@ -19,7 +19,7 @@ index 80949df..eeca4b1 100644
    image_scan: ImageScan | null;
 @@ -196,6 +204,21 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
      // 理由で、依頼主の方針により2026-10時点では使わない（lib/social.ts の readOfficialAccount
-     // のコマント参照。将来「運用」機能を作る際に再検討する想定で、関数自体は残してある）
+     // のコメント参照。将来「運用」機能を作る際に再検討する想定で、関数自体は残してある）
      if (!a.social && ((a.site?.social ?? []).length > 0 || (a.social_manual ?? []).length > 0)) {
 +      // Apify呼び出し回数のハードキャップ（2026-10-03のクレジット急減事故の再発防止）。
 +      // cronの重複拾いは別途ロックで塞いだが、それとは独立に「この分析に対して
