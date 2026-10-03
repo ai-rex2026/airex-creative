@@ -135,7 +135,7 @@ function GuestMask({ guest, label, children }: { guest: boolean; label: string; 
 
 // 2026-10-04: LP生成（ベータ）はクオリティが安定しないため、依頼主の指示で一旦非表示にしている。
 // 再公開するときは true に戻す。
-// （注）この値をJSX側で直接 `false && ` と書くとTypeScriptの型チェックが崩れ、
+// （注）この値をJSX側で直接 `false &&` と書くとTypeScriptの型チェックが崩れ、
 // 無関係な `{lp && (...)}` のnullガードまで誤って「lpがnullかもしれない」エリーになるため、
 // booleanの変数を経由させている
 const LP_GENERATION_ENABLED: boolean = false;
