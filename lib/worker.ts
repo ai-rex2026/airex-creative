@@ -2,8 +2,16 @@ import { createAdminClient } from "./supabase/admin";
 import { tick } from "./analysis";
 
 /** 実行中とみなす猶予。これより古い更新は「止まっている」と判断して拾い直す */
-// 広告運用設計のようにAIの1工程が2分を超えることがあるので、実行中の工程を二重に走らせない長さにする
-const STALE_MS = 200_000;
+// 広告運用設計のようにAIの1工程が2分を超えることがあるのに加え、ad_ops確定後の
+// 9章まとめ並列生成フェーズ（social_competitors・tactics・sns_plan・kpi・lpo・keywords・
+// line_plan・copies・suggests）は askJson() の1回目（最大150秒）＋JSON解析失敗時の
+// 再試行（さらに最大150秒）が絡むと最悪ケースで約5分かかり得る。この間 updated_at は
+// 更新されない（Promise.all完了後に1回だけ保存するため）ので、閾値が短すぎると
+// 「まだ正常に動いている分析」を cron の安全網が二重に拾ってしまい、二重実行の片方が
+// 失敗して status=failed を書いた直後にもう片方が成功してchapterデータだけ上書きする
+// （= ほぼ完走しているのに failed のまま残る）レース条件を引き起こす。
+// 並列フェーズの最悪ケース（約300秒）に安全マージンを持たせて、二重に走らせない長さにする
+const STALE_MS = 400_000;
 
 /** 自己継続（下記 triggerContinue）を許す最大回数。壊れて完了しない分析を延々と連打しないための安全弁 */
 const MAX_CHAIN_ATTEMPTS = 6; // 240秒 x 6 ≈ 24分。それでも終わらなければ cron の安全網（processPending）に任せる
