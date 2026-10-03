@@ -36,6 +36,25 @@ export type SocialAccount = {
    * 取れなかった・対象外の媒体は null
    */
   recentContent: string[] | null;
+  /**
+   * 直近の投稿のエンゲージメント実数。X・TikTok・InstagramはApifyのレスポンスに
+   * 既に乗っている（課金もプロフィール/投稿単位で、この後付けに追加コストは発生しない）のに
+   * 以前は使わず捨てていたデータ。取れなかった項目はnullのまま、取れた媒体・項目だけ入れる。
+   * 取れなかった・対象外の媒体は null
+   */
+  recentPosts: SocialPost[] | null;
+};
+
+/** 投稿1件の実測値。本文は要約しない全文（画面側で必要に応じて折りたたむ） */
+export type SocialPost = {
+  text: string | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  /** 再生数。動画系（TikTok）のみ。X・Instagramはnull */
+  views: number | null;
+  /** ISO 8601。取れなければ null */
+  postedAt: string | null;
 };
 
 export type SocialScan = {
@@ -135,6 +154,20 @@ function fromDescription(desc: string): { followers: number | null; posts: numbe
 
 /** 直近の投稿本文を見出し表示用に短くする。via=公式連携・Apify のどちらからでも使う */
 const shorten = (s: string) => (s.length > 30 ? `${s.slice(0, 30)}…` : s);
+
+/** 日付文字列・UNIX秒をISO 8601に正規化する。パースできなければnull（推測で埋めない） */
+function toIsoDate(raw: unknown): string | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const ms = raw > 1e12 ? raw : raw * 1000; // 秒 or ミリ秒のどちらで来てもISOにする
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  return null;
+}
 
 /**
  * YouTube は公式APIで公開情報が取れる。
@@ -299,6 +332,20 @@ async function readXApify(a: { platform: string; url: string; handle: string }, 
       .slice(0, 5)
       .map(shorten);
 
+    // いいね・リプライ・リツイート・投稿日時はApifyのレスポンスに既に乗っていて、
+    // maxItems:5で課金される件数は変わらないため、ここで拾っても追加コストは発生しない
+    const recentPosts: SocialPost[] = items.slice(0, 5).map((raw) => {
+      const it = raw as { text?: unknown; likeCount?: unknown; replyCount?: unknown; retweetCount?: unknown; viewCount?: unknown; createdAt?: unknown };
+      return {
+        text: typeof it.text === "string" && it.text.trim() ? it.text : null,
+        likes: typeof it.likeCount === "number" ? Math.round(it.likeCount) : null,
+        comments: typeof it.replyCount === "number" ? Math.round(it.replyCount) : null,
+        shares: typeof it.retweetCount === "number" ? Math.round(it.retweetCount) : null,
+        views: typeof it.viewCount === "number" ? Math.round(it.viewCount) : null,
+        postedAt: toIsoDate(it.createdAt),
+      };
+    });
+
     return {
       ...base,
       readable: followers !== null || recentContent.length > 0,
@@ -307,6 +354,7 @@ async function readXApify(a: { platform: string; url: string; handle: string }, 
       via: "Apify",
       title: typeof author.name === "string" ? author.name : null,
       recentContent: recentContent.length ? recentContent : null,
+      recentPosts: recentPosts.length ? recentPosts : null,
       reason: followers === null ? "フォロワー数を確認できませんでした" : null,
     };
   } catch (e) {
@@ -320,7 +368,12 @@ async function readTikTokApify(a: { platform: string; url: string; handle: strin
 
   try {
     const actorId = process.env.APIFY_ACTOR_TIKTOK || "clockworks/tiktok-profile-scraper";
-    const items = await runApifyActor(actorId, { profiles: [a.handle] });
+    // このActorは1動画＝1件の課金（$3.00/1,000件）で、resultsPerPageを指定しないと
+    // デフォルトの100件/プロフィールが取得され、TikTokがApify費用の大半を占める原因になっていた。
+    // 分析に使うのは直近5件だけなので、15件に絞ってコストを抑える（commentsPerPost:0で
+    // コメント取得＝追加の課金対象も発生させない）
+    const resultsPerPage = Number(process.env.APIFY_TIKTOK_RESULTS_PER_PAGE || 15);
+    const items = await runApifyActor(actorId, { profiles: [a.handle], resultsPerPage, commentsPerPost: 0 });
     if (!items.length) return { ...base, reason: "このアカウントをTikTokで確認できませんでした（非公開・削除済みの可能性）" };
 
     // このActorはプロフィールの統計（フォロワー数等）を各動画アイテムの authorMeta に載せて返す仕様。
@@ -337,6 +390,20 @@ async function readTikTokApify(a: { platform: string; url: string; handle: strin
       .map((v) => (typeof v.text === "string" && v.text.trim() ? shorten(v.text) : "（無題の動画）"));
     const viewsSum = videos.reduce((sum, v) => sum + (typeof v.playCount === "number" ? v.playCount : 0), 0);
 
+    // いいね・コメント・シェア・投稿日時も既に取得済みの動画データに乗っているので、
+    // resultsPerPageで絞った件数の分だけそのまま使う（追加コストなし）
+    const recentPosts: SocialPost[] = videos.slice(0, 5).map((raw) => {
+      const v = raw as { text?: unknown; diggCount?: unknown; commentCount?: unknown; shareCount?: unknown; playCount?: unknown; createTimeISO?: unknown; createTime?: unknown };
+      return {
+        text: typeof v.text === "string" && v.text.trim() ? v.text : null,
+        likes: typeof v.diggCount === "number" ? Math.round(v.diggCount) : null,
+        comments: typeof v.commentCount === "number" ? Math.round(v.commentCount) : null,
+        shares: typeof v.shareCount === "number" ? Math.round(v.shareCount) : null,
+        views: typeof v.playCount === "number" ? Math.round(v.playCount) : null,
+        postedAt: toIsoDate(v.createTimeISO ?? v.createTime),
+      };
+    });
+
     return {
       ...base,
       readable: followers !== null || recentContent.length > 0,
@@ -346,6 +413,7 @@ async function readTikTokApify(a: { platform: string; url: string; handle: strin
       via: "Apify",
       title: typeof authorMeta.nickName === "string" ? authorMeta.nickName : null,
       recentContent: recentContent.length ? recentContent : null,
+      recentPosts: recentPosts.length ? recentPosts : null,
       reason: followers === null ? "フォロワー数を確認できませんでした" : null,
     };
   } catch (e) {
@@ -370,6 +438,17 @@ async function readInstagramApify(a: { platform: string; url: string; handle: st
       .slice(0, 5)
       .map((p) => (typeof p.caption === "string" && p.caption.trim() ? shorten(p.caption) : "（キャプションなし）"));
 
+    // いいね・コメント数・投稿日時もlatestPostsに既に入っている。Instagramの課金は
+    // プロフィール単位（$2.60/1,000プロフィール）なので、ここで何件読んでも追加コストは無い
+    const recentPosts: SocialPost[] = latestPosts.slice(0, 5).map((p) => ({
+      text: typeof p.caption === "string" && p.caption.trim() ? p.caption : null,
+      likes: typeof p.likesCount === "number" ? Math.round(p.likesCount) : null,
+      comments: typeof p.commentsCount === "number" ? Math.round(p.commentsCount) : null,
+      shares: null, // Instagramはシェア数を公開していない
+      views: null, // 動画(リール)以外は再生数が無く、媒体混在になるので出さない
+      postedAt: toIsoDate(p.timestamp),
+    }));
+
     return {
       ...base,
       readable: followers !== null || posts !== null,
@@ -379,6 +458,7 @@ async function readInstagramApify(a: { platform: string; url: string; handle: st
       title: typeof profile.fullName === "string" ? profile.fullName : null,
       bio: typeof profile.biography === "string" ? profile.biography.slice(0, 160) : null,
       recentContent: recentContent.length ? recentContent : null,
+      recentPosts: recentPosts.length ? recentPosts : null,
       reason: followers === null ? "フォロワー数を確認できませんでした" : null,
     };
   } catch (e) {
@@ -540,7 +620,7 @@ export async function readSocialAccount(
   void ownerId;
   const base: SocialAccount = {
     ...a, readable: false, followers: null, posts: null, views: null, via: null, title: null, bio: null, reason: null,
-    recentContent: null,
+    recentContent: null, recentPosts: null,
   };
 
   // YouTube だけは公式APIで正規に取れる

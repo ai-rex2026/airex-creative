@@ -1,7 +1,7 @@
 import { askJson } from "./anthropic";
 import { checkGuard } from "./guardrail";
 import type { Diagnosis, GuardHit, Industry } from "./types";
-import type { SocialAccount, SocialScan } from "./social";
+import type { SocialAccount, SocialPost, SocialScan } from "./social";
 import type { SocialCompetitorPlatform, SocialCompetitorScan } from "./social-competitors";
 import type { YoutubeAnalyticsData } from "./google";
 
@@ -61,6 +61,21 @@ function ownAccountsByPlatform(social: SocialScan | null): Partial<Record<Social
   return out;
 }
 
+/** 投稿1件を「本文冒頭＋実測の反応数」の1行にする。取れなかった項目は省く（推測で埋めない） */
+function postLine(p: SocialPost, i: number): string {
+  const text = p.text ? `${i + 1}. ${p.text.length > 60 ? `${p.text.slice(0, 60)}…` : p.text}` : `${i + 1}. （本文なし）`;
+  const stats = [
+    p.likes !== null ? `いいね${p.likes.toLocaleString()}` : "",
+    p.comments !== null ? `コメント${p.comments.toLocaleString()}` : "",
+    p.shares !== null ? `シェア${p.shares.toLocaleString()}` : "",
+    p.views !== null ? `再生${p.views.toLocaleString()}` : "",
+    p.postedAt ? p.postedAt.slice(0, 10) : "",
+  ]
+    .filter(Boolean)
+    .join("・");
+  return stats ? `${text}（${stats}）` : text;
+}
+
 function accountFacts(a: SocialAccount, label: string): string {
   const lines = [
     `${label}：@${a.handle || a.url}`,
@@ -68,7 +83,11 @@ function accountFacts(a: SocialAccount, label: string): string {
     a.posts !== null ? `投稿（動画）数 ${a.posts.toLocaleString()}件` : "",
     a.views !== null ? `総再生回数 ${a.views.toLocaleString()}回` : "",
     a.bio ? `プロフィール：${a.bio}` : "",
-    a.recentContent?.length ? `直近の投稿内容：${a.recentContent.join(" / ")}` : "直近の投稿内容は取得できず",
+    a.recentPosts?.length
+      ? `直近の投稿（実測のいいね・コメント・シェア・再生・投稿日時つき）：\n  ${a.recentPosts.map(postLine).join("\n  ")}`
+      : a.recentContent?.length
+        ? `直近の投稿内容：${a.recentContent.join(" / ")}`
+        : "直近の投稿内容は取得できず",
   ].filter(Boolean);
   return lines.join("\n  ");
 }
@@ -120,41 +139,12 @@ export async function generateSocialInsights(
       ? comp.map((c, i) => accountFacts(c.account, `競合${i + 1}（${p}）`)).join("\n  ")
       : "競合アカウントは見つからなかった、または実測できなかった";
     const extra = p === "YouTube" ? ytAnalyticsFacts(ytAnalytics) : "";
-    return `【${p}】
-  ${accountFacts(a, `自社（${p}）`)}${extra}
-  ${compBlock}`;
+    return `【${p}】\n  ${accountFacts(a, `自社（${p}）`)}${extra}\n  ${compBlock}`;
   });
 
   const res = await askJson<SocialInsightPlan>(
-    `あなたはSNS運用の実務者です。実測できているYouTube・X・TikTok・Instagramのアカウントについて、
-「分析結果（findings）」と、そこから導く「施策詳細（measures）」を媒体ごとに作ります。
-
-守ること:
-- 対象媒体は ${targets.join("・")} のみ。実測が無い媒体は出さない
-- findings は媒体ごとに2〜4件。**渡された実測値（フォロワー数・投稿数・直近の投稿内容、
-  YouTubeは連携時のみ渡る推定視聴時間・平均視聴時間・純増登録者数・主な流入経路も含む）を
-  引用して**書く。競合が実測できていれば自社との比較で書き、競合が無ければ自社の実測値と
-  投稿内容から分かることだけを書く
-  ・渡されていない数字を作らない（「エンゲージメント率が高い」のような、渡していない指標の断定は禁止）
-  ・一般論（「動画は伸びやすい」等）や最上級・断定（「必ず」「業界随一」）は禁止
-- measures は媒体ごとに2〜3件。**すでに運用している前提**で書く（新規開設は書かない）
-  ・title は「何をするか」を動詞で。「〜の検討」「〜の強化」のような、やったか判断できない書き方は禁止
-  ・why は findings の裏付けとなる実測値を引用して書く
-  ・steps は3〜4手順。誰がどこで何をするか
-  ・owner は実在する役割（「SNS運用担当」「店舗責任者」など）
-  ・effort は すぐ / 数日 / 数週間 のいずれか
-  ・kpi は1つ。数えられるものにする（例：登録者数、動画の平均再生数、投稿へのリプライ数）
-  ・効果や結果を断定しない。「必ず」「保証」は使わない`,
-    `商材: ${d.product}
-ターゲット: ${d.audience}
-業種: ${d.industry}
-
-【実測データ】
-${blocks.join("\n\n")}
-
-出力:
-{"items":[{"platform":"YouTube","findings":["",""],
- "measures":[{"title":"","why":"","steps":["",""],"owner":"","effort":"すぐ","kpi":""}]}]}`,
+    `あなたはSNS運用の実務者です。実測できているYouTube・X・TikTok・Instagramのアカウントについて、\n「分析結果（findings）」と、そこから導く「施策詳細（measures）」を媒体ごとに作ります。\n\n守ること:\n- 対象媒体は ${targets.join("・")} のみ。実測が無い媒体は出さない\n- findings は媒体ごとに2〜4件。**渡された実測値（フォロワー数・投稿数、投稿ごとの\n  いいね・コメント・シェア・再生数・投稿日時、YouTubeは連携時のみ渡る推定視聴時間・\n  平均視聴時間・純増登録者数・主な流入経路も含む）を引用して**書く。X・TikTok・\n  Instagramは投稿ごとの反応数が実測で渡っているので、「どの投稿が伸びているか」\n  「反応数の差」のような比較も書いてよい。競合が実測できていれば自社との比較で書き、\n  競合が無ければ自社の実測値と投稿内容から分かることだけを書く\n  ・渡されていない数字を作らない（「エンゲージメント率が高い」のような、渡していない指標の断定は禁止）\n  ・一般論（「動画は伸びやすい」等）や最上級・断定（「必ず」「業界随一」）は禁止\n- measures は媒体ごとに2〜3件。**すでに運用している前提**で書く（新規開設は書かない）\n  ・title は「何をするか」を動詞で。「〜の検討」「〜の強化」のような、やったか判断できない書き方は禁止\n  ・why は findings の裏付けとなる実測値を引用して書く\n  ・steps は3〜4手順。誰がどこで何をするか\n  ・owner は実在する役割（「SNS運用担当」「店舗責任者」など）\n  ・effort は すぐ / 数日 / 数週間 のいずれか\n  ・kpi は1つ。数えられるものにする（例：登録者数、動画の平均再生数、投稿へのリプライ数）\n  ・効果や結果を断定しない。「必ず」「保証」は使わない`,
+    `商材: ${d.product}\nターゲット: ${d.audience}\n業種: ${d.industry}\n\n【実測データ】\n${blocks.join("\n\n")}\n\n出力:\n{"items":[{"platform":"YouTube","findings":["",""],\n "measures":[{"title":"","why":"","steps":["",""],"owner":"","effort":"すぐ","kpi":""}]}]}`,
     { maxTokens: 4000 }
   );
 
