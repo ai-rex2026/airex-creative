@@ -1,0 +1,26 @@
+name: Apply worker-fix patch
+on:
+  push:
+    paths:
+      - '.buildtmp/worker-fix/GO.marker'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply patch
+        run: git apply --whitespace=nowarn .buildtmp/worker-fix/worker.patch
+      - name: Commit and push
+        run: |
+          git config user.name "ai-rex-bot"
+          git config user.email "bot@ai-rex2026.local"
+          git rm -r --cached --ignore-unmatch .buildtmp/worker-fix
+          rm -rf .buildtmp/worker-fix
+          rm -f .github/workflows/apply-worker-fix-patch.yml
+          git add -A
+          git commit -m "fix: worker.ts の転記ミス（全角文字の欠損・数字の誤挿入）を修正"
+          git push
