@@ -41,6 +41,7 @@ import { Inputs } from "./Inputs";
 import { hygiene } from "@/lib/measures";
 import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
+import { PlatformIcon } from "./PlatformIcons";
 
 type Tab = "inputs" | "measures" | "overview";
 
@@ -450,7 +451,7 @@ export function Report({
 
   const renderSI = (si: (typeof siItems)[number]) => (
     <div key={si.platform} style={{ marginTop: 10 }}>
-      <p className="eyebrow">{si.platform}の分析</p>
+      <p className="eyebrow"><PlatformIcon platform={si.platform} size={14} /> {si.platform}の分析</p>
       {si.findings.length > 0 && (
         <ul>{si.findings.map((f, k) => <li key={k}>{f}</li>)}</ul>
       )}
@@ -530,10 +531,6 @@ export function Report({
         )}
       </div>
     );
-
-  // MEO（Googleマップ）は専用章（MEO対策）で扱うため、ここでは表示しない
-  const visibleTactics = (tactics?.items ?? []).filter((t) => !/MEO|Googleマップ/i.test(t.area));
-
 
   return (
     <div>
@@ -806,21 +803,201 @@ export function Report({
         <span className="ic">↗</span>
         <div>
           <h2 id="sec-angles">訴求軸</h2>
-          <div className="sub">この切り口でコピーを作りました</div>
+          <div className="sub">この切り口でコピーを作りました。生成と同時に景表法・薬機法も確認しています</div>
         </div>
         <span className="rule" />
       </div>
-      <div style={{ display: "grid", gap: 10 }}>
-        {d.angles.map((a, i) => (
-          <div key={a.id} className="card" style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: 18 }}>
-            <span className="tag score" style={{ flex: "0 0 auto" }}>{i + 1}</span>
-            <div>
-              <b style={{ fontSize: 14.5 }}>{a.name}</b>
-              <span style={{ display: "block", fontSize: 12.5, color: "var(--muted)", marginTop: 4 }}>{a.why}</span>
-            </div>
-          </div>
-        ))}
+      <div className="filters measure">
+        <button className={`sw${hideRed ? " on" : ""}`} onClick={() => setHideRed((v) => !v)}>
+          {hideRed ? "✓ " : ""}要修正を隠す
+        </button>
+        <span>
+          {visible.length} / {copies.length} 案を表示中
+          {redCount > 0 && `（要修正 ${redCount}件）`}
+        </span>
       </div>
+      <div style={{ display: "grid", gap: 10 }}>
+        {d.angles.map((a, ai) => {
+          const angleCopies = shown.filter(([, c]) => c.angleId === a.id);
+          return (
+            <div key={a.id} style={{ display: "grid", gap: 10 }}>
+              <div className="card" style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: 18 }}>
+                <span className="tag score" style={{ flex: "0 0 auto" }}>{ai + 1}</span>
+                <div>
+                  <b style={{ fontSize: 14.5 }}>{a.name}</b>
+                  <span style={{ display: "block", fontSize: 12.5, color: "var(--muted)", marginTop: 4 }}>{a.why}</span>
+                </div>
+              </div>
+              {angleCopies.length > 0 && (
+                <div className="measure" style={{ display: "grid", gap: 12, paddingLeft: 20 }}>
+                  {angleCopies.map(([i, c]) => (
+                    <label key={i} className={`card copy-card${picked.includes(i) ? " sel" : ""}`} style={{ display: "block", cursor: "pointer" }}>
+                      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                        <input
+                          type="checkbox"
+                          checked={picked.includes(i)}
+                          onChange={(e) => setPicked((p) => (e.target.checked ? [...p, i] : p.filter((x) => x !== i)))}
+                          style={{ marginTop: 8 }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                            <GuardTag g={c.guard} />
+                            {typeof c.score === "number" && <span className="tag score">勝ち筋 {c.score}</span>}
+                          </div>
+
+                          <div className="hl">{c.headline.join("")}</div>
+                          <p className="body">{c.body}</p>
+
+                          <div className="meta">
+                            {c.ribbonTop && <span className="m"><em>条件</em>{c.ribbonTop}</span>}
+                            {c.ribbonBottom && <span className="m"><em>強調</em>{c.ribbonBottom}</span>}
+                            <span className="m"><em>CTA</em>{c.cta}</span>
+                          </div>
+
+                          {c.scoreReason && <p className="why">{c.scoreReason}</p>}
+
+                          {c.guard && c.guard.hits.length > 0 && (
+                            <details className="flags">
+                              <summary onClick={(e) => e.stopPropagation()}>
+                                法令の指摘 {c.guard.hits.length}件
+                                {c.guard.hits.some((h) => h.severity === "high") && (
+                                  <span className="hit-sev high">要修正 {c.guard.hits.filter((h) => h.severity === "high").length}</span>
+                                )}
+                              </summary>
+                              {c.guard.hits.map((h, k) => (
+                                <div key={k} className={`flag ${h.severity ?? "medium"}`}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span className={`hit-sev ${h.severity ?? "medium"}`}>
+                                      {h.severity === "high" ? "要修正" : h.severity === "low" ? "参考" : "要確認"}
+                                    </span>
+                                    <span className="q">「{h.text}」</span>
+                                  </div>
+                                  <dl>
+                                    <dt>根拠</dt>
+                                    <dd>{h.law}</dd>
+                                    <dt>なぜ</dt>
+                                    <dd>{h.reason}</dd>
+                                    <dt>言い換え</dt>
+                                    <dd className="fix">{h.suggestion}</dd>
+                                  </dl>
+                                </div>
+                              ))}
+                            </details>
+                          )}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {(() => {
+          const matchedIds = new Set(d.angles.map((a) => a.id));
+          const orphans = shown.filter(([, c]) => !matchedIds.has(c.angleId));
+          if (orphans.length === 0) return null;
+          return (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div className="card" style={{ padding: 18 }}>
+                <b style={{ fontSize: 14.5 }}>その他</b>
+                <span style={{ display: "block", fontSize: 12.5, color: "var(--muted)", marginTop: 4 }}>
+                  どの訴求軸にも一致しなかったコピーです
+                </span>
+              </div>
+              <div className="measure" style={{ display: "grid", gap: 12, paddingLeft: 20 }}>
+                {orphans.map(([i, c]) => (
+                  <label key={i} className={`card copy-card${picked.includes(i) ? " sel" : ""}`} style={{ display: "block", cursor: "pointer" }}>
+                    <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                      <input
+                        type="checkbox"
+                        checked={picked.includes(i)}
+                        onChange={(e) => setPicked((p) => (e.target.checked ? [...p, i] : p.filter((x) => x !== i)))}
+                        style={{ marginTop: 8 }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                          <GuardTag g={c.guard} />
+                          {typeof c.score === "number" && <span className="tag score">勝ち筋 {c.score}</span>}
+                        </div>
+
+                        <div className="hl">{c.headline.join("")}</div>
+                        <p className="body">{c.body}</p>
+
+                        <div className="meta">
+                          {c.ribbonTop && <span className="m"><em>条件</em>{c.ribbonTop}</span>}
+                          {c.ribbonBottom && <span className="m"><em>強調</em>{c.ribbonBottom}</span>}
+                          <span className="m"><em>CTA</em>{c.cta}</span>
+                        </div>
+
+                        {c.scoreReason && <p className="why">{c.scoreReason}</p>}
+
+                        {c.guard && c.guard.hits.length > 0 && (
+                          <details className="flags">
+                            <summary onClick={(e) => e.stopPropagation()}>
+                              法令の指摘 {c.guard.hits.length}件
+                              {c.guard.hits.some((h) => h.severity === "high") && (
+                                <span className="hit-sev high">要修正 {c.guard.hits.filter((h) => h.severity === "high").length}</span>
+                              )}
+                            </summary>
+                            {c.guard.hits.map((h, k) => (
+                              <div key={k} className={`flag ${h.severity ?? "medium"}`}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span className={`hit-sev ${h.severity ?? "medium"}`}>
+                                    {h.severity === "high" ? "要修正" : h.severity === "low" ? "参考" : "要確認"}
+                                  </span>
+                                  <span className="q">「{h.text}」</span>
+                                </div>
+                                <dl>
+                                  <dt>根拠</dt>
+                                  <dd>{h.law}</dd>
+                                  <dt>なぜ</dt>
+                                  <dd>{h.reason}</dd>
+                                  <dt>言い換え</dt>
+                                  <dd className="fix">{h.suggestion}</dd>
+                                </dl>
+                              </div>
+                            ))}
+                          </details>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+        {!showAllCopies && visible.length > TOP_N && (
+          <button className="more" onClick={() => setShowAllCopies(true)}>
+            残り {visible.length - TOP_N} 案を表示する
+          </button>
+        )}
+      </div>
+      <div className="note">
+        <i className="i">i</i>
+        <span>勝ち筋スコアは案どうしの相対的な順位づけで、クリック率の予測値ではありません。数字より、その下の理由を読んで選んでください。</span>
+      </div>
+      {tactics && tactics.risks?.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">⚠</span>
+            <div>
+              <h2 id="sec-risk">リスクと注意点</h2>
+              <div className="sub">先に潰しておくもの</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div className="rows measure">
+            {tactics.risks.map((r, i) => (
+              <div className="r" key={i}>
+                <span className="st" style={{ color: "var(--warn)" }}>!</span>
+                <b style={{ fontWeight: 400 }}>{r}</b>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {competitors && (
         <>
           <div className="sec-head" style={{ marginTop: 0 }}>
@@ -955,6 +1132,7 @@ export function Report({
               <div className="p" key={m.channel + i}>
                 <div className="top">
                   <span className="ic">◎</span>
+                  <PlatformIcon platform={m.channel} size={15} />
                   <b>{m.channel}</b>
                   <span className="share">{m.share}%</span>
                   {shareToYen(budget, m.share) && <span className="yen">{shareToYen(budget, m.share)}</span>}
@@ -1015,7 +1193,7 @@ export function Report({
               <div className="cmp" key={ci}>
                 <div className="top">
                   <b>{c.name}</b>
-                  <span className="tag">{c.channel}</span>
+                  <span className="tag"><PlatformIcon platform={c.channel} size={13} /> {c.channel}</span>
                 </div>
                 {c.purpose && <p className="purpose">{c.purpose}</p>}
                 {c.budget && <p className="budget">{c.budget}</p>}
@@ -1594,6 +1772,8 @@ export function Report({
               return (
                 <div className="r" key={i}>
                   <div style={{ flex: 1, minWidth: 0 }}>
+                    <PlatformIcon platform={x.platform} size={15} />
+                    {" "}
                     <b>{x.platform}</b>
                     {m && (m.followers != null || m.posts != null || m.views != null) ? (
                       <span className="tag ok" style={{ marginLeft: 6 }}>🟢実データ取得済み</span>
@@ -1612,7 +1792,7 @@ export function Report({
                     <span className="tag">{/youtube/i.test(x.platform) ? "動画" : "投稿"} {m.posts.toLocaleString()}</span>
                   )}
                   {m?.views != null && <span className="tag">{/facebook/i.test(x.platform) ? "リーチ" : "再生"} {m.views.toLocaleString()}</span>}
-                  {m?.via && <span className="tag">{m.via}</span>}
+                  {m?.via && m.via !== "Apify" && m.via !== "Grok(xAI)" && <span className="tag">{m.via}</span>}
                   <a className="tag" href={x.url} target="_blank" rel="noreferrer noopener">開く</a>
                 </div>
               );
@@ -1621,12 +1801,14 @@ export function Report({
           <div className="note">
             <i className="i">i</i>
             <span>
-              YouTube は公式APIから取得しています（相手のアカウントとの連携は不要です）。
-              それ以外は公開ページから読み取れたものだけを出しています。
-              媒体がログインを求める場合は取得できません。
+              YouTube は公式APIから取得しています（連携不要です）。
+              X・TikTok・Instagramは外部の取得サービス経由で公開プロフィールの情報を取得しています（ログイン・連携は不要です）。
+              Facebookは公開ページから直接読み取っています。
+              媒体がログインを求める場合や取得上限に達した場合は数値を取得できないことがあります。
               <b style={{ fontWeight: 600 }}>取れなかった数字は推測で埋めていません。</b>
               取得できた数値は施策の生成にも渡していて、すでに運用しているSNSを
               「新しく開設する」施策としては出しません。
+              LINEは友だち数が非公開のため取得していません。
             </span>
           </div>
         </>
@@ -1770,43 +1952,6 @@ export function Report({
               </div>
             );
           })()}
-
-          <div className="measure" style={{ display: "grid", gap: 12 }}>
-            {visibleTactics.map((t, i) => (
-              <div className="tactic" key={i}>
-                <div className="top">
-                  <b>{t.area}</b>
-                  {t.kpi && <span className="kpi">見る数字：{t.kpi}</span>}
-                </div>
-                <p>{t.summary}</p>
-                <GuestMask guest={isGuest} label="具体的なアクションは会員登録で確認できます">
-                  <ul>
-                    {t.actions?.map((a, k) => <li key={k}>{a}</li>)}
-                  </ul>
-                </GuestMask>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-      {tactics && tactics.risks?.length > 0 && (
-        <>
-          <div className="sec-head">
-            <span className="ic">⚠</span>
-            <div>
-              <h2 id="sec-risk">リスクと注意点</h2>
-              <div className="sub">先に潰しておくもの</div>
-            </div>
-            <span className="rule" />
-          </div>
-          <div className="rows measure">
-            {tactics.risks.map((r, i) => (
-              <div className="r" key={i}>
-                <span className="st" style={{ color: "var(--warn)" }}>!</span>
-                <b style={{ fontWeight: 400 }}>{r}</b>
-              </div>
-            ))}
-          </div>
         </>
       )}
           {tactics && tactics.items?.length > 0 && tactics.schedule?.length > 0 && (
@@ -1832,95 +1977,6 @@ export function Report({
               </div>
             </>
           )}
-      <div className="sec-head">
-        <span className="ic">✎</span>
-        <div>
-          <h2 id="sec-copies">コピーと法令チェック</h2>
-          <div className="sub">生成と同時に景表法・薬機法を確認しています</div>
-        </div>
-        <span className="rule" />
-      </div>
-      <section>
-        <div className="filters measure">
-          <button className={`sw${hideRed ? " on" : ""}`} onClick={() => setHideRed((v) => !v)}>
-            {hideRed ? "✓ " : ""}要修正を隠す
-          </button>
-          <span>
-            {visible.length} / {copies.length} 案を表示中
-            {redCount > 0 && `（要修正 ${redCount}件）`}
-          </span>
-        </div>
-
-        <div className="measure" style={{ display: "grid", gap: 12 }}>
-          {shown.map(([i, c]) => (
-              <label key={i} className={`card copy-card${picked.includes(i) ? " sel" : ""}`} style={{ display: "block", cursor: "pointer" }}>
-                <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                  <input
-                    type="checkbox"
-                    checked={picked.includes(i)}
-                    onChange={(e) => setPicked((p) => (e.target.checked ? [...p, i] : p.filter((x) => x !== i)))}
-                    style={{ marginTop: 8 }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                      <GuardTag g={c.guard} />
-                      {typeof c.score === "number" && <span className="tag score">勝ち筋 {c.score}</span>}
-                    </div>
-
-                    <div className="hl">{c.headline.join("")}</div>
-                    <p className="body">{c.body}</p>
-
-                    <div className="meta">
-                      {c.ribbonTop && <span className="m"><em>条件</em>{c.ribbonTop}</span>}
-                      {c.ribbonBottom && <span className="m"><em>強調</em>{c.ribbonBottom}</span>}
-                      <span className="m"><em>CTA</em>{c.cta}</span>
-                    </div>
-
-                    {c.scoreReason && <p className="why">{c.scoreReason}</p>}
-
-                    {c.guard && c.guard.hits.length > 0 && (
-                      <details className="flags">
-                        <summary onClick={(e) => e.stopPropagation()}>
-                          法令の指摘 {c.guard.hits.length}件
-                          {c.guard.hits.some((h) => h.severity === "high") && (
-                            <span className="hit-sev high">要修正 {c.guard.hits.filter((h) => h.severity === "high").length}</span>
-                          )}
-                        </summary>
-                        {c.guard.hits.map((h, k) => (
-                          <div key={k} className={`flag ${h.severity ?? "medium"}`}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span className={`hit-sev ${h.severity ?? "medium"}`}>
-                                {h.severity === "high" ? "要修正" : h.severity === "low" ? "参考" : "要確認"}
-                              </span>
-                              <span className="q">「{h.text}」</span>
-                            </div>
-                            <dl>
-                              <dt>根拠</dt>
-                              <dd>{h.law}</dd>
-                              <dt>なぜ</dt>
-                              <dd>{h.reason}</dd>
-                              <dt>言い換え</dt>
-                              <dd className="fix">{h.suggestion}</dd>
-                            </dl>
-                          </div>
-                        ))}
-                      </details>
-                    )}
-                  </div>
-                </div>
-              </label>
-          ))}
-          {!showAllCopies && visible.length > TOP_N && (
-            <button className="more" onClick={() => setShowAllCopies(true)}>
-              残り {visible.length - TOP_N} 案を表示する
-            </button>
-          )}
-        </div>
-        <div className="note">
-          <i className="i">i</i>
-          <span>勝ち筋スコアは案どうしの相対的な順位づけで、クリック率の予測値ではありません。数字より、その下の理由を読んで選んでください。</span>
-        </div>
-      </section>
       {chosen.length > 0 && (
         <section className="block no-print">
           <div className="sec-head" style={{ marginTop: 0 }}>
