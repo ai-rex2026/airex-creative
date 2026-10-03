@@ -1,0 +1,45 @@
+name: apply-apify-budget-patch3
+on:
+  push:
+    paths:
+      - ".buildtmp/apify-budget3/GO.marker"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decode escaped patches
+        run: |
+          python3 -c "import json,pathlib; p=pathlib.Path('.buildtmp/apify-budget3/escaped_social.txt'); pathlib.Path('.buildtmp/apify-budget3/social.patch').write_text(json.loads(p.read_text(encoding='utf-8')), encoding='utf-8')"
+          python3 -c "import json,pathlib; p=pathlib.Path('.buildtmp/apify-budget3/escaped_social-comp.txt'); pathlib.Path('.buildtmp/apify-budget3/social-comp.patch').write_text(json.loads(p.read_text(encoding='utf-8')), encoding='utf-8')"
+          python3 -c "import json,pathlib; p=pathlib.Path('.buildtmp/apify-budget3/escaped_analysis.txt'); pathlib.Path('.buildtmp/apify-budget3/analysis.patch').write_text(json.loads(p.read_text(encoding='utf-8')), encoding='utf-8')"
+          python3 -c "import json,pathlib; p=pathlib.Path('.buildtmp/apify-budget3/escaped_report.txt'); pathlib.Path('.buildtmp/apify-budget3/report.patch').write_text(json.loads(p.read_text(encoding='utf-8')), encoding='utf-8')"
+
+      - name: Apply patches
+        run: |
+          git apply --whitespace=nowarn .buildtmp/apify-budget3/social.patch
+          git apply --whitespace=nowarn .buildtmp/apify-budget3/social-comp.patch
+          git apply --whitespace=nowarn .buildtmp/apify-budget3/analysis.patch
+          git apply --whitespace=nowarn .buildtmp/apify-budget3/report.patch
+
+      - name: Commit and push patched files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add lib/social.ts lib/social-competitors.ts lib/analysis.ts components/Report.tsx
+          git commit -m "fix: Apify呼び出し予算を自社実測/競合調査で共通化、コピー選択UIをバナー書き出しに移設"
+          git push
+
+      - name: Clean up temporary workflow files
+        run: |
+          git rm -f .github/workflows/apply-apify-budget-patch3.yml .github/workflows/apply-apify-budget-patch2.yml .github/workflows/apply-apify-budget-patch.yml
+          git rm -rf .buildtmp/apify-budget3 .buildtmp/apify-budget2 .buildtmp/apify-budget
+          git commit -m "chore: remove temp workflow"
+          git push
