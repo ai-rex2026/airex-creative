@@ -1,0 +1,22 @@
+diff --git a/lib/analysis.ts b/lib/analysis.ts
+index 658354b..48a204b 100644
+--- a/lib/analysis.ts
++++ b/lib/analysis.ts
+@@ -221,7 +221,7 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
+       // Apifyを呼ぶ前に試行回数を先に記録する。呼び出し自体が時間切れで中断しても
+       // 「試みた」事実は残るので、再開時に同じ回数分だけ重ねて叫かれることはない
+       await save({ social_attempt_count: a.social_attempt_count + 1, social_attempted_at: new Date().toISOString() });
+-      const social = await scanSocial(a.site, a.owner_id, a.social_manual ?? []);
++      const social = await scanSocial(a.site, a.owner_id, a.social_manual ?? [], a.id);
+       return await save({ social, step: "サイトを読んでいます", progress: 20 });
+     }
+     if (a.url && hasPlacesApi() && !a.meo) {
+@@ -383,7 +383,7 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
+         a.social_competitors ??
+           (readableTargets.length === 0
+             ? Promise.resolve<SocialCompetitorScan>({ items: [], searchedAt: new Date().toISOString() })
+-            : findSocialCompetitors(a.diagnosis, a.url, readableTargets).catch(
++            : findSocialCompetitors(a.diagnosis, a.url, readableTargets, a.id).catch(
+                 () => ({ items: [], searchedAt: new Date().toISOString() }) as SocialCompetitorScan
+               )),
+         a.tactics ?? generateTactics(a.diagnosis, a.site, a.social, a.ad_ops),
