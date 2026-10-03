@@ -1,0 +1,26 @@
+name: Apply social-attempt-cap patch
+on:
+  push:
+    paths:
+      - '.buildtmp/social-attempt-cap/GO.marker'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply patch
+        run: git apply --whitespace=nowarn .buildtmp/social-attempt-cap/analysis.patch
+      - name: Commit and push
+        run: |
+          git config user.name "ai-rex-bot"
+          git config user.email "bot@ai-rex2026.local"
+          git rm -r --cached --ignore-unmatch .buildtmp/social-attempt-cap
+          rm -rf .buildtmp/social-attempt-cap
+          rm -f .github/workflows/apply-social-attempt-cap-patch.yml
+          git add -A
+          git commit -m "fix: scanSocialのApify呼び出し回数にハードキャップを追加（social-attempt-cap patch適用）"
+          git push
