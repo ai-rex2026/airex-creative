@@ -386,7 +386,7 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
             : findSocialCompetitors(a.diagnosis, a.url, readableTargets).catch(
                 () => ({ items: [], searchedAt: new Date().toISOString() }) as SocialCompetitorScan
               )),
-        a.tactics ?? generateTactics(a.diagnosis, a.site, a.social),
+        a.tactics ?? generateTactics(a.diagnosis, a.site, a.social, a.ad_ops),
         a.sns_plan ?? generateSnsPlan(a.diagnosis, a.social).catch(failedChapter<SnsPlan>({ channels: [], campaign: null })),
         a.kpi ?? generateKpi(a.diagnosis, a.site, a.pricing, a.meo, a.gsc, a.ga4),
         a.lpo ?? generateLpo(a.diagnosis, a.site, priorityNoteFor(a, "lpo")).catch(failedChapter<LpoPlan>({ groups: [] })),
