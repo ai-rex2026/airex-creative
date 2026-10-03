@@ -1,23 +1,23 @@
 import { createAdminClient } from "./supabase/admin";
 import { tick } from "./analysis";
 
-/** 実行中とみなす猶予。これより古い更新は「止まっている」と判断して拾い直す */
+/** 実行中とみなす献予。これよりも古い更新は「止まっている」と判断して拾い直す */
 // 広告運用設計のようにAIの1工程が2分を超えることがあるのに加え、ad_ops確定後の
 // 9章まとめ並列生成フェーズ（social_competitors・tactics・sns_plan・kpi・lpo・keywords・
-// line_plan・copies・suggests）は askJson() の1回目（最大150秒）＋JSON解析失敗時の
-// 再試行（さらに最大150秒）が絡むと最悪ケースで約5分かかり得る。この間 updated_at は
+// line_plan・copies・suggests）は askJson() の1回目（最大50秒）＋JSON解析失敗時の
+// 再試行（さらに最大50秒）が絡むと最悪ケースで約5分かかり得る。この間 updated_at は
 // 更新されない（Promise.all完了後に1回だけ保存するため）ので、閾値が短すぎると
 // 「まだ正常に動いている分析」を cron の安全網が二重に拾ってしまい、二重実行の片方が
-// 失敗して status=failed を書いた直後にもう片方が成功してchapterデータだけ上書きする
+// 失敗して status=failed を書いた直後にもう一方が成功してchapterデータだけを上書きする
 // （= ほぼ完走しているのに failed のまま残る）レース条件を引き起こす。
-// 並列フェーズの最悪ケース（約300秒）に安全マージンを持たせて、二重に走らせない長さにする
+// 並列フェーズの最悪ケース（約300秒）に安全マージンを持たせ、二重に走らせない長さにする
 const STALE_MS = 400_000;
 
-/** 自己継続（下記 triggerContinue）を許す最大回数。壊れて完了しない分析を延々と連打しないための安全弁 */
+/** 自己繼続（下記 triggerContinue）を許す最大回数。壊れて完了しない分析を延々と連打しないための安全弁 */
 const MAX_CHAIN_ATTEMPTS = 6; // 240秒 x 6 ≈ 24分。それでも終わらなければ cron の安全網（processPending）に任せる
 
 /**
- * 1バーストが時間切れになった直後に、cron の巡回（最大1分＋stale判定200秒）を待たず
+ * 1バーストが時間切れになった直後に、cron の巡回（最大51分＋stale判定200秒）を待たず
  * 自分で次のバーストを呼び出す。
  *
  * Vercel の1回のサーバーレス実行には上限があるので、同じ関数の中でループし続けることはできない。
@@ -63,19 +63,28 @@ export async function processAnalysis(id: string, budgetMs = 240_000, attempt = 
   }
 }
 
-/** 止まっている分析を拾って進める。cron から呼ぶ安全網 */
+/**
+ * 止まっている分析を拾って進める。cron から呼ぶ安全網。
+ *
+ * 拾う部分は claim_pending_analyses（Postgres関数。FOR UPDATE SKIP LOCKED で
+ * 原子的に行をロック＆updated_atをtouchしてから返す）を使う。cron は毎分発火するが
+ * 1回の実行は最大300秒かかりうるため、前回の実行がまだ終わっていないうちに
+ * 次のcronが同じ「stale」判定の行を拾ってしまうことがある（continueチェーンとの
+ * 重複も同様）。単純なSELECTだけだと、拾った直後にApifyなどの高コストな外部呼び出しを
+ * 始める前に別プロセスが同じidを拾い直し、同じ分析に対して何重にもApify Actorを
+ * 起動してクレジットを溶かす事故になる（2026-10-03に実際に発生）。
+ * この関数はSELECTと同時にupdated_atを更新するので、一度拾われた行は他プロセスの
+ * 次回staleチェックに引っかからなくなり、二重処理を防げる。
+ */
 export async function processPending(limit = 3, budgetMs = 240_000) {
   const sb = createAdminClient();
   const staleBefore = new Date(Date.now() - STALE_MS).toISOString();
-  const { data } = await sb
-    .from("analyses")
-    .select("id")
-    .in("status", ["queued", "running"])
-    .lt("updated_at", staleBefore)
-    .order("created_at", { ascending: true })
-    .limit(limit);
+  const { data } = await sb.rpc("claim_pending_analyses", {
+    p_limit: limit,
+    p_stale_before: staleBefore,
+  });
 
-  const ids = (data ?? []).map((r) => r.id as string);
+  const ids = (data ?? []) as string[];
   const deadline = Date.now() + budgetMs;
   const done: string[] = [];
   for (const id of ids) {
