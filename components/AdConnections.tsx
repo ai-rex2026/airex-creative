@@ -1,6 +1,7 @@
 import { AD_PLATFORMS, missingEnv, type AdPlatform } from "@/lib/ads/platforms";
 import type { AdConnectionView } from "@/app/ad-actions";
 import { AdDisconnectButton } from "./AdDisconnectButton";
+import { PlatformIcon } from "./PlatformIcons";
 
 /**
  * 設定画面の「広告アカウント連携」。媒体ごとに状態と操作を1行で出す。
@@ -64,7 +65,7 @@ export function AdConnections({
           return (
             <div className="r" key={def.id}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <b>{def.name}</b>
+                <b><PlatformIcon platform={def.id} size={15} /> {def.name}</b>
                 <small>
                   {conn
                     ? `連携済み（${new Date(conn.connected_at).toLocaleDateString("ja-JP")}）。${

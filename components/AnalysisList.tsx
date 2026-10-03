@@ -6,7 +6,7 @@ import type { Analysis } from "@/lib/analysis";
 import type { ScoreLevel } from "@/lib/types";
 
 const PILL: Record<string, [string, string]> = {
-  queued: ["待機中", ""],
+  queued: ["分析中", ""],
   running: ["処理中", "run"],
   done: ["完了", "ok"],
   failed: ["失敗", "ng"],
@@ -39,7 +39,7 @@ export function AnalysisList({ rows }: { rows: Analysis[] }) {
         ))}
         <span className="sep" />
         {[["all", "すべて", rows.length], ["done", "完了", count("done")], ["running", "処理中", count("running")],
-          ["queued", "待機中", count("queued")], ["failed", "失敗", count("failed")]].map(([k, label, n]) => (
+          ["queued", "分析中", count("queued")], ["failed", "失敗", count("failed")]].map(([k, label, n]) => (
           <button key={k as string} className={`f${status === k ? " on" : ""}`} onClick={() => setStatus(k as string)}>
             {label as string} {n as number}
           </button>

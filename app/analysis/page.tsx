@@ -8,7 +8,7 @@ import type { Analysis } from "@/lib/analysis";
 export const metadata = { title: "分析サマリー｜AI-REX Studio" };
 
 const PILL: Record<string, [string, string]> = {
-  queued: ["待機中", ""],
+  queued: ["分析中", ""],
   running: ["処理中", "run"],
   done: ["完了", "ok"],
   failed: ["失敗", "ng"],

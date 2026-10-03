@@ -152,7 +152,7 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
       truncated
         ? "\n前回の出力は途中で切れた。項目数を減らし、各項目を短くして、必ず閉じ括弧まで出力すること。"
         : "\n前回の出力は JSON として読めなかった。構文を厳密に守り、JSON だけを出力すること。",
-      Math.min(Math.round((opts.maxTokens ?? 4000) * 1.5), 8000)
+      Math.min(Math.round((opts.maxTokens ?? 4000) * 1.5), 12000)
     );
     try {
       return conformToExample<T>(parse(retry.text), system, user);

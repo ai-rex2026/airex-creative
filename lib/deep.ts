@@ -129,7 +129,7 @@ ${meo?.self ? `\nGoogleビジネスプロフィールの実測:\n- 評価 ${meo.
 
 出力: {"rows":[{"keyword":"","kind":"","volume":"100〜1,000","difficulty":"","priority":"","action":""}],
  "technical":[""],"content":[""],"meo":[""]}`,
-    { maxTokens: 5000 }
+    { maxTokens: 8000 }
   );
 
   // 実測がある語には実数を入れる。無い語は null のまま（推測で埋めない）

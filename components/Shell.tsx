@@ -6,7 +6,7 @@ import { MobileNav } from "./MobileNav";
 type HistRow = { id: string; url: string | null; status: string; diagnosis: { product?: string } | null };
 
 const PILL: Record<string, [string, string]> = {
-  queued: ["待機中", ""],
+  queued: ["分析中", ""],
   running: ["処理中", "run"],
   done: ["完了", "ok"],
   failed: ["失敗", "ng"],

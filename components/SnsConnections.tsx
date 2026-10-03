@@ -1,6 +1,7 @@
 import { SNS_PLATFORMS, missingSnsEnv } from "@/lib/social-connect/platforms";
 import type { SnsConnectionView } from "@/app/social-actions";
 import { SnsDisconnectButton } from "./SnsDisconnectButton";
+import { PlatformIcon } from "./PlatformIcons";
 
 /**
  * 設定画面の「公式SNSアカウント連携」。媒体ごとに状態と操作を1行で出す。
@@ -53,7 +54,7 @@ export function SnsConnections({
           return (
             <div className="r" key={def.id}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <b>{def.name}</b>
+                <b><PlatformIcon platform={def.id} size={15} /> {def.name}</b>
                 <small>
                   {conn
                     ? `連携済み（${new Date(conn.connected_at).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })}）${conn.label ? `：@${conn.label}` : ""}${
