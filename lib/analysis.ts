@@ -79,6 +79,8 @@ export type Analysis = {
    * 何度もtickされても、Apifyを叩く回数そのものは増えない
    */
   social_attempt_count: number;
+  /** 直近でscanSocialを試みた時刻。障害調査用のメモで、ロジック上は使っていない */
+  social_attempted_at: string | null;
   social_competitors: SocialCompetitorScan | null;
   social_insights: SocialInsightPlan | null;
   image_scan: ImageScan | null;
