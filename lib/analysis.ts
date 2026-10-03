@@ -76,7 +76,7 @@ export type Analysis = {
    * 2026-10-03のApifyクレジット急減事故（cronの安全網が同一分析を重複して拾い、
    * scanSocialが何重にも起動された）の再発防止として、tickStepがこの値で
    * Apify呼び出し回数にハードキャップをかける。将来また別の原因で同じ分析が
-   * 何度もtickされても、Apifyを叛く回数そのものは増えない
+   * 何度もtickされても、Apifyを叩く回数そのものは増えない
    */
   social_attempt_count: number;
   social_competitors: SocialCompetitorScan | null;
@@ -217,7 +217,7 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
         });
       }
       // Apifyを呼ぶ前に試行回数を先に記録する。呼び出し自体が時間切れで中断しても
-      // 「試みた」事実は残るので、再開時に同じ回数分だけ重ねて叛かれることはない
+      // 「試みた」事実は残るので、再開時に同じ回数分だけ重ねて叩かれることはない
       await save({ social_attempt_count: a.social_attempt_count + 1, social_attempted_at: new Date().toISOString() });
       const social = await scanSocial(a.site, a.owner_id, a.social_manual ?? []);
       return await save({ social, step: "サイトを読んでいます", progress: 20 });
