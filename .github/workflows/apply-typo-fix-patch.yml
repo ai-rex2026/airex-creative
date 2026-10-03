@@ -1,0 +1,35 @@
+name: apply-typo-fix-patch
+on:
+  push:
+    paths:
+      - ".buildtmp/typo-fix/GO.marker"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: |
+          git apply --whitespace=nowarn .buildtmp/typo-fix/report.patch
+
+      - name: Commit and push patched file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add components/Report.tsx
+          git commit -m "fix: コメント内の転記ミスを修正"
+          git push
+
+      - name: Remove temporary workflow and buildtmp files
+        run: |
+          git rm -f .github/workflows/apply-typo-fix-patch.yml
+          git rm -rf .buildtmp/typo-fix
+          git commit -m "chore: 一時ワークフローを削除"
+          git push
