@@ -4,6 +4,7 @@ import { getSnsCredentials } from "./social-connect/tokens";
 import { fetchXProfile, fetchXRecentPosts } from "./social-connect/x";
 import { fetchTikTokProfile, fetchTikTokVideos } from "./social-connect/tiktok";
 import { fetchInstagramProfile, fetchInstagramRecentMedia, fetchFacebookPageProfile, fetchFacebookPageRecentPosts, fetchFacebookPageInsights } from "./meta";
+import { createAdminClient } from "./supabase/admin";
 
 /**
  * サイトから辿れた公式SNSを、実際に見に行って測る。
@@ -293,13 +294,49 @@ function apifyToken() {
 type ApifyDatasetItem = Record<string, unknown>;
 
 /**
+ * 1分析あたりのApify Actor呼び出し総数の上限。
+ *
+ * 2026-10-04、自社SNS実測側だけに掛けていた上限（MAX_SOCIAL_ATTEMPTS。lib/analysis.ts）
+ * では防ぎきれない形でApifyクレジットが再度大きく減った。原因はSNS競合調査
+ * （findSocialCompetitors。lib/social-competitors.ts）が自社実測と同じ readSocialAccount
+ * 経由でApifyを呼ぶが、そちらには上限が無かったこと（最大で媒体ごと2件×3媒体＝6回、
+ * 自社実測の最大3回と合わせて1分析で最大9回、何もおかしくなくても普通に発生しうる）。
+ *
+ * そのため上限は「自社実測」「競合調査」どちらの経路かを問わず、Apify Actorを実際に
+ * 呼ぶ直前の、この関数1箇所だけでまとめて数える。claim_apify_call（Postgres関数。
+ * 原子的にインクリメント＆上限チェック）で1分析あたりの合計回数を強制する
+ */
+const APIFY_BUDGET_PER_ANALYSIS = 10;
+
+async function claimApifyBudget(analysisId: string): Promise<boolean> {
+  const sb = createAdminClient();
+  const { data, error } = await sb.rpc("claim_apify_call", {
+    p_analysis_id: analysisId,
+    p_max: APIFY_BUDGET_PER_ANALYSIS,
+  });
+  // RPC呼び出し自体が失敗した場合（一時的なDB不調など）は、Apifyコストを守る側に倒して
+  // 呼ばせない。「取れなかった」は許容できるが「予算を数え損ねて無制限に呼ぶ」は許容できない
+  if (error) return false;
+  return data === true;
+}
+
+/**
  * Apify の Actor を同期実行し、データセットの中身をそのまま受け取る。
  * run-sync-get-dataset-items は、Actorの実行が終わるまでこのリクエスト自体が
  * 待つ仕様（別途ポーリングが要らない）。待っても数十秒程度で終わるActorだけに使う。
  */
-async function runApifyActor(actorId: string, input: object, timeoutMs = 90_000): Promise<ApifyDatasetItem[]> {
+async function runApifyActor(
+  analysisId: string,
+  actorId: string,
+  input: object,
+  timeoutMs = 90_000
+): Promise<ApifyDatasetItem[]> {
   const token = apifyToken();
   if (!token) throw new Error("Apify APIトークンが未設定です");
+  const withinBudget = await claimApifyBudget(analysisId);
+  if (!withinBudget) {
+    throw new Error(`この分析でのApify呼び出し回数が上限（${APIFY_BUDGET_PER_ANALYSIS}回）に達したため取得していません`);
+  }
   // Apify の REST API は Actor ID の "/" を "~" に置き換えた形でパスに使う仕様
   const safeId = actorId.replace("/", "~");
   const res = await fetch(`https://api.apify.com/v2/acts/${safeId}/run-sync-get-dataset-items?token=${token}`, {
@@ -315,13 +352,17 @@ async function runApifyActor(actorId: string, input: object, timeoutMs = 90_000)
   return (await res.json()) as ApifyDatasetItem[];
 }
 
-async function readXApify(a: { platform: string; url: string; handle: string }, base: SocialAccount): Promise<SocialAccount> {
+async function readXApify(
+  a: { platform: string; url: string; handle: string },
+  base: SocialAccount,
+  analysisId: string
+): Promise<SocialAccount> {
   if (!apifyToken()) return { ...base, reason: "Apify APIトークンが未設定のため取得していません" };
   if (!a.handle) return { ...base, reason: "アカウントのハンドルをURLから取り出せませんでした" };
 
   try {
     const actorId = process.env.APIFY_ACTOR_X || "apidojo/twitter-scraper-lite";
-    const items = await runApifyActor(actorId, { twitterHandles: [a.handle], maxItems: 5, sort: "Latest" });
+    const items = await runApifyActor(analysisId, actorId, { twitterHandles: [a.handle], maxItems: 5, sort: "Latest" });
     if (!items.length) return { ...base, reason: "このアカウントをXで確認できませんでした（非公開・削除済みの可能性）" };
 
     const author = (items[0] as { author?: Record<string, unknown> }).author ?? {};
@@ -362,7 +403,11 @@ async function readXApify(a: { platform: string; url: string; handle: string }, 
   }
 }
 
-async function readTikTokApify(a: { platform: string; url: string; handle: string }, base: SocialAccount): Promise<SocialAccount> {
+async function readTikTokApify(
+  a: { platform: string; url: string; handle: string },
+  base: SocialAccount,
+  analysisId: string
+): Promise<SocialAccount> {
   if (!apifyToken()) return { ...base, reason: "Apify APIトークンが未設定のため取得していません" };
   if (!a.handle) return { ...base, reason: "アカウントのハンドルをURLから取り出せませんでした" };
 
@@ -373,7 +418,7 @@ async function readTikTokApify(a: { platform: string; url: string; handle: strin
     // 分析に使うのは直近5件だけなので、15件に絞ってコストを抑える（commentsPerPost:0で
     // コメント取得＝追加の課金対象も発生させない）
     const resultsPerPage = Number(process.env.APIFY_TIKTOK_RESULTS_PER_PAGE || 15);
-    const items = await runApifyActor(actorId, { profiles: [a.handle], resultsPerPage, commentsPerPost: 0 });
+    const items = await runApifyActor(analysisId, actorId, { profiles: [a.handle], resultsPerPage, commentsPerPost: 0 });
     if (!items.length) return { ...base, reason: "このアカウントをTikTokで確認できませんでした（非公開・削除済みの可能性）" };
 
     // このActorはプロフィールの統計（フォロワー数等）を各動画アイテムの authorMeta に載せて返す仕様。
@@ -421,13 +466,17 @@ async function readTikTokApify(a: { platform: string; url: string; handle: strin
   }
 }
 
-async function readInstagramApify(a: { platform: string; url: string; handle: string }, base: SocialAccount): Promise<SocialAccount> {
+async function readInstagramApify(
+  a: { platform: string; url: string; handle: string },
+  base: SocialAccount,
+  analysisId: string
+): Promise<SocialAccount> {
   if (!apifyToken()) return { ...base, reason: "Apify APIトークンが未設定のため取得していません" };
   if (!a.handle) return { ...base, reason: "アカウントのハンドルをURLから取り出せませんでした" };
 
   try {
     const actorId = process.env.APIFY_ACTOR_INSTAGRAM || "apify/instagram-profile-scraper";
-    const items = await runApifyActor(actorId, { usernames: [a.handle] });
+    const items = await runApifyActor(analysisId, actorId, { usernames: [a.handle] });
     const profile = items[0] as Record<string, unknown> | undefined;
     if (!profile) return { ...base, reason: "このアカウントをInstagramで確認できませんでした（非公開・削除済みの可能性）" };
 
@@ -612,10 +661,15 @@ export async function readOfficialAccount(
  * 現在は使わず、LPから拾ったSNSリンクをすべてApify/公開APIで実測する（readOfficialAccount
  * のコメント参照）。呼び出し元（scanSocial）との引数の形を変えずに済むよう、引数自体は
  * 残してある。
+ *
+ * analysisId は、Apify Actorを実際に呼ぶ直前の予算チェック（claimApifyBudget。
+ * 2026-10-04の事故対応）に使う。自社実測・SNS競合調査どちらの経路から呼ばれても、
+ * この分析id単位で合計回数を数える
  */
 export async function readSocialAccount(
   a: { platform: string; url: string; handle: string },
-  ownerId?: string
+  ownerId: string | undefined,
+  analysisId: string
 ): Promise<SocialAccount> {
   void ownerId;
   const base: SocialAccount = {
@@ -628,9 +682,9 @@ export async function readSocialAccount(
 
   // X・TikTok・Instagram は公式連携が無い場合、Apify Actor経由で見に行く
   // （「X」表記のみ・ドメインのみ等のゆれも拾えるよう twitter|^x$ で判定）
-  if (/twitter|^x$/i.test(a.platform)) return readXApify(a, base);
-  if (/tiktok/i.test(a.platform)) return readTikTokApify(a, base);
-  if (/instagram/i.test(a.platform)) return readInstagramApify(a, base);
+  if (/twitter|^x$/i.test(a.platform)) return readXApify(a, base, analysisId);
+  if (/tiktok/i.test(a.platform)) return readTikTokApify(a, base, analysisId);
+  if (/instagram/i.test(a.platform)) return readInstagramApify(a, base, analysisId);
 
   // LINE公式アカウントは友だち数を公開しないので、取りに行くだけ無駄になる
   if (/line/i.test(a.platform)) {
@@ -684,15 +738,16 @@ export async function readSocialAccount(
  */
 export async function scanSocial(
   site: SiteScan | null,
-  ownerId?: string,
-  extra?: { platform: string; url: string; handle: string }[]
+  ownerId: string | undefined,
+  extra: { platform: string; url: string; handle: string }[] | undefined,
+  analysisId: string
 ): Promise<SocialScan> {
   const merged = new Map<string, { platform: string; url: string; handle: string }>();
   for (const a of site?.social ?? []) merged.set(a.platform, a);
   for (const a of extra ?? []) merged.set(a.platform, a);
   const list = [...merged.values()].slice(0, 8);
   // 媒体ごとに独立しているので並行で取る。1件が遅くても全体は止めない
-  const accounts = await Promise.all(list.map((a) => readSocialAccount(a, ownerId)));
+  const accounts = await Promise.all(list.map((a) => readSocialAccount(a, ownerId, analysisId)));
   return { accounts, fetchedAt: new Date().toISOString() };
 }
 
