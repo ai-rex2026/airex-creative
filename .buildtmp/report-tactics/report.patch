@@ -1,0 +1,70 @@
+diff --git a/components/Report.tsx b/components/Report.tsx
+index 718b33d..b986ad9 100644
+--- a/components/Report.tsx
++++ b/components/Report.tsx
+@@ -747,21 +747,6 @@ export function Report({
+             <span className="chip-s">内部リンク {site.internalLinks} / 外部リンク {site.externalLinks}</span>
+           </div>
+ 
+-          <div className="label" style={{ marginTop: 18 }}>検出された広告タグ</div>
+-          <div className="chips">
+-            {site.adTags.length > 0 ? (
+-              <span className="chip-s" style={{ background: "#FBEDE9", borderColor: "#EFD3CA", color: "var(--ng)" }}>
+-                {site.adTags.length}件検出（詳細は「計測タグの導入状況」参照）
+-              </span>
+-            ) : (
+-              <span className="chip-s">
+-                {site.tech.includes("Google Tag Manager")
+-                  ? "HTMLからは検出できず（GTM経由の可能性あり）"
+-                  : "検出できず"}
+-              </span>
+-            )}
+-          </div>
+-
+           {site.tech.length > 0 && (
+             <>
+               <div className="label" style={{ marginTop: 14 }}>使用技術</div>
+@@ -773,12 +758,6 @@ export function Report({
+         </>
+       )}
+ 
+-      <div className="stat-row" style={{ marginTop: 14 }}>
+-        <div><b>{d.strengths.length}</b><small>強み</small></div>
+-        <div><b>{d.objections.length}</b><small>買わない理由</small></div>
+-        <div><b>{d.angles.length}</b><small>訴求軸</small></div>
+-        <div><b>{copies.filter((c) => c.guard?.level === "green").length}/{copies.length}</b><small>法令チェック通過</small></div>
+-      </div>
+       <div className="sec-head">
+         <span className="ic">◆</span>
+         <div>
+@@ -1959,6 +1938,19 @@ export function Report({
+             <span className="rule" />
+           </div>
+ 
++          <div className="measure" style={{ display: "grid", gap: 12 }}>
++            {tactics.items.map((t, i) => (
++              <div className="tactic" key={i}>
++                <div className="top">
++                  <b>{t.area}</b>
++                  {t.kpi && <span className="kpi">KPI: {t.kpi}</span>}
++                </div>
++                {t.summary && <p>{t.summary}</p>}
++                <ul>{t.actions?.map((x, k) => <li key={k}>{x}</li>)}</ul>
++              </div>
++            ))}
++          </div>
++
+           {/* 作れなかった章は黙って消さない。無いのか、作れなかったのかで読み方が変わる */}
+           {(() => {
+             const broken = [
+@@ -2399,7 +2391,9 @@ export function Report({
+           </GuestMask>
+         </section>
+       )}
+-      {chosen.length > 0 && (
++      {/* 2026-10-04: LP生成（ベータ）はクオリティが安定しないため、依頼主の指示で一旦非表示にしている。
++          再公開するときは "false && " を外すだけで戻せる */}
++      {false && chosen.length > 0 && (
+         <section className="block no-print">
+           <div className="sec-head" style={{ marginTop: 0 }}>
+             <span className="ic">▣</span>
