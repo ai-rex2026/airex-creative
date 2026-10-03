@@ -1782,6 +1782,31 @@ export function Report({
                     )}
                     <small>{m?.title ?? x.handle}</small>
                     {m?.reason && <small className="warn">{m.reason}</small>}
+                    {m?.recentPosts && m.recentPosts.length > 0 && (
+                      <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
+                        {m.recentPosts.slice(0, 3).map((p, j) => {
+                          const stats = [
+                            p.likes != null ? `いいね${p.likes.toLocaleString()}` : null,
+                            p.comments != null ? `コメント${p.comments.toLocaleString()}` : null,
+                            p.shares != null ? `シェア${p.shares.toLocaleString()}` : null,
+                            p.views != null ? `再生${p.views.toLocaleString()}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" ・ ");
+                          return (
+                            <small key={j} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              {p.postedAt && <span>{p.postedAt.slice(0, 10)}</span>}
+                              <span>{p.text ? (p.text.length > 50 ? `${p.text.slice(0, 50)}…` : p.text) : "（本文なし）"}</span>
+                              {stats && (
+                                <span className="tag ok" style={{ fontSize: 10.5, padding: "1px 8px" }}>
+                                  実データ：{stats}
+                                </span>
+                              )}
+                            </small>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   {m?.followers != null && (
                     <span className="tag ok">
