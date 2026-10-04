@@ -1,0 +1,21 @@
+diff --git a/lib/deep.ts b/lib/deep.ts
+index 3b64e6e..593e6ef 100644
+--- a/lib/deep.ts
++++ b/lib/deep.ts
+@@ -11,9 +11,17 @@ import type { MeoScan } from "./meo";
+ 
+ // ── LP改善（LPO）────────────────────────────────
+ 
++/**
++ * 指摘の重大度。2026-10-04: サマリータブのLPカテゴリスコアにLPOの所見を
++ * 反映する決定（単純な指摘件数では「質」の信号にならないため、重大度を
++ * 生成時に判定させる）を受けて追加。lib/summary-tab.ts の LP スコア算出が使う。
++ */
++export type LpoSeverity = "軽" | "中" | "重";
++export type LpoItem = { text: string; severity: LpoSeverity };
+ export type LpoGroup = {
+   area: "ファーストビュー" | "CTA・フォーム" | "コンテンツの信頼性" | "表示速度" | "セキュリティ" | string;
+-  items: string[];
++  /** 旧形式の分析（items が string[] だった時代）もそのまま読めるよう、両方を許容する */
++  items: (LpoItem | string)[];
+ };

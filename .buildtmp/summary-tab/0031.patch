@@ -1,0 +1,18 @@
+ export type LpoPlan = { groups: LpoGroup[]; /** 生成に失敗したときの理由。章を空で出す代わりに事実を残す */ error?: string };
+ 
+@@ -22,11 +30,11 @@ export async function generateLpo(d: Diagnosis, site: SiteScan | null, priorityN
+   const measured: LpoGroup[] = [];
+   if (site) {
+     const ng = site.headers.filter((h) => !h.pass);
+-    const items: string[] = [];
++    const items: LpoItem[] = [];
+     for (const h of ng) {
+-      items.push(`${h.label}（${h.desc}）が未設定。サーバーまたはCDNのレスポンスヘッダーに追加する`);
++      items.push({ text: `${h.label}（${h.desc}）が未設定。サーバーまたはCDNのレスポンスヘッダーに追加する`, severity: "中" });
+     }
+-    if (!site.https) items.push("HTTPS に未対応。常時SSL化する");
++    if (!site.https) items.push({ text: "HTTPS に未対応。常時SSL化する", severity: "重" });
+     if (items.length) measured.push({ area: "セキュリティ", items });
+   }
+ 
+@@ -45,6 +53,10 @@ export async function generateLpo(d: Diagnosis, site: SiteScan | null, priorityN
