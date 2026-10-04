@@ -1,0 +1,48 @@
+name: apply-analysis-patch10
+on:
+  push:
+    paths:
+      - '.buildtmp/analysis10/GO.marker'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decode and apply patch
+        run: |
+          python3 -c "import json, pathlib; p = pathlib.Path('.buildtmp/analysis10/escaped_p10.txt'); content = json.loads(p.read_text(encoding='utf-8')); pathlib.Path('.buildtmp/analysis10/patch10.diff').write_text(content, encoding='utf-8')"
+          git apply --whitespace=nowarn .buildtmp/analysis10/patch10.diff
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add lib/analysis.ts
+          git commit -m "perf: ad_ops確定後の後続5〜6章を直列からPromise.allSettledの並列バッチに変更
+
+          social_insights・measures・seo_articles・outreach・copiesのスコアリング・image_scanは
+          互いの出力に依存しないにも関わらず1本ずつ直列にtickしていたため、1本あたり数十秒〜
+          最大260秒のAI生成が連続し、レポート全体の処理時間(20〜30分)を大きく伸ばしていた。
+          直前の9章並列フェーズと同じ、まだ無い章だけジョブを積んでPromise.allSettledで並列実行し
+          完了した章だけその場で即保存するパターンに統一した。表示速度の実測(speed)は既存の
+          残り予算ベースの専用ロジックがあるためこのバッチには含めず最後に残している。
+
+          Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+          git push origin HEAD:main
+
+      - name: Remove temp workflow and buildtmp
+        run: |
+          git rm -r .github/workflows/apply-analysis-patch10.yml .buildtmp/analysis10
+          git commit -m "chore: remove temp workflow (apply-analysis-patch10)
+
+          Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+          git push origin HEAD:main
