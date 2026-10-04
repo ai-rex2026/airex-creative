@@ -1,0 +1,20 @@
+-      {/* 足したKPIに効く施策が無い状態は、作り直しが通っていない。押し直せるようにする */}
+-      {!busy && missing.length > 0 && (
+-        <div className="note warn">
+-          <i className="i">!</i>
+-          <span>
+-            <b style={{ fontWeight: 600 }}>{missing.map((p) => p.name).join("・")}</b>
+-            に効く施策がまだありません。作り直しが途中で終わった可能性があります。
+-            <button className="linkbtn" onClick={() => rebuild()}>いま作り直す</button>
+-          </span>
+-        </div>
+-      )}
++      {err && <div className="alert" style={{ marginTop: 10 }}>{err}</div>}
+ 
+       <div className="mlist measure">
+-        {shown.length === 0 && <div className="note"><i className="i">i</i><span>KPIを選ぶと、そのKPIに効く施策が出ます。</span></div>}
++        {shown.length === 0 && <div className="note"><i className="i">i</i><span>まだ施策がありません。</span></div>}
+         {shown.map((m) => {
+           const isDone = doneIds.includes(m.id);
+           const isOpen = open === m.id;
+@@ -242,7 +181,6 @@ export function Measures({

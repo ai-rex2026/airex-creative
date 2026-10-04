@@ -1,0 +1,21 @@
+-          <div className="sub">選んだKPIに効くものだけを出しています。順位はつけていません</div>
++          <h2 id="sec-measures">優先度の高い施策</h2>
++          <div className="sub">スコアが低いカテゴリ・分析不可のカテゴリに効くものを優先して並べています</div>
+         </div>
+         <span className="rule" />
+-        <button className="redo" onClick={() => rebuild()} disabled={busy}>
++        <button className="redo" onClick={rebuild} disabled={busy}>
+           {busy ? <Spinner label="作り直しています" /> : "施策を作り直す"}
+         </button>
+       </div>
+@@ -210,26 +160,15 @@ export function Measures({
+         <div className="note">
+           <i className="i">…</i>
+           <span>
+-            いま施策を作り直しています。1〜2分かかります。
++            いま作り直しています。1〜2分かかります。
+             この画面を開いたままにしてください。終わると下の一覧が入れ替わります。
+           </span>
+         </div>
+       )}
+-
