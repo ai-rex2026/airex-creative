@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { makeRunbook, regenerateSummaryTab, toggleMeasure } from "@/app/actions";
 import type { Measure } from "@/lib/measures";
 import type { CategoryEvaluation } from "@/lib/summary-tab";
-import { sortMeasuresByPriority } from "@/lib/summary-tab";
+import { categoryForMeasure, sortMeasuresByPriority } from "@/lib/summary-tab";
 import { Spinner } from "./Loading";
 import { CasePhotoFrame } from "./CasePhotoFrame";
 import { isCasePhoto } from "@/lib/case-photo";
@@ -24,14 +24,14 @@ import { isCasePhoto } from "@/lib/case-photo";
 
 const SCORE_LABEL: Record<string, string> = { 強: "強", 標準: "標準", 弱: "弱" };
 
-function CategoryCard({ ev }: { ev: CategoryEvaluation }) {
+function CategoryCard({ ev, onNavigate }: { ev: CategoryEvaluation; onNavigate: (anchor: string) => void }) {
   const tone = ev.score === null ? "na" : ev.score === "強" ? "ok" : ev.score === "標準" ? "warn" : "ng";
   return (
-    <a className={`cat-card ${tone}`} href={`#${ev.sectionAnchor}`}>
+    <button type="button" className={`cat-card ${tone}`} onClick={() => onNavigate(ev.sectionAnchor)}>
       <b>{ev.category}</b>
       <span className="sc">{ev.score === null ? "分析不可" : SCORE_LABEL[ev.score]}</span>
       <small>{ev.basis}</small>
-    </a>
+    </button>
   );
 }
 
@@ -42,6 +42,7 @@ export function Measures({
   done,
   log,
   hygiene,
+  onNavigate,
 }: {
   id: string;
   measures: Measure[];
@@ -49,6 +50,8 @@ export function Measures({
   done: string[];
   log: { title: string; at: string }[];
   hygiene: { label: string; how: string }[];
+  /** カテゴリカードをクリックしたとき、分析データタブの該当セクションへ切り替えてスクロールする */
+  onNavigate: (anchor: string) => void;
 }) {
   const [list, setList] = useState<Measure[]>(measures);
   const [evaluations, setEvaluations] = useState<CategoryEvaluation[] | null>(categoryEvaluations);
@@ -132,7 +135,7 @@ export function Measures({
             <span className="rule" />
           </div>
           <div className="cat-grid measure">
-            {evaluations.map((ev) => <CategoryCard ev={ev} key={ev.category} />)}
+            {evaluations.map((ev) => <CategoryCard ev={ev} key={ev.category} onNavigate={onNavigate} />)}
           </div>
         </>
       )}
@@ -181,6 +184,10 @@ export function Measures({
                 <span className="ar">{isOpen ? "閉じる" : "手順を見る"}</span>
               </button>
               <div className="kk">
+                {evaluations && (() => {
+                  const cat = categoryForMeasure(m, evaluations);
+                  return cat ? <span className="chip cat">{cat.category}</span> : null;
+                })()}
                 {m.node && <span className="chip node">{m.node}</span>}
                 {m.flags && m.flags.length > 0 && <span className="chip law">法令の指摘 {m.flags.length}</span>}
               </div>

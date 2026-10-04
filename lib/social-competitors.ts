@@ -56,7 +56,7 @@ ${own ? `自社サイト: ${own}（この運営元のアカウントは競合に
 - **実際に検索で見つかった、実在するアカウントのURL**だけを挙げる。知識から思い出したアカウントを書かない
 - フォロワー数・登録者数・再生回数などの数字はここでは書かない（後で別途実測するため不要）。
   アカウントの所在（URL）を特定することだけに集中する
-- 媒体ごとに最大2件。同じ商圏・客層を狙っている競合に絞り、業種が明らかに異なるアカウントは含めない
+- 媒体ごとに最大1件。最も同じ商圏・客層を狙っている競合1つに絞り、業種が明らかに異なるアカウントは含めない
 - 対象媒体は ${platforms.join("・")} のみ
 
 最後に STRICT JSON のみを出力（前置き・コードフェンス不要）:
@@ -71,11 +71,20 @@ ${own ? `自社サイト: ${own}（この運営元のアカウントは競合に
     parsed = {};
   }
 
+  // 媒体ごとに最大1件に制限する（プロンプトにも書いているが、AIが守らない場合の保険。
+  // 2026-10-05: この制限が無いと媒体ごとに最大2件×最大3媒体＝最大6回のApify呼び出しが
+  // 発生し、自社実測（最大3回）と合わせてApifyの1分析あたりの上限に迫る一因になっていた
+  // ため、半分に減らした。lib/social.ts の APIFY_BUDGET_PER_ANALYSIS 参照）
+  const seenPlatforms = new Set<string>();
   const candidates = (parsed.items ?? [])
     .filter((x): x is { platform: string; url: string } => !!x.url && !!x.platform)
     .filter((x) => (platforms as string[]).includes(x.platform))
     .filter((x) => !own || !x.url.includes(own))
-    .slice(0, platforms.length * 2);
+    .filter((x) => {
+      if (seenPlatforms.has(x.platform)) return false;
+      seenPlatforms.add(x.platform);
+      return true;
+    });
 
   // 見つけたのはURLだけ。数字はAIに書かせず、自社アカウントと同じ経路で測り直す
   // （2026-10-04: readSocialAccountに渡すanalysisIdで、自社実測とApify呼び出し回数を

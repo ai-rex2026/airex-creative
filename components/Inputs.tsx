@@ -5,7 +5,6 @@ import { addInput, replanForBudget, setSocialFollowers } from "@/app/actions";
 import { BUDGETS, type BudgetBand } from "@/lib/types";
 import type { SiteScan } from "@/lib/site-scan";
 import type { SocialScan } from "@/lib/social";
-import type { KpiTree } from "@/lib/kpi";
 import { breakEvenCpa, type PriceScan } from "@/lib/pricing";
 import { MainPrice } from "./MainPrice";
 import { Spinner } from "./Loading";
@@ -92,7 +91,6 @@ export function Inputs({
   social,
   pricing,
   onPricing,
-  kpi,
 }: {
   id: string;
   url: string | null;
@@ -106,7 +104,6 @@ export function Inputs({
   social: SocialScan | null;
   pricing: PriceScan | null;
   onPricing: (p: PriceScan) => void;
-  kpi: KpiTree | null;
 }) {
   const [list, setList] = useState(extra ?? []);
   const [platform, setPlatform] = useState(PLATFORMS[0]);
@@ -206,50 +203,10 @@ export function Inputs({
         </div>
       </div>
 
-      {kpi && (kpi.branches.length > 0 || kpi.candidates.length > 0) && (
-        <>
-          <div className="sec-head">
-            <span className="ic">◎</span>
-            <div>
-              <h2 id="sec-kpi">追っているKPI</h2>
-              <div className="sub">{kpi.model || "追えるKPIは自動的にすべて追っています。ここは表示専用です"}</div>
-            </div>
-            <span className="rule" />
-          </div>
-
-          {kpi.branches.length > 0 && (
-            <div className="tree measure">
-              {kpi.branches.map((b, i) => (
-                <div className="b" key={i}>
-                  <span className="nd">{b.node}</span>
-                  <span className="fm">{b.formula}</span>
-                  {b.note && <span className="nt">{b.note}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {kpi.candidates.length > 0 && (
-            <div className="kpis-pick measure" style={{ marginTop: kpi.branches.length > 0 ? 10 : 0 }}>
-              {kpi.candidates.map((c) => (
-                <div className="k" key={c.id} style={{ cursor: "default" }}>
-                  <span className="tp">
-                    <b>{c.name}</b>
-                    <i className={c.trackable === "追えません" ? "ng" : c.trackable === "実測できます" ? "ok" : "warn"}>{c.trackable}</i>
-                  </span>
-                  <small>{c.why}</small>
-                  <small className="how">{c.how}</small>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
       <div className="sec-head">
         <span className="ic">＋</span>
         <div>
-          <h2>足していただきたい材料</h2>
+          <h2>追加情報（必要に応じて入力ください）</h2>
           <div className="sub">サイトから辿れないものは、こちらで拾えません</div>
         </div>
         <span className="rule" />
@@ -294,7 +251,7 @@ export function Inputs({
       <div className="sec-head" id="sec-budget">
         <span className="ic">¥</span>
         <div>
-          <h2>予算と粗利率</h2>
+          <h2>予算と粗利率（任意）</h2>
           <div className="sub">入れると、媒体ごとの実額と損益分岐CPAが出ます</div>
         </div>
         <span className="rule" />
@@ -362,7 +319,7 @@ export function Inputs({
           <div className="sec-head">
             <span className="ic">¥</span>
             <div>
-              <h2 id="sec-cpa">CPAはいくらまで出せるか</h2>
+              <h2 id="sec-cpa">CPAはいくらまで出せるか（任意）</h2>
               <div className="sub">サイトに載っている価格から計算しています</div>
             </div>
             <span className="rule" />

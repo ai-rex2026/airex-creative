@@ -269,7 +269,20 @@ ${kpi.branches.map((b) => `- ${b.node}（${b.formula}）`).join("\n")}
     { maxTokens: 6000 }
   );
   const items = fixNodes(res.items ?? [], kpi);
-  return await flag(items, d.industry);
+  return await flag(items.filter((m) => !isBookingGtmMeasure(m)), d.industry);
+}
+
+/**
+ * 「予約完了画面へのGoogleタグマネージャー（GTM）計測タグ設置」系の施策を落とす。
+ * 予約フォームが別ドメイン（別サービス）のことが多く、自社のGTMでは計測できないため
+ * 出さない方針（プロンプト側のRULESにも明記しているが、AIが守らない場合の保険として
+ * 生成後にも機械的に除く）
+ */
+function isBookingGtmMeasure(m: Measure): boolean {
+  const text = `${m.title} ${m.impactWhy}`;
+  const mentionsBookingCompletion = /予約(完了|申込|申し込み)|完了画面/.test(text);
+  const mentionsTag = /GTM|タグマネージャー|計測タグ|コンバージョンタグ/.test(text);
+  return mentionsBookingCompletion && mentionsTag;
 }
 
 /**
@@ -311,11 +324,20 @@ const SCORE_RANK: Record<string, number> = { 弱: 0, 標準: 1, 強: 2 }; // nul
 const IMPACT_RANK: Record<string, number> = { 大: 0, 中: 1, 小: 2 };
 const EFFORT_RANK: Record<string, number> = { すぐ: 0, 数日: 1, 数週間: 2 };
 
+/**
+ * Measure.node（KPIツリーの語。例: "問い合わせを増やす"）から、対応するカテゴリ評価
+ * （例: "LP"）を推定する。直接一致しないことが多いため部分一致で見る。
+ * 分からない場合は null（画面側・並び順側の両方で「不明」として扱う）。
+ */
+export function categoryForMeasure(m: Measure, evaluations: CategoryEvaluation[]): CategoryEvaluation | null {
+  return evaluations.find((e) => m.node && (m.node.includes(e.category) || e.category.includes(m.node))) ?? null;
+}
+
 export function sortMeasuresByPriority(measures: Measure[], evaluations: CategoryEvaluation[]): Measure[] {
   const rankOf = (m: Measure) => {
     // Measure.node はKPIツリーの語で、カテゴリ名と直接一致しないことが多いため、
     // 対応するカテゴリが分かる場合だけスコアを使う。分からない施策は中間順位にする
-    const matched = evaluations.find((e) => m.node && (m.node.includes(e.category) || e.category.includes(m.node)));
+    const matched = categoryForMeasure(m, evaluations);
     return matched ? (matched.score === null ? SCORE_RANK["弱"] : SCORE_RANK[matched.score]) : 1;
   };
   return [...measures].sort((a, b) => {

@@ -3,6 +3,7 @@ import type { Diagnosis } from "./types";
 import type { SiteScan } from "./site-scan";
 import { socialFacts, type SocialScan } from "./social";
 import type { AdOps } from "./ad-ops";
+import type { MeoScan } from "./meo";
 
 /**
  * 広告以外の施策。SNS・LINE・LPO・SEO/MEO・PR まで、
@@ -43,14 +44,40 @@ function adOpsFacts(ops: AdOps | null): string {
     .join("\n");
 }
 
+/**
+ * MEO（Googleマップ）の実測を要約する。
+ *
+ * 2026-10-05: 従来 generateTactics は meo を受け取っておらず、MEOの施策が
+ * （実際に選択・実測した店舗のデータを使わずに）AIの一般論で書かれていた。
+ * Places API で実測済みの不足点（breakdown。lib/meo.ts）をそのまま渡し、
+ * 選んだ店舗の実際の状態に基づいた施策を書かせる。
+ */
+function meoFacts(meo: MeoScan | null): string {
+  if (!meo?.self) return "";
+  const s = meo.self;
+  const lines = [
+    `店舗名: ${s.name}`,
+    `評価: ${s.rating ?? "未評価"}（近隣同業の平均 ${meo.avgRating ?? "不明"}）`,
+    `レビュー数: ${s.reviews}件（近隣同業の平均 ${meo.avgReviews ?? "不明"}件・${meo.totalShops}店中${meo.reviewRank ?? "不明"}位）`,
+  ];
+  const gaps = meo.breakdown.filter((b) => b.got < b.max);
+  if (gaps.length) {
+    lines.push("不足している項目:");
+    for (const g of gaps) lines.push(`- ${g.label}：${g.note}`);
+  }
+  return lines.join("\n");
+}
+
 export async function generateTactics(
   d: Diagnosis,
   site: SiteScan | null,
   social: SocialScan | null = null,
-  adOps: AdOps | null = null
+  adOps: AdOps | null = null,
+  meo: MeoScan | null = null
 ): Promise<TacticPlan> {
   const sns = socialFacts(social);
   const ads = adOpsFacts(adOps);
+  const meoNote = meoFacts(meo);
   return askJson<TacticPlan>(
     `あなたは広告運用と集客の実務者です。広告出稿**以外**の施策を設計します。
 
@@ -72,7 +99,8 @@ items は次の領域から、この商材に効くものだけを4〜6件。効
   良い例：「『${d.product}』の instagram プロフィールに、価格と所在地を記載したハイライトを追加する」
 ${ads ? "- 広告出稿も必ずスケジュールに乗せる。下に渡す実際のキャンペーン名・媒体・予算を使い、「いつ入稿するか」「いつ最初の指標（CPA/CTR等）を見て調整するか」「いつ予算配分を見直すか」を、各媒体・各キャンペーンについて具体的なitemとして書く（出稿準備フェーズで完結させない。初動確認・調整のタイミングも後続フェーズに置く）" : "- この分析では広告出稿の設計がまだ無いため、広告関連のitemは schedule に入れない"}
 - risks は3件まで。この商材で実際に起きうるものだけ（法令・炎上・人手・季節性など）
-${sns ? "- 実測できているSNSの数値（フォロワー数・投稿数など）がある場合は、その媒体については新規開設ではなく、今の数値・投稿頻度・投稿内容を動かす前提で具体的に書く。実測が無い媒体についてだけ、新規に始める施策として書いてよい" : ""}`,
+${sns ? "- 実測できているSNSの数値（フォロワー数・投稿数など）がある場合は、その媒体については新規開設ではなく、今の数値・投稿頻度・投稿内容を動かす前提で具体的に書く。実測が無い媒体についてだけ、新規に始める施策として書いてよい" : ""}
+${meoNote ? "- MEO（Googleマップ）のitemは、下に渡す【Googleビジネスプロフィールの実測】の「不足している項目」を根拠にする。一般論（「口コミを増やす」「情報を充実させる」等）ではなく、渡された不足項目をそのまま埋める具体的なactionsを書く" : "- この分析ではGoogleビジネスプロフィールの実測が取れていないため、MEOのitemは出さない"}`,
     `商材: ${d.product}
 ターゲット: ${d.audience}
 業種: ${d.industry}
@@ -81,6 +109,7 @@ ${sns ? "- 実測できているSNSの数値（フォロワー数・投稿数な
 ${site ? `サイトの技術面: 構造化データ ${site.structuredData ? "有り" : "無し"} / sitemap ${site.sitemapXml ? "有り" : "無し"} / 内部リンク ${site.internalLinks}` : ""}
 ${sns ? `\n【運用中の公式SNS】※実測。新規に開設する施策は出さない。今ある数値・投稿頻度を動かす施策を書く\n${sns}` : ""}
 ${ads ? `\n【設計済みの広告出稿】※この内容をschedule内の広告itemに具体的に引用する\n${ads}` : ""}
+${meoNote ? `\n【Googleビジネスプロフィールの実測】※この店舗の実際の状態。MEOのitemはこれを根拠にする\n${meoNote}` : ""}
 
 出力:
 {"items":[{"area":"","summary":"","actions":["",""],"kpi":""}],

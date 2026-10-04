@@ -27,7 +27,7 @@ import type { OutreachPlan, SuggestScan } from "@/lib/outreach";
 import { MARGIN, type PriceScan } from "@/lib/pricing";
 import type { SpeedScan } from "@/lib/pagespeed";
 import type { SocialScan } from "@/lib/social";
-import type { SocialInsightPlan } from "@/lib/social-insights";
+import { PLATFORM_RE, type SocialInsightPlan } from "@/lib/social-insights";
 import type { ImageScan, SafeCrop } from "@/lib/image-check";
 import { pickTextZone, type TextZone } from "@/lib/overlay-position";
 import type { Ga4Data, GscData } from "@/lib/google";
@@ -362,6 +362,17 @@ export function Report({
     }, 50);
   }
 
+  // サマリータブの「カテゴリ別評価」カードは、分析データタブの対応セクションへの
+  // ショートカット。セクションはタブ切り替えでマウントが外れるため、#アンカーの
+  // <a href> では飛べない（DOMに存在しない）。goToInputsBudget と同じ要領で、
+  // タブを切り替えてから対象要素が描画されるのを待ってスクロールする
+  function goToOverviewSection(anchor: string) {
+    setTab("overview");
+    setTimeout(() => {
+      document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }
+
   // 予算に対して媒体が多すぎると、どの媒体もデータが溜まらず判断できなくなる
   const band = budgetOf(budget);
   const thin = band
@@ -469,6 +480,65 @@ export function Report({
   // 取得できたものは全部まとめて「SNS戦略」クラスターで出す
   const siItems = socialInsights?.items ?? [];
   const snsChannels = snsPlan?.channels ?? [];
+
+  // 「情報取得」1媒体分の行。以前はsite.socialの全件をここで直接map()していたが、
+  // 媒体ごとに情報取得→分析→運用プランを束ねる構成（sec-social）に変えたため、
+  // 1媒体分だけを描く関数として切り出した
+  const renderSocialInfoRow = (x: { platform: string; url: string; handle: string }) => {
+    const m = social?.accounts.find((a) => a.url === x.url);
+    return (
+      <div className="r" key={x.url}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <PlatformIcon platform={x.platform} size={15} />
+          {" "}
+          <b>{x.platform}</b>
+          {m && (m.followers != null || m.posts != null || m.views != null) ? (
+            <span className="tag ok" style={{ marginLeft: 6 }}>🟢実データ取得済み</span>
+          ) : (
+            <span className="tag" style={{ marginLeft: 6 }}>⚪データ未取得</span>
+          )}
+          <small>{m?.title ?? x.handle}</small>
+          {m?.reason && <small className="warn">{m.reason}</small>}
+          {m?.recentPosts && m.recentPosts.length > 0 && (
+            <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
+              {m.recentPosts.slice(0, 3).map((p, j) => {
+                const stats = [
+                  p.likes != null ? `いいね${p.likes.toLocaleString()}` : null,
+                  p.comments != null ? `コメント${p.comments.toLocaleString()}` : null,
+                  p.shares != null ? `シェア${p.shares.toLocaleString()}` : null,
+                  p.views != null ? `再生${p.views.toLocaleString()}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ・ ");
+                return (
+                  <small key={j} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    {p.postedAt && <span>{p.postedAt.slice(0, 10)}</span>}
+                    <span>{p.text ? (p.text.length > 50 ? `${p.text.slice(0, 50)}…` : p.text) : "（本文なし）"}</span>
+                    {stats && (
+                      <span className="tag ok" style={{ fontSize: 10.5, padding: "1px 8px" }}>
+                        実データ：{stats}
+                      </span>
+                    )}
+                  </small>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {m?.followers != null && (
+          <span className="tag ok">
+            {/youtube/i.test(x.platform) ? "登録者" : "フォロワー"} {m.followers.toLocaleString()}
+          </span>
+        )}
+        {m?.posts != null && (
+          <span className="tag">{/youtube/i.test(x.platform) ? "動画" : "投稿"} {m.posts.toLocaleString()}</span>
+        )}
+        {m?.views != null && <span className="tag">{/facebook/i.test(x.platform) ? "リーチ" : "再生"} {m.views.toLocaleString()}</span>}
+        {m?.via && m.via !== "Apify" && m.via !== "Grok(xAI)" && <span className="tag">{m.via}</span>}
+        <a className="tag" href={x.url} target="_blank" rel="noreferrer noopener">開く</a>
+      </div>
+    );
+  };
 
   const renderSI = (si: (typeof siItems)[number]) => (
     <div key={si.platform} style={{ marginTop: 10 }}>
@@ -632,7 +702,6 @@ export function Report({
           social={social}
           pricing={pricing}
           onPricing={setPricing}
-          kpi={kpi}
         />
       )}
 
@@ -644,6 +713,7 @@ export function Report({
           done={measuresDone ?? []}
           log={measureLog ?? []}
           hygiene={hygiene(site)}
+          onNavigate={goToOverviewSection}
         />
       )}
 
@@ -1686,79 +1756,77 @@ export function Report({
               </>
             );
           })()}
-      {site && site.social.length > 0 && (
+      {site && (site.social.length > 0 || siItems.length > 0 || snsChannels.length > 0) && (
         <>
           <div className="sec-head">
             <span className="ic">◍</span>
             <div>
               <h2 id="sec-social">公式SNSアカウント</h2>
-              <div className="sub">サイトからリンクされているアカウントを、実際に見に行って測っています</div>
+              <div className="sub">情報取得→分析→運用プランの順に、媒体ごとにまとめています</div>
             </div>
             <span className="rule" />
           </div>
-          <div className="rows measure">
-            {site.social.map((x, i) => {
-              const m = social?.accounts.find((a) => a.url === x.url);
-              return (
-                <div className="r" key={i}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <PlatformIcon platform={x.platform} size={15} />
-                    {" "}
-                    <b>{x.platform}</b>
-                    {m && (m.followers != null || m.posts != null || m.views != null) ? (
-                      <span className="tag ok" style={{ marginLeft: 6 }}>🟢実データ取得済み</span>
-                    ) : (
-                      <span className="tag" style={{ marginLeft: 6 }}>⚪データ未取得</span>
+
+          {/*
+           * 2026-10-05: 以前は「情報取得（全媒体）」→「SNS分析（全媒体）」→
+           * 「SNS運用プラン（全媒体）」の3ブロックを縦に並べていたため、1つの媒体の
+           * 話が3箇所に分断されていた。媒体ごとに3つを束ねて繰り返す構成に変更する。
+           * SNS分析・SNS運用プランはYouTube/X/TikTok/Instagramの4媒体でしか作っていない
+           * （lib/social-insights.ts・lib/sns-plan.ts）ため、まずその4媒体を
+           * 対応するsite.social上のリンクと紐付けて束ね、残り（Facebook・LINE等）は
+           * 情報取得だけの行として最後にまとめる
+           */}
+          {(() => {
+            const CANON = ["YouTube", "X", "TikTok", "Instagram"] as const;
+            const usedUrls = new Set<string>();
+            const blocks = CANON.map((p) => {
+              const info = site.social.find((x) => PLATFORM_RE[p].test(x.platform));
+              const si = siItems.find((x) => x.platform === p);
+              const ch = snsChannels.find((x) => x.platform === p);
+              if (info) usedUrls.add(info.url);
+              return info || si || ch ? { platform: p, info, si, ch } : null;
+            }).filter((b): b is NonNullable<typeof b> => b !== null);
+            const rest = site.social.filter((x) => !usedUrls.has(x.url));
+
+            return (
+              <>
+                {blocks.map((b) => (
+                  <div key={b.platform} className="measure" style={{ marginTop: 18 }}>
+                    <p className="eyebrow"><PlatformIcon platform={b.platform} size={14} /> {b.platform}</p>
+                    {b.info && (
+                      <div className="rows measure" style={{ marginTop: 8 }}>
+                        {renderSocialInfoRow(b.info)}
+                      </div>
                     )}
-                    <small>{m?.title ?? x.handle}</small>
-                    {m?.reason && <small className="warn">{m.reason}</small>}
-                    {m?.recentPosts && m.recentPosts.length > 0 && (
-                      <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
-                        {m.recentPosts.slice(0, 3).map((p, j) => {
-                          const stats = [
-                            p.likes != null ? `いいね${p.likes.toLocaleString()}` : null,
-                            p.comments != null ? `コメント${p.comments.toLocaleString()}` : null,
-                            p.shares != null ? `シェア${p.shares.toLocaleString()}` : null,
-                            p.views != null ? `再生${p.views.toLocaleString()}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" ・ ");
-                          return (
-                            <small key={j} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                              {p.postedAt && <span>{p.postedAt.slice(0, 10)}</span>}
-                              <span>{p.text ? (p.text.length > 50 ? `${p.text.slice(0, 50)}…` : p.text) : "（本文なし）"}</span>
-                              {stats && (
-                                <span className="tag ok" style={{ fontSize: 10.5, padding: "1px 8px" }}>
-                                  実データ：{stats}
-                                </span>
-                              )}
-                            </small>
-                          );
-                        })}
+                    {b.si && (
+                      <div style={{ marginTop: 10 }}>
+                        <p className="eyebrow">SNS分析</p>
+                        {renderSI(b.si)}
+                      </div>
+                    )}
+                    {b.ch && (
+                      <div style={{ marginTop: 10 }}>
+                        <p className="eyebrow">SNS運用プラン</p>
+                        <SnsChannelBlock c={b.ch} />
                       </div>
                     )}
                   </div>
-                  {m?.followers != null && (
-                    <span className="tag ok">
-                      {/youtube/i.test(x.platform) ? "登録者" : "フォロワー"} {m.followers.toLocaleString()}
-                    </span>
-                  )}
-                  {m?.posts != null && (
-                    <span className="tag">{/youtube/i.test(x.platform) ? "動画" : "投稿"} {m.posts.toLocaleString()}</span>
-                  )}
-                  {m?.views != null && <span className="tag">{/facebook/i.test(x.platform) ? "リーチ" : "再生"} {m.views.toLocaleString()}</span>}
-                  {m?.via && m.via !== "Apify" && m.via !== "Grok(xAI)" && <span className="tag">{m.via}</span>}
-                  <a className="tag" href={x.url} target="_blank" rel="noreferrer noopener">開く</a>
-                </div>
-              );
-            })}
-          </div>
-          <div className="note">
+                ))}
+
+                {rest.length > 0 && (
+                  <div className="rows measure" style={{ marginTop: blocks.length > 0 ? 18 : 8 }}>
+                    {rest.map((x) => renderSocialInfoRow(x))}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+
+          <div className="note" style={{ marginTop: 16 }}>
             <i className="i">i</i>
             <span>
               YouTube は公式APIから取得しています（連携不要です）。
-              X・TikTok・Instagramは外部の取得サービス経由で公開プロフィールの情報を取得しています（ログイン・連携は不要です）。
-              Facebookは公開ページから直接読み取っています。
+              X・TikTok・Instagram・Facebookは外部の取得サービス経由で公開プロフィールの情報を取得しています（ログイン・連携は不要です）。
               媒体がログインを求める場合や取得上限に達した場合は数値を取得できないことがあります。
               <b style={{ fontWeight: 600 }}>取れなかった数字は推測で埋めていません。</b>
               取得できた数値は施策の生成にも渡していて、すでに運用しているSNSを
@@ -1766,25 +1834,12 @@ export function Report({
               LINEは友だち数が非公開のため取得していません。
             </span>
           </div>
+
         </>
       )}
 
-      {(siItems.length > 0 || snsChannels.length > 0 || !!snsPlan?.campaign || !!snsPlan?.error || !!linePlan) && (
+      {(!!snsPlan?.campaign || !!snsPlan?.error || !!linePlan) && (
         <>
-          {siItems.length > 0 && (
-            <div className="measure" style={{ display: "grid", gap: 12, marginTop: 16 }}>
-              <p className="eyebrow">SNS分析</p>
-              {siItems.map((si) => renderSI(si))}
-            </div>
-          )}
-
-          {snsChannels.length > 0 && (
-            <div className="measure" style={{ display: "grid", gap: 12, marginTop: 16 }}>
-              <p className="eyebrow">SNS運用プラン</p>
-              {snsChannels.map((c) => <SnsChannelBlock key={c.platform} c={c} />)}
-            </div>
-          )}
-
           {snsPlan?.campaign && (
             <div className="measure" style={{ marginTop: 16 }}>
               <p className="eyebrow">SNSキャンペーン案</p>

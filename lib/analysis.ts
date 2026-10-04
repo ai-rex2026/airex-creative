@@ -415,7 +415,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
         jobs.push({
           key: "tactics",
           run: () =>
-            generateTactics(diagnosis, a.site, a.social, a.ad_ops).catch(
+            generateTactics(diagnosis, a.site, a.social, a.ad_ops, a.meo).catch(
               failedChapter<TacticPlan>({ items: [], schedule: [], risks: [] })
             ),
         });

@@ -42,7 +42,8 @@ export type SocialInsight = {
 
 export type SocialInsightPlan = { items: SocialInsight[] };
 
-const PLATFORM_RE: Record<SocialInsightPlatform, RegExp> = {
+/** components/Report.tsx が「情報取得→SNS分析→SNS運用プラン」を媒体ごとに束ねる際にも使う */
+export const PLATFORM_RE: Record<SocialInsightPlatform, RegExp> = {
   YouTube: /youtube/i,
   X: /twitter|^x$/i,
   TikTok: /tiktok/i,

@@ -305,8 +305,20 @@ type ApifyDatasetItem = Record<string, unknown>;
  * そのため上限は「自社実測」「競合調査」どちらの経路かを問わず、Apify Actorを実際に
  * 呼ぶ直前の、この関数1箇所だけでまとめて数える。claim_apify_call（Postgres関数。
  * 原子的にインクリメント＆上限チェック）で1分析あたりの合計回数を強制する
+ *
+ * 2026-10-05: 「TikTokだけApify呼び出し回数が上限に達して取得できない」という報告の
+ * 原因調査で、通常ケースの消費量自体が上限10にかなり近いことが分かった：自社実測が
+ * 最大3回（X・TikTok・Instagram）＋競合調査が媒体ごと最大2件×最大3媒体＝最大6回で、
+ * 合計最大9回。claim_apify_call は「予算を使い切った」ことだけを数え、実行が途中で
+ * 打ち切られて保存されなかった試行（サーバーレスの実行時間切れ等）も1回として消費する
+ * ため、1〜2回の中断・再試行が重なるだけで合計が10に届き、後から実行される媒体
+ * （Promise.allSettledの完了順は保証されないため、TikTokとは限らないが結果的に
+ * TikTokで発生した）が「上限に達した」で弾かれる。
+ * 恒久対策は実行時間切れそのものを無くすことだが、それとは別に、通常ケースの
+ * 最大消費（9）に対して上限（10）の余裕が無さすぎるため、中断1回分の再試行を
+ * 吸収できるよう上限を上げる（合わせて競合調査側の消費も減らす。lib/social-competitors.ts）
  */
-const APIFY_BUDGET_PER_ANALYSIS = 10;
+const APIFY_BUDGET_PER_ANALYSIS = 20;
 
 async function claimApifyBudget(analysisId: string): Promise<boolean> {
   const sb = createAdminClient();
@@ -463,6 +475,69 @@ async function readTikTokApify(
     };
   } catch (e) {
     return { ...base, reason: `Apify経由の取得に失敗しました（TikTok）: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/**
+ * Facebookページ。
+ *
+ * 2026-10-05: 従来はX・TikTok・Instagram以外として下の汎用HTML取得（fetch + og:タグ
+ * 読み取り）にフォールバックしていたが、Facebookは非ログインの素のfetchに対して
+ * 「アカウントのページを開けませんでした（HTTP 400）」を返すことが多い（ボット判定が
+ * 他媒体より厳しく、UA偽装のfetchをそもそも弾いている）。これはUAやリトライで直せる
+ * 問題ではないため、X・TikTok・Instagramと同じくApify Actor経由に切り替える。
+ */
+async function readFacebookApify(
+  a: { platform: string; url: string; handle: string },
+  base: SocialAccount,
+  analysisId: string
+): Promise<SocialAccount> {
+  if (!apifyToken()) return { ...base, reason: "Apify APIトークンが未設定のため取得していません" };
+
+  try {
+    const actorId = process.env.APIFY_ACTOR_FACEBOOK || "apify/facebook-pages-scraper";
+    const items = await runApifyActor(analysisId, actorId, { startUrls: [{ url: a.url }] });
+    const page = items[0] as Record<string, unknown> | undefined;
+    if (!page) return { ...base, reason: "このページをFacebookで確認できませんでした（非公開・削除済みの可能性）" };
+
+    // このActorのレスポンス形は変わりうるため、候補になりそうなフィールド名を
+    // 複数チェックする（他媒体の実装と同じ、他で既に採用している防御的な書き方）
+    const followers =
+      typeof page.followers === "number"
+        ? Math.round(page.followers)
+        : typeof page.followersCount === "number"
+          ? Math.round(page.followersCount)
+          : typeof page.likes === "number"
+            ? Math.round(page.likes)
+            : null;
+    const posts = Array.isArray(page.posts) ? (page.posts as Record<string, unknown>[]) : [];
+    const recentContent = posts
+      .slice(0, 5)
+      .map((p) => (typeof p.text === "string" && p.text.trim() ? shorten(p.text) : "（本文なしの投稿）"));
+
+    const recentPosts: SocialPost[] = posts.slice(0, 5).map((p) => ({
+      text: typeof p.text === "string" && p.text.trim() ? p.text : null,
+      likes: typeof p.likes === "number" ? Math.round(p.likes) : null,
+      comments: typeof p.comments === "number" ? Math.round(p.comments) : null,
+      shares: typeof p.shares === "number" ? Math.round(p.shares) : null,
+      views: null, // Facebookページ投稿は動画以外に再生数が無く、媒体混在になるので出さない
+      postedAt: toIsoDate(p.time ?? p.date ?? p.timestamp),
+    }));
+
+    return {
+      ...base,
+      readable: followers !== null || recentContent.length > 0,
+      followers,
+      posts: null,
+      via: "Apify",
+      title:
+        typeof page.title === "string" ? page.title : typeof page.pageName === "string" ? page.pageName : null,
+      recentContent: recentContent.length ? recentContent : null,
+      recentPosts: recentPosts.length ? recentPosts : null,
+      reason: followers === null ? "フォロワー数を確認できませんでした" : null,
+    };
+  } catch (e) {
+    return { ...base, reason: `Apify経由の取得に失敗しました（Facebook）: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
 
@@ -685,6 +760,9 @@ export async function readSocialAccount(
   if (/twitter|^x$/i.test(a.platform)) return readXApify(a, base, analysisId);
   if (/tiktok/i.test(a.platform)) return readTikTokApify(a, base, analysisId);
   if (/instagram/i.test(a.platform)) return readInstagramApify(a, base, analysisId);
+  // Facebookは非ログインの素のfetchをボット判定で弾く（HTTP 400）ことが多いため、
+  // 他媒体同様にApify Actor経由に統一する（readFacebookApifyのコメント参照）
+  if (/facebook/i.test(a.platform)) return readFacebookApify(a, base, analysisId);
 
   // LINE公式アカウントは友だち数を公開しないので、取りに行くだけ無駄になる
   if (/line/i.test(a.platform)) {

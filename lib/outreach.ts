@@ -72,16 +72,40 @@ function classify(s: string, base: string): SuggestKind {
   return "中立";
 }
 
-/** ブランド名まわりのサジェストを実測する */
+/** タイトルの区切りの片側に来がちな、ブランド名ではない語。候補から除く */
+const GENERIC_TITLE_WORD = /^(公式(サイト|ホームページ)?|ホームページ|トップ(ページ)?|TOP|HOME)$/i;
+
+/**
+ * ブランド名の候補を、構造化データ（bizName）が無い場合はタイトルから推測する。
+ *
+ * 2026-10-05: 従来は `title.split(区切り).pop()`（最後の区切りの語）だけを使っていたが、
+ * 日本語のサイトタイトルは「会社名｜キャッチコピー」（会社名が先）と
+ * 「キャッチコピー｜会社名」（会社名が後）のどちらの並びも普通にあり、タイトルの形だけでは
+ * どちらが正しいブランド名か判別できない。常に末尾だけを採る実装では、会社名が先に来る
+ * タイトルのサイトで的外れな語（キャッチコピー側）をサジェストに投げてしまい、
+ * 「検出されませんでした」になっていた可能性が高い。先頭・末尾の両方を候補にして、
+ * 実際にサジェストが返った方を採用する（scanSuggests側は返りがあった語だけ画面に出す）。
+ */
+function brandCandidatesFromTitle(site: SiteScan | null): string[] {
+  if (site?.bizName) return [site.bizName];
+  const parts = (site?.title ?? "")
+    .split(/[|｜\-–—:：]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return [];
+  const edges = [...new Set([parts[0], parts[parts.length - 1]])];
+  return edges.filter((x) => !GENERIC_TITLE_WORD.test(x));
+}
+
 /**
  * サジェストに投げる語。
  * 商材の説明文のような長い文はサジェストが返らないので、短い語だけを使う。
  * 地名は候補を順に試し、実際に返ったものだけ採用する（町名まで細かいと何も返らない）。
  */
 function candidates(site: SiteScan | null, areas: string[]): string[] {
-  const brand = site?.bizName || site?.title?.split(/[|｜\-–—:：]/).pop()?.trim() || "";
-  if (brand.length < 2) return [];
-  const out = [brand, ...areas.map((a) => `${brand} ${a}`)];
+  const brands = brandCandidatesFromTitle(site).filter((b) => b.length >= 2);
+  if (brands.length === 0) return [];
+  const out = brands.flatMap((brand) => [brand, ...areas.map((a) => `${brand} ${a}`)]);
   return [...new Set(out.map((x) => x.trim()).filter((x) => x.length >= 2 && x.length <= 25))];
 }
 
