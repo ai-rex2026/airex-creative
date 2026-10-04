@@ -502,6 +502,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       if (!diagnosis) throw new Error("診断結果が見つかりません");
       const kpi = a.kpi;
       const copies = a.copies;
+      const suggests = a.suggests;
 
       const jobs2: { key: keyof Analysis; run: () => Promise<unknown> }[] = [];
       if (!a.social_insights) {
@@ -537,7 +538,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
         jobs2.push({
           key: "outreach",
           run: () =>
-            generateOutreach(diagnosis, a.suggests, a.competitors).catch(
+            generateOutreach(diagnosis, suggests, a.competitors).catch(
               failedChapter<OutreachPlan>({
                 citations: [],
                 affiliate: { fit: false, reason: "生成できなかったため判断していません", asps: [], terms: "", caution: null },
