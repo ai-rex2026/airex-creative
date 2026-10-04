@@ -1,7 +1,0 @@
-                 <span className="ar">{isOpen ? "閉じる" : "手順を見る"}</span>
-               </button>
-               <div className="kk">
--                {m.kpis?.map((k) => <span className="chip" key={k}>{kpiName(k)}</span>)}
-                 {m.node && <span className="chip node">{m.node}</span>}
-                 {m.flags && m.flags.length > 0 && <span className="chip law">法令の指摘 {m.flags.length}</span>}
-               </div>

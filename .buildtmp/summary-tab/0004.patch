@@ -1,6 +1,0 @@
-   revalidatePath(`/analysis/${id}/report`);
--  return { items, done: carried };
-+  return { items, done: carried, evaluations: plan.evaluations };
- }
- 
- /**

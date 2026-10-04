@@ -1,5 +1,0 @@
-+      return await save({ category_evaluations, measures, step: "要約をまとめています", progress: 96 });
-+    }
-     const summary = await generateSummary(a.diagnosis, a.site, a.seo, a.copies);
-     return await save({ summary, status: "done", step: "完了しました", progress: 100 });
-   } catch (e) {
