@@ -1,0 +1,10 @@
+-{"items":[{"id":"","title":"","kpis":["${kpiId}"],"node":"","impact":"大","impactWhy":"",
+- "effort":"すぐ","owner":"","steps":[""],"done":""}]}`,
+-    { maxTokens: 3000 }
+-  );
+-  return { items: await flag(res.items ?? [], d.industry) };
+-}
+-
+ /**
+  * 衛生管理のチェックリスト。KPIに直結しないので施策とは分ける。
+  * AI を使わず実測から機械的に作る。

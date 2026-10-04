@@ -1,0 +1,26 @@
+diff --git a/lib/summary-tab.ts b/lib/summary-tab.ts
+new file mode 100644
+index 0000000..303ae8c
+--- /dev/null
++++ b/lib/summary-tab.ts
+@@ -0,0 +1,328 @@
++import { askJson } from "./anthropic";
++import type { Diagnosis } from "./types";
++import type { SeoEstimate, SiteScan } from "./site-scan";
++import type { KpiTree } from "./kpi";
++import type { MeoScan } from "./meo";
++import type { PriceScan } from "./pricing";
++import type { SocialScan } from "./social";
++import type { SpeedScan } from "./pagespeed";
++import type { KeywordPlan, LpoPlan } from "./deep";
++import type { SuggestScan } from "./outreach";
++import type { GscData } from "./google";
++import type { AdOps } from "./ad-ops";
++import { facts, fixNodes, flag, RULES, type Measure, type MeasurePlan } from "./measures";
++
++/**
++ * サマリータブ（旧「施策」タブ）の生成。
++ *
++ * 2026-10-04: 「KPIを絞って、絞った分だけ施策を出す」という考え方から、
++ * 「全データ（22章の分析結果）を評価してから、弱い所・測れない所に効く
++ * 施策を優先して見せる」という考え方へ転換した（前セッションでの合意）。
