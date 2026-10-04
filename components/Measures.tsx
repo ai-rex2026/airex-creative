@@ -1,47 +1,60 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { makeRunbook, regenerateMeasures, selectKpis, toggleMeasure } from "@/app/actions";
-import type { KpiTree } from "@/lib/kpi";
+import { makeRunbook, regenerateSummaryTab, toggleMeasure } from "@/app/actions";
 import type { Measure } from "@/lib/measures";
+import type { CategoryEvaluation } from "@/lib/summary-tab";
+import { sortMeasuresByPriority } from "@/lib/summary-tab";
 import { Spinner } from "./Loading";
 import { CasePhotoFrame } from "./CasePhotoFrame";
 import { isCasePhoto } from "@/lib/case-photo";
 
 /**
- * KPIを決めてから施策を並べる画面。
+ * サマリータブ（旧「施策」タブ）。
  *
- * 施策は優先順位で並べ替えない。担当も工数も違うものを一列にすると動けなくなる。
- * 代わりに効果の見込みを添えて、判断は見る人に委ねる。
+ * 2026-10-04: 「KPIを絞って、絞った分だけ施策を出す」という考え方から、
+ * 「全データを評価してから、弱い所・測れない所に効く施策を優先して見せる」
+ * という考え方へ転換した。KPI選択UIはここから無くし、入力タブへ表示専用で
+ * 移した（components/Inputs.tsx）。
+ *
+ * 施策同士は優先順位で並べ替えないという元の方針は変わらないが、ここに限って
+ * 「優先度の高い施策」という並びだけは、カテゴリスコアの低さ（一次）＋
+ * Measure.impact/effort（二次）で並べる（決定済み。sortMeasuresByPriority）。
  */
 
-type Picked = { id: string; name: string; custom?: boolean };
+const SCORE_LABEL: Record<string, string> = { 強: "強", 標準: "標準", 弱: "弱" };
+
+function CategoryCard({ ev }: { ev: CategoryEvaluation }) {
+  const tone = ev.score === null ? "na" : ev.score === "強" ? "ok" : ev.score === "標準" ? "warn" : "ng";
+  return (
+    <a className={`cat-card ${tone}`} href={`#${ev.sectionAnchor}`}>
+      <b>{ev.category}</b>
+      <span className="sc">{ev.score === null ? "分析不可" : SCORE_LABEL[ev.score]}</span>
+      <small>{ev.basis}</small>
+    </a>
+  );
+}
 
 export function Measures({
   id,
-  kpi,
   measures,
-  selected,
+  categoryEvaluations,
   done,
   log,
   hygiene,
 }: {
   id: string;
-  kpi: KpiTree;
   measures: Measure[];
-  selected: Picked[];
+  categoryEvaluations: CategoryEvaluation[] | null;
   done: string[];
   log: { title: string; at: string }[];
   hygiene: { label: string; how: string }[];
 }) {
-  const [picked, setPicked] = useState<Picked[]>(
-    selected.length ? selected : kpi.candidates.filter((c) => c.trackable !== "追えません").map((c) => ({ id: c.id, name: c.name }))
-  );
   const [list, setList] = useState<Measure[]>(measures);
+  const [evaluations, setEvaluations] = useState<CategoryEvaluation[] | null>(categoryEvaluations);
   const [doneIds, setDoneIds] = useState<string[]>(done);
   const [logs, setLogs] = useState(log);
   const [open, setOpen] = useState<string | null>(null);
-  const [custom, setCustom] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, start] = useTransition();
   const [rbBusy, setRbBusy] = useState<string | null>(null);
@@ -71,49 +84,21 @@ export function Measures({
     }
   }
 
-  // 保存できなかったら画面を戻す。黙って握りつぶすと、押した本人は
-  // 保存されたと思ったまま次の画面に進んでしまう
-  function toggleKpi(c: Picked) {
-    const prev = picked;
-    const next = picked.some((p) => p.id === c.id) ? picked.filter((p) => p.id !== c.id) : [...picked, c];
-    setPicked(next);
-    setErr(null);
-    void selectKpis(id, next).catch((e) => {
-      setPicked(prev);
-      setErr(e instanceof Error ? e.message : "KPIを保存できませんでした");
-    });
-  }
-
-  /**
-   * 施策を作り直す。
-   * KPI を足したら全体に跳ね返す（継ぎ足すと、既存の施策が
-   * 新しい KPI を踏まえていない状態のまま残る）。
-   * 1〜2分かかるので、押せたことと進んでいることを画面に出す。
-   */
-  function rebuild(next?: Picked[]) {
+  /** サマリー（カテゴリ評価＋施策）を作り直す。数十秒〜1〜2分かかる */
+  function rebuild() {
     if (busy) return;
     setErr(null);
     start(async () => {
       try {
-        if (next) await selectKpis(id, next);
-        const res = await regenerateMeasures(id);
+        const res = await regenerateSummaryTab(id);
         setList(res.items);
+        setEvaluations(res.evaluations);
         setDoneIds(res.done);
         setOpen(null);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
       }
     });
-  }
-
-  function addCustom() {
-    const name = custom.trim();
-    if (!name || busy) return;
-    const kid = `c${Date.now()}`;
-    const next = [...picked, { id: kid, name, custom: true }];
-    setPicked(next);
-    setCustom("");
-    rebuild(next);
   }
 
   function markDone(m: Measure, v: boolean) {
@@ -130,78 +115,43 @@ export function Measures({
     });
   }
 
-  const shown = list.filter((m) => picked.length === 0 || m.kpis?.some((k) => picked.some((p) => p.id === k)));
-  // 選んだKPIのうち、効く施策が1件も無いもの
-  const missing = picked.filter((p) => !list.some((m) => m.kpis?.includes(p.id)));
-  const kpiName = (k: string) => picked.find((p) => p.id === k)?.name ?? kpi.candidates.find((c) => c.id === k)?.name ?? k;
+  // 旧形式の分析（category_evaluationsがまだ無い）はカード無しで施策だけ表示する。
+  // 再計算・移行バッチは行わない方針（2026-10-04決定）
+  const shown = evaluations ? sortMeasuresByPriority(list, evaluations) : list;
 
   return (
     <>
-      <div className="sec-head">
-        <span className="ic">◎</span>
-        <div>
-          <h2 id="sec-kpi">追うKPI</h2>
-          <div className="sub">{kpi.model}</div>
-        </div>
-        <span className="rule" />
-      </div>
-
-      {kpi.branches?.length > 0 && (
-        <div className="tree measure">
-          {kpi.branches.map((b, i) => (
-            <div className="b" key={i}>
-              <span className="nd">{b.node}</span>
-              <span className="fm">{b.formula}</span>
-              {b.note && <span className="nt">{b.note}</span>}
+      {evaluations && evaluations.length > 0 && (
+        <>
+          <div className="sec-head">
+            <span className="ic">◉</span>
+            <div>
+              <h2 id="sec-category-eval">カテゴリ別評価</h2>
+              <div className="sub">実測できたものだけを評価しています。クリックで詳細に移動します</div>
             </div>
-          ))}
-        </div>
+            <span className="rule" />
+          </div>
+          <div className="cat-grid measure">
+            {evaluations.map((ev) => <CategoryCard ev={ev} key={ev.category} />)}
+          </div>
+        </>
       )}
 
-      <div className="kpis-pick measure">
-        {kpi.candidates.map((c) => {
-          const on = picked.some((p) => p.id === c.id);
-          const dead = c.trackable === "追えません";
-          return (
-            <button key={c.id} className={`k${on ? " on" : ""}${dead ? " dead" : ""}`} onClick={() => toggleKpi({ id: c.id, name: c.name })}>
-              <span className="tp">
-                <b>{c.name}</b>
-                <i className={dead ? "ng" : c.trackable === "実測できます" ? "ok" : "warn"}>{c.trackable}</i>
-              </span>
-              <small>{c.why}</small>
-              <small className="how">{c.how}</small>
-            </button>
-          );
-        })}
-        {picked.filter((p) => p.custom).map((p) => (
-          <button key={p.id} className="k on custom" onClick={() => toggleKpi(p)}>
-            <span className="tp"><b>{p.name}</b><i className="warn">自分で追加</i></span>
-            <small>このKPIに効く施策を下に足しています</small>
-          </button>
-        ))}
-      </div>
-
-      <div className="kpi-add measure">
-        <input
-          value={custom}
-          onChange={(e) => setCustom(e.target.value)}
-          placeholder="ほかに追いたい指標があれば入力（例：リピート率）"
-          onKeyDown={(e) => { if (e.key === "Enter") addCustom(); }}
-        />
-        <button className="btn" onClick={addCustom} disabled={busy || !custom.trim()}>
-          {busy ? <Spinner label="施策を作り直しています" /> : "追加して施策を作り直す"}
-        </button>
-      </div>
-      {err && <div className="alert" style={{ marginTop: 10 }}>{err}</div>}
+      {!evaluations && (
+        <div className="note">
+          <i className="i">i</i>
+          <span>この分析はカテゴリ別評価の導入前に作られたため、カードは表示できません。下の施策は引き続き確認できます。</span>
+        </div>
+      )}
 
       <div className="sec-head">
         <span className="ic">▸</span>
         <div>
-          <h2 id="sec-measures">施策</h2>
-          <div className="sub">選んだKPIに効くものだけを出しています。順位はつけていません</div>
+          <h2 id="sec-measures">優先度の高い施策</h2>
+          <div className="sub">スコアが低いカテゴリ・分析不可のカテゴリに効くものを優先して並べています</div>
         </div>
         <span className="rule" />
-        <button className="redo" onClick={() => rebuild()} disabled={busy}>
+        <button className="redo" onClick={rebuild} disabled={busy}>
           {busy ? <Spinner label="作り直しています" /> : "施策を作り直す"}
         </button>
       </div>
@@ -210,26 +160,15 @@ export function Measures({
         <div className="note">
           <i className="i">…</i>
           <span>
-            いま施策を作り直しています。1〜2分かかります。
+            いま作り直しています。1〜2分かかります。
             この画面を開いたままにしてください。終わると下の一覧が入れ替わります。
           </span>
         </div>
       )}
-
-      {/* 足したKPIに効く施策が無い状態は、作り直しが通っていない。押し直せるようにする */}
-      {!busy && missing.length > 0 && (
-        <div className="note warn">
-          <i className="i">!</i>
-          <span>
-            <b style={{ fontWeight: 600 }}>{missing.map((p) => p.name).join("・")}</b>
-            に効く施策がまだありません。作り直しが途中で終わった可能性があります。
-            <button className="linkbtn" onClick={() => rebuild()}>いま作り直す</button>
-          </span>
-        </div>
-      )}
+      {err && <div className="alert" style={{ marginTop: 10 }}>{err}</div>}
 
       <div className="mlist measure">
-        {shown.length === 0 && <div className="note"><i className="i">i</i><span>KPIを選ぶと、そのKPIに効く施策が出ます。</span></div>}
+        {shown.length === 0 && <div className="note"><i className="i">i</i><span>まだ施策がありません。</span></div>}
         {shown.map((m) => {
           const isDone = doneIds.includes(m.id);
           const isOpen = open === m.id;
@@ -242,7 +181,6 @@ export function Measures({
                 <span className="ar">{isOpen ? "閉じる" : "手順を見る"}</span>
               </button>
               <div className="kk">
-                {m.kpis?.map((k) => <span className="chip" key={k}>{kpiName(k)}</span>)}
                 {m.node && <span className="chip node">{m.node}</span>}
                 {m.flags && m.flags.length > 0 && <span className="chip law">法令の指摘 {m.flags.length}</span>}
               </div>

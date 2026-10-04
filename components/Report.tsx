@@ -41,9 +41,10 @@ import { Inputs } from "./Inputs";
 import { hygiene } from "@/lib/measures";
 import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
+import type { CategoryEvaluation } from "@/lib/summary-tab";
 import { PlatformIcon } from "./PlatformIcons";
 
-type Tab = "inputs" | "measures" | "overview";
+type Tab = "inputs" | "summary" | "overview";
 
 /**
  * 「切り抜く」表示のとき、横・縦どちらの位置スライダーが実際に効くかを判定する。
@@ -169,7 +170,7 @@ export function Report({
   margin: initialMargin,
   kpi,
   measures,
-  kpiSelected,
+  categoryEvaluations,
   measuresDone,
   extraInputs,
   measureLog,
@@ -207,7 +208,7 @@ export function Report({
   margin: number | null;
   kpi: KpiTree | null;
   measures: Measure[] | null;
-  kpiSelected: { id: string; name: string; custom?: boolean }[] | null;
+  categoryEvaluations: CategoryEvaluation[] | null;
   measuresDone: string[] | null;
   extraInputs: { platform: string; url: string }[] | null;
   measureLog: { title: string; at: string }[] | null;
@@ -225,7 +226,7 @@ export function Report({
   const [showAllCopies, setShowAllCopies] = useState(false);
   const [hideRed, setHideRed] = useState(false);
   const [zoom, setZoom] = useState<{ ci: number; sizeId: string } | null>(null);
-  const [tab, setTab] = useState<Tab>(kpi ? "measures" : "overview");
+  const [tab, setTab] = useState<Tab>(kpi ? "summary" : "overview");
   const [budget, setBudgetState] = useState<BudgetBand | null>(initialBudget);
   const [margin, setMarginState] = useState<number>(initialMargin ?? MARGIN[d.industry] ?? 0.4);
   // 主力商材は押し替えられる。自動で拾った価格が実際の主力とずれることがある
@@ -611,7 +612,7 @@ export function Report({
 
       <div className="tabs">
         <button className={tab === "inputs" ? "on" : ""} onClick={() => setTab("inputs")}>入力</button>
-        {kpi && <button className={tab === "measures" ? "on" : ""} onClick={() => setTab("measures")}>施策</button>}
+        {kpi && <button className={tab === "summary" ? "on" : ""} onClick={() => setTab("summary")}>サマリー</button>}
         <button className={tab === "overview" ? "on" : ""} onClick={() => setTab("overview")}>分析データ</button>
       </div>
 
@@ -631,15 +632,15 @@ export function Report({
           social={social}
           pricing={pricing}
           onPricing={setPricing}
+          kpi={kpi}
         />
       )}
 
-      {tab === "measures" && kpi && (
+      {tab === "summary" && kpi && (
         <Measures
           id={id}
-          kpi={kpi}
           measures={measures ?? []}
-          selected={kpiSelected ?? []}
+          categoryEvaluations={categoryEvaluations ?? null}
           done={measuresDone ?? []}
           log={measureLog ?? []}
           hygiene={hygiene(site)}
@@ -1600,7 +1601,18 @@ export function Report({
                     {lpo!.groups.map((g, i) => (
                       <div className="tactic" key={i}>
                         <div className="top"><b>{g.area}</b></div>
-                        <ul>{g.items?.map((x, k) => <li key={k}>{x}</li>)}</ul>
+                        <ul>
+                          {g.items?.map((x, k) => (
+                            <li key={k}>
+                              {typeof x === "string" ? x : x.text}
+                              {typeof x !== "string" && (
+                                <span className={`tag${x.severity === "重" ? " warn" : ""}`} style={{ marginLeft: 8 }}>
+                                  {x.severity}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     ))}
                   </div>

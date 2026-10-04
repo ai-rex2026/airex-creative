@@ -11,9 +11,17 @@ import type { MeoScan } from "./meo";
 
 // ── LP改善（LPO）────────────────────────────────
 
+/**
+ * 指摘の重大度。2026-10-04: サマリータブのLPカテゴリスコアにLPOの所見を
+ * 反映する決定（単純な指摘件数では「質」の信号にならないため、重大度を
+ * 生成時に判定させる）を受けて追加。lib/summary-tab.ts の LP スコア算出が使う。
+ */
+export type LpoSeverity = "軽" | "中" | "重";
+export type LpoItem = { text: string; severity: LpoSeverity };
 export type LpoGroup = {
   area: "ファーストビュー" | "CTA・フォーム" | "コンテンツの信頼性" | "表示速度" | "セキュリティ" | string;
-  items: string[];
+  /** 旧形式の分析（items が string[] だった時代）もそのまま読めるよう、両方を許容する */
+  items: (LpoItem | string)[];
 };
 export type LpoPlan = { groups: LpoGroup[]; /** 生成に失敗したときの理由。章を空で出す代わりに事実を残す */ error?: string };
 
@@ -22,11 +30,11 @@ export async function generateLpo(d: Diagnosis, site: SiteScan | null, priorityN
   const measured: LpoGroup[] = [];
   if (site) {
     const ng = site.headers.filter((h) => !h.pass);
-    const items: string[] = [];
+    const items: LpoItem[] = [];
     for (const h of ng) {
-      items.push(`${h.label}（${h.desc}）が未設定。サーバーまたはCDNのレスポンスヘッダーに追加する`);
+      items.push({ text: `${h.label}（${h.desc}）が未設定。サーバーまたはCDNのレスポンスヘッダーに追加する`, severity: "中" });
     }
-    if (!site.https) items.push("HTTPS に未対応。常時SSL化する");
+    if (!site.https) items.push({ text: "HTTPS に未対応。常時SSL化する", severity: "重" });
     if (items.length) measured.push({ area: "セキュリティ", items });
   }
 
@@ -45,6 +53,10 @@ export async function generateLpo(d: Diagnosis, site: SiteScan | null, priorityN
   良い例：「症例数5,000件という実績を、ファーストビューの見出し直下に置く」
 - 「体制を整える」「最適化する」のようなプロセス語は禁止。何を・どこに・どう変えるかを書く
 - 効果を断定する表現は書かない
+- **各 item に severity（軽/中/重）を付ける。**
+  判断基準：「重」は広告の受け皿として機能しない・成果に直結する欠落（CTAが無い／申し込み方法が
+  分からない／信頼材料が皆無など）。「中」は無くても動くが伸び代が大きい指摘。「軽」は仕上げの範囲
+  （文言の微調整・見た目の整理など）。severity は件数調整のための形式ではなく、実際の深刻さで判断する
 ${priorityNote ? `\n${priorityNote}` : ""}`,
     `商材: ${d.product}
 ターゲット: ${d.audience}
@@ -54,7 +66,7 @@ ${priorityNote ? `\n${priorityNote}` : ""}`,
 訴求軸: ${d.angles.map((a) => `${a.name}（${a.why}）`).join(" / ")}
 ${site ? `サイトのタイトル: ${site.title}\n説明: ${site.description}` : ""}
 
-出力: {"groups":[{"area":"","items":[""]}]}`,
+出力: {"groups":[{"area":"","items":[{"text":"","severity":"軽"}]}]}`,
     { maxTokens: 3500 }
   );
 

@@ -7,7 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { newAnalysisId, type Analysis } from "@/lib/analysis";
 import { askAboutReport } from "@/lib/chat";
-import { generateMeasures, type Measure } from "@/lib/measures";
+import type { Measure } from "@/lib/measures";
+import { generateSummaryTab } from "@/lib/summary-tab";
 import { generateRunbook } from "@/lib/runbook";
 import type { AnalysisMode, BudgetBand } from "@/lib/types";
 import type { PriceScan } from "@/lib/pricing";
@@ -538,24 +539,14 @@ export async function uploadBannerImage(id: string, formData: FormData): Promise
   return { path };
 }
 
-/** 追うKPIを選ぶ。複数選べる */
-export async function selectKpis(id: string, selected: { id: string; name: string; custom?: boolean }[]) {
-  const sb = await createClient();
-  const {
-    data: { user },
-  } = await sb.auth.getUser();
-  if (!user) throw new Error("ログインが必要です");
-  await updateOwned(sb, id, user.id, { kpi_selected: selected });
-}
-
 /**
- * 施策を作り直す。
+ * サマリータブ（カテゴリ別評価＋施策）を作り直す。
  *
- * KPI を足したら全体に跳ね返す（足したぶんだけ継ぎ足すと、既存の施策が
- * 新しい KPI を踏まえていない状態のまま残る）。
+ * 2026-10-04: KPI選択UIを廃止し「追えるKPIは自動的に全部追う」前提にしたため、
+ * 自由入力KPIの合成（旧 selectKpis・kpi_selected 連動）は不要になった。
  * 済みにした印は施策名で照合して引き継ぎ、拾えなかったものは記録に残す。
  */
-export async function regenerateMeasures(id: string) {
+export async function regenerateSummaryTab(id: string) {
   assertKey();
   const sb = await createClient();
   const {
@@ -572,33 +563,19 @@ export async function regenerateMeasures(id: string) {
   const doneIds = a.measures_done ?? [];
   const doneTitles = (a.measures ?? []).filter((m) => doneIds.includes(m.id)).map((m) => m.title);
 
-  // 自由入力の KPI もツリーの候補として渡す
-  const custom = (a.kpi_selected ?? []).filter((k) => k.custom);
-  const kpi = {
-    ...a.kpi,
-    candidates: [
-      ...a.kpi.candidates,
-      ...custom.map((k) => ({
-        id: k.id,
-        name: k.name,
-        node: "",
-        why: "利用者が追加した指標",
-        trackable: "連携が必要です" as const,
-        how: "利用者の指定",
-      })),
-    ],
-  };
-
-  const plan = await generateMeasures(a.diagnosis, a.site, kpi, a.meo, a.pricing, a.extra_inputs ?? [], doneTitles, a.social);
-  const items = (plan.items ?? []).map((m, i) => ({ ...m, id: `m${Date.now()}-${i}` }));
+  const plan = await generateSummaryTab(
+    a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.seo, a.gsc, a.keywords, a.speed, a.lpo,
+    a.social, a.suggests, a.ad_ops, a.extra_inputs ?? [], doneTitles
+  );
+  const items = plan.measures.map((m, i) => ({ ...m, id: `m${Date.now()}-${i}` }));
 
   // 名前が一致するものは済みのまま引き継ぐ
   const carried = items.filter((m) => doneTitles.includes(m.title)).map((m) => m.id);
 
-  await updateOwned(sb, id, user.id, { measures: items, measures_done: carried });
+  await updateOwned(sb, id, user.id, { measures: items, measures_done: carried, category_evaluations: plan.evaluations });
 
   revalidatePath(`/analysis/${id}/report`);
-  return { items, done: carried };
+  return { items, done: carried, evaluations: plan.evaluations };
 }
 
 /**

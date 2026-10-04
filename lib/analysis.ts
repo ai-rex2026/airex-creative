@@ -17,7 +17,8 @@ import { findSocialCompetitors, type SocialCompetitorPlatform, type SocialCompet
 import { generateSocialInsights, type SocialInsightPlan } from "./social-insights";
 import { checkImages, type ImageScan } from "./image-check";
 import { generateKpi, type KpiTree } from "./kpi";
-import { generateMeasures, type Measure } from "./measures";
+import type { Measure } from "./measures";
+import { evaluateCategories, generateSummaryMeasures, type CategoryEvaluation } from "./summary-tab";
 import { fetchGa4, fetchSearchConsole, fetchYoutubeAnalytics, hasGoogleApp, type Ga4Data, type GscData, type YoutubeAnalyticsData } from "./google";
 import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
@@ -93,6 +94,8 @@ export type Analysis = {
   /** 選ばれたKPIのID。自由入力ぶんも id を振ってここに入る */
   kpi_selected: { id: string; name: string; custom?: boolean }[] | null;
   measures: Measure[] | null;
+  /** カテゴリ別評価（サマリータブ）。2026-10-04新設。古い分析には無い（null=未算出。旧形式のままUIに表示する） */
+  category_evaluations: CategoryEvaluation[] | null;
   /** 済みにした施策のID */
   measures_done: string[] | null;
   /** サイトから辿れない材料。別ドメインのLP・非公開SNSなど */
@@ -498,7 +501,6 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       a.ad_ops?.done &&
       a.social_competitors && a.tactics && a.sns_plan && a.kpi && a.lpo && a.keywords && a.line_plan && a.copies && a.suggests &&
       (!a.social_insights ||
-        !a.measures ||
         !a.seo_articles ||
         !a.outreach ||
         !a.copies[0]?.score ||
@@ -506,7 +508,6 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
     ) {
       const diagnosis = a.diagnosis;
       if (!diagnosis) throw new Error("診断結果が見つかりません");
-      const kpi = a.kpi;
       const copies = a.copies;
       const suggests = a.suggests;
 
@@ -519,15 +520,6 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
             generateSocialInsights(diagnosis, a.social, a.social_competitors, a.social_yt_analytics).catch(
               () => ({ items: [] }) as SocialInsightPlan
             ),
-        });
-      }
-      if (!a.measures) {
-        jobs2.push({
-          key: "measures",
-          run: () =>
-            generateMeasures(diagnosis, a.site, kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social, priorityNoteFor(a, "measures"))
-              .then((plan) => plan.items ?? [])
-              .catch(() => [] as Measure[]),
         });
       }
       if (!a.seo_articles) {
@@ -612,6 +604,35 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       }
       const speed = await scanSpeed(a.url, remaining - SAVE_MARGIN_MS);
       return await save({ speed, step: "要約をまとめています", progress: 95 });
+    }
+    // サマリータブ（カテゴリ別評価＋優先度の高い施策）。2026-10-04新設。
+    // LPカテゴリの評価がPageSpeedの実測（speed）を使うため、speedが確定する
+    // （実測できた、またはURLが無く実測の対象外と分かる）までこのステップを待つ。
+    // evaluations（決定的・無料）とmeasures（AI呼び出し・有料）を別々に保存し、
+    // どちらかが既にあれば再計算しない（再試行で完了済みの項目まで作り直さない）
+    if (!a.category_evaluations || !a.measures) {
+      const diagnosis = a.diagnosis;
+      if (!diagnosis) throw new Error("診断結果が見つかりません");
+      const kpi = a.kpi ?? { model: "", branches: [], candidates: [] };
+      const category_evaluations =
+        a.category_evaluations ??
+        evaluateCategories({
+          adOps: a.ad_ops,
+          meo: a.meo,
+          seo: a.seo,
+          gsc: a.gsc,
+          keywords: a.keywords,
+          speed: a.speed,
+          lpo: a.lpo,
+          social: a.social,
+          suggests: a.suggests,
+        });
+      const measures =
+        a.measures ??
+        (await generateSummaryMeasures(
+          diagnosis, a.site, kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social, priorityNoteFor(a, "measures")
+        ).catch(() => [] as Measure[]));
+      return await save({ category_evaluations, measures, step: "要約をまとめています", progress: 96 });
     }
     const summary = await generateSummary(a.diagnosis, a.site, a.seo, a.copies);
     return await save({ summary, status: "done", step: "完了しました", progress: 100 });

@@ -1,4 +1,3 @@
-import { askJson } from "./anthropic";
 import type { Diagnosis } from "./types";
 import type { SiteScan } from "./site-scan";
 import type { KpiTree } from "./kpi";
@@ -18,7 +17,15 @@ import type { Runbook } from "./runbook";
  *
  * 優先順位で並べ替えることはしない（順位を決め打ちすると、担当も工数も違う
  * ものが一列に並んで動けなくなる）。代わりに効果の見込みを添えて、
- * 判断は見る人に委ねる。
+ * 判断は見る人に委ねる（施策同士の並び）。ただし2026-10-04、サマリータブの
+ * 「優先度の高い施策」ブロックに限っては、スコアが低いカテゴリを優先する
+ * 一次ソートに加え、Measure.impact/effortによる二次ソートを適用する決定をした
+ * （lib/summary-tab.ts 側で行う。この生成ロジック自体は変えない）。
+ *
+ * 2026-10-04: 「施策」タブを「サマリー」タブへ置き換えるのに合わせて、
+ * 生成の入口（旧 generateMeasures・measuresForKpi）は lib/summary-tab.ts の
+ * generateSummaryTab に一本化した。この先に残っている facts/fixNodes/flag は
+ * そちらから呼ぶための共有ヘルパーとして export している
  */
 
 export type Impact = "大" | "中" | "小";
@@ -48,7 +55,7 @@ export type Measure = {
 
 export type MeasurePlan = { items: Measure[] };
 
-const RULES = `守ること:
+export const RULES = `守ること:
 - **KPIに効くものだけを出す。** サーバー設定やセキュリティヘッダーのような衛生管理は書かない
   （それらは別のチェックリストで扱う）
 - title は「何をするか」を動詞で。「〜の検討」「〜の強化」のような、やったか判断できない書き方は禁止
@@ -67,7 +74,7 @@ const RULES = `守ること:
 - done は「何を見たら完了と判断できるか」。数えられるものにする
 - 効果や結果を断定しない。「必ず」「保証」は使わない`;
 
-function facts(
+export function facts(
   d: Diagnosis,
   site: SiteScan | null,
   meo: MeoScan | null,
@@ -107,7 +114,7 @@ ${platformNotes()}`;
 }
 
 /** どのKPIを動かす施策なのかを、必ず画面に出せる形にそろえる */
-function fixNodes(items: Measure[], kpi: KpiTree): Measure[] {
+export function fixNodes(items: Measure[], kpi: KpiTree): Measure[] {
   // ツリーの段を第一候補にする。ただし候補KPIはツリーに無い指標を含むので
   // （売上ツリーに載らない「サイト訪問数」など）、そちらも許可する。
   // 空欄で返すと施策がどのKPIの話か画面から消えるため、最後は
@@ -128,7 +135,7 @@ function fixNodes(items: Measure[], kpi: KpiTree): Measure[] {
 }
 
 /** 施策の文言も法令チェックにかける。コピーだけ検査しても、施策名に残る */
-async function flag(items: Measure[], industry: Industry): Promise<Measure[]> {
+export async function flag(items: Measure[], industry: Industry): Promise<Measure[]> {
   const texts = items.flatMap((m) => [m.title, m.impactWhy, ...(m.steps ?? [])]);
   let hits: GuardHit[] = [];
   try {
@@ -142,79 +149,6 @@ async function flag(items: Measure[], industry: Industry): Promise<Measure[]> {
       ? { ...m, flags: own.map((h) => ({ text: h.text, law: h.law, reason: h.reason, suggestion: h.suggestion })) }
       : m;
   });
-}
-
-export async function generateMeasures(
-  d: Diagnosis,
-  site: SiteScan | null,
-  kpi: KpiTree,
-  meo: MeoScan | null,
-  pricing: PriceScan | null,
-  extra: { platform: string; url: string }[] = [],
-  doneTitles: string[] = [],
-  social: SocialScan | null = null,
-  priorityNote?: string
-): Promise<MeasurePlan> {
-  const res = await askJson<MeasurePlan>(
-    `あなたは集客の実務者です。下のKPIに効く施策を設計します。
-
-${RULES}
-- items は6〜9件
-- **node を1つに集中させない。** 上のノードのうち少なくとも3つに散らす。
-  「問い合わせを増やす」だけでなく、来院率・単価・リピートを動かす施策も考える
-${priorityNote ? `\n${priorityNote}` : ""}`,
-    `${facts(d, site, meo, pricing, extra, doneTitles, social)}
-
-【追うKPI】
-${kpi.candidates.map((c) => `- ${c.id}：${c.name}（${c.node}）／ ${c.trackable}`).join("\n")}
-
-【KPIツリーのノード】※ node にはこの中の語をそのまま使う
-${kpi.branches.map((b) => `- ${b.node}（${b.formula}）`).join("\n")}
-
-出力:
-{"items":[{"id":"m1","title":"","kpis":["k1"],"node":"","impact":"大","impactWhy":"",
- "effort":"すぐ","owner":"","steps":[""],"done":""}]}`,
-    { maxTokens: 6000 }
-  );
-  const items = fixNodes(res.items ?? [], kpi);
-  return { items: await flag(items, d.industry) };
-}
-
-/**
- * 自由入力で足されたKPIについてだけ施策を考える。
- * 既存の施策は作り直さない。作り直すと、済みにした印が消える。
- */
-export async function measuresForKpi(
-  d: Diagnosis,
-  site: SiteScan | null,
-  meo: MeoScan | null,
-  pricing: PriceScan | null,
-  kpiId: string,
-  kpiName: string,
-  existing: string[],
-  extra: { platform: string; url: string }[] = []
-): Promise<MeasurePlan> {
-  const res = await askJson<MeasurePlan>(
-    `あなたは集客の実務者です。指定されたKPI1つに効く施策を設計します。
-
-${RULES}
-- items は2〜4件。**このKPIに効くものだけ**
-- kpis には必ず "${kpiId}" を入れる
-- すでにある施策と重複するものは出さない`,
-    `${facts(d, site, meo, pricing, extra)}
-
-【追うKPI】
-${kpiId}：${kpiName}
-
-【すでにある施策（重複させない）】
-${existing.length ? existing.map((x) => `- ${x}`).join("\n") : "（なし）"}
-
-出力:
-{"items":[{"id":"","title":"","kpis":["${kpiId}"],"node":"","impact":"大","impactWhy":"",
- "effort":"すぐ","owner":"","steps":[""],"done":""}]}`,
-    { maxTokens: 3000 }
-  );
-  return { items: await flag(res.items ?? [], d.industry) };
 }
 
 /**
