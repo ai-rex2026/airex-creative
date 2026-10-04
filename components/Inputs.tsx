@@ -110,6 +110,10 @@ export function Inputs({
   const [value, setValue] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, start] = useTransition();
+  // replanForBudget はDB更新だけを待って返る（実際のAI再生成はバックグラウンドで
+  // 数分かかる）。busy が false に戻った＝完了、と誤解されないよう、
+  // 「開始した」という事実だけを別に出す
+  const [replanStarted, setReplanStarted] = useState(false);
 
   function add() {
     const v = value.trim();
@@ -243,7 +247,8 @@ export function Inputs({
         </span>
       </div>
 
-      <div className="sec-head">
+      {/* id="sec-budget" は「広告手法一覧」タブの「入力タブで予算を見直す」リンク先 */}
+      <div className="sec-head" id="sec-budget">
         <span className="ic">¥</span>
         <div>
           <h2>予算と粗利率</h2>
@@ -284,10 +289,27 @@ export function Inputs({
             <button
               className="linkbtn"
               disabled={busy}
-              onClick={() => { setErr(null); start(async () => { try { await replanForBudget(id, budget); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } }); }}
+              onClick={() => {
+                setErr(null);
+                setReplanStarted(false);
+                start(async () => {
+                  try {
+                    await replanForBudget(id, budget);
+                    setReplanStarted(true);
+                  } catch (e) {
+                    setErr(e instanceof Error ? e.message : String(e));
+                  }
+                });
+              }}
             >
-              この予算で作り直す
+              {busy ? "送信しています…" : "この予算で作り直す"}
             </button>
+            <small>（広告運用設計も作り直すため、送信後も数分かかります）</small>
+            {replanStarted && (
+              <small style={{ display: "block", marginTop: 6 }}>
+                作り直しを開始しました。終わると「分析データ」タブに反映されます（このボタンが使えるようになっても、裏の処理はまだ続いています）。
+              </small>
+            )}
           </span>
         </div>
       )}

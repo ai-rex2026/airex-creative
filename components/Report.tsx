@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
-import { replanForBudget, runLp, setBudget, setMargin, uploadBannerImage } from "@/app/actions";
+import { runLp, setBudget, setMargin, uploadBannerImage } from "@/app/actions";
 import { SIZES, type SizePreset } from "@/lib/sizes";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "@/lib/types";
 import type { SeoEstimate, SiteScan } from "@/lib/site-scan";
@@ -227,7 +227,6 @@ export function Report({
   const [zoom, setZoom] = useState<{ ci: number; sizeId: string } | null>(null);
   const [tab, setTab] = useState<Tab>(kpi ? "measures" : "overview");
   const [budget, setBudgetState] = useState<BudgetBand | null>(initialBudget);
-  const [replanning, setReplanning] = useState(false);
   const [margin, setMarginState] = useState<number>(initialMargin ?? MARGIN[d.industry] ?? 0.4);
   // 主力商材は押し替えられる。自動で拾った価格が実際の主力とずれることがある
   const [pricing, setPricing] = useState(initialPricing);
@@ -346,6 +345,19 @@ export function Report({
   function pickBudget(b: BudgetBand | null) {
     setBudgetState(b);
     void setBudget(id, b).catch(() => {});
+  }
+
+  // 2026-10-04: 予算の変更・作り直しは入力タブ（Inputs）に一本化する。
+  // 「広告手法一覧」側に予算ピッカーと作り直しボタンを両方置いていたため、
+  // ①変更できる場所が2つになって分かりにくい、②作り直しボタンは
+  // replanForBudget（裏でAI生成。数分かかる）を呼ぶのに、完了を検知する手段が
+  // 画面になく「作り直しています…」の表記が終わらない、という問題があった。
+  // ここでは想定予算の表示だけに留め、変更・作り直しは入力タブへ誘導する
+  function goToInputsBudget() {
+    setTab("inputs");
+    setTimeout(() => {
+      document.getElementById("sec-budget")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
   }
 
   // 予算に対して媒体が多すぎると、どの媒体もデータが溜まらず判断できなくなる
@@ -1057,18 +1069,21 @@ export function Report({
           </div>
 
           <div className="budget measure" style={{ marginTop: 16 }}>
-            <div className="bh">月間広告予算<span>任意</span></div>
+            <div className="bh">月間広告予算<span>想定値</span></div>
             <div className="bb">
-              {BUDGETS.map((b) => (
-                <button key={b.id} className={budget === b.id ? "on" : ""} onClick={() => pickBudget(budget === b.id ? null : b.id)}>
-                  {b.label}
-                </button>
-              ))}
+              <span className={budget ? "on" : ""} style={{ display: "inline-block" }}>
+                {budget ? BUDGETS.find((b) => b.id === budget)?.label ?? budget : "未設定（配分%のまま表示）"}
+              </span>
             </div>
             <p>
               {budget
-                ? "配分%を実額に直しています。もう一度押すと解除できます。"
-                : "選ぶと、配分%が媒体ごとの実額に変わります。あとから何度でも変えられます。"}
+                ? "配分%をこの想定予算で実額に直しています。"
+                : "予算を入れると、配分%が媒体ごとの実額に変わります。"}
+              変更・作り直しは
+              <button className="linkbtn" onClick={goToInputsBudget}>
+                入力タブの「予算と粗利率」
+              </button>
+              から行えます。
             </p>
           </div>
 
@@ -1078,17 +1093,9 @@ export function Report({
               <span>
                 この予算だと <b style={{ fontWeight: 600 }}>{thin.map((m) => m.channel).join("・")}</b> が
                 月10万円を下回ります。予算を薄く広げると、どの媒体もデータが溜まらず良し悪しを判断できません。
-                <button
-                  className="linkbtn"
-                  disabled={replanning}
-                  onClick={() => {
-                    setReplanning(true);
-                    void replanForBudget(id, band.id).catch(() => setReplanning(false));
-                  }}
-                >
-                  {replanning ? "作り直しています…" : "この予算で媒体構成を作り直す"}
+                <button className="linkbtn" onClick={goToInputsBudget}>
+                  入力タブで予算を見直す
                 </button>
-                <small>（広告運用設計も作り直すため、数分かかります）</small>
               </span>
             </div>
           )}
@@ -1471,7 +1478,7 @@ export function Report({
               </div>
             </>
           )}
-          {suggests && suggests.rows.length > 0 && (
+          {suggests && (
             <>
               <div className="sec-head">
                 <span className="ic">⌕</span>
@@ -1481,36 +1488,52 @@ export function Report({
                 </div>
                 <span className="rule" />
               </div>
-              <div className="sg measure">
-                {suggests.queried.map((q) => (
-                  <div className="q" key={q}>
-                    <div className="qh">「{q}」で検索したとき</div>
-                    <div className="chips">
-                      {suggests.rows.filter((r) => r.keyword === q).map((r, i) => (
-                        <span
-                          className={`chip${r.kind === "注意" ? " ng" : r.kind === "誘導先に注意" ? " warn" : r.kind === "同名の別物" ? " dim" : ""}`}
-                          key={i}
-                          title={r.kind}
-                        >
-                          {r.suggestion}
-                        </span>
-                      ))}
-                    </div>
+              {suggests.rows.length > 0 ? (
+                <>
+                  <div className="sg measure">
+                    {suggests.queried.map((q) => (
+                      <div className="q" key={q}>
+                        <div className="qh">「{q}」で検索したとき</div>
+                        <div className="chips">
+                          {suggests.rows.filter((r) => r.keyword === q).map((r, i) => (
+                            <span
+                              className={`chip${r.kind === "注意" ? " ng" : r.kind === "誘導先に注意" ? " warn" : r.kind === "同名の別物" ? " dim" : ""}`}
+                              key={i}
+                              title={r.kind}
+                            >
+                              {r.suggestion}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div className="note">
-                <i className="i">i</i>
-                <span>
-                  赤は放置すると不利になる語、黄は第三者サイトへ流れる語（口コミ・比較など）です。
-                  黄は必ずしも悪くありませんが、遷移先の内容を自社で制御できません。
-                  グレーは同名の別施設・別サービスのサジェストで、指名検索で埋もれている状態を示します。
-                </span>
-              </div>
-              {outreach && outreach.suggestActions?.length > 0 && (
-                <div className="tactic measure" style={{ marginTop: 12 }}>
-                  <div className="top"><b>この状態に対してやること</b></div>
-                  <ul>{outreach.suggestActions.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                  <div className="note">
+                    <i className="i">i</i>
+                    <span>
+                      赤は放置すると不利になる語、黄は第三者サイトへ流れる語（口コミ・比較など）です。
+                      黄は必ずしも悪くありませんが、遷移先の内容を自社で制御できません。
+                      グレーは同名の別施設・別サービスのサジェストで、指名検索で埋もれている状態を示します。
+                    </span>
+                  </div>
+                  {outreach && outreach.suggestActions?.length > 0 && (
+                    <div className="tactic measure" style={{ marginTop: 12 }}>
+                      <div className="top"><b>この状態に対してやること</b></div>
+                      <ul>{outreach.suggestActions.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                // 2026-10-04: scanSuggests は失敗ではなく「検出なし」でも rows: [] を
+                // 返しうる（error は付かない）。以前はこの場合セクション自体を丸ごと
+                // 非表示にしていたため、利用者には「サジェストがあるはずなのに無い」
+                // ように見えていた。チェック自体は実行済みであることを示す
+                <div className="note">
+                  <i className="i">i</i>
+                  <span>
+                    指名検索のサジェストは検出されませんでした。社名・サービス名の検索ボリュームが
+                    まだ少ない、またはGoogle側の一時的な制限の可能性があります。
+                  </span>
                 </div>
               )}
             </>
