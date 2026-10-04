@@ -1,0 +1,34 @@
++}
++
++/** 実測ソースが無いため常に分析不可（2026-10-04・既決） */
++function evalOutreach(): CategoryEvaluation {
++  return { category: "外部施策", score: null, measured: false, basis: "実測できるソースがありません", sectionAnchor: "sec-outreach" };
++}
++
++export function evaluateCategories(input: {
++  adOps: AdOps | null;
++  meo: MeoScan | null;
++  seo: SeoEstimate | null;
++  gsc: GscData | null;
++  keywords: KeywordPlan | null;
++  speed: SpeedScan | null;
++  lpo: LpoPlan | null;
++  social: SocialScan | null;
++  suggests: SuggestScan | null;
++}): CategoryEvaluation[] {
++  return [
++    evalAdTags(input.adOps),
++    evalMeo(input.meo),
++    evalSeo(input.seo),
++    evalKeywordCoverage(input.gsc, input.keywords),
++    evalLp(input.speed, input.lpo),
++    evalSocial(input.social),
++    evalSuggest(input.suggests),
++    evalOutreach(),
++  ];
++}
++
++/**
++ * 施策（measures）の生成。旧 generateMeasures と同じ1回のAI呼び出し
++ * （KPIを絞らず、常に全KPI候補に対して出す）。evaluateCategories（決定的・
++ * 無料）とは別の関数に分けている。呼び出し元（lib/analysis.ts）で、

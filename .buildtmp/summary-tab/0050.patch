@@ -1,0 +1,33 @@
++${kpi.branches.map((b) => `- ${b.node}（${b.formula}）`).join("\n")}
++
++出力:
++{"items":[{"id":"m1","title":"","kpis":["k1"],"node":"","impact":"大","impactWhy":"",
++ "effort":"すぐ","owner":"","steps":[""],"done":""}]}`,
++    { maxTokens: 6000 }
++  );
++  const items = fixNodes(res.items ?? [], kpi);
++  return await flag(items, d.industry);
++}
++
++/**
++ * サマリータブ全体（evaluations + measures）を一度に作る。
++ * 画面からの「施策を作り直す」操作（app/actions.ts の regenerateSummaryTab）向け。
++ * パイプライン本体（lib/analysis.ts）は、evaluations と measures を別々に
++ * 保存するためこの関数を使わず、evaluateCategories と generateSummaryMeasures を
++ * 個別に呼ぶ
++ */
++export async function generateSummaryTab(
++  d: Diagnosis,
++  site: SiteScan | null,
++  kpi: KpiTree,
++  meo: MeoScan | null,
++  pricing: PriceScan | null,
++  seo: SeoEstimate | null,
++  gsc: GscData | null,
++  keywords: KeywordPlan | null,
++  speed: SpeedScan | null,
++  lpo: LpoPlan | null,
++  social: SocialScan | null,
++  suggests: SuggestScan | null,
++  adOps: AdOps | null,
++  extra: { platform: string; url: string }[] = [],

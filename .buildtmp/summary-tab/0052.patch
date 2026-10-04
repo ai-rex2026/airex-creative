@@ -1,0 +1,12 @@
++    // 対応するカテゴリが分かる場合だけスコアを使う。分からない施策は中間順位にする
++    const matched = evaluations.find((e) => m.node && (m.node.includes(e.category) || e.category.includes(m.node)));
++    return matched ? (matched.score === null ? SCORE_RANK["弱"] : SCORE_RANK[matched.score]) : 1;
++  };
++  return [...measures].sort((a, b) => {
++    const primary = rankOf(a) - rankOf(b);
++    if (primary !== 0) return primary;
++    const impact = IMPACT_RANK[a.impact] - IMPACT_RANK[b.impact];
++    if (impact !== 0) return impact;
++    return EFFORT_RANK[a.effort] - EFFORT_RANK[b.effort];
++  });
++}

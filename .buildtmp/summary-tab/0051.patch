@@ -1,0 +1,20 @@
++  doneTitles: string[] = [],
++  priorityNote?: string
++): Promise<SummaryTab> {
++  const evaluations = evaluateCategories({ adOps, meo, seo, gsc, keywords, speed, lpo, social, suggests });
++  const measures = await generateSummaryMeasures(d, site, kpi, meo, pricing, extra, doneTitles, social, priorityNote);
++  return { evaluations, measures };
++}
++
++/**
++ * 「優先度の高い施策」の並び順（表示専用。保存はしない）。
++ * 2026-10-04決定：一次ソートはスコアが低いカテゴリ優先、二次ソートで
++ * Measure.impact/effortも加味する。
++ */
++const SCORE_RANK: Record<string, number> = { 弱: 0, 標準: 1, 強: 2 }; // null(分析不可)は弱と同じ扱い
++const IMPACT_RANK: Record<string, number> = { 大: 0, 中: 1, 小: 2 };
++const EFFORT_RANK: Record<string, number> = { すぐ: 0, 数日: 1, 数週間: 2 };
++
++export function sortMeasuresByPriority(measures: Measure[], evaluations: CategoryEvaluation[]): Measure[] {
++  const rankOf = (m: Measure) => {
++    // Measure.node はKPIツリーの語で、カテゴリ名と直接一致しないことが多いため、
