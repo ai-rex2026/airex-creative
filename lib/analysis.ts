@@ -478,68 +478,100 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
 
       return await save({ step: "訴求軸ごとにコピーを書いています", progress: 80 });
     }
-    // YouTube・X・TikTok・Instagramはアカウント情報（登録者数・直近の投稿）が実測できている場合だけ、
-    // 競合アカウントを探して実測し直す。実測が無い媒体は探しに行くだけ無駄になる
-    if (!a.social_insights) {
-      let si: SocialInsightPlan = { items: [] };
-      try {
-        si = await generateSocialInsights(a.diagnosis, a.social, a.social_competitors, a.social_yt_analytics);
-      } catch {
-        // 作れなくても分析全体は止めない。その媒体の分析結果が空のまま先に進む
+    // 2026-10-04: ここから先の章（SNS分析まとめ・施策・SEO記事設計・外部露出・コピー採点・
+    // バナー向け画像判定）も、直前の9章フェーズと同様に互いの出力を必要としない
+    // （例えばseo_articlesはkeywordsだけ、outreachはsuggestsだけを使い、互いには依存しない）。
+    // 以前はこの5〜6工程を1本ずつ直列に待っていたため、1本あたり数十秒〜最大260秒
+    // （TOTAL_BUDGET_MS。lib/anthropic.ts参照）かかるAI生成が連続し、レポート全体の
+    // 処理時間（20〜30分）の主な原因になっていた。9章フェーズと同じ「まだ無い分だけ
+    // ジョブを積んで並列実行し、完了した章だけその場で即保存する」パターンに統一し、
+    // 直列5〜6本の待ち時間を一番遅い1本の待ち時間まで短縮する。
+    // 表示速度の実測(speed)だけは、残り予算を見て安全にスキップ/実行する専用ロジックが
+    // 既にあるため、このバッチには含めず元のまま最後に残す
+    if (
+      a.ad_ops?.done &&
+      a.social_competitors && a.tactics && a.sns_plan && a.kpi && a.lpo && a.keywords && a.line_plan && a.copies && a.suggests &&
+      (!a.social_insights ||
+        !a.measures ||
+        !a.seo_articles ||
+        !a.outreach ||
+        !a.copies[0]?.score ||
+        (!a.image_scan && (a.site?.images ?? []).length > 0))
+    ) {
+      const diagnosis = a.diagnosis;
+      if (!diagnosis) throw new Error("診断結果が見つかりません");
+      const kpi = a.kpi;
+      const copies = a.copies;
+
+      const jobs2: { key: keyof Analysis; run: () => Promise<unknown> }[] = [];
+      if (!a.social_insights) {
+        jobs2.push({
+          key: "social_insights",
+          // 作れなくても分析全体は止めない。その媒体の分析結果が空のまま先に進む
+          run: () =>
+            generateSocialInsights(diagnosis, a.social, a.social_competitors, a.social_yt_analytics).catch(
+              () => ({ items: [] }) as SocialInsightPlan
+            ),
+        });
       }
-      return await save({ social_insights: si, step: "施策を組み立てています", progress: 81 });
-    }
-    if (!a.measures) {
-      // 通常ここには来ない（直前のまとめ生成で必ず埋まる）が、型の安全のための保険
-      if (!a.kpi) {
-        const kpi = await generateKpi(a.diagnosis, a.site, a.pricing, a.meo, a.gsc, a.ga4);
-        return await save({ kpi, step: "施策を組み立てています", progress: 82 });
+      if (!a.measures) {
+        jobs2.push({
+          key: "measures",
+          run: () =>
+            generateMeasures(diagnosis, a.site, kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social, priorityNoteFor(a, "measures"))
+              .then((plan) => plan.items ?? [])
+              .catch(() => [] as Measure[]),
+        });
       }
-      const plan = await generateMeasures(
-        a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social,
-        priorityNoteFor(a, "measures")
-      );
-      return await save({ measures: plan.items ?? [], step: "SEO記事の設計を書いています", progress: 83 });
-    }
-    // SEO記事設計（H2/H3構成の記事案2本）。対策キーワードが決まった直後に作る
-    if (!a.seo_articles) {
-      const seo_articles = await generateSeoArticles(a.diagnosis, a.site, a.keywords, priorityNoteFor(a, "seo_articles")).catch(
-        failedChapter<SeoArticleSet>({ articles: [] })
-      );
-      return await save({ seo_articles, step: "外部露出の施策を書いています", progress: 85 });
-    }
-    if (!a.outreach) {
-      // 通常ここには来ない（直前のまとめ生成で必ず埋まる）が、型の安全のための保険
-      if (!a.suggests) {
-        const suggests = await scanSuggests(a.diagnosis, a.site, []).catch(
-          failedChapter<SuggestScan>({ rows: [], queried: [], fetchedAt: new Date().toISOString() })
-        );
-        return await save({ suggests, step: "勝ち筋を採点しています", progress: 87 });
+      if (!a.seo_articles) {
+        // SEO記事設計（H2/H3構成の記事案2本）。対策キーワードが決まった直後に作れる
+        jobs2.push({
+          key: "seo_articles",
+          run: () =>
+            generateSeoArticles(diagnosis, a.site, a.keywords, priorityNoteFor(a, "seo_articles")).catch(
+              failedChapter<SeoArticleSet>({ articles: [] })
+            ),
+        });
       }
-      const outreach = await generateOutreach(a.diagnosis, a.suggests, a.competitors).catch(
-        failedChapter<OutreachPlan>({
-          citations: [],
-          affiliate: { fit: false, reason: "生成できなかったため判断していません", asps: [], terms: "", caution: null },
-          suggestActions: [],
-          prThemes: [],
+      if (!a.outreach) {
+        jobs2.push({
+          key: "outreach",
+          run: () =>
+            generateOutreach(diagnosis, a.suggests, a.competitors).catch(
+              failedChapter<OutreachPlan>({
+                citations: [],
+                affiliate: { fit: false, reason: "生成できなかったため判断していません", asps: [], terms: "", caution: null },
+                suggestActions: [],
+                prThemes: [],
+              })
+            ),
+        });
+      }
+      if (!a.copies[0]?.score) {
+        jobs2.push({
+          key: "copies",
+          // 採点に失敗しても章ごと保存は変えない。コピー自体は既にあるので、未採点のまま先へ進む
+          run: () => scoreCopies(diagnosis, copies).catch(() => copies),
+        });
+      }
+      if (!a.image_scan && (a.site?.images ?? []).length > 0) {
+        // バナーに使える写真かを見る。文字が焼き込まれた画像は切り抜くと切れるので、
+        // 候補から外すために先に判定しておく
+        jobs2.push({
+          key: "image_scan",
+          run: () => checkImages(a.site!.images).catch(() => ({ items: [], checkedAt: new Date().toISOString() })),
+        });
+      }
+
+      // 各ジョブは他のジョブの成否と無関係に、完了した時点でそれぞれ即保存する（9章フェーズと同じ理由）
+      await Promise.allSettled(
+        jobs2.map(async (job) => {
+          const value = await job.run();
+          await save({ [job.key]: value } as Partial<Analysis>);
         })
       );
-      return await save({ outreach, step: "勝ち筋を採点しています", progress: 88 });
-    }
-    if (!a.copies) {
-      // 通常ここには来ない（直前のまとめ生成で必ず埋まる）が、型の安全のための保険
-      const copies = await generateCopies(a.diagnosis, 2);
-      return await save({ copies, step: "勝ち筋を採点しています", progress: 86 });
-    }
-    if (!a.copies[0]?.score) {
-      const scored = await scoreCopies(a.diagnosis, a.copies);
-      return await save({ copies: scored, step: "要約をまとめています", progress: 92 });
-    }
-    // バナーに使える写真かを見る。文字が焼き込まれた画像は切り抜くと切れるので、
-    // 候補から外すために先に判定しておく
-    if (!a.image_scan && (a.site?.images ?? []).length > 0) {
-      const image_scan = await checkImages(a.site!.images).catch(() => ({ items: [], checkedAt: new Date().toISOString() }));
-      return await save({ image_scan, step: "要約をまとめています", progress: 94 });
+
+      return await save({ step: "要約をまとめています", progress: 92 });
     }
     // 表示速度の実測は最後に回す。PSI は返らないことがあり、
     // 途中に置くとレポート全体がそこで止まる
