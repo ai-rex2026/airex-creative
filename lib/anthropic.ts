@@ -93,18 +93,36 @@ export function conformToExample<T>(parsed: unknown, system: string, user: strin
   return obj as T;
 }
 
+/**
+ * askJson は失敗時に最大1回リトライする（下記）。
+ *
+ * 2026-10-04: 以前はリトライも初回と同じ timeoutMs を使っていたため、呼び出し元が
+ * timeoutMs を長めに指定していると（例: lib/ad-ops.ts の finishAdOps は170秒）、
+ * 「初回170秒＋リトライ170秒＝最悪340秒」のように、1回の askJson 呼び出し単体で
+ * サーバーレス関数の実行上限（300秒）を超えてしまい、途中経過を保存する前に
+ * 関数ごと強制終了される組み合わせが存在した。
+ * そのため、初回とリトライを合わせた合計がこの値を超えないように、リトライの
+ * 持ち時間を「残り予算」として算出する（呼び出し元が timeoutMs をどう指定しても、
+ * askJson 1回の呼び出し全体がこの上限に収まることを保証する）
+ */
+const TOTAL_BUDGET_MS = 260_000;
+/** 初回・リトライのどちらにも、最低限これだけの時間は残す */
+const MIN_CALL_MS = 20_000;
+
 /** JSON だけを返させる。壊れた出力は最初の { … } / [ … ] を拾って救済する */
 export async function askJson<T>(system: string, user: string, opts: AskOpts = {}): Promise<T> {
   const model = opts.model ?? MODEL;
+  const firstTimeoutMs = Math.min(opts.timeoutMs ?? 150_000, TOTAL_BUDGET_MS - MIN_CALL_MS);
+  const retryTimeoutMs = Math.max(MIN_CALL_MS, TOTAL_BUDGET_MS - firstTimeoutMs);
 
-  const call = async (extra: string, maxTokens: number) => {
+  const call = async (extra: string, maxTokens: number, timeoutMs: number) => {
     if (currentProvider() === "gemini") {
       const g = await geminiOrFallback({
         system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。" + extra,
         parts: [{ text: user }],
         maxTokens,
         json: true,
-        timeoutMs: opts.timeoutMs,
+        timeoutMs,
       });
       if (g) return { text: stripFence(g.text), stop: g.truncated ? "max_tokens" : "end_turn" };
     }
@@ -119,7 +137,7 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
         messages: [{ role: "user", content: user }],
       },
       // 返ってこない呼び出しに実行時間を食われると、工程を保存できないまま関数ごと切られる
-      { timeout: opts.timeoutMs ?? 150_000, maxRetries: 1 }
+      { timeout: timeoutMs, maxRetries: 1 }
     );
     opts.meter?.({
       model,
@@ -140,7 +158,7 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
     }
   };
 
-  const first = await call("", opts.maxTokens ?? 4000);
+  const first = await call("", opts.maxTokens ?? 4000, firstTimeoutMs);
   try {
     return conformToExample<T>(parse(first.text), system, user);
   } catch {
@@ -152,7 +170,8 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
       truncated
         ? "\n前回の出力は途中で切れた。項目数を減らし、各項目を短くして、必ず閉じ括弧まで出力すること。"
         : "\n前回の出力は JSON として読めなかった。構文を厳密に守り、JSON だけを出力すること。",
-      Math.min(Math.round((opts.maxTokens ?? 4000) * 1.5), 12000)
+      Math.min(Math.round((opts.maxTokens ?? 4000) * 1.5), 12000),
+      retryTimeoutMs
     );
     try {
       return conformToExample<T>(parse(retry.text), system, user);
@@ -170,6 +189,10 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
  * 画像を見せて JSON を返させる。
  * 画像は base64 で渡す（外部URLのままだと、取得できないことがある）。
  */
+/** askJson と同じ理由（合計が実行上限に迫らないように）。こちらは元のデフォルトが
+ *  90秒×2＝180秒とまだ余裕があるため、やや緩めの合計予算にしている */
+const TOTAL_BUDGET_MS_IMAGES = 220_000;
+
 export async function askJsonWithImages<T>(
   system: string,
   user: string,
@@ -177,8 +200,10 @@ export async function askJsonWithImages<T>(
   opts: AskOpts = {}
 ): Promise<T> {
   const model = opts.model ?? MODEL_FAST;
+  const firstTimeoutMs = Math.min(opts.timeoutMs ?? 90_000, TOTAL_BUDGET_MS_IMAGES - MIN_CALL_MS);
+  const retryTimeoutMs = Math.max(MIN_CALL_MS, TOTAL_BUDGET_MS_IMAGES - firstTimeoutMs);
 
-  const call = async (maxTokens: number, extraSystem: string) => {
+  const call = async (maxTokens: number, extraSystem: string, timeoutMs: number) => {
     if (currentProvider() === "gemini") {
       const g = await geminiOrFallback({
         system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。" + extraSystem,
@@ -188,7 +213,7 @@ export async function askJsonWithImages<T>(
         ],
         maxTokens,
         json: true,
-        timeoutMs: opts.timeoutMs ?? 90_000,
+        timeoutMs,
       });
       if (g) return { text: stripFence(g.text), stop: g.truncated ? "max_tokens" : "end_turn" };
     }
@@ -213,7 +238,7 @@ export async function askJsonWithImages<T>(
           },
         ],
       },
-      { timeout: opts.timeoutMs ?? 90_000, maxRetries: 1 }
+      { timeout: timeoutMs, maxRetries: 1 }
     );
     opts.meter?.({ model, input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens });
     recordAiCall({ model, input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens });
@@ -231,7 +256,7 @@ export async function askJsonWithImages<T>(
   };
 
   const maxTokens = opts.maxTokens ?? 1500;
-  const first = await call(maxTokens, "");
+  const first = await call(maxTokens, "", firstTimeoutMs);
   try {
     return parse(first.text);
   } catch {
@@ -242,7 +267,8 @@ export async function askJsonWithImages<T>(
       truncated ? Math.min(Math.round(maxTokens * 1.5), 6000) : maxTokens,
       truncated
         ? "\n前回の出力は途中で切れた。各項目の note を短くしてでも、必ず閉じ括弧まで出力すること。"
-        : "\n前回の出力は JSON として読めなかった。構文を厳密に守り、JSON だけを出力すること。"
+        : "\n前回の出力は JSON として読めなかった。構文を厳密に守り、JSON だけを出力すること。",
+      retryTimeoutMs
     );
     return parse(retry.text);
   }

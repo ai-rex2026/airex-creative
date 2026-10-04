@@ -50,35 +50,42 @@ async function triggerContinue(id: string, attempt: number) {
  * 時間切れで終わるときは、cron の巡回を待たずに次のバーストを自分で起動する
  * （attempt は起動の連鎖回数。呼び出し元が付けなければ0＝新規の分析として数える）。
  */
+// 2026-10-04: 以前は速度計測(PSI)専用に「次が速度計測の工程なら、このバーストの
+// 2周目以降は試みずに次のバーストへ引き渡す」という個別チェック（DBを覗いて
+// url/speed/statusを見る）を入れていた。これは速度計測というその1工程にしか効かず、
+// 同じ理由でタイムアウトしうる他の工程（askJsonを呼ぶ9章並列生成フェーズなど。
+// lib/anthropic.ts 参照）には適用されない個別対応だった。
+// そのため、個別の工程名で判定するのではなく「実際にその工程がどれだけ時間を
+// 使ったか」を直接計測し、一定以上かかった工程の直後は常に次のバーストへ
+// 引き渡す、という工程に依存しない一般的なルールに置き換える。
+// これにより、速度計測だけでなく、重いAI生成や外部API呼び出しを含む
+// どの工程でも同じ保護が自動的に効く。一方、DB更新だけのような軽い工程は
+// 何工程でも同じバーストの中で続けて進められるので、無駄な継続（往復）を
+// 増やさず処理時間を最短化できる
+const SLOW_STEP_MS = 5_000; // この時間を超えて完了した工程は「重い工程」とみなし、直後に次バーストへ渡す
+
 export async function processAnalysis(id: string, budgetMs = 240_000, attempt = 0) {
   const sb = createAdminClient();
   const deadline = Date.now() + budgetMs;
-  let stepCount = 0;
   for (;;) {
-    // 2026-10-04: 速度計測(PSI)は、工程の中でいちばん時間がかかりうる（重いサイトだと
-    // 1分を超えることがある）。残り時間に応じて待ち時間を縮める対策（lib/analysis.ts /
-    // lib/pagespeed.ts）は入れたが、それでも「このバーストで既に他の工程を消化した後に
-    // 短い残り時間で無理に試す」こと自体がタイムアウトのリスクを残す。
-    // そのため、このバーストの2周目以降（stepCount > 0）で次に速度計測の工程に
-    // 差し掛かる場合は、そもそも試みずにこの場で次のバースト（満額の時間予算を持つ）に
-    // 引き渡す。速度計測は常に「バーストの先頭」で、フルの時間予算を持った状態で
-    // 実行されることを保証する
-    if (stepCount > 0) {
-      const { data: peek } = await sb.from("analyses").select("url, speed, status").eq("id", id).single();
-      if (peek && peek.status !== "done" && peek.status !== "failed" && peek.url && !peek.speed) {
-        await triggerContinue(id, attempt + 1);
-        return "handoff";
-      }
-    }
+    const stepStartedAt = Date.now();
     // deadline を tick に渡す（表示速度計測ステップが、このバーストに実際残っている
-    // 時間を見て安全に試せる分だけ試すための保険。上の事前チェックで基本的には
-    // フル予算の状態でしか実行されないはずだが、念のための二重の安全網）
+    // 時間を見て安全に試せる分だけ試すための保険。下の「重い工程の直後は次バーストへ
+    // 引き渡す」ルールで基本的には速度計測もフル予算の状態でしか実行されないはずだが、
+    // 念のための二重の安全網）
     const a = await tick(sb, id, deadline);
-    stepCount += 1;
+    const tookMs = Date.now() - stepStartedAt;
     if (a.status === "done" || a.status === "failed") return a.status;
     if (Date.now() > deadline) {
       await triggerContinue(id, attempt + 1);
       return "timeout";
+    }
+    if (tookMs > SLOW_STEP_MS) {
+      // 重い工程を1本消化した直後。このバーストの残り時間がまだあっても、
+      // 次の工程も重かった場合に合計がタイムアウトへ近づくリスクを避けるため、
+      // ここで次のバースト（満額の時間予算を持つ）に引き渡す
+      await triggerContinue(id, attempt + 1);
+      return "handoff";
     }
   }
 }
