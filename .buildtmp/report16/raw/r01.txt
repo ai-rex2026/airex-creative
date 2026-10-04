@@ -1,0 +1,88 @@
+@@ -115,7 +120,7 @@ export function MeoReport({ id, meo, site, url }: { id: string; meo: MeoScan | n
+             ))}
+           </div>
+ 
+-          {meo.competitors.length > 0 && (
++          {selectedStore!.competitors.length > 0 && (
+             <>
+               <div className="sec-head">
+                 <span className="ic">◈</span>
+@@ -126,7 +131,7 @@ export function MeoReport({ id, meo, site, url }: { id: string; meo: MeoScan | n
+                 <span className="rule" />
+               </div>
+               <div className="rows measure">
+-                {meo.competitors.map((c, i) => (
++                {selectedStore!.competitors.map((c, i) => (
+                   <div className="r" key={i}>
+                     <div style={{ flex: 1, minWidth: 0 }}>
+                       <b>{c.name}</b>
+ diff --git a/components/MeoStores.tsx b/components/MeoStores.tsx
+index c453123..ffe7a79 100644
+--- a/components/MeoStores.tsx
++++ b/components/MeoStores.tsx
+@@ -10,10 +10,21 @@ export function scorePct(got: number, max: number) {
+   return max > 0 ? Math.round((got / max) * 100) : 0;
+ }
+ 
+-export function MeoStoreRow({ st }: { st: MeoStore }) {
++/**
++ * selected/onSelect を渡すと、クリックでその店舗の詳細評価（MeoStoreDetail）に
++ * 切り替えられるようにする。渡さない場合は従来どおり選べない一覧表示のまま
++ * （他で使っていても壊れないようにオプショナルにしている）。
++ */
++export function MeoStoreRow({ st, selected, onSelect }: { st: MeoStore; selected?: boolean; onSelect?: () => void }) {
+   const p = scorePct(st.score, st.scoreMax);
+   return (
+-    <div className="s">
++    <div
++      className={`s${selected ? " selected" : ""}`}
++      onClick={onSelect}
++      role={onSelect ? "button" : undefined}
++      tabIndex={onSelect ? 0 : undefined}
++      style={onSelect ? { cursor: "pointer", outline: selected ? "2px solid var(--accent, #1a56db)" : undefined } : undefined}
++    >
+       <div className="h">
+         <b>{st.self.name}</b>
+         <span className={`tag${p >= 75 ? " ok" : p >= 50 ? "" : " warn"}`}>
+@@ -37,7 +48,16 @@ export function MeoStoreRow({ st }: { st: MeoStore }) {
+ /** 先頭20件だけ開いておく。100拠点あると一覧が画面を埋めてしまう */
+ const SHOWN = 20;
+ 
+-export function MeoStoreList({ meo }: { meo: MeoScan }) {
++export function MeoStoreList({
++  meo,
++  selectedIdx,
++  onSelect,
++}: {
++  meo: MeoScan;
++  /** 選択中の店舗（meo.stores のインデックス）。渡すとクリックで切り替えられる */
++  selectedIdx?: number;
++  onSelect?: (i: number) => void;
++}) {
+   if (meo.stores.length <= 1) return null;
+   const rest = meo.stores.length - SHOWN;
+   return (
+@@ -47,6 +67,7 @@ export function MeoStoreList({ meo }: { meo: MeoScan }) {
+         <span>
+           同じサイトを登録している店舗が <b style={{ fontWeight: 600 }}>{meo.stores.length}件</b> 見つかりました。
+           店舗ごとに評価とレビュー数が違うので、分けて出しています。
++          {onSelect && <>店舗をクリックすると、その店舗の詳細評価に切り替わります。</>}
+           {meo.comparedCount < meo.stores.length && (
+             <>
+               {" "}
+@@ -58,19 +79,111 @@ export function MeoStoreList({ meo }: { meo: MeoScan }) {
+       </div>
+       <div className="stores measure">
+         {meo.stores.slice(0, SHOWN).map((st, i) => (
+-          <MeoStoreRow st={st} key={i} />
++          <MeoStoreRow st={st} key={i} selected={selectedIdx === i} onSelect={onSelect ? () => onSelect(i) : undefined} />
+         ))}
+       </div>
+       {rest > 0 && (
+         <details className="moredt measure">
+           <summary>残り {rest} 店舗を表示</summary>
+           <div className="stores">
+-            {meo.stores.slice(SHOWN).map((st, i) => (
+-              <MeoStoreRow st={st} key={i} />
+-            ))}
++            
