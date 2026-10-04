@@ -1,0 +1,38 @@
+name: apply-speed-patch6
+
+on:
+  push:
+    paths:
+      - '.buildtmp/speed6/GO.marker'
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decode escaped patch
+        run: python3 -c "import json,pathlib; p=pathlib.Path('.buildtmp/speed6/escaped_p6_speed.txt'); pathlib.Path('.buildtmp/speed6/p6-speed.patch').write_text(json.loads(p.read_text(encoding='utf-8')), encoding='utf-8')"
+
+      - name: Apply patch
+        run: git apply --whitespace=nowarn .buildtmp/speed6/p6-speed.patch
+
+      - name: Commit and push patched files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add lib/analysis.ts lib/pagespeed.ts lib/worker.ts
+          git commit -m "fix: 表示速度計測(PSI)の待ち時間をバーストの残り時間に応じて動的にする。固定240秒待つことで関数の実行上限を超えて強制終了され計測が終わらない事故を修正"
+          git push
+
+      - name: Clean up temporary workflow files
+        run: |
+          rm -f .github/workflows/apply-speed-patch6.yml
+          rm -rf .buildtmp/speed6
+          git add -A
+          git commit -m "chore: remove temp workflow"
+          git push
