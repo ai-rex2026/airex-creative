@@ -1,0 +1,10 @@
+fix: 広告手法一覧に出てこない媒体のタグを「推奨」から「参考」に変更
+
+計測タグの導入状況で、広告手法一覧に出てこない媒体のタグまで「推奨」と
+表示され、配信するかも決めていない媒体へのタグ設置を迫る見え方になって
+いたため、「参考」バッジ＋検討を促す注記に変更。GA4は媒体に関わらず必須の
+ままなので対象外。LINE Tag（旧仕様）はYahoo!広告への統合済み案件のため
+元から対象外。
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3
