@@ -11,7 +11,8 @@
 -          onKeyDown={(e) => { if (e.key === "Enter") addCustom(); }}
 -        />
 -        <button className="btn" onClick={addCustom} disabled={busy || !custom.trim()}>
--          {busy ? <Spinner label="施策を作り直しています" /> : "追すうして施策を作り直す"}</button>
+-          {busy ? <Spinner label="施策を作り直しています" /> : "追加して施策を作り直す"}
+-        </button>
 -      </div>
 -      {err && <div className="alert" style={{ marginTop: 10 }}>{err}</div>}
 +      {!evaluations && (
@@ -22,4 +23,6 @@
 +      )}
  
        <div className="sec-head">
-         <span className="ic">◉</span>
+         <span className="ic">▸</span>
+         <div>
+-          <h2 id="sec-measures">施策</h2>
