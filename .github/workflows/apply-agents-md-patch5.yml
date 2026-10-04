@@ -1,0 +1,38 @@
+name: apply-agents-md-patch5
+
+on:
+  push:
+    paths:
+      - '.buildtmp/agents-md5/GO.marker'
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decode escaped patch
+        run: python3 -c "import json,pathlib; p=pathlib.Path('.buildtmp/agents-md5/escaped_agents.txt'); pathlib.Path('.buildtmp/agents-md5/agents.patch').write_text(json.loads(p.read_text(encoding='utf-8')), encoding='utf-8')"
+
+      - name: Apply patch
+        run: git apply --whitespace=nowarn .buildtmp/agents-md5/agents.patch
+
+      - name: Commit and push patched files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add AGENTS.md
+          git commit -m "docs: 有料APIを含む非同期処理の必須ルールをAGENTS.mdに追記（2026-10-04事故の再発防止）"
+          git push
+
+      - name: Clean up temporary workflow files
+        run: |
+          rm -f .github/workflows/apply-agents-md-patch5.yml
+          rm -rf .buildtmp/agents-md5
+          git add -A
+          git commit -m "chore: remove temp workflow"
+          git push
