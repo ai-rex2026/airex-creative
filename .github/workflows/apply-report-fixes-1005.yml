@@ -1,0 +1,52 @@
+name: apply-report-fixes-1005
+on:
+  push:
+    paths:
+      - '.buildtmp/report-fixes-1005/GO.marker'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Concatenate chunks, decode and apply patch
+        run: |
+          cat .buildtmp/report-fixes-1005/chunks/chunk-*.b64 | tr -d '\n' > /tmp/combined.b64
+          wc -c /tmp/combined.b64
+          base64 -d /tmp/combined.b64 > /tmp/combined.patch
+          wc -c /tmp/combined.patch
+          git apply --check /tmp/combined.patch
+          git apply /tmp/combined.patch
+
+      - name: Commit applied changes
+        run: |
+          git config user.name "suzuki"
+          git config user.email "suzuki@ad-rex.com"
+          git add -A -- . ':!.buildtmp' ':!.github/workflows/apply-report-fixes-1005.yml'
+          git commit -m "$(cat <<'EOF'
+fix: 入力/サマリー/分析データタブの不具合修正・改善 (#44-#54)
+
+Apify呼び出し上限緩和とFacebook取得のApify移行、追っているKPI削除、
+入力タブ文言修正、サマリータブのカテゴリ別評価カードのレイアウト・遷移修正、
+予約完了画面GTM施策の抑制、優先度施策へのカテゴリ表示、指名検索サジェストの
+ブランド候補抽出改善、MEO施策の実測連動、SNSセクションの媒体ごと再構成。
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3
+EOF
+)"
+
+      - name: Remove staging files and this workflow
+        run: |
+          git rm -r .buildtmp
+          git rm .github/workflows/apply-report-fixes-1005.yml
+          git commit -m "chore: remove temporary push-apply workflow and staging files"
+
+      - name: Push to main
+        run: git push origin HEAD:main
