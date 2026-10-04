@@ -29,18 +29,11 @@ jobs:
           git config user.name "suzuki"
           git config user.email "suzuki@ad-rex.com"
           git add -A -- . ':!.buildtmp' ':!.github/workflows/apply-report-fixes-1005.yml'
-          git commit -m "$(cat <<'EOF'
-fix: 入力/サマリー/分析データタブの不具合修正・改善 (#44-#54)
-
-Apify呼び出し上限緩和とFacebook取得のApify移行、追っているKPI削除、
-入力タブ文言修正、サマリータブのカテゴリ別評価カードのレイアウト・遷移修正、
-予約完了画面GTM施策の抑制、優先度施策へのカテゴリ表示、指名検索サジェストの
-ブランド候補抽出改善、MEO施策の実測連動、SNSセクションの媒体ごと再構成。
-
-Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3
-EOF
-)"
+          git commit \
+            -m "fix: 入力/サマリー/分析データタブの不具合修正・改善 (#44-#54)" \
+            -m "Apify呼び出し上限緩和とFacebook取得のApify移行、追っているKPI削除、入力タブ文言修正、サマリータブのカテゴリ別評価カードのレイアウト・遷移修正、予約完了画面GTM施策の抑制、優先度施策へのカテゴリ表示、指名検索サジェストのブランド候補抽出改善、MEO施策の実測連動、SNSセクションの媒体ごと再構成。" \
+            -m "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
 
       - name: Remove staging files and this workflow
         run: |
