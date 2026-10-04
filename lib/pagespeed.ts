@@ -12,11 +12,15 @@
 /**
  * 計測の待ち時間。
  * 重いページは1分を超えることがある（ib-clinic.jp で40秒では足りなかった）。
- * この工程は最後に置いてあるので、長く待ってもレポート本体には影響しない
- * （すでに保存済みの工程はやり直さない。この工程に来た時点でほぼ丸ごとの
- * 実行時間を使える）。関数の実行上限（300秒。app/api/cron/worker/route.ts の
- * maxDuration）と、その場合のワーカーの1回ぶんの持ち時間（240秒。lib/worker.ts の
- * processAnalysis の既定 budgetMs）の内側に収める。
+ *
+ * 2026-10-04: 以前はこの工程に来た時点で「ほぼ丸ごとの実行時間を使える」前提で
+ * OUTER_MS を固定240秒にしていたが、実際にはこの工程の前に同じバースト内で
+ * 他の工程を消化していることがあり、その場合「240秒フルで待つ」こと自体が
+ * 関数の実行上限（300秒。app/api/cron/worker/route.ts の maxDuration）を
+ * 超えてしまい、保存される前に関数ごと強制終了される＝計測がいつまでも
+ * 終わらないように見える不具合があった（呼び出し元 lib/analysis.ts の
+ * tickStep から、そのバーストに実際残っている時間を渡してもらい、
+ * それを超えないようにする）。
  */
 const FETCH_MS = 100_000;
 const OUTER_MS = 240_000;
@@ -110,14 +114,20 @@ type PsiResponse = {
  * 測定は必ず時間内に終わらせる。
  * PSI は重いサイトだと返らないことがあり、そのまま待つと工程を保存できないまま
  * 関数ごと切られて、同じところを何度もやり直すことになる。
+ *
+ * maxWaitMs: 呼び出し元（lib/analysis.ts の tickStep）が、今回のバーストに
+ * 実際残っている時間から算出して渡す上限。省略時は従来どおり OUTER_MS（240秒）。
+ * 渡された値が OUTER_MS より大きくても OUTER_MS でクリップする（そもそもPSI自体に
+ * 240秒以上かける意味が薄いため）
  */
-export async function scanSpeed(url: string | null): Promise<SpeedScan> {
+export async function scanSpeed(url: string | null, maxWaitMs: number = OUTER_MS): Promise<SpeedScan> {
+  const waitMs = Math.max(5_000, Math.min(OUTER_MS, maxWaitMs));
   return Promise.race([
     run(url),
     new Promise<SpeedScan>((r) =>
       setTimeout(
         () => r(empty("PageSpeed Insights の応答が時間内に返りませんでした。重いページでは測定に時間がかかります。もう一度お試しください。")),
-        OUTER_MS
+        waitMs
       )
     ),
   ]);

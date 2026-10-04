@@ -54,7 +54,11 @@ export async function processAnalysis(id: string, budgetMs = 240_000, attempt = 
   const sb = createAdminClient();
   const deadline = Date.now() + budgetMs;
   for (;;) {
-    const a = await tick(sb, id);
+    // deadline を tick に渡す（lib/analysis.ts の表示速度計測ステップが、
+    // このバーストに実際残っている時間を見て安全に試せる分だけ試すのに使う。
+    // 2026-10-04: 渡していなかったため、速度計測が常に固定240秒待とうとして
+    // サーバーレス関数の実行上限を超えて強制終了される不具合があった）
+    const a = await tick(sb, id, deadline);
     if (a.status === "done" || a.status === "failed") return a.status;
     if (Date.now() > deadline) {
       await triggerContinue(id, attempt + 1);

@@ -151,15 +151,15 @@ export async function chooseProvider(sb: SupabaseClient, ownerId: string): Promi
   return hasGemini() ? "gemini" : "anthropic";
 }
 
-export async function tick(sb: SupabaseClient, id: string): Promise<Analysis> {
+export async function tick(sb: SupabaseClient, id: string, deadline: number = Date.now() + 240_000): Promise<Analysis> {
   const { data: head } = await sb.from("analyses").select("owner_id, status, ai_provider").eq("id", id).single();
-  if (!head || head.status === "done" || head.status === "failed") return tickStep(sb, id);
+  if (!head || head.status === "done" || head.status === "failed") return tickStep(sb, id, deadline);
   let provider = head.ai_provider as AiProvider | null;
   if (!provider) {
     provider = await chooseProvider(sb, head.owner_id as string);
     await sb.from("analyses").update({ ai_provider: provider }).eq("id", id);
   }
-  const { result, calls, fellBack } = await withAi(provider, () => tickStep(sb, id));
+  const { result, calls, fellBack } = await withAi(provider, () => tickStep(sb, id, deadline));
   if (calls.length) {
     const { data: u } = await sb.from("analyses").select("ai_usage").eq("id", id).single();
     const ai_usage = addUsage((u?.ai_usage as AiUsageTotal | null) ?? null, provider, calls);
@@ -178,7 +178,7 @@ const SOCIAL_COMPETITOR_PLATFORM_RE: Record<SocialCompetitorPlatform, RegExp> = 
   Instagram: /instagram/i,
 };
 
-async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
+async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.now() + 240_000): Promise<Analysis> {
   const { data, error } = await sb.from("analyses").select("*").eq("id", id).single();
   if (error || !data) throw new Error("分析が見つかりません");
   const a = data as Analysis;
@@ -543,8 +543,28 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
     }
     // 表示速度の実測は最後に回す。PSI は返らないことがあり、
     // 途中に置くとレポート全体がそこで止まる
+    //
+    // 2026-10-04: scanSpeed 内の上限（旧実装で固定240秒）が、呼び出し元
+    // processAnalysis（lib/worker.ts）の残り時間を見ずに毎回フルで待っていた。
+    // この工程の前にこのバースト内で既に他の工程を消化していた場合、
+    // 「240秒待つ」こと自体がサーバーレス関数の実行上限（300秒。app/api/cron/worker/route.ts
+    // 等の maxDuration）を超え、保存される前に関数ごと強制終了される＝
+    // 「表示速度の計測が終わらない」という形で観測される不具合があった。
+    // そのため、このバースト（tick の呼び出し元が持つ deadline）に実際どれだけ
+    // 残っているかを見て、安全に試せる分だけ試す。十分な時間が無ければ無理に
+    // 試みず、残り時間を使い切ってから抜ける（何もしないまま即return すると
+    // 呼び出し元の時間切れ判定に引っかかるまでDBへの問い合わせを空回りさせて
+    // しまうため、残り時間ぶんだけ待ってから抜けることで、次のバースト
+    // （triggerContinue による継続。満額の時間予算を持つ）に確実に回す）
     if (a.url && !a.speed) {
-      const speed = await scanSpeed(a.url);
+      const SAVE_MARGIN_MS = 15_000; // save() や後処理に残しておく分
+      const MIN_ATTEMPT_MS = 45_000; // これより短いとPSIを試す意味が薄い
+      const remaining = deadline - Date.now();
+      if (remaining < MIN_ATTEMPT_MS + SAVE_MARGIN_MS) {
+        await new Promise((r) => setTimeout(r, Math.max(0, remaining)));
+        return a;
+      }
+      const speed = await scanSpeed(a.url, remaining - SAVE_MARGIN_MS);
       return await save({ speed, step: "要約をまとめています", progress: 95 });
     }
     const summary = await generateSummary(a.diagnosis, a.site, a.seo, a.copies);
