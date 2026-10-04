@@ -1,0 +1,80 @@
+{meo.stores.slice(SHOWN).map((st, i) => {
++              const idx = i + SHOWN;
++              return (
++                <MeoStoreRow st={st} key={idx} selected={selectedIdx === idx} onSelect={onSelect ? () => onSelect(idx) : undefined} />
++              );
++            })}
++          </div>
++        </details>
++      )}
++    </>
++  );
++}
++
++/**
++ * 店舗1件分の詳細評価（ゲージ・内訳・近隣比較）。
++ * Report.tsx・MeoReport.tsx は、選んでいる店舗（既定は先頭）をここに渡す。
++ */
++export function MeoStoreDetail({ store }: { store: MeoStore }) {
++  return (
++    <>
++      <div className="meo measure">
++        <div className="gauge">
++          <b>{store.score}</b>
++          <small>/ {store.scoreMax || 100}</small>
++          <span className={scorePct(store.score, store.scoreMax) >= 75 ? "ok" : scorePct(store.score, store.scoreMax) >= 50 ? "warn" : "ng"}>
++            {scorePct(store.score, store.scoreMax) >= 75 ? "良好" : scorePct(store.score, store.scoreMax) >= 50 ? "改善の余地あり" : "要対策"}
++          </span>
++        </div>
++        <div className="kpis">
++          <div className="kpi">
++            <b>{store.self.rating?.toFixed(1) ?? "—"}</b>
++            <small>評価{store.avgRating !== null ? `（近隣平均 ${store.avgRating}）` : ""}</small>
++          </div>
++          <div className="kpi">
++            <b>{store.self.reviews}</b>
++            <small>レビュー数{store.avgReviews !== null ? `（近隣平均 ${store.avgReviews}）` : ""}</small>
++          </div>
++          <div className="kpi">
++            <b>{store.totalShops > 1 && store.ratingRank ? `${store.ratingRank}位` : "—"}</b>
++            <small>{store.totalShops > 1 ? `評価の順位 / ${store.totalShops}店` : "比較できる近隣同業なし"}</small>
++          </div>
++          <div className="kpi">
++            <b>{store.totalShops > 1 && store.reviewRank ? `${store.reviewRank}位` : "—"}</b>
++            <small>{store.totalShops > 1 ? `レビュー数の順位 / ${store.totalShops}店` : "比較できる近隣同業なし"}</small>
++          </div>
++        </div>
++      </div>
++
++      <details className="flags measure">
++        <summary>点数の内訳（何を測ったか）</summary>
++        <div className="rows" style={{ margin: 0 }}>
++          {store.breakdown.map((b, i) => (
++            <div className="r" key={i}>
++              <div style={{ flex: 1, minWidth: 0 }}>
++                <b>{b.label}</b>
++                <small>{b.note}</small>
++              </div>
++              <span className={`tag${b.got === 0 ? " warn" : ""}`}>{b.got} / {b.max}</span>
++            </div>
++          ))}
++        </div>
++      </details>
++
++      {store.competitors.length > 0 && (
++        <details className="flags measure">
++          <summary>近隣の同業（{store.competitors.length}店）</summary>
++          <div className="rows" style={{ margin: 0 }}>
++            {(() => {
++              // 自社を含めた最大値で正規化する。順位だけでなく差の大きさを見せる
++              const top = Math.max(store.self.reviews ?? 0, ...store.competitors.map((c) => c.reviews), 1);
++              return [{ name: store.self.name, address: "自社", rating: store.self.rating, reviews: store.self.reviews, me: true },
++                      ...store.competitors.map((c) => ({ ...c, me: false }))]
++                .sort((a, b) => b.reviews - a.reviews)
++                .map((c, i) => (
++                  <div className="r" key={i}>
++                    <div style={{ flex: 1, minWidth: 0 }}>
++                      <b style={{ fontWeight: c.me ? 700 : 400 }}>{c.name}</b>
++                      <small>{c.address}</small>
++                    </div>
++                    <span className="tag">★ {c.rating?.toFixed(1) ?? "—
