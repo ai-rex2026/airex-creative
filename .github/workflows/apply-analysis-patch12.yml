@@ -1,0 +1,46 @@
+name: apply-analysis-patch12
+on:
+  push:
+    paths:
+      - '.buildtmp/analysis12/GO.marker'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decode and apply patch
+        run: |
+          python3 -c "import json, pathlib; p = pathlib.Path('.buildtmp/analysis12/escaped_p12.txt'); content = json.loads(p.read_text(encoding='utf-8')); pathlib.Path('.buildtmp/analysis12/patch12.diff').write_text(content, encoding='utf-8')"
+          git apply --whitespace=nowarn .buildtmp/analysis12/patch12.diff
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add lib/analysis.ts
+          git commit -m "fix: wave2バッチ通過後のa.copiesのnull許容型エラーを修正
+
+          wave2バッチのif-block（複雑な論理式でガードされている）を通らずに
+          抜けた場合、TSはa.copiesをBannerCopy[]|nullのまま保持し、下のgenerateSummaryへの
+          a.copies渡しで型チェックが落ちていた。旧実装にあった単純なif(!a.copies) returnの
+          絞り込みチェーンを復元し、型の安全のための保険として同じ場所に戻す。
+
+          Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+          git push origin HEAD:main
+
+      - name: Remove temp workflow and buildtmp
+        run: |
+          git rm -r .github/workflows/apply-analysis-patch12.yml .buildtmp/analysis12
+          git commit -m "chore: remove temp workflow (apply-analysis-patch12)
+
+          Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+          git push origin HEAD:main
