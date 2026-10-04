@@ -1,0 +1,52 @@
+name: apply-report-patch14
+on:
+  push:
+    paths:
+      - '.buildtmp/report14/GO.marker'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decode and apply patch
+        run: |
+          python3 -c "
+          import json, pathlib
+          p = pathlib.Path('.buildtmp/report14/escaped_p14.txt')
+          content = json.loads(p.read_text(encoding='utf-8'))
+          pathlib.Path('.buildtmp/report14/patch14.diff').write_text(content, encoding='utf-8')
+          "
+          git apply --whitespace=nowarn .buildtmp/report14/patch14.diff
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add components/Report.tsx
+          git commit -m "fix: remove duplicate 広告以外の施策 listing, keep 実行スケジュール
+
+          SNS運用・LINE・LPO・SEO・MEO・PR/サジェスト対策の要約とアクションは、
+          それぞれ専用章（SNS運用プラン・LINE・LP改善・SEOキーワード/記事設計・
+          検索サジェスト対策など）とほぼ重複していたため、一覧表示を削除。
+          直後の実行スケジュール章は同じtactics生成結果から作るが他章にない
+          情報のため維持。他章の生成エラー通知も維持。
+
+          Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+          git push origin HEAD:main
+
+      - name: Remove temp workflow and buildtmp
+        run: |
+          git rm -r .github/workflows/apply-report-patch14.yml .buildtmp/report14
+          git commit -m "chore: remove temp workflow (apply-report-patch14)
+
+          Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+          git push origin HEAD:main
