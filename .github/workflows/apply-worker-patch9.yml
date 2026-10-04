@@ -17,7 +17,7 @@ jobs:
 
       - name: Decode and apply patch
         run: |
-          python3 -c "import json, pathlib; p = pathlib.Path('.buildtmp/worker9/escaped_p9.txt'); content = json.loads(p.read_text(encoding='ascii')); pathlib.Path('.buildtmp/worker9/patch9.diff').write_text(content, encoding='utf-8')"
+          python3 -c "import json, pathlib; p = pathlib.Path('.buildtmp/worker9/escaped_p9.txt'); content = json.loads(p.read_text(encoding='utf-8')); pathlib.Path('.buildtmp/worker9/patch9.diff').write_text(content, encoding='utf-8')"
           git apply --whitespace=nowarn .buildtmp/worker9/patch9.diff
 
       - name: Commit and push
