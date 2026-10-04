@@ -16,7 +16,7 @@
                    <div className="r" key={i}>
                      <div style={{ flex: 1, minWidth: 0 }}>
                        <b>{c.name}</b>
- diff --git a/components/MeoStores.tsx b/components/MeoStores.tsx
+diff --git a/components/MeoStores.tsx b/components/MeoStores.tsx
 index c453123..ffe7a79 100644
 --- a/components/MeoStores.tsx
 +++ b/components/MeoStores.tsx
