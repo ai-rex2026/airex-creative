@@ -1,0 +1,25 @@
++  const avgPosition =
++    positions.length > 0
++      ? positions.reduce((n, p) => n + p, 0) / positions.length
++      : gsc.totals.position || 100;
++  // 位置は小さいほど良い。しきい値は固定（同業種内の相対評価は未実装、2026-10-04決定）
++  const score = avgPosition <= 10 ? "強" : avgPosition <= 30 ? "標準" : "弱";
++  return {
++    category: "対策キーワード充足度",
++    score,
++    measured: true,
++    basis: `対策キーワードの平均掲載順位は${avgPosition.toFixed(1)}位です`,
++    sectionAnchor: anchor,
++  };
++}
++
++/**
++ * LP（新設カテゴリ）。
++ * 2026-10-04決定：表示速度の実測（PageSpeed）をスコアのアンカーにし、
++ * LPOのAI定性所見（ファーストビュー/CTA/信頼性）に重大度判定を追加した上で
++ * 合成する（重大な指摘が多いほど減点）。単純な指摘件数は使わない
++ * （generateLpo は実測の有無に関わらず常に3〜5件を出す設計のため）。
++ */
++function evalLp(speed: SpeedScan | null, lpo: LpoPlan | null): CategoryEvaluation {
++  const anchor = "sec-lpo";
++  if (!speed || speed.score === null) {
