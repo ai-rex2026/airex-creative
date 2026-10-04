@@ -1,0 +1,38 @@
+name: apply-analysis-fix-patch4
+
+on:
+  push:
+    paths:
+      - '.buildtmp/apify-budget4/GO.marker'
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decode escaped patch
+        run: python3 -c "import json,pathlib; p=pathlib.Path('.buildtmp/apify-budget4/escaped_p4_analysis.txt'); pathlib.Path('.buildtmp/apify-budget4/p4-analysis.patch').write_text(json.loads(p.read_text(encoding='utf-8')), encoding='utf-8')"
+
+      - name: Apply patch
+        run: git apply --whitespace=nowarn .buildtmp/apify-budget4/p4-analysis.patch
+
+      - name: Commit and push patched files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add lib/analysis.ts
+          git commit -m "fix: 9章生成をPromise.allSettled+章ごと即保存に変更し、1章失敗で成功済み章(Apify実測含む)が消えて再課金される不具合を修正"
+          git push
+
+      - name: Clean up temporary workflow files
+        run: |
+          rm -f .github/workflows/apply-analysis-fix-patch4.yml
+          rm -rf .buildtmp/apify-budget4
+          git add -A
+          git commit -m "chore: remove temp workflow"
+          git push
