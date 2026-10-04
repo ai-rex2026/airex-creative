@@ -1,0 +1,36 @@
+-    { maxTokens: 6000 }
+-  );
+-  const items = fixNodes(res.items ?? [], kpi);
+-  return { items: await flag(items, d.industry) };
+-}
+-
+-/**
+- * 自由入力で足されたKPIについてだけ施策を考える。
+- * 既存の施策は作り直さない。作り直すと、済みにした印が消える。
+- */
+-export async function measuresForKpi(
+-  d: Diagnosis,
+-  site: SiteScan | null,
+-  meo: MeoScan | null,
+-  pricing: PriceScan | null,
+-  kpiId: string,
+-  kpiName: string,
+-  existing: string[],
+-  extra: { platform: string; url: string }[] = []
+-): Promise<MeasurePlan> {
+-  const res = await askJson<MeasurePlan>(
+-    `あなたは集客の実務者です。指定されたKPI1つに効く施策を設計します。
+-
+-${RULES}
+-- items は2〜4件。**このKPIに効くものだけ**
+-- kpis には必ず "${kpiId}" を入れる
+-- すでにある施策と重複するものは出さない`,
+-    `${facts(d, site, meo, pricing, extra)}
+-
+-【追うKPI】
+-${kpiId}：${kpiName}
+-
+-【すでにある施策（重複させない）】
+-${existing.length ? existing.map((x) => `- ${x}`).join("\n") : "（なし）"}
+-
+-出力:
