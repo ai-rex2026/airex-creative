@@ -574,6 +574,13 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
 
       return await save({ step: "要約をまとめています", progress: 92 });
     }
+    // 通常ここには来ない（ad_ops確定後のwave2バッチで必ず埋まる）が、型の安全のための保険。
+    // これが無いと、ここから先のコード（下のgenerateSummaryへのa.copies渡し等）でTSが
+    // a.copies を BannerCopy[] | null のままにし、型チェックで落ちる
+    if (!a.copies) {
+      const copies = await generateCopies(a.diagnosis, 2);
+      return await save({ copies, step: "勝ち筋を採点しています", progress: 86 });
+    }
     // 表示速度の実測は最後に回す。PSI は返らないことがあり、
     // 途中に置くとレポート全体がそこで止まる
     //
