@@ -53,12 +53,28 @@ async function triggerContinue(id: string, attempt: number) {
 export async function processAnalysis(id: string, budgetMs = 240_000, attempt = 0) {
   const sb = createAdminClient();
   const deadline = Date.now() + budgetMs;
+  let stepCount = 0;
   for (;;) {
-    // deadline を tick に渡す（lib/analysis.ts の表示速度計測ステップが、
-    // このバーストに実際残っている時間を見て安全に試せる分だけ試すのに使う。
-    // 2026-10-04: 渡していなかったため、速度計測が常に固定240秒待とうとして
-    // サーバーレス関数の実行上限を超えて強制終了される不具合があった）
+    // 2026-10-04: 速度計測(PSI)は、工程の中でいちばん時間がかかりうる（重いサイトだと
+    // 1分を超えることがある）。残り時間に応じて待ち時間を縮める対策（lib/analysis.ts /
+    // lib/pagespeed.ts）は入れたが、それでも「このバーストで既に他の工程を消化した後に
+    // 短い残り時間で無理に試す」こと自体がタイムアウトのリスクを残す。
+    // そのため、このバーストの2周目以降（stepCount > 0）で次に速度計測の工程に
+    // 差し掛かる場合は、そもそも試みずにこの場で次のバースト（満額の時間予算を持つ）に
+    // 引き渡す。速度計測は常に「バーストの先頭」で、フルの時間予算を持った状態で
+    // 実行されることを保証する
+    if (stepCount > 0) {
+      const { data: peek } = await sb.from("analyses").select("url, speed, status").eq("id", id).single();
+      if (peek && peek.status !== "done" && peek.status !== "failed" && peek.url && !peek.speed) {
+        await triggerContinue(id, attempt + 1);
+        return "handoff";
+      }
+    }
+    // deadline を tick に渡す（表示速度計測ステップが、このバーストに実際残っている
+    // 時間を見て安全に試せる分だけ試すための保険。上の事前チェックで基本的には
+    // フル予算の状態でしか実行されないはずだが、念のための二重の安全網）
     const a = await tick(sb, id, deadline);
+    stepCount += 1;
     if (a.status === "done" || a.status === "failed") return a.status;
     if (Date.now() > deadline) {
       await triggerContinue(id, attempt + 1);
