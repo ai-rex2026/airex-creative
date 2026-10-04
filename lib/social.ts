@@ -735,6 +735,19 @@ export async function readSocialAccount(
  * 直接指定したアカウント（extra。lib/analysis.ts の social_manual。normalizeManualSocialInput
  * で正規化済み）を足して見に行く。LPにSNSリンクが無い場合や、自動検出が間違っている場合の
  * 補完／上書きのために、同じ媒体なら extra（手入力）を優先する。
+ *
+ * 2026-10-04の事故対応: 以前は `Promise.all` で全媒体を待ち、全部終わってから
+ * まとめて1回だけ `analyses.social` へ保存していた。生成関数の一部が例外を投げなくても、
+ * サーバーレスの実行時間切れでこの関数自体が呼び出し元に戻る前に打ち切られると、
+ * 取れていた分（Apify実測＝実際に課金される処理も含む）まで丸ごと保存されず、
+ * 次回の再試行で最初からやり直し＝成功していたApify呼び出しまで再度実行される
+ * 無駄な再実行・再課金が発生した（AGENTS.md参照）。
+ *
+ * 対策として、ここでは `Promise.allSettled` で待ち、**1件取れるたびにその場で保存する**。
+ * 既にDBに保存済み（前回までに取れていた）媒体はそもそも取得対象から外すため、
+ * 途中で打ち切られても次回は取れていない媒体だけを引き継いで取得する。
+ * Apify呼び出し回数そのものの上限は、ここではなく実際に呼ぶ直前の
+ * claimApifyBudget（analysisId単位、合計10回まで）で守る。
  */
 export async function scanSocial(
   site: SiteScan | null,
@@ -746,8 +759,53 @@ export async function scanSocial(
   for (const a of site?.social ?? []) merged.set(a.platform, a);
   for (const a of extra ?? []) merged.set(a.platform, a);
   const list = [...merged.values()].slice(0, 8);
-  // 媒体ごとに独立しているので並行で取る。1件が遅くても全体は止めない
-  const accounts = await Promise.all(list.map((a) => readSocialAccount(a, ownerId, analysisId)));
+
+  const listPlatforms = new Set(list.map((a) => a.platform));
+
+  const sb = createAdminClient();
+  const { data: row } = await sb.from("analyses").select("social").eq("id", analysisId).single();
+  const saved = ((row?.social as SocialScan | null)?.accounts ?? []);
+  const savedPlatforms = new Set(saved.map((acc) => acc.platform));
+  // 今回の対象媒体（list、最大8件）のうち、既に保存済みの分はそのまま引き継ぎ、再取得しない
+  const already = saved.filter((acc) => listPlatforms.has(acc.platform));
+  const pending = list.filter((a) => !savedPlatforms.has(a.platform));
+
+  // 同じ social 列への書き込みを複数件並行で行うと、互いの読み取り→書き込みが
+  // 競合して相手の保存結果を消してしまう（read-modify-write の競合）。
+  // この呼び出し内では常に直前の保存を待ってから次の保存を始めることで、
+  // 1プロセス内での書き込みを直列化して守る（DB側に専用RPCを作るほどの規模ではないため）
+  let saveChain: Promise<void> = Promise.resolve();
+  const persist = (account: SocialAccount) => {
+    saveChain = saveChain.then(async () => {
+      const { data: cur } = await sb.from("analyses").select("social").eq("id", analysisId).single();
+      const curAccounts = ((cur?.social as SocialScan | null)?.accounts ?? []).filter((x) => x.platform !== account.platform);
+      const accounts = [...curAccounts, account];
+      await sb.from("analyses").update({ social: { accounts, fetchedAt: new Date().toISOString() } }).eq("id", analysisId);
+    });
+    return saveChain;
+  };
+
+  // 媒体ごとに独立しているので取得自体は並行。1件が遅くても全体は止めず、
+  // 取れた媒体はその場で保存する（全件揃うのを待たない）
+  const settled = await Promise.allSettled(
+    pending.map(async (a) => {
+      const acc = await readSocialAccount(a, ownerId, analysisId);
+      await persist(acc);
+      return acc;
+    })
+  );
+
+  const fetchedNow: SocialAccount[] = [];
+  for (const r of settled) {
+    if (r.status === "fulfilled") {
+      fetchedNow.push(r.value);
+    }
+    // readSocialAccount は各媒体内で自前の例外を捕まえて reason を返す設計のため、
+    // rejected はここに来るのは想定外の例外のみ。取れなかった事実を残し、次回は再試行させる
+    // （保存しない＝savedPlatformsに入らないので、次のtickで自動的に対象へ戻る）
+  }
+
+  const accounts = [...already, ...fetchedNow];
   return { accounts, fetchedAt: new Date().toISOString() };
 }
 

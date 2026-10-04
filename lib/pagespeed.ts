@@ -45,8 +45,14 @@ export type SpeedScan = {
   field: SpeedMetric[];
   /** その場の計測値 */
   lab: SpeedMetric[];
-  /** 効きそうな改善。PSI が算出した短縮見込み付き */
-  opportunities: { title: string; savingsMs: number; detail: string }[];
+  /**
+   * 効きそうな改善。PSI の表示用テキスト（savingsDisplay）をそのまま使う。
+   * 2026-10: Lighthouse 13 の「インサイト」移行で監査IDが入れ替わりつつあり、
+   * かつ短縮見込みは「ミリ秒」だけでなく「KiB」等のデータ量でも返ってくるため、
+   * 固定IDの許可リストや特定フィールド名（overallSavingsMs 等）に依存せず、
+   * 各監査の displayValue 文字列から直接読み取る方式にしている（下の parseSaving 参照）
+   */
+  opportunities: { title: string; savingsDisplay: string; detail: string }[];
   testedUrl: string | null;
   reason: string | null;
   fetchedAt: string;
@@ -65,22 +71,56 @@ const RATING: Record<string, SpeedRating> = {
   SLOW: "不良",
 };
 
-/** 改善提案として出す監査項目。PSI が短縮見込みを出すものに絞る */
-const OPPORTUNITY_IDS = [
-  "render-blocking-resources",
-  "unused-css-rules",
-  "unused-javascript",
-  "modern-image-formats",
-  "uses-optimized-images",
-  "uses-responsive-images",
-  "offscreen-images",
-  "server-response-time",
-  "unminified-css",
-  "unminified-javascript",
-  "efficient-animated-content",
-  "duplicated-javascript",
-  "legacy-javascript",
-];
+/**
+ * 改善提案から除く監査ID。
+ * - lab[] の指標として別途出している監査（二重表示を避ける）
+ * - 「サードパーティ」「DOMサイズ」等、具体的な短縮見込みの数字を持たない診断系
+ *   （displayValue が無い/ランク付けできないものは parseSaving() 側でも自然に弾かれるが、
+ *   ここで明示しておくことで「監査の説明文だけの項目」を改善案として出さないようにする）
+ */
+const SKIP_AUDIT_IDS = new Set([
+  "largest-contentful-paint",
+  "first-contentful-paint",
+  "total-blocking-time",
+  "cumulative-layout-shift",
+  "speed-index",
+  "interactive",
+  "first-meaningful-paint",
+  "max-potential-fid",
+  "final-screenshot",
+  "screenshot-thumbnails",
+  "diagnostics",
+  "metrics",
+]);
+
+type ParsedSaving = { kind: "time" | "size"; magnitude: number; display: string };
+
+/**
+ * PSI の displayValue（日本語ロケール）から、ランク付け用の数値を取り出す。
+ * 固定のJSONフィールド名（overallSavingsMs 等）には依存しない —
+ * Lighthouse のインサイト移行でフィールド名が変わってもここは影響を受けない。
+ * 時間（ミリ秒・秒）とデータ量（KiB・MiB・MB）の二種類だけを扱い、
+ * どちらにも当たらない（具体的な数字が無い）項目は null を返して一覧から外す。
+ */
+function parseSaving(displayValue: string | undefined): ParsedSaving | null {
+  if (!displayValue) return null;
+  const s = displayValue.replace(/,/g, "");
+  // 日本語の単位（ミリ秒・秒）は \b（ASCIIの単語境界）が前後とも非単語文字の間では
+  // 発火しないため \b を使わない。英字単位（ms/s/KiB/MB 等）だけ \b で誤マッチを防ぐ
+  let m = s.match(/([\d.]+)\s*ミリ秒/);
+  if (m) return { kind: "time", magnitude: parseFloat(m[1]), display: displayValue };
+  m = s.match(/([\d.]+)\s*ms\b/i);
+  if (m) return { kind: "time", magnitude: parseFloat(m[1]), display: displayValue };
+  m = s.match(/([\d.]+)\s*秒/);
+  if (m) return { kind: "time", magnitude: parseFloat(m[1]) * 1000, display: displayValue };
+  m = s.match(/([\d.]+)\s*s\b/i);
+  if (m) return { kind: "time", magnitude: parseFloat(m[1]) * 1000, display: displayValue };
+  m = s.match(/([\d.]+)\s*(?:MiB|MB)\b/i);
+  if (m) return { kind: "size", magnitude: parseFloat(m[1]) * 1024, display: displayValue };
+  m = s.match(/([\d.]+)\s*(?:KiB|KB)\b/i);
+  if (m) return { kind: "size", magnitude: parseFloat(m[1]), display: displayValue };
+  return null;
+}
 
 function empty(reason: string): SpeedScan {
   return {
@@ -98,7 +138,6 @@ type PsiAudit = {
   description?: string;
   /** 0〜1。合格している項目も短縮見込みを返すので、これで弾く */
   score?: number | null;
-  details?: { overallSavingsMs?: number };
 };
 type PsiResponse = {
   id?: string;
@@ -237,19 +276,31 @@ async function run(url: string | null): Promise<SpeedScan> {
     .filter(([id]) => audits[id]?.displayValue)
     .map(([id, label, note]) => ({ id, label, value: audits[id]!.displayValue!, rating: null, note }));
 
-  const opportunities = OPPORTUNITY_IDS.map((id) => {
-    const a = audits[id];
-    const savings = a?.details?.overallSavingsMs ?? 0;
-    // 合格している項目は「改善」ではない。短縮見込みだけ見ると
-    // 「サーバーの応答時間は短い」まで改善案として並んでしまう
-    const passing = typeof a?.score === "number" && a.score >= 0.9;
-    return savings >= 100 && a?.title && !passing
-      ? { title: a.title, savingsMs: Math.round(savings), detail: (a.description ?? "").replace(/\s*\[[^\]]*\]\([^)]*\)/g, "") }
-      : null;
-  })
-    .filter((x): x is { title: string; savingsMs: number; detail: string } => !!x)
-    .sort((a, b) => b.savingsMs - a.savingsMs)
-    .slice(0, 6);
+  const opportunities = Object.entries(audits)
+    .filter(([id, a]) => !SKIP_AUDIT_IDS.has(id) && !!a?.title)
+    .map(([, a]) => {
+      // 合格している項目は「改善」ではない。短縮見込みの表示だけ見ると
+      // 「サーバーの応答時間は短い」まで改善案として並んでしまう
+      const passing = typeof a!.score === "number" && a!.score! >= 0.9;
+      if (passing) return null;
+      const parsed = parseSaving(a!.displayValue);
+      // 具体的な短縮見込みの数字が無い項目（「サードパーティ」「DOMサイズ」等の
+      // 診断情報のみの監査）は、ランク付けできないため一覧には出さない
+      if (!parsed) return null;
+      return {
+        title: a!.title!,
+        kind: parsed.kind,
+        magnitude: parsed.magnitude,
+        savingsDisplay: parsed.display,
+        detail: (a!.description ?? "").replace(/\s*\[[^\]]*\]\([^)]*\)/g, ""),
+      };
+    })
+    .filter((x): x is { title: string; kind: "time" | "size"; magnitude: number; savingsDisplay: string; detail: string } => !!x)
+    // 時間の短縮（表示速度に直結）を先に、データ量の削減を後に。
+    // 種類の違う数字（ミリ秒とKiB）を直接比較しても意味がないため、種類内でのみ大きい順
+    .sort((a, b) => (a.kind === b.kind ? b.magnitude - a.magnitude : a.kind === "time" ? -1 : 1))
+    .slice(0, 12)
+    .map(({ title, savingsDisplay, detail }) => ({ title, savingsDisplay, detail }));
 
   const score = j.lighthouseResult?.categories?.performance?.score;
 

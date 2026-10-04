@@ -73,10 +73,13 @@ export type Analysis = {
   social: SocialScan | null;
   /**
    * scanSocial（Apify経由でX・TikTok・Instagramを実測する）を試みた回数。
-   * 2026-10-03のApifyクレジット急減事故（cronの安全網が同一分析を重複して拾い、
-   * scanSocialが何重にも起動された）の再発防止として、tickStepがこの値で
-   * Apify呼び出し回数にハードキャップをかける。将来また別の原因で同じ分析が
-   * 何度もtickされても、Apifyを叩く回数そのものは増えない
+   * 2026-10-03のApifyクレジット急減事故を受けて、以前はtickStepがこの値で
+   * Apify呼び出し回数にハードキャップをかけていた（上限到達で社SNSを
+   * accounts: [] として保存＝全滅表示にしていた）が、それ自体が別の事故
+   * （2026-10-04。サーバーレスの時間切れで中断されただけの分析まで、取れていた
+   * 媒体ごと「全滅」として保存されてしまう）の原因になったため撤廃。
+   * 現在はtickStepの判定には使っておらず、障害調査用のメモとして記録だけ残している
+   * （実際のApifyコスト上限はclaimApifyBudgetが呼び出し直前で守る）
    */
   social_attempt_count: number;
   /** 直近でscanSocialを試みた時刻。障害調査用のメモで、ロジック上は使っていない */
@@ -205,24 +208,27 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
     // 連携は分析対象のURL（事業）と紐付くとは限らない・取れるデータがApify実測より乏しいという
     // 理由で、依頼主の方針により2026-10時点では使わない（lib/social.ts の readOfficialAccount
     // のコメント参照。将来「運用」機能を作る際に再検討する想定で、関数自体は残してある）
-    if (!a.social && ((a.site?.social ?? []).length > 0 || (a.social_manual ?? []).length > 0)) {
-      // Apify呼び出し回数のハードキャップ（2026-10-03のクレジット急減事故の再発防止）。
-      // cronの重複拾いは別途ロックで塞いだが、それとは独立に「この分析に対して
-      // scanSocialを試みるのは最大2回まで」という上限を設け、どんな原因であれ
-      // 同一分析へのApify呼び出しが積み重なり続けることを防ぐ
-      const MAX_SOCIAL_ATTEMPTS = 2;
-      if (a.social_attempt_count >= MAX_SOCIAL_ATTEMPTS) {
-        return await save({
-          social: { accounts: [], fetchedAt: new Date().toISOString() },
-          step: "サイトを読んでいます",
-          progress: 20,
-        });
+    {
+      // 対象媒体（LPから辿れた公式SNS＋利用者が手入力したSNS）のうち、まだ
+      // 保存できていない媒体が残っているかで「このステップが終わったか」を判定する。
+      // 2026-10-04の事故対応: 以前は `social_attempt_count` に固定の上限（2回）を設け、
+      // 上限に達したら社SNSを「全滅（accounts: []）」として保存していたが、これだと
+      // サーバーレスの実行時間切れで何度か中断されただけで、実際には取れていた分
+      // （YouTube等、Apifyと無関係な媒体も含む）までまとめて消えてしまっていた。
+      // 今は scanSocial（lib/social.ts）側が媒体ごとに取れた時点で直接DBへ保存し、
+      // 既に保存済みの媒体は再取得しない設計に変えたため、ここでの上限は不要になった
+      // （Apify呼び出し自体のコスト上限は claimApifyBudget が呼び出し直前で守る）
+      const wanted = new Map<string, true>();
+      for (const x of a.site?.social ?? []) wanted.set(x.platform, true);
+      for (const x of a.social_manual ?? []) wanted.set(x.platform, true);
+      const wantedPlatforms = [...wanted.keys()].slice(0, 8); // scanSocial 自体も最大8件に絞っているので揃える
+      const gotPlatforms = new Set((a.social?.accounts ?? []).map((x) => x.platform));
+      const stillMissing = wantedPlatforms.some((p) => !gotPlatforms.has(p));
+      if (wantedPlatforms.length > 0 && stillMissing) {
+        await save({ social_attempt_count: a.social_attempt_count + 1, social_attempted_at: new Date().toISOString() });
+        const social = await scanSocial(a.site, a.owner_id, a.social_manual ?? [], a.id);
+        return await save({ social, step: "サイトを読んでいます", progress: 20 });
       }
-      // Apifyを呼ぶ前に試行回数を先に記録する。呼び出し自体が時間切れで中断しても
-      // 「試みた」事実は残るので、再開時に同じ回数分だけ重ねて叩かれることはない
-      await save({ social_attempt_count: a.social_attempt_count + 1, social_attempted_at: new Date().toISOString() });
-      const social = await scanSocial(a.site, a.owner_id, a.social_manual ?? [], a.id);
-      return await save({ social, step: "サイトを読んでいます", progress: 20 });
     }
     if (a.url && hasPlacesApi() && !a.meo) {
       // 失敗しても分析全体は止めない。取れなければ画面に理由を出す

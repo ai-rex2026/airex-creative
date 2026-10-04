@@ -33,8 +33,14 @@ export type SuggestScan = {
   error?: string;
 };
 
-/** Google の公開サジェスト。認証も課金も要らない */
-async function suggestFor(q: string): Promise<string[]> {
+/**
+ * Google の「サジェスト」機能が内部で使っている、認証も課金も要らないエンドポイント
+ * （公式に公開されたAPIではない）。そのため共有のクラウドIPからだと稀に一時的な
+ * 制限・遮断を受ける可能性があり、それが起きても今まで黙って空配列を返していたため、
+ * 「検出なし」と「取得自体に失敗した」が画面上は区別できなかった。
+ * 失敗した場合はその理由を返し、呼び出し元（scanSuggests）が SuggestScan.error に記録する。
+ */
+async function suggestFor(q: string): Promise<{ items: string[]; error?: string }> {
   const url =
     "https://suggestqueries.google.com/complete/search?client=firefox&hl=ja&gl=jp&q=" +
     encodeURIComponent(q);
@@ -43,11 +49,14 @@ async function suggestFor(q: string): Promise<string[]> {
       headers: { "user-agent": "Mozilla/5.0" },
       signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return [];
+    if (!res.ok) return { items: [], error: `サジェストの取得に失敗しました（HTTP ${res.status}）` };
     const j = (await res.json()) as [string, string[]];
-    return Array.isArray(j?.[1]) ? j[1] : [];
-  } catch {
-    return [];
+    return { items: Array.isArray(j?.[1]) ? j[1] : [] };
+  } catch (e) {
+    if (e instanceof Error && e.name === "TimeoutError") {
+      return { items: [], error: "サジェストの取得が時間内に終わりませんでした（8秒以内に応答がありませんでした）" };
+    }
+    return { items: [], error: e instanceof Error ? `サジェストの取得に失敗しました（${e.message}）` : "サジェストの取得に失敗しました" };
   }
 }
 
@@ -85,10 +94,16 @@ export async function scanSuggests(
   const got: string[] = [];
   // 地名を足した2本目は1本目と結果が重なる。同じ語を2回出さない
   const seen = new Set<string>();
+  // 取得自体に失敗した検索語の理由を集める。「検出なし（正常に取得できたが0件）」とは
+  // 区別し、全ての検索語で取得に失敗した場合だけ SuggestScan.error に出す
+  const errors: string[] = [];
 
-  for (const q of candidates(site, areas)) {
+  const cands = candidates(site, areas);
+  for (const q of cands) {
     if (got.length >= 2) break;
-    const list = (await suggestFor(q)).filter(
+    const { items, error } = await suggestFor(q);
+    if (error) errors.push(error);
+    const list = items.filter(
       // 検索語そのものは対策対象ではない
       (x) => x.trim().toLowerCase() !== q.trim().toLowerCase()
     );
@@ -100,7 +115,15 @@ export async function scanSuggests(
       rows.push({ keyword: q, suggestion: x, kind: classify(x, q) });
     }
   }
-  return { rows, queried: got, fetchedAt: new Date().toISOString() };
+  // 試した検索語が1つ以上あり、1件も拾えず、かつ全件が「取得失敗」だった場合だけ
+  // エラーとして出す（検索ボリュームが少なくて0件、のような正常系は error を付けない）
+  const allFailed = cands.length > 0 && got.length === 0 && errors.length === cands.length;
+  return {
+    rows,
+    queried: got,
+    fetchedAt: new Date().toISOString(),
+    error: allFailed ? errors[errors.length - 1] : undefined,
+  };
 }
 
 // ── 外部施策 ────────────────────────────────────

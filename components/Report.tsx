@@ -15,7 +15,7 @@ import { AdStructureTable, MissingSectionsBanner, RebuildAdPlanNote, SnsCampaign
 import { adWidth, type AdOps } from "@/lib/ad-ops";
 import { lengthIn, limitLabel, specFor, type CountMode } from "@/lib/ad-specs";
 import type { MeoScan } from "@/lib/meo";
-import { MeoStoreList, scorePct } from "./MeoStores";
+import { MeoStoreList, MeoStoreDetail } from "./MeoStores";
 import { MeoEntryCard } from "./meo/MeoEntryCard";
 import { Toc } from "./Toc";
 import { BANNER_CASE_WARNING, looksLikeCasePhoto } from "@/lib/case-photo";
@@ -234,6 +234,7 @@ export function Report({
   const [photo, setPhoto] = useState<string | null>(null);
   // 文字入りの画像は切り抜くと見切れるので、切り方と位置を選べるようにする
   const [photoFit, setPhotoFit] = useState<"cover" | "contain">("cover");
+  const [meoStoreIdx, setMeoStoreIdx] = useState(0);
   const [photoFocus, setPhotoFocus] = useState({ x: 50, y: 50 });
   // 画像とテキストを分けて並べる（split）か、画像の上にテキストを重ねる（overlay）か
   const [photoLayout, setPhotoLayout] = useState<"split" | "overlay">("split");
@@ -1564,86 +1565,8 @@ export function Report({
             </div>
           ) : (
             <>
-              <MeoStoreList meo={meo} />
-
-              <div className="meo measure">
-                <div className="gauge">
-                  <b>{meo.score}</b>
-                  <small>/ {meo.scoreMax || 100}</small>
-                  <span className={scorePct(meo.score, meo.scoreMax) >= 75 ? "ok" : scorePct(meo.score, meo.scoreMax) >= 50 ? "warn" : "ng"}>
-                    {scorePct(meo.score, meo.scoreMax) >= 75 ? "良好" : scorePct(meo.score, meo.scoreMax) >= 50 ? "改善の余地あり" : "要対策"}
-                  </span>
-                </div>
-                <div className="kpis">
-                  <div className="kpi">
-                    <b>{meo.self.rating?.toFixed(1) ?? "—"}</b>
-                    <small>評価{meo.avgRating !== null ? `（近隣平均 ${meo.avgRating}）` : ""}</small>
-                  </div>
-                  <div className="kpi">
-                    <b>{meo.self.reviews}</b>
-                    <small>レビュー数{meo.avgReviews !== null ? `（近隣平均 ${meo.avgReviews}）` : ""}</small>
-                  </div>
-                  <div className="kpi">
-                    <b>{meo.totalShops > 1 && meo.ratingRank ? `${meo.ratingRank}位` : "—"}</b>
-                    <small>{meo.totalShops > 1 ? `評価の順位 / ${meo.totalShops}店` : "比較できる近隣同業なし"}</small>
-                  </div>
-                  <div className="kpi">
-                    <b>{meo.totalShops > 1 && meo.reviewRank ? `${meo.reviewRank}位` : "—"}</b>
-                    <small>{meo.totalShops > 1 ? `レビュー数の順位 / ${meo.totalShops}店` : "比較できる近隣同業なし"}</small>
-                  </div>
-                </div>
-              </div>
-
-              <details className="flags measure">
-                <summary>点数の内訳（何を測ったか）</summary>
-                <div className="rows" style={{ margin: 0 }}>
-                  {meo.breakdown.map((b, i) => (
-                    <div className="r" key={i}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <b>{b.label}</b>
-                        <small>{b.note}</small>
-                      </div>
-                      <span className={`tag${b.got === 0 ? " warn" : ""}`}>{b.got} / {b.max}</span>
-                    </div>
-                  ))}
-                </div>
-              </details>
-
-              {meo.competitors.length > 0 && (
-                <details className="flags measure">
-                  <summary>近隣の同業（{meo.competitors.length}店）</summary>
-                  <div className="rows" style={{ margin: 0 }}>
-                    {(() => {
-                      // 自社を含めた最大値で正規化する。順位だけでなく差の大きさを見せる
-                      const top = Math.max(meo.self?.reviews ?? 0, ...meo.competitors.map((c) => c.reviews), 1);
-                      return [{ name: meo.self!.name, address: "自社", rating: meo.self!.rating, reviews: meo.self!.reviews, me: true },
-                              ...meo.competitors.map((c) => ({ ...c, me: false }))]
-                        .sort((a, b) => b.reviews - a.reviews)
-                        .map((c, i) => (
-                          <div className="r" key={i}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <b style={{ fontWeight: c.me ? 700 : 400 }}>{c.name}</b>
-                              <small>{c.address}</small>
-                            </div>
-                            <span className="tag">★ {c.rating?.toFixed(1) ?? "—"}</span>
-                            <span className={`cmpbar${c.me ? " self" : ""}`}>
-                              <i style={{ width: `${Math.round((c.reviews / top) * 100)}%` }} />
-                            </span>
-                            <span className="tag">{c.reviews.toLocaleString()}</span>
-                          </div>
-                        ));
-                    })()}
-                  </div>
-                </details>
-              )}
-
-              <div className="note">
-                <i className="i">i</i>
-                <span>
-                  写真の枚数や投稿頻度は Google の公開データでは取得できないため、点数に入れていません。
-                  上の点数は<b style={{ fontWeight: 600 }}>実際に取得できた項目だけ</b>で計算しています。
-                </span>
-              </div>
+              <MeoStoreList meo={meo} selectedIdx={meoStoreIdx} onSelect={setMeoStoreIdx} />
+              <MeoStoreDetail store={meo.stores[meoStoreIdx] ?? meo.stores[0]} />
             </>
           )}
 
@@ -1741,7 +1664,7 @@ export function Report({
                               <b>{o.title}</b>
                               <small>{o.detail}</small>
                             </div>
-                            <span className="tag warn">−{(o.savingsMs / 1000).toFixed(1)}秒</span>
+                            <span className="tag warn">{o.savingsDisplay}</span>
                           </div>
                         ))}
                       </div>
