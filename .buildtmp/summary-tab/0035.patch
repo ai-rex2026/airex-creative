@@ -1,0 +1,27 @@
++ * 生成の入口（旧 generateMeasures・measuresForKpi）は lib/summary-tab.ts の
++ * generateSummaryTab に一本化した。この先に残っている facts/fixNodes/flag は
++ * そちらから呼ぶための共有ヘルパーとして export している
+  */
+ 
+ export type Impact = "大" | "中" | "小";
+@@ -48,7 +55,7 @@ export type Measure = {
+ 
+ export type MeasurePlan = { items: Measure[] };
+ 
+-const RULES = `守ること:
++export const RULES = `守ること:
+ - **KPIに効くものだけを出す。** サーバー設定やセキュリティヘッダーのような衛生管理は書かない
+   （それらは別のチェックリストで扱う）
+ - title は「何をするか」を動詞で。「〜の検討」「〜の強化」のような、やったか判断できない書き方は禁止
+@@ -67,7 +74,7 @@ const RULES = `守ること:
+ - done は「何を見たら完了と判断できるか」。数えられるものにする
+ - 効果や結果を断定しない。「必ず」「保証」は使わない`;
+ 
+-function facts(
++export function facts(
+   d: Diagnosis,
+   site: SiteScan | null,
+   meo: MeoScan | null,
+@@ -107,7 +114,7 @@ ${platformNotes()}`;
+ }
+ 

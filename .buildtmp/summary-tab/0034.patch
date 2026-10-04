@@ -1,0 +1,20 @@
+diff --git a/lib/measures.ts b/lib/measures.ts
+index 1f44b78..2f4bcfa 100644
+--- a/lib/measures.ts
++++ b/lib/measures.ts
+@@ -1,4 +1,3 @@
+-import { askJson } from "./anthropic";
+ import type { Diagnosis } from "./types";
+ import type { SiteScan } from "./site-scan";
+ import type { KpiTree } from "./kpi";
+@@ -18,7 +17,15 @@ import type { Runbook } from "./runbook";
+  *
+  * 優先順位で並べ替えることはしない（順位を決め打ちすると、担当も工数も違う
+  * ものが一列に並んで動けなくなる）。代わりに効果の見込みを添えて、
+- * 判断は見る人に委ねる。
++ * 判断は見る人に委ねる（施策同士の並び）。ただし2026-10-04、サマリータブの
++ * 「優先度の高い施策」ブロックに限っては、スコアが低いカテゴリを優先する
++ * 一次ソートに加え、Measure.impact/effortによる二次ソートを適用する決定をした
++ * （lib/summary-tab.ts 側で行う。この生成ロジック自体は変えない）。
++ *
++ * 2026-10-04: 「施策」タブを「サマリー」タブへ置き換えるのに合わせて、
