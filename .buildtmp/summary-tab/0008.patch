@@ -1,0 +1,26 @@
++            <span className="ic">◎</span>
++            <div>
++              <h2 id="sec-kpi">追っているKPI</h2>
++              <div className="sub">{kpi.model || "追えるKPIは自動的にすべて追っています。ここは表示専用です"}</div>
++            </div>
++            <span className="rule" />
++          </div>
++
++          {kpi.branches.length > 0 && (
++            <div className="tree measure">
++              {kpi.branches.map((b, i) => (
++                <div className="b" key={i}>
++                  <span className="nd">{b.node}</span>
++                  <span className="fm">{b.formula}</span>
++                  {b.note && <span className="nt">{b.note}</span>}
++                </div>
++              ))}
++            </div>
++          )}
++
++          {kpi.candidates.length > 0 && (
++            <div className="kpis-pick measure" style={{ marginTop: kpi.branches.length > 0 ? 10 : 0 }}>
++              {kpi.candidates.map((c) => (
++                <div className="k" key={c.id} style={{ cursor: "default" }}>
++                  <span className="tp">
++                    <b>{c.name}</b>

@@ -1,0 +1,26 @@
+diff --git a/app/actions.ts b/app/actions.ts
+index 91b09a0..d0d8df8 100644
+--- a/app/actions.ts
++++ b/app/actions.ts
+@@ -7,7 +7,8 @@ import { createClient } from "@/lib/supabase/server";
+ import { createAdminClient } from "@/lib/supabase/admin";
+ import { newAnalysisId, type Analysis } from "@/lib/analysis";
+ import { askAboutReport } from "@/lib/chat";
+-import { generateMeasures, type Measure } from "@/lib/measures";
++import type { Measure } from "@/lib/measures";
++import { generateSummaryTab } from "@/lib/summary-tab";
+ import { generateRunbook } from "@/lib/runbook";
+ import type { AnalysisMode, BudgetBand } from "@/lib/types";
+ import type { PriceScan } from "@/lib/pricing";
+@@ -538,24 +539,14 @@ export async function uploadBannerImage(id: string, formData: FormData): Promise
+   return { path };
+ }
+ 
+-/** 追うKPIを選ぶ。複数選べる */
+-export async function selectKpis(id: string, selected: { id: string; name: string; custom?: boolean }[]) {
+-  const sb = await createClient();
+-  const {
+-    data: { user },
+-  } = await sb.auth.getUser();
+-  if (!user) throw new Error("ログインが必要です");
+-  await updateOwned(sb, id, user.id, { kpi_selected: selected });
