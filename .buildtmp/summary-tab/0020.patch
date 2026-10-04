@@ -1,4 +1,4 @@
-                <span className="ar">{isOpen ? "閉じる" : "手順を見る"}</span>
+                 <span className="ar">{isOpen ? "閉じる" : "手順を見る"}</span>
                </button>
                <div className="kk">
 -                {m.kpis?.map((k) => <span className="chip" key={k}>{kpiName(k)}</span>)}
