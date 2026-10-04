@@ -1,0 +1,22 @@
++ * 業種別に集計する仕組みが無いため、今回は固定しきい値で実装する
++ * （将来、業種別集計ができたら置き換える前提）。
++ */
++function tier(score: number, strongAt: number, standardAt: number): "強" | "標準" | "弱" {
++  return score >= strongAt ? "強" : score >= standardAt ? "標準" : "弱";
++}
++
++function evalAdTags(adOps: AdOps | null): CategoryEvaluation {
++  const anchor = "sec-tags";
++  if (!adOps || adOps.tags.length === 0) {
++    return { category: "広告の準備", score: null, measured: false, basis: "計測タグの判定がまだできていません", sectionAnchor: anchor };
++  }
++  const required = adOps.tags.filter((t) => t.need === "必須");
++  if (required.length === 0) {
++    return { category: "広告の準備", score: "標準", measured: true, basis: "必須タグの対象媒体が無いため、現状を「標準」としています", sectionAnchor: anchor };
++  }
++  const missing = required.filter((t) => t.status === "未導入");
++  const unchecked = required.filter((t) => t.status === "要確認");
++  if (missing.length > 0) {
++    return {
++      category: "広告の準備",
++      score: "弱",

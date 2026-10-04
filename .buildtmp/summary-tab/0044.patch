@@ -1,0 +1,26 @@
++    basis: `近隣${meo.totalShops}店中の実測評価で${meo.score}/${meo.scoreMax}点です`,
++    sectionAnchor: anchor,
++  };
++}
++
++/** estimateSeo（lib/site-scan.ts）が既に使っている境界値（70/45）をそのまま流用する */
++function evalSeo(seo: SeoEstimate | null): CategoryEvaluation {
++  const anchor = "sec-seo";
++  if (!seo) {
++    return { category: "SEO強度", score: null, measured: false, basis: "サイトが読めていないため推定できません", sectionAnchor: anchor };
++  }
++  return {
++    category: "SEO強度",
++    score: tier(seo.score, 70, 45),
++    measured: true,
++    basis: `推定スコア${seo.score}点（${seo.label}）です`,
++    sectionAnchor: anchor,
++  };
++}
++
++function evalKeywordCoverage(gsc: GscData | null, keywords: KeywordPlan | null): CategoryEvaluation {
++  const anchor = "sec-kw";
++  if (!gsc || gsc.queries.length === 0) {
++    return { category: "対策キーワード充足度", score: null, measured: false, basis: "Search Console が連携されていません", sectionAnchor: anchor };
++  }
++  const positions = (keywords?.rows ?? []).map((r) => r.position).filter((p): p is number => p !== null);
