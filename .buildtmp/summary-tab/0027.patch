@@ -1,0 +1,22 @@
+@@ -521,15 +522,6 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
+             ),
+         });
+       }
+-      if (!a.measures) {
+-        jobs2.push({
+-          key: "measures",
+-          run: () =>
+-            generateMeasures(diagnosis, a.site, kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social, priorityNoteFor(a, "measures"))
+-              .then((plan) => plan.items ?? [])
+-              .catch(() => [] as Measure[]),
+-        });
+-      }
+       if (!a.seo_articles) {
+         // SEO記事設計（H2/H3構成の記事案2本）。対策キーワードが決まった直後に作れる
+         jobs2.push({
+@@ -613,6 +605,35 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
+       const speed = await scanSpeed(a.url, remaining - SAVE_MARGIN_MS);
+       return await save({ speed, step: "要約をまとめています", progress: 95 });
+     }
++    // サマリータブ（カテゴリ別評価＋優先度の高い施策）。2026-10-04新設。
++    // LPカテゴリの評価がPageSpeedの実測（speed）を使うため、speedが確定する

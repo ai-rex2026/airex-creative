@@ -1,0 +1,25 @@
++    // （実測できた、またはURLが無く実測の対象外と分かる）までこのステップを待つ。
++    // evaluations（決定的・無料）とmeasures（AI呼び出し・有料）を別々に保存し、
++    // どちらかが既にあれば再計算しない（再試行で完了済みの項目まで作り直さない）
++    if (!a.category_evaluations || !a.measures) {
++      const diagnosis = a.diagnosis;
++      if (!diagnosis) throw new Error("診断結果が見つかりません");
++      const kpi = a.kpi ?? { model: "", branches: [], candidates: [] };
++      const category_evaluations =
++        a.category_evaluations ??
++        evaluateCategories({
++          adOps: a.ad_ops,
++          meo: a.meo,
++          seo: a.seo,
++          gsc: a.gsc,
++          keywords: a.keywords,
++          speed: a.speed,
++          lpo: a.lpo,
++          social: a.social,
++          suggests: a.suggests,
++        });
++      const measures =
++        a.measures ??
++        (await generateSummaryMeasures(
++          diagnosis, a.site, kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social, priorityNoteFor(a, "measures")
++        ).catch(() => [] as Measure[]));
