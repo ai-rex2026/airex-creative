@@ -1,0 +1,48 @@
+name: Apply Patch19 Diff
+
+on:
+  push:
+    paths:
+      - '.buildtmp/report19/GO.marker'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "airex-bot"
+          git config user.email "suzuki@ad-rex.com"
+
+      - name: Reconstruct diff
+        run: |
+          cat .buildtmp/report19/s/s_*.txt > /tmp/patch19.b64
+          base64 -d /tmp/patch19.b64 > /tmp/patch19.diff
+          wc -c /tmp/patch19.diff
+
+      - name: Apply diff
+        run: |
+          git apply --check /tmp/patch19.diff
+          git apply /tmp/patch19.diff
+
+      - name: Commit applied changes
+        run: |
+          git add components/MeoReport.tsx components/MeoStores.tsx components/Report.tsx lib/analysis.ts lib/outreach.ts lib/pagespeed.ts lib/social.ts
+          git commit -F .buildtmp/report19/commitmsg19.txt
+
+      - name: Cleanup staging dirs and self
+        run: |
+          git rm -r --ignore-unmatch -q .buildtmp/report16 .buildtmp/report18 .buildtmp/report19 .github/workflows/apply-patch19.yml
+          git commit -m "chore: remove patch19 staging files and temp workflow"
+
+      - name: Push to main
+        run: |
+          git push origin HEAD:main
