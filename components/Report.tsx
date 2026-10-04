@@ -1037,7 +1037,13 @@ export function Report({
           <div className="rows measure">
             {adOps.tags.map((t, i) => (
               <div className="r" key={i}>
-                <span className="st" style={{ color: t.status === "導入済み" ? "var(--ok)" : t.status === "要確認" ? "var(--warn)" : "var(--ng)" }}>
+                <span
+                  className="st"
+                  style={{
+                    color:
+                      t.status === "導入済み" ? "var(--ok)" : t.status === "要確認" ? "var(--warn)" : t.need === "参考" ? "var(--muted)" : "var(--ng)",
+                  }}
+                >
                   {t.status === "導入済み" ? "✓" : t.status === "要確認" ? "?" : "✕"}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>

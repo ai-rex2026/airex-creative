@@ -58,7 +58,8 @@ export type TagStatus = "導入済み" | "未導入" | "要確認";
 export type MeasureTag = {
   name: string;
   status: TagStatus;
-  need: "必須" | "推奨";
+  /** 必須＝広告手法一覧の媒体に対応。推奨＝媒体に関わらず入れておきたいもの。参考＝広告手法一覧に出てこない媒体用 */
+  need: "必須" | "推奨" | "参考";
   /** 導入済み・要確認の根拠、または未導入時の設置手順 */
   note: string;
 };
@@ -99,7 +100,9 @@ export function diagnoseTags(site: SiteScan | null, plan: MediaPlanItem[]): Meas
   // 予算を割り当てた媒体のタグだけを必須にする。使わない媒体のタグは推奨止まり
   const used = (re: RegExp) => re.test(ch);
 
-  const rows: { name: string; detected: boolean; need: "必須" | "推奨"; howTo: string }[] = [
+  // 広告手法一覧に出てこない媒体のタグは「推奨」ではなく「参考」にする。
+  // 配信するかどうかも決めていない媒体のタグ設置を迫る表示になっていたため。
+  const rows: { name: string; detected: boolean; need: "必須" | "推奨" | "参考"; howTo: string }[] = [
     {
       name: "Google Analytics 4",
       detected: has("Google Analytics 4"),
@@ -109,25 +112,25 @@ export function diagnoseTags(site: SiteScan | null, plan: MediaPlanItem[]): Meas
     {
       name: "Google 広告 コンバージョンタグ",
       detected: has("Google 広告"),
-      need: used(/Google|検索|P-?MAX|YouTube/i) ? "必須" : "推奨",
+      need: used(/Google|検索|P-?MAX|YouTube/i) ? "必須" : "参考",
       howTo: "Google 広告 → [目標] → [コンバージョン] でタグを取得し、GTM か <head> に設置。問い合わせ完了などのコンバージョンアクションも作成してください。",
     },
     {
       name: "Meta Pixel",
       detected: has("Meta Pixel"),
-      need: used(/Meta|Instagram|Facebook/i) ? "必須" : "推奨",
+      need: used(/Meta|Instagram|Facebook/i) ? "必須" : "参考",
       howTo: "Meta イベントマネージャ → [データソースを接続] → ウェブ でピクセルを作成し、Lead / Schedule の標準イベントを設定してください。",
     },
     {
       name: "Yahoo! タグ",
       detected: has("Yahoo! タグ"),
-      need: used(/Yahoo/i) ? "必須" : "推奨",
+      need: used(/Yahoo/i) ? "必須" : "参考",
       howTo: "Yahoo!広告 → [ツール] → [サイトジェネラルタグ] を取得し、全ページに設置してください。",
     },
     {
       name: "TikTok Pixel",
       detected: has("TikTok Pixel"),
-      need: used(/TikTok/i) ? "必須" : "推奨",
+      need: used(/TikTok/i) ? "必須" : "参考",
       howTo: "TikTok Business Center → [ピクセル管理] → [ピクセルを作成]。ViewContent・Contact イベントを設定してください。",
     },
     {
@@ -139,6 +142,8 @@ export function diagnoseTags(site: SiteScan | null, plan: MediaPlanItem[]): Meas
     },
   ];
 
+  const sanko = (n: string) => `${n}（広告手法一覧に含まれていません。広告配信対象とするか検討してください）`;
+
   const tags: MeasureTag[] = rows.map((r) => {
     if (r.detected) return { name: r.name, status: "導入済み", need: r.need, note: site.gtmRead ? "サイトまたはGTMコンテナの中で検出しました。" : "サイトのHTMLで検出しました。" };
     // GTM は実行時にタグを差し込むため、HTML の静的な確認では未導入と言い切れない
@@ -149,7 +154,7 @@ export function diagnoseTags(site: SiteScan | null, plan: MediaPlanItem[]): Meas
         need: r.need,
         note: `HTMLからは検出できませんでしたが、このサイトは Google タグマネージャーを使っています。GTM 経由で設置されている可能性があるため、GTM の管理画面でご確認ください。未設置の場合は次の手順です。${r.howTo}`,
       };
-    return { name: r.name, status: "未導入", need: r.need, note: r.howTo };
+    return { name: r.name, status: "未導入", need: r.need, note: r.need === "参考" ? sanko(r.howTo) : r.howTo };
   });
 
   if (site.tech.includes("Google Tag Manager")) {
