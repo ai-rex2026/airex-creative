@@ -1937,30 +1937,14 @@ export function Report({
               )}
             </>
           )}
-      {tactics && tactics.items?.length > 0 && (
+      {/* 2026-10-04: 「広告以外の施策」の一覧（SNS運用・LINE・LPO・SEO・MEO・PR/サジェスト対策の
+          要約とアクション）は、同じ内容を扱う専用章（SNS運用プラン・LINE・LP改善・SEOキーワード/
+          記事設計・検索サジェスト対策など）とほぼ重複していたため、一覧表示そのものは削除した。
+          直後の「実行スケジュール」は同じtactics生成結果から作るが、どの順で手を付けるかという
+          他の章にはない情報なので残す。「作れなかった章」のお知らせは施策一覧とは無関係の情報
+          （他章の生成エラー通知）なので、tactics.items の有無に関係なく出す */}
+      {tactics && (
         <>
-          <div className="sec-head">
-            <span className="ic">◇</span>
-            <div>
-              <h2 id="sec-tactics">広告以外の施策</h2>
-              <div className="sub">出稿と並行してやると効くもの</div>
-            </div>
-            <span className="rule" />
-          </div>
-
-          <div className="measure" style={{ display: "grid", gap: 12 }}>
-            {tactics.items.map((t, i) => (
-              <div className="tactic" key={i}>
-                <div className="top">
-                  <b>{t.area}</b>
-                  {t.kpi && <span className="kpi">KPI: {t.kpi}</span>}
-                </div>
-                {t.summary && <p>{t.summary}</p>}
-                <ul>{t.actions?.map((x, k) => <li key={k}>{x}</li>)}</ul>
-              </div>
-            ))}
-          </div>
-
           {/* 作れなかった章は黙って消さない。無いのか、作れなかったのかで読み方が変わる */}
           {(() => {
             const broken = [
