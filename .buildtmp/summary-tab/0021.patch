@@ -1,0 +1,33 @@
+diff --git a/components/Report.tsx b/components/Report.tsx
+index 2abb062..05342bc 100644
+--- a/components/Report.tsx
++++ b/components/Report.tsx
+@@ -41,9 +41,10 @@ import { Inputs } from "./Inputs";
+ import { hygiene } from "@/lib/measures";
+ import type { KpiTree } from "@/lib/kpi";
+ import type { Measure } from "@/lib/measures";
++import type { CategoryEvaluation } from "@/lib/summary-tab";
+ import { PlatformIcon } from "./PlatformIcons";
+ 
+-type Tab = "inputs" | "measures" | "overview";
++type Tab = "inputs" | "summary" | "overview";
+ 
+ /**
+  * 「切り抜く」表示のとき、横・縦どちらの位置スライダーが実際に効くかを判定する。
+@@ -169,7 +170,7 @@ export function Report({
+   margin: initialMargin,
+   kpi,
+   measures,
+-  kpiSelected,
++  categoryEvaluations,
+   measuresDone,
+   extraInputs,
+   measureLog,
+@@ -207,7 +208,7 @@ export function Report({
+   margin: number | null;
+   kpi: KpiTree | null;
+   measures: Measure[] | null;
+-  kpiSelected: { id: string; name: string; custom?: boolean }[] | null;
++  categoryEvaluations: CategoryEvaluation[] | null;
+   measuresDone: string[] | null;
+   extraInputs: { platform: string; url: string }[] | null;
