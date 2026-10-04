@@ -363,8 +363,14 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
     // ここから先の章（SNS競合調査・広告以外の施策・SNS運用プラン・KPI・LP改善・キーワード・
     // LINE設計・コピー・検索サジェスト）は、互いの出力を必要としない。
     // 1本ずつ待つと章数ぶん往復が積み上がるので、まだ無いぶんをまとめて並列に生成する。
-    // どれか1本が失敗すると（既存の.catchが無い generateTactics・generateKpi・generateCopies は特に）
-    // このひとまとめ全体が保存されずやり直しになるが、失敗時に分析ごと止まる挙動自体はこれまでと同じ
+    //
+    // 2026-10-04: 以前はこの9章をPromise.allでまとめて待ち、1本でも失敗すると「どれも保存されない」
+    // 仕様だった。generateTactics・generateKpi・generateCopiesには.catchが無く例外を投げるため、
+    // Promise.all全体が失敗すると、既に成功していたsocial_competitors（Apify実測＝実際に課金される）
+    // まで保存されず、次のtickで9章すべてやり直し＝成功していたApify呼び出しまで再度行う、という
+    // 無駄な再実行が起きていた（2026-10-03のクレジット急減事故の一因）。
+    // そのため章ごとに完了した時点で即保存するよう変更し、1章の失敗が他の章の成果を消さない・
+    // 次のtickではまだ無い章だけが再試行されるようにした
     if (
       a.ad_ops?.done &&
       (!a.social_competitors || !a.tactics || !a.sns_plan || !a.kpi || !a.lpo || !a.keywords || !a.line_plan || !a.copies || !a.suggests)
@@ -378,44 +384,99 @@ async function tickStep(sb: SupabaseClient, id: string): Promise<Analysis> {
       const ward = addr.match(/[都道府県](.*?[市区町村])/)?.[1] ?? "";
       const town = addr.match(/[市区町村]([^\d\s]{2,6})/)?.[1]?.replace(/[東西南北]$/, "") ?? "";
       const areas = [town, ward].filter(Boolean);
+      // a.diagnosis はこの時点で非nullだが、その絞り込みは下のクロージャ（jobs[].run）の中では
+      // 保持されない（TypeScriptの仕様）ため、ローカル変数に受けてから使う
+      const diagnosis = a.diagnosis;
 
-      const [social_competitors, tactics, sns_plan, kpi, lpo, keywords, line_plan, copies, suggests] = await Promise.all([
-        a.social_competitors ??
-          (readableTargets.length === 0
-            ? Promise.resolve<SocialCompetitorScan>({ items: [], searchedAt: new Date().toISOString() })
-            : findSocialCompetitors(a.diagnosis, a.url, readableTargets, a.id).catch(
-                () => ({ items: [], searchedAt: new Date().toISOString() }) as SocialCompetitorScan
-              )),
-        a.tactics ?? generateTactics(a.diagnosis, a.site, a.social, a.ad_ops),
-        a.sns_plan ?? generateSnsPlan(a.diagnosis, a.social).catch(failedChapter<SnsPlan>({ channels: [], campaign: null })),
-        a.kpi ?? generateKpi(a.diagnosis, a.site, a.pricing, a.meo, a.gsc, a.ga4),
-        a.lpo ?? generateLpo(a.diagnosis, a.site, priorityNoteFor(a, "lpo")).catch(failedChapter<LpoPlan>({ groups: [] })),
-        a.keywords ??
-          generateKeywords(a.diagnosis, a.site, a.gsc, a.meo, priorityNoteFor(a, "keywords")).catch(
-            failedChapter<KeywordPlan>({ rows: [], hasRealData: false, technical: [], content: [], meo: [] })
-          ),
-        a.line_plan ??
-          generateLine(a.diagnosis, a.site).catch(failedChapter<LinePlan>({ skip: null, richMenu: [], steps: [], segments: [] })),
-        a.copies ?? generateCopies(a.diagnosis, 2),
-        a.suggests ??
-          scanSuggests(a.diagnosis, a.site, areas).catch(
-            failedChapter<SuggestScan>({ rows: [], queried: [], fetchedAt: new Date().toISOString() })
-          ),
-      ]);
+      // 章ごとに { 保存先キー, 実行関数 } を用意する。まだ無い章だけをここに積む
+      // （既に a.X が入っている章は、そもそもジョブを作らずスキップする）
+      const jobs: { key: keyof Analysis; run: () => Promise<unknown> }[] = [];
+      if (!a.social_competitors) {
+        jobs.push({
+          key: "social_competitors",
+          run: () =>
+            readableTargets.length === 0
+              ? Promise.resolve<SocialCompetitorScan>({ items: [], searchedAt: new Date().toISOString() })
+              : findSocialCompetitors(diagnosis, a.url, readableTargets, a.id).catch(
+                  () => ({ items: [], searchedAt: new Date().toISOString() }) as SocialCompetitorScan
+                ),
+        });
+      }
+      if (!a.tactics) {
+        jobs.push({
+          key: "tactics",
+          run: () =>
+            generateTactics(diagnosis, a.site, a.social, a.ad_ops).catch(
+              failedChapter<TacticPlan>({ items: [], schedule: [], risks: [] })
+            ),
+        });
+      }
+      if (!a.sns_plan) {
+        jobs.push({
+          key: "sns_plan",
+          run: () => generateSnsPlan(diagnosis, a.social).catch(failedChapter<SnsPlan>({ channels: [], campaign: null })),
+        });
+      }
+      if (!a.kpi) {
+        jobs.push({
+          key: "kpi",
+          run: () =>
+            generateKpi(diagnosis, a.site, a.pricing, a.meo, a.gsc, a.ga4).catch(
+              failedChapter<KpiTree>({ model: "", branches: [], candidates: [] })
+            ),
+        });
+      }
+      if (!a.lpo) {
+        jobs.push({
+          key: "lpo",
+          run: () => generateLpo(diagnosis, a.site, priorityNoteFor(a, "lpo")).catch(failedChapter<LpoPlan>({ groups: [] })),
+        });
+      }
+      if (!a.keywords) {
+        jobs.push({
+          key: "keywords",
+          run: () =>
+            generateKeywords(diagnosis, a.site, a.gsc, a.meo, priorityNoteFor(a, "keywords")).catch(
+              failedChapter<KeywordPlan>({ rows: [], hasRealData: false, technical: [], content: [], meo: [] })
+            ),
+        });
+      }
+      if (!a.line_plan) {
+        jobs.push({
+          key: "line_plan",
+          run: () =>
+            generateLine(diagnosis, a.site).catch(
+              failedChapter<LinePlan>({ skip: null, richMenu: [], steps: [], segments: [] })
+            ),
+        });
+      }
+      if (!a.copies) {
+        jobs.push({
+          key: "copies",
+          // BannerCopy[] は配列なので failedChapter（オブジェクト用）は使わず、空配列にフォールバックする
+          run: () => generateCopies(diagnosis, 2).catch(() => [] as BannerCopy[]),
+        });
+      }
+      if (!a.suggests) {
+        jobs.push({
+          key: "suggests",
+          run: () =>
+            scanSuggests(diagnosis, a.site, areas).catch(
+              failedChapter<SuggestScan>({ rows: [], queried: [], fetchedAt: new Date().toISOString() })
+            ),
+        });
+      }
 
-      return await save({
-        social_competitors,
-        tactics,
-        sns_plan,
-        kpi,
-        lpo,
-        keywords,
-        line_plan,
-        copies,
-        suggests,
-        step: "訴求軸ごとにコピーを書いています",
-        progress: 80,
-      });
+      // 各ジョブは他のジョブの成否と無関係に、完了した時点でそれぞれ即保存する。
+      // save() は update(patch) で該当カラムだけを更新するので、同じ行への並行保存は安全
+      await Promise.allSettled(
+        jobs.map(async (job) => {
+          const value = await job.run();
+          await save({ [job.key]: value } as Partial<Analysis>);
+        })
+      );
+
+      return await save({ step: "訴求軸ごとにコピーを書いています", progress: 80 });
     }
     // YouTube・X・TikTok・Instagramはアカウント情報（登録者数・直近の投稿）が実測できている場合だけ、
     // 競合アカウントを探して実測し直す。実測が無い媒体は探しに行くだけ無駄になる
