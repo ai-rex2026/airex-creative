@@ -1,0 +1,32 @@
++        const res = await regenerateSummaryTab(id);
+         setList(res.items);
++        setEvaluations(res.evaluations);
+         setDoneIds(res.done);
+         setOpen(null);
+       } catch (e) {
+@@ -106,16 +101,6 @@ export function Measures({
+     });
+   }
+ 
+-  function addCustom() {
+-    const name = custom.trim();
+-    if (!name || busy) return;
+-    const kid = `c${Date.now()}`;
+-    const next = [...picked, { id: kid, name, custom: true }];
+-    setPicked(next);
+-    setCustom("");
+-    rebuild(next);
+-  }
+-
+   function markDone(m: Measure, v: boolean) {
+     const prev = doneIds;
+     const prevLogs = logs;
+@@ -130,78 +115,43 @@ export function Measures({
+     });
+   }
+ 
+-  const shown = list.filter((m) => picked.length === 0 || m.kpis?.some((k) => picked.some((p) => p.id === k)));
+-  // 選んだKPIのうち、効く施策が1件も無いもの
+-  const missing = picked.filter((p) => !list.some((m) => m.kpis?.includes(p.id)));
+-  const kpiName = (k: string) => picked.find((p) => p.id === k)?.name ?? kpi.candidates.find((c) => c.id === k)?.name ?? k;
++  // 旧形式の分析（category_evaluationsがまだ無い）はカード無しで施策だけ表示する。

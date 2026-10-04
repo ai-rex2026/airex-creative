@@ -1,0 +1,23 @@
++ * 「全データを評価してから、弱い所・測れない所に効く施策を優先して見せる」
++ * という考え方へ転換した。KPI選択UIはここから無くし、入力タブへ表示専用で
++ * 移した（components/Inputs.tsx）。
++ *
++ * 施策同士は優先順位で並べ替えないという元の方針は変わらないが、ここに限って
++ * 「優先度の高い施策」という並びだけは、カテゴリスコアの低さ（一次）＋
++ * Measure.impact/effort（二次）で並べる（決定済み。sortMeasuresByPriority）。
+  */
+ 
+-type Picked = { id: string; name: string; custom?: boolean };
++const SCORE_LABEL: Record<string, string> = { 強: "強", 標準: "標準", 弱: "弱" };
++
++function CategoryCard({ ev }: { ev: CategoryEvaluation }) {
++  const tone = ev.score === null ? "na" : ev.score === "強" ? "ok" : ev.score === "標準" ? "warn" : "ng";
++  return (
++    <a className={`cat-card ${tone}`} href={`#${ev.sectionAnchor}`}>
++      <b>{ev.category}</b>
++      <span className="sc">{ev.score === null ? "分析不可" : SCORE_LABEL[ev.score]}</span>
++      <small>{ev.basis}</small>
++    </a>
++  );
++}
+ 

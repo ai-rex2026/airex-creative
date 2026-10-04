@@ -1,0 +1,14 @@
++                    <i className={c.trackable === "追えません" ? "ng" : c.trackable === "実測できます" ? "ok" : "warn"}>{c.trackable}</i>
++                  </span>
++                  <small>{c.why}</small>
++                  <small className="how">{c.how}</small>
++                </div>
++              ))}
++            </div>
++          )}
++        </>
++      )}
++
+       <div className="sec-head">
+         <span className="ic">＋</span>
+         <div>
