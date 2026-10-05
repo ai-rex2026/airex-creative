@@ -26,7 +26,7 @@ import { facts, fixNodes, flag, RULES, type Measure, type MeasurePlan } from "./
  * そのまま使う（このファイル単体でPromise.allを使う箇所は無い）。
  */
 
-export type CategoryKey = "広告の準備" | "MEO" | "SEO強度" | "対策キーワード充足度" | "LP" | "SNS" | "検索サジェスト" | "外部施策";
+export type CategoryKey = "サイト健全性" | "広告の準備" | "MEO" | "SEO強度" | "対策キーワード充足度" | "LP" | "SNS" | "検索サジェスト" | "外部施策";
 
 export type CategoryEvaluation = {
   category: CategoryKey;
@@ -49,6 +49,41 @@ export type SummaryTab = {
  */
 function tier(score: number, strongAt: number, standardAt: number): "強" | "標準" | "弱" {
   return score >= strongAt ? "強" : score >= standardAt ? "標準" : "弱";
+}
+
+/**
+ * サイト健全性。サイトを読んで確認した10項目（HTTPS・セキュリティヘッダー6項目・robots.txt・
+ * sitemap.xml・構造化データ）のうち、いくつ満たしているかで評価する。
+ */
+function evalSiteHealth(site: SiteScan | null): CategoryEvaluation {
+  const anchor = "sec-health";
+  if (!site || !(site.total > 0)) {
+    return { category: "サイト健全性", score: null, measured: false, basis: "サイトを読めていないため確認できていません", sectionAnchor: anchor };
+  }
+  const ratio = site.passed / site.total;
+  const missing = [
+    ...(site.https ? [] : ["HTTPS"]),
+    ...site.headers.filter((h) => !h.pass).map((h) => h.label),
+    ...(site.robotsTxt ? [] : ["robots.txt"]),
+    ...(site.sitemapXml ? [] : ["sitemap.xml"]),
+    ...(site.structuredData ? [] : ["構造化データ"]),
+  ];
+  return {
+    category: "サイト健全性",
+    score: ratio >= 0.8 ? "強" : ratio >= 0.5 ? "標準" : "弱",
+    measured: true,
+    basis:
+      missing.length === 0
+        ? `${site.total}項目すべて満たしています`
+        : `${site.total}項目中${site.passed}項目を満たしています（未対応：${missing.slice(0, 5).join("・")}${missing.length > 5 ? " ほか" : ""}）`,
+    sectionAnchor: anchor,
+  };
+}
+
+/** サイト健全性が入る前に保存された評価に、サイトの実測から決まる評価を先頭に足す（表示専用） */
+export function withSiteHealth(evs: CategoryEvaluation[] | null, site: SiteScan | null): CategoryEvaluation[] | null {
+  if (!evs || evs.some((e) => e.category === "サイト健全性")) return evs;
+  return [evalSiteHealth(site), ...evs];
 }
 
 function evalAdTags(adOps: AdOps | null): CategoryEvaluation {
@@ -302,6 +337,8 @@ function evalOutreach(): CategoryEvaluation {
 }
 
 export function evaluateCategories(input: {
+  /** サイト健全性の判定に使う */
+  site?: SiteScan | null;
   adOps: AdOps | null;
   meo: MeoScan | null;
   seo: SeoEstimate | null;
@@ -317,6 +354,7 @@ export function evaluateCategories(input: {
   diagnosis?: Diagnosis | null;
 }): CategoryEvaluation[] {
   return [
+    evalSiteHealth(input.site ?? null),
     evalAdTags(input.adOps),
     evalMeo(input.meo),
     evalSeo(input.seo),
@@ -375,13 +413,14 @@ ${CATEGORY_NAMES.map((c) => `- ${c}`).join("\n")}
 }
 
 /** 「カテゴリ別評価」のカテゴリ名（evaluateCategories が返す category と同じ語） */
-export const CATEGORY_NAMES = ["広告の準備", "MEO", "SEO強度", "対策キーワード充足度", "LP", "SNS", "検索サジェスト", "外部施策"] as const;
+export const CATEGORY_NAMES = ["サイト健全性", "広告の準備", "MEO", "SEO強度", "対策キーワード充足度", "LP", "SNS", "検索サジェスト", "外部施策"] as const;
 
 /**
  * 施策の文面から、どのカテゴリの施策かを推定する（AIが category を返さなかった・古い分析向け）。
  * 語の出現数が最も多いカテゴリを採る。1語も当たらなければ null。
  */
 const CATEGORY_HINTS: Record<(typeof CATEGORY_NAMES)[number], RegExp> = {
+  サイト健全性: /HTTPS|セキュリティヘッダー|HSTS|CSP|クリックジャッキング|Referrer-Policy|X-Frame|nosniff|SSL|証明書/g,
   広告の準備: /広告アカウント|リマーケ|広告タグ|広告媒体|運用型広告|リスティング|P-?MAX|出稿|入札|予算配分/g,
   MEO: /MEO|Googleマップ|ビジネスプロフィール|GBP|口コミ|店舗情報|写真投稿|営業時間/g,
   SEO強度: /SEO|内部リンク|メタ|タイトルタグ|構造化データ|サイトマップ|見出し|robots|canonical|被リンク/g,
@@ -460,7 +499,7 @@ export async function generateSummaryTab(
   doneTitles: string[] = [],
   priorityNote?: string
 ): Promise<SummaryTab> {
-  const evaluations = evaluateCategories({ adOps, meo, seo, gsc, keywords, speed, lpo, social, suggests });
+  const evaluations = evaluateCategories({ site, adOps, meo, seo, gsc, keywords, speed, lpo, social, suggests });
   const measures = await generateSummaryMeasures(d, site, kpi, meo, pricing, extra, doneTitles, social, priorityNote);
   return { evaluations, measures };
 }

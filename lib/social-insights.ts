@@ -41,7 +41,11 @@ export type SocialInsight = {
   measures: SocialInsightMeasure[];
 };
 
-export type SocialInsightPlan = { items: SocialInsight[] };
+export type SocialInsightPlan = {
+  items: SocialInsight[];
+  /** 事業が一般消費者向けかを見て、Facebookの扱いを決めて作った版か。無い＝それ以前に作られたもの */
+  b2cAware?: boolean;
+};
 
 /** components/Report.tsx が「情報取得→SNS分析→SNS運用プラン」を媒体ごとに束ねる際にも使う */
 export const PLATFORM_RE: Record<SocialInsightPlatform, RegExp> = {
@@ -199,5 +203,5 @@ ${blocks.join("\n\n")}
   const items = await Promise.all(
     (res.items ?? []).map(async (it) => ({ ...it, measures: await flag(it.measures ?? [], d.industry) }))
   );
-  return { items };
+  return { items, b2cAware: true };
 }

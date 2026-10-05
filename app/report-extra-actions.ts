@@ -14,6 +14,13 @@ import { classifyIndustryVertical, buildPriorityInstruction, type IndustryVertic
 import type { Diagnosis } from "@/lib/types";
 import type { SiteScan } from "@/lib/site-scan";
 import type { SocialScan } from "@/lib/social";
+import type { SocialCompetitorScan } from "@/lib/social-competitors";
+import { generateSocialInsights, type SocialInsightPlan } from "@/lib/social-insights";
+import type { YoutubeAnalyticsData } from "@/lib/google";
+import { analyzeCompetitors } from "@/lib/competitor-analysis";
+import type { CompetitorScan } from "@/lib/competitors";
+import type { SnsPlan } from "@/lib/sns-plan";
+import { isB2c } from "@/lib/biz-model";
 
 /**
  * 以前に作ったレポートへ、後から増えた項目を足す（作り直さずに、無い部分だけ作る）。
@@ -22,7 +29,20 @@ import type { SocialScan } from "@/lib/social";
  * - 対策キーワードの月間検索数の推定（keywords.rows[].volume）
  * - 業種別優先度の判定（industry_vertical）
  * - SEO記事設計（seo_articles）
+ * - 競合サイトの比較分析（competitors.analysis。競合ページを読むだけで、外部の有料APIは使わない）
+ * - 一般消費者向けのビジネスでの Facebook の扱いの反映（social_insights・sns_plan の作り直し）
  */
+
+/** Facebookを優先度の低い媒体として扱う前の版で作られた、SNS分析・運用プランが残っているか */
+function staleFacebook(row: Record<string, unknown>, d: Diagnosis): { insights: boolean; plan: boolean } {
+  if (!isB2c(d)) return { insights: false, plan: false };
+  const si = row.social_insights as SocialInsightPlan | null;
+  const sp = row.sns_plan as SnsPlan | null;
+  return {
+    insights: !!si && !si.b2cAware && (si.items ?? []).some((x) => x.platform === "Facebook"),
+    plan: !!sp && !sp.b2cAware && (sp.channels ?? []).some((c) => /facebook/i.test(c.platform)),
+  };
+}
 
 async function ownedRow(id: string, columns: string) {
   if (!hasAnthropic()) throw new Error("ANTHROPIC_API_KEY が未設定です");
@@ -38,7 +58,10 @@ async function ownedRow(id: string, columns: string) {
 
 /** 足りない項目の一覧。画面の「新しい項目を追加」ボタンの出し分けに使う */
 export async function missingSections(id: string): Promise<string[]> {
-  const { row } = await ownedRow(id, "status, diagnosis, sns_plan, outreach, keywords, seo_articles, industry_vertical");
+  const { row } = await ownedRow(
+    id,
+    "status, diagnosis, sns_plan, outreach, keywords, seo_articles, industry_vertical, competitors, social_insights"
+  );
   if (row.status !== "done" || !row.diagnosis) return [];
   const out: string[] = [];
   if (!row.sns_plan) out.push("SNSオーガニック運用・SNSキャンペーン企画");
@@ -48,6 +71,10 @@ export async function missingSections(id: string): Promise<string[]> {
   if (k && k.rows.length > 0 && k.rows.every((r) => r.volume === undefined)) out.push("月間検索数の推定");
   if (!row.industry_vertical) out.push("業種別優先度の判定");
   if (!row.seo_articles) out.push("SEO記事設計");
+  const comp = row.competitors as CompetitorScan | null;
+  if (comp && (comp.items?.length ?? 0) > 0 && !comp.analysis) out.push("競合サイトの比較分析");
+  const stale = staleFacebook(row, row.diagnosis as Diagnosis);
+  if (stale.insights || stale.plan) out.push("Facebookの扱い（一般消費者向けの前提を反映したSNS分析）");
   return out;
 }
 
@@ -55,7 +82,7 @@ export async function missingSections(id: string): Promise<string[]> {
 export async function addMissingSections(id: string) {
   const { row } = await ownedRow(
     id,
-    "status, diagnosis, site, social, sns_plan, outreach, suggests, keywords, seo_articles, industry_vertical, ai_provider"
+    "status, url, diagnosis, site, social, social_competitors, social_insights, social_yt_analytics, competitors, sns_plan, outreach, suggests, keywords, seo_articles, industry_vertical, ai_provider"
   );
   if (row.status !== "done" || !row.diagnosis) throw new Error("レポートが完成してから追加できます");
   const d = row.diagnosis as Diagnosis;
@@ -115,6 +142,40 @@ export async function addMissingSections(id: string) {
         generateSeoArticles(d, site, k, priorityNote)
           .then((articles: SeoArticleSet) => {
             if (articles.articles.length) patch.seo_articles = articles;
+          })
+          .catch(() => undefined)
+      );
+    }
+    const comp = row.competitors as CompetitorScan | null;
+    if (comp && (comp.items?.length ?? 0) > 0 && !comp.analysis) {
+      tasks.push(
+        analyzeCompetitors(d, (row.url as string | null) ?? null, comp.items)
+          .then((analysis) => {
+            if (analysis) patch.competitors = { ...comp, analysis };
+          })
+          .catch(() => undefined)
+      );
+    }
+    const stale = staleFacebook(row, d);
+    if (stale.insights) {
+      tasks.push(
+        generateSocialInsights(
+          d,
+          (row.social as SocialScan | null) ?? null,
+          (row.social_competitors as SocialCompetitorScan | null) ?? null,
+          (row.social_yt_analytics as YoutubeAnalyticsData | null) ?? null
+        )
+          .then((p) => {
+            if (p.items.length) patch.social_insights = p;
+          })
+          .catch(() => undefined)
+      );
+    }
+    if (stale.plan) {
+      tasks.push(
+        generateSnsPlan(d, (row.social as SocialScan | null) ?? null)
+          .then((p) => {
+            if (p.channels.length || p.campaign) patch.sns_plan = p;
           })
           .catch(() => undefined)
       );

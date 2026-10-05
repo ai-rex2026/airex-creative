@@ -29,7 +29,11 @@ const MAX_CHAIN_ATTEMPTS = 6; // 240秒 x 6 ≈ 24分。それでも終わらな
  */
 async function triggerContinue(id: string, attempt: number) {
   if (attempt > MAX_CHAIN_ATTEMPTS) return;
-  const host = process.env.VERCEL_URL;
+  // 次のバーストは「いま本番になっているデプロイ」で動かす。VERCEL_URL は自分自身のデプロイ固有の
+  // URL なので、デプロイ前から動いていた分析は古いコードのまま最後まで走ってしまう
+  // （2026-10-05：修正を入れた後に作った分析で、修正前の挙動が出た）。本番ドメインを優先し、
+  // 無ければ従来どおり VERCEL_URL を使う
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
   if (!host) return;
   const base = `https://${host}`;
   try {
@@ -73,8 +77,28 @@ async function triggerContinue(id: string, attempt: number) {
 // 無駄な引き渡しを増やさず処理時間を最短化できる
 const LOW_BUDGET_MS = 90_000; // 残りがこれを下回ったら、次の工程の最悪ケースを安全に試せない恐れがあるので次バーストへ渡す
 
+/**
+ * この分析を動かしたコードのバージョン（コミットの先頭7桁）を、分析の行に足していく。
+ * 「直したはずなのに古い挙動のまま」のとき、どの版が動いたかを後から確かめるため。
+ * 記録に失敗しても分析は止めない
+ */
+async function stampVersion(sb: ReturnType<typeof createAdminClient>, id: string) {
+  try {
+    const ver = (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7);
+    const { data } = await sb.from("analyses").select("app_version").eq("id", id).maybeSingle();
+    const seen = String((data as { app_version?: string | null } | null)?.app_version ?? "")
+      .split(",")
+      .filter(Boolean);
+    if (seen.includes(ver)) return;
+    await sb.from("analyses").update({ app_version: [...seen, ver].join(",") }).eq("id", id);
+  } catch {
+    // 記録できなくても続ける
+  }
+}
+
 export async function processAnalysis(id: string, budgetMs = 240_000, attempt = 0) {
   const sb = createAdminClient();
+  await stampVersion(sb, id);
   const deadline = Date.now() + budgetMs;
   for (;;) {
     // deadline を tick に渡す（表示速度計測ステップが、このバーストに実際残っている

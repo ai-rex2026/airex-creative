@@ -45,6 +45,8 @@ export type SnsCampaign = {
 export type SnsPlan = {
   channels: SnsChannelPlan[];
   campaign: SnsCampaign | null;
+  /** 事業が一般消費者向けかを見て、Facebookの扱いを決めて作った版か。無い＝それ以前に作られたもの */
+  b2cAware?: boolean;
   /** 生成に失敗したときの理由 */
   error?: string;
 };
@@ -150,5 +152,5 @@ ${sns ? `\n【運用中の公式SNS】※実測\n${sns}` : "\n【運用中の公
         }
       : null;
 
-  return { channels, campaign };
+  return { channels, campaign, b2cAware: true };
 }

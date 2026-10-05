@@ -20,7 +20,6 @@ import { MeoStoreList, MeoStoreDetail } from "./MeoStores";
 import { MeoEntryCard } from "./meo/MeoEntryCard";
 import { Toc } from "./Toc";
 import { BANNER_CASE_WARNING, looksLikeCasePhoto } from "@/lib/case-photo";
-import { cropImageToDataUrl } from "@/lib/crop-image";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
 import type { SeoArticleSet } from "@/lib/seoArticles";
 import { INDUSTRY_VERTICAL_LABEL, type IndustryVertical } from "@/lib/industryMatrix";
@@ -29,7 +28,7 @@ import { MARGIN, type PriceScan } from "@/lib/pricing";
 import type { SpeedScan } from "@/lib/pagespeed";
 import type { SocialScan } from "@/lib/social";
 import { PLATFORM_RE, type SocialInsightPlan } from "@/lib/social-insights";
-import type { ImageScan, SafeCrop } from "@/lib/image-check";
+import type { ImageScan } from "@/lib/image-check";
 import { pickTextZone, type TextZone } from "@/lib/overlay-position";
 import type { Ga4Data, GscData } from "@/lib/google";
 import type { CustomImage } from "@/lib/analysis";
@@ -42,7 +41,7 @@ import { Inputs } from "./Inputs";
 import { hygiene } from "@/lib/measures";
 import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
-import type { CategoryEvaluation } from "@/lib/summary-tab";
+import { withSiteHealth, type CategoryEvaluation } from "@/lib/summary-tab";
 import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
 
 type Tab = "inputs" | "summary" | "overview";
@@ -74,32 +73,6 @@ function coverAxisEffect(size: SizePreset, natural: { w: number; h: number }): {
   const excessY = natural.h * scale - boxH;
   return { x: excessX > 1, y: excessY > 1 };
 }
-
-/**
- * 候補一覧のサムネイルを、実際に選んだときに使われる範囲（safeCrop）だけを
- * 拡大して見せるための background-size / background-position を計算する。
- *
- * サムネイルが元画像のままだと、選ぶ前から文字入りの写真に見えてしまい、
- * 「文字入りの画像が候補に出ている」ように見えていた。実際の切り抜きは
- * 選択した瞬間に cropImageToDataUrl が行うので、ここはその見た目を
- * サムネイルの時点で先取りして見せるだけの表示用計算。
- *
- * safeCrop は幅・高さとも40%以上（image-check.ts の validCrop）を保証されているため、
- * 拡大率は最大でも 100/40 = 2.5倍程度に収まる
- */
-function safeCropPreviewStyle(c: SafeCrop): { backgroundSize: string; backgroundPosition: string } {
-  const w = Math.min(Math.max(c.x1 - c.x0, 1), 100);
-  const h = Math.min(Math.max(c.y1 - c.y0, 1), 100);
-  const sizeX = (100 / w) * 100;
-  const sizeY = (100 / h) * 100;
-  const posX = w >= 100 ? 0 : (100 * c.x0) / (100 - w);
-  const posY = h >= 100 ? 0 : (100 * c.y0) / (100 - h);
-  return {
-    backgroundSize: `${sizeX}% ${sizeY}%`,
-    backgroundPosition: `${posX}% ${posY}%`,
-  };
-}
-
 
 /**
  * ゲスト（未登録）向けの部分マスキング。見出し・件数などの「teaser」は呼び出し側で
@@ -296,31 +269,16 @@ export function Report({
   }, [photoSrc]);
 
   /**
-   * 写真候補を選ぶ。文字が写り込んでいても safeCrop（文字を含まない領域）が
-   * 取れている画像なら、選んだ瞬間にその領域だけを切り出して使う。
-   * こうすると、表示位置をどう動かしても文字が入り込まないことを保証できる
-   * （position をずらして避けるやり方は、文字が広く入った画像では成立しないため）
+   * 写真候補を選ぶ。写真の切り出し（トリミング）はしない。文字が重なっていない写真を
+   * 候補の先頭に並べ、そのまま使う（切り出すと被写体が欠けたり、文字が途中で切れたりするため）
    */
   async function pickPhoto(u: string) {
     setPhoto(u);
     setCropError(null);
+    setCroppedSrc(null);
     const info = imageScan?.items.find((x) => x.url === u);
     // テキストを重ねる帯は、この写真の顔の位置から選び直す（無ければ定石どおり下部）
     setPhotoTextZone(pickTextZone(info?.hasFace ? info.facePosition : null));
-    if (info?.hasText && info.safeCrop) {
-      setCropBusy(true);
-      try {
-        const src = `/api/analysis/${id}/img?u=${encodeURIComponent(u)}`;
-        setCroppedSrc(await cropImageToDataUrl(src, info.safeCrop));
-      } catch {
-        setCroppedSrc(null);
-        setCropError("この写真の自動トリミングに失敗しました。お手数ですが他の写真をお選びください。");
-      } finally {
-        setCropBusy(false);
-      }
-    } else {
-      setCroppedSrc(null);
-    }
   }
 
   /**
@@ -388,34 +346,6 @@ export function Report({
   const thin = band
     ? (plan ?? []).filter((m) => Math.round((band.min * m.share) / 100) < 10)
     : [];
-
-  /**
-   * 4領域のスコア。すべて実測済みの値から組む。
-   * 判定できない領域は出さない（0点として出すと、測っていないのに低評価に見える）
-   */
-  const cards: { key: string; label: string; got: number; max: number; note: string }[] = [];
-  if (site) cards.push({ key: "site", label: "サイト健全性", got: site.passed, max: site.total, note: "HTTPS・ヘッダー・構造化データ" });
-  if (meo?.self)
-    cards.push({
-      key: "meo",
-      label: "MEO",
-      got: meo.score,
-      max: 100,
-      note:
-        meo.stores.length > 1
-          ? `${meo.stores.length}店舗を検出（下の一覧に店舗ごとの点数）`
-          : meo.totalShops > 1
-            ? `近隣${meo.totalShops}店中 レビュー${meo.reviewRank}位`
-            : "近隣に比較できる同業が見つかりませんでした",
-    });
-  if (adOps?.done) {
-    const need = adOps.tags.filter((t) => t.need === "必須");
-    const ok = need.filter((t) => t.status === "導入済み").length;
-    cards.push({ key: "ads", label: "広告の準備", got: ok, max: need.length, note: `必須タグ ${ok}/${need.length} 導入済み` });
-  }
-  if (seo) cards.push({ key: "seo", label: "SEO強度", got: seo.score, max: 100, note: seo.label });
-  const pct = (c: { got: number; max: number }) => (c.max > 0 ? Math.round((c.got / c.max) * 100) : 0);
-  const total = cards.length ? Math.round(cards.reduce((n, c) => n + pct(c), 0) / cards.length) : null;
 
   /**
    * バナーに載せる「何屋か」。ブランド名だけでは何の広告か伝わらない。
@@ -675,32 +605,6 @@ export function Report({
         )}
       </div>
 
-      {cards.length > 0 && (
-        <div className="scorecard">
-          {total !== null && (
-            <div className="tot">
-              <span className="lb">総合</span>
-              <b>{total}<i>/100</i></b>
-              <span className="nt">実測できた{cards.length}領域の平均</span>
-            </div>
-          )}
-          <div className="cs">
-            {cards.map((c) => {
-              const p = pct(c);
-              const tone = p >= 75 ? "ok" : p >= 50 ? "warn" : "ng";
-              return (
-                <div className={`c ${tone}`} key={c.key}>
-                  <span className="lb">{c.label}</span>
-                  <b>{c.got}<i>/{c.max}</i></b>
-                  <div className="tr"><i style={{ width: `${p}%` }} /></div>
-                  <span className="nt">{c.note}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       <div className="tabs">
         <button className={tab === "inputs" ? "on" : ""} onClick={() => setTab("inputs")}>入力</button>
         {kpi && <button className={tab === "summary" ? "on" : ""} onClick={() => setTab("summary")}>サマリー</button>}
@@ -730,7 +634,7 @@ export function Report({
         <Measures
           id={id}
           measures={measures ?? []}
-          categoryEvaluations={categoryEvaluations ?? null}
+          categoryEvaluations={withSiteHealth(categoryEvaluations ?? null, site ?? null)}
           done={measuresDone ?? []}
           log={measureLog ?? []}
           hygiene={hygiene(site)}
@@ -855,6 +759,27 @@ export function Report({
             <span className="chip-s">sitemap.xml {site.sitemapXml ? "有り" : "無し"}</span>
             <span className="chip-s">構造化データ {site.structuredData ? "有り" : "無し"}</span>
             <span className="chip-s">内部リンク {site.internalLinks} / 外部リンク {site.externalLinks}</span>
+          </div>
+
+          <div className="sec-head">
+            <div>
+              <h2 id="sec-health">サイト健全性<RealBadge label="サイトを読んで確認" /></h2>
+              <div className="sub">HTTPS・セキュリティヘッダー・robots.txt・sitemap.xml・構造化データの10項目（{site.passed}/{site.total}項目を満たしています）</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div className="card measure">
+            <div className="chips">
+              {[
+                { label: "HTTPS", pass: site.https },
+                ...site.headers.map((h) => ({ label: h.label, pass: h.pass })),
+                { label: "robots.txt", pass: site.robotsTxt },
+                { label: "sitemap.xml", pass: site.sitemapXml },
+                { label: "構造化データ", pass: site.structuredData },
+              ].map((c) => (
+                <span key={c.label} className="chip-s">{c.pass ? "✓" : "✕"} {c.label}</span>
+              ))}
+            </div>
           </div>
 
           {site.tech.length > 0 && (
@@ -2207,11 +2132,9 @@ export function Report({
                     // 決めつけない。安全側に倒し、除外側と同じ「それも表示する」に回す
                     if (!info) return showTexted;
                     if (!info.hasText) return true;
-                    if (info.safeCrop) return true; // 自動トリミングで使えるので候補に残す
-                    return showTexted; // 除外対象。手動で「それも表示する」を選んだときだけ
+                    return showTexted; // 文字が重なっている写真。手動で「それも表示する」を選んだときだけ
                   })
-                  // トリミング不要（文字なし）の写真を最優先で並べ、次に自動トリミングで
-                  // 使える写真、それ以外の順にする。文字なしの写真がサイト内に存在するのに
+                  // 文字が重なっていない写真を最優先で並べ、次に未判定、文字ありの順にする。文字なしの写真がサイト内に存在するのに
                   // 発見順（HTML内の並び順）がたまたま後ろだと、下の枚数上限で弾かれて
                   // 表示されないことがあったため、切り詰める前に並べ替える。
                   // Array#sort は安定ソートなので、同じ優先度内の順序は変えない
@@ -2219,43 +2142,26 @@ export function Report({
                     const rank = (u: string) => {
                       const info = imageScan?.items.find((x) => x.url === u);
                       if (!info) return 1; // 未判定は中間扱い
-                      if (!info.hasText) return 0; // 文字なし＝トリミング不要を最優先
-                      if (info.safeCrop) return 1; // 自動トリミングで使える
-                      return 2; // 除外対象（「それも表示する」を選んだときだけここに来る）
+                      if (!info.hasText) return 0; // 文字が重なっていない写真を最優先
+                      return 2; // 文字が重なっている写真（「それも表示する」を選んだときだけここに来る）
                     };
                     return rank(a) - rank(b);
                   })
                   .slice(0, 12)
                   .map((u) => {
                     const info = imageScan?.items.find((x) => x.url === u);
-                    const autoCrop = !!(info?.hasText && info.safeCrop);
+                    const textedPhoto = !!info?.hasText;
                     const src = `/api/analysis/${id}/img?u=${encodeURIComponent(u)}`;
                     return (
                       <button
                         key={u}
                         className={photo === u ? "on" : ""}
                         style={{ position: "relative" }}
-                        disabled={cropBusy && photo === u}
                         onClick={() => void pickPhoto(u)}
                       >
-                        {autoCrop ? (
-                          // 自動トリミング対象は、選択時に実際に使われる範囲だけを
-                          // 先取りして見せる（元画像のままだと文字入りに見えてしまうため）
-                          <div
-                            aria-hidden
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              backgroundImage: `url(${src})`,
-                              backgroundRepeat: "no-repeat",
-                              ...safeCropPreviewStyle(info!.safeCrop!),
-                            }}
-                          />
-                        ) : (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={src} alt="" />
-                        )}
-                        {autoCrop && (
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={src} alt="" />
+                        {textedPhoto && (
                           <span
                             style={{
                               position: "absolute",
@@ -2270,7 +2176,7 @@ export function Report({
                               fontWeight: 600,
                             }}
                           >
-                            {cropBusy && photo === u ? "処理中…" : "自動トリミング"}
+                            文字あり
                           </span>
                         )}
                       </button>
@@ -2313,44 +2219,35 @@ export function Report({
 
               {!checkUnavailable && (() => {
                 const withText = imageScan?.items.filter((x) => x.hasText) ?? [];
-                const autoCrop = withText.filter((x) => x.safeCrop);
-                const excluded = withText.filter((x) => !x.safeCrop);
-                // AIの文字チェックに回らなかった画像(判定件数の上限などで対象外になったもの)。
+                const clean = imageScan?.items.filter((x) => !x.hasText) ?? [];
+                // AIの文字チェックに回らなかった画像（判定件数の上限などで対象外になったもの）。
                 // 「文字なし」と決めつけて候補に出すと文字入りのまま使われかねないので、
-                // 除外枚数として別に数えて、同じ「それも表示する」の裏に回す
+                // 文字ありの写真と同じ「それも表示する」の裏に回す
                 const checkedUrls = new Set((imageScan?.items ?? []).map((x) => x.url));
                 const unverified = (site?.images ?? [])
                   .filter((u) => !looksLikeCasePhoto(u))
                   .filter((u) => !checkedUrls.has(u));
-                const hiddenCount = excluded.length + unverified.length;
-                if (autoCrop.length === 0 && hiddenCount === 0) return null;
+                const hiddenCount = withText.length + unverified.length;
+                if (hiddenCount === 0 && clean.length > 0) return null;
                 return (
                   <div className="note" style={{ marginTop: 10 }}>
                     <i className="i">i</i>
                     <span>
-                      {autoCrop.length > 0 && (
-                        <>
-                          文字が写り込んだ写真のうち <b style={{ fontWeight: 600 }}>{autoCrop.length}枚</b> は、
-                          文字を含まない部分だけを自動的に切り出して候補に含めています（サムネイルの「自動トリミング」表示）。
-                          <br />
-                        </>
+                      写真は切り出さず、文字が重なっていない写真を優先して候補に出しています。
+                      {clean.length === 0 && (
+                        <> 今回は文字が重なっていない写真を判定できませんでした。{imageScan?.error && <>（要因：{imageScan.error}）</>}<br /></>
                       )}
                       {hiddenCount > 0 && (
                         <>
-                          {excluded.length > 0 && (
-                            <>
-                              文字を含まない部分が十分に取れない写真 <b style={{ fontWeight: 600 }}>{excluded.length}枚</b> は候補から外しています。
-                              切り抜くと文字が途中で切れるためです。
-                            </>
+                          {" "}
+                          {withText.length > 0 && (
+                            <>文字が重なっている写真 <b style={{ fontWeight: 600 }}>{withText.length}枚</b></>
                           )}
+                          {withText.length > 0 && unverified.length > 0 && "、"}
                           {unverified.length > 0 && (
-                            <>
-                              {excluded.length > 0 && " "}
-                              文字が入っているか確認できなかった写真 <b style={{ fontWeight: 600 }}>{unverified.length}枚</b> も、
-                              念のため候補から外しています。
-                              {imageScan?.error && <>（要因：{imageScan.error}）</>}
-                            </>
+                            <>文字の有無を確認できなかった写真 <b style={{ fontWeight: 600 }}>{unverified.length}枚</b></>
                           )}
+                          は候補から外しています。
                           <button className="linkbtn" onClick={() => setShowTexted(!showTexted)}>
                             {showTexted ? "また隠す" : "それも表示する"}
                           </button>

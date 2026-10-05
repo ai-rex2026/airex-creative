@@ -15,6 +15,7 @@ import type { PriceScan } from "@/lib/pricing";
 import type { SocialScan } from "@/lib/social";
 import { normalizeManualSocialInput } from "@/lib/social";
 import { processAnalysis } from "@/lib/worker";
+import { hasGoogleApp, listGoogleAssets, type GoogleAssets, type GoogleChoice } from "@/lib/google";
 import { generateLp } from "@/lib/lp";
 import { hasAnthropic } from "@/lib/anthropic";
 import type { BannerCopy, Diagnosis, GuardHit } from "@/lib/types";
@@ -45,6 +46,41 @@ function normalizeUrl(raw: string | undefined): string | undefined {
 
 const MAX_MANUAL_SOCIAL = 4;
 
+/** 画面から来た連携データの選択を、保存してよい形に整える。不正な値は「自動」に倒す */
+function cleanGoogleChoice(g: GoogleChoice | undefined): GoogleChoice | null {
+  if (!g) return null;
+  const str = (v: unknown) => (typeof v === "string" && v.length > 0 && v.length <= 300 ? v : null);
+  return { gsc: str(g.gsc), ga4: str(g.ga4), youtube: g.youtube !== false };
+}
+
+/**
+ * 新規作成画面用：連携中のGoogleアカウントが持っている Search Console のサイトと GA4 のプロパティの一覧、
+ * 入力したURLに一致するもの。連携していなければ connected:false
+ */
+export async function googleAssetsFor(
+  rawUrl: string
+): Promise<{ connected: false } | { connected: true; assets?: GoogleAssets; error?: string }> {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user || !hasGoogleApp()) return { connected: false };
+  const admin = createAdminClient();
+  const { data: conn } = await admin.from("google_connections").select("refresh_token").eq("user_id", user.id).maybeSingle();
+  if (!conn?.refresh_token) return { connected: false };
+  let url: string | null = null;
+  try {
+    url = normalizeUrl(rawUrl) ?? null;
+  } catch {
+    url = null;
+  }
+  try {
+    return { connected: true, assets: await listGoogleAssets(conn.refresh_token, url) };
+  } catch (e) {
+    return { connected: true, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /**
  * 分析を積む。アカウントが無ければ一時アカウント（匿名サインイン）を作って、
  * その持ち物として登録する。あとで本登録すると同じIDのまま引き継がれる。
@@ -62,6 +98,8 @@ export async function startAnalysis(input: {
   mode?: AnalysisMode;
   budget?: BudgetBand | null;
   socialAccounts?: { platform: string; value: string }[];
+  /** 連携中のGoogleアカウントのどのデータを使うか（任意） */
+  google?: GoogleChoice;
 }) {
   assertKey();
   const mode: AnalysisMode = input.mode === "meo" ? "meo" : "report";
@@ -98,6 +136,7 @@ export async function startAnalysis(input: {
     mode,
     budget: input.budget ?? null,
     social_manual: social_manual.length ? social_manual : null,
+    google_choice: cleanGoogleChoice(input.google),
   };
 
   let { error } = await sb.from("analyses").insert({ ...row, owner_id: user.id });

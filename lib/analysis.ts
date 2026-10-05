@@ -20,7 +20,7 @@ import { checkImages, type ImageScan } from "./image-check";
 import { generateKpi, type KpiTree } from "./kpi";
 import type { Measure } from "./measures";
 import { evaluateCategories, generateSummaryMeasures, type CategoryEvaluation } from "./summary-tab";
-import { fetchGa4, fetchSearchConsole, fetchYoutubeAnalytics, hasGoogleApp, type Ga4Data, type GscData, type YoutubeAnalyticsData } from "./google";
+import { fetchGa4, fetchSearchConsole, fetchYoutubeAnalytics, hasGoogleApp, type Ga4Data, type GoogleChoice, type GscData, type YoutubeAnalyticsData } from "./google";
 import type { AnalysisMode, BannerCopy, BudgetBand, Diagnosis, MediaPlanItem, Summary } from "./types";
 import { estimateSeo, scanSite, type SeoEstimate, type SiteScan } from "./site-scan";
 import { addUsage, withAi, type AiProvider, type AiUsageTotal } from "./ai-context";
@@ -108,6 +108,10 @@ export type Analysis = {
    * （scanSocial に渡す。lib/social.ts 参照）。古い分析には無い
    */
   social_manual: { platform: string; url: string; handle: string }[] | null;
+  /** 新規作成時に選んだGoogle連携データ（Search Console・GA4・YouTube）。無ければ自動で探す */
+  google_choice?: GoogleChoice | null;
+  /** この分析を動かしたコードのバージョン（コミット先頭7桁をカンマ区切りで） */
+  app_version?: string | null;
   /** 済みにした施策の記録。施策を作り直しても消えない */
   measure_log: { title: string; at: string }[] | null;
   outreach: OutreachPlan | null;
@@ -334,12 +338,12 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
         let gsc: GscData | null = null;
         let ga4: Ga4Data | null = null;
         try {
-          gsc = await fetchSearchConsole(conn.refresh_token, a.url);
+          if (a.google_choice?.gsc !== "none") gsc = await fetchSearchConsole(conn.refresh_token, a.url, a.google_choice?.gsc);
         } catch {
           // 権限が無い・所有していない等。落とさず先へ
         }
         try {
-          ga4 = await fetchGa4(conn.refresh_token, a.url);
+          if (a.google_choice?.ga4 !== "none") ga4 = await fetchGa4(conn.refresh_token, a.url, a.google_choice?.ga4);
         } catch {
           // 同上
         }
@@ -359,7 +363,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
         from: "", to: "", views: null, estimatedMinutesWatched: null,
         averageViewDurationSec: null, subscribersGained: null, topTrafficSource: null,
       };
-      if (hasYoutube && hasGoogleApp()) {
+      if (hasYoutube && hasGoogleApp() && a.google_choice?.youtube !== false) {
         const { data: conn } = await sb
           .from("google_connections")
           .select("refresh_token")
@@ -702,6 +706,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       const category_evaluations =
         a.category_evaluations ??
         evaluateCategories({
+          site: a.site,
           adOps: a.ad_ops,
           meo: a.meo,
           seo: a.seo,

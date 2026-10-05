@@ -9,6 +9,12 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/yt-analytics.readonly",
 ].join(" ");
 
+/**
+ * 新規作成時に選んだ連携データ。null は「URLのドメインで自動的に探す」、"none" は「使わない」。
+ * youtube は連携中のアカウントのチャンネルの非公開指標を使うか
+ */
+export type GoogleChoice = { gsc: string | null; ga4: string | null; youtube: boolean };
+
 export function hasGoogleApp() {
   return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
@@ -34,17 +40,26 @@ export type GscRow = { query: string; clicks: number; impressions: number; ctr: 
 export type GscData = { site: string; from: string; to: string; totals: { clicks: number; impressions: number; position: number }; queries: GscRow[] };
 
 /** Search Console：直近28日の検索クエリ上位 */
-export async function fetchSearchConsole(refreshToken: string, url: string): Promise<GscData | null> {
+export async function fetchSearchConsole(
+  refreshToken: string,
+  url: string,
+  /** 新規作成時に選んだサイト。無ければURLのドメインで自動的に探す */
+  chosenSite?: string | null
+): Promise<GscData | null> {
   const token = await accessToken(refreshToken);
   const host = new URL(url).host.replace(/^www\./, "");
 
-  const listed = await fetch("https://searchconsole.googleapis.com/webmasters/v3/sites", {
-    headers: { authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(15000),
-  }).then((r) => r.json());
-
-  const sites: { siteUrl: string }[] = listed.siteEntry ?? [];
-  const match = sites.find((s) => s.siteUrl.includes(host));
+  let match: { siteUrl: string } | undefined;
+  if (chosenSite) {
+    match = { siteUrl: chosenSite };
+  } else {
+    const listed = await fetch("https://searchconsole.googleapis.com/webmasters/v3/sites", {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15000),
+    }).then((r) => r.json());
+    const sites: { siteUrl: string }[] = listed.siteEntry ?? [];
+    match = sites.find((s) => s.siteUrl.includes(host));
+  }
   if (!match) return null; // このアカウントで所有していないサイト
 
   const to = new Date();
@@ -89,38 +104,108 @@ export async function fetchSearchConsole(refreshToken: string, url: string): Pro
 export type Ga4Data = { property: string; from: string; to: string; sessions: number; users: number; channels: { name: string; sessions: number }[] };
 
 /** GA4：ドメインが一致するプロパティを探して、直近28日のセッションと流入チャネル */
-export async function fetchGa4(refreshToken: string, url: string): Promise<Ga4Data | null> {
+export async function fetchGa4(
+  refreshToken: string,
+  url: string,
+  /** 新規作成時に選んだプロパティ（"properties/123"）。無ければURLのドメインで自動的に探す */
+  chosenProperty?: string | null
+): Promise<Ga4Data | null> {
   const token = await accessToken(refreshToken);
   const host = new URL(url).host.replace(/^www\./, "");
   const h = { authorization: `Bearer ${token}` };
 
+  let target: string | null = chosenProperty ?? null;
+  if (!target) target = await findGa4Property(h, host);
+  if (!target) return null;
+  return await runGa4Report(h, target);
+}
+
+type AuthHeader = { authorization: string };
+type Ga4Prop = { property: string; displayName: string; account: string };
+
+async function listGa4Properties(h: AuthHeader): Promise<Ga4Prop[]> {
   const accounts = await fetch("https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=50", {
     headers: h,
     signal: AbortSignal.timeout(15000),
   }).then((r) => r.json());
-
-  const props: { property: string; displayName: string }[] = [];
+  const props: Ga4Prop[] = [];
   for (const a of accounts.accountSummaries ?? []) {
-    for (const p of a.propertySummaries ?? []) props.push({ property: p.property, displayName: p.displayName });
-  }
-
-  // データストリームの URL でドメイン一致を見る（表示名は当てにならない）
-  let target: string | null = null;
-  for (const p of props.slice(0, 12)) {
-    const streams = await fetch(`https://analyticsadmin.googleapis.com/v1beta/${p.property}/dataStreams?pageSize=20`, {
-      headers: h,
-      signal: AbortSignal.timeout(15000),
-    }).then((r) => r.json());
-    const hit = (streams.dataStreams ?? []).some((s: { webStreamData?: { defaultUri?: string } }) =>
-      s.webStreamData?.defaultUri?.includes(host)
-    );
-    if (hit) {
-      target = p.property;
-      break;
+    for (const p of a.propertySummaries ?? []) {
+      props.push({ property: p.property, displayName: p.displayName, account: a.displayName ?? "" });
     }
   }
-  if (!target) return null;
+  return props;
+}
 
+/** データストリームのURLでドメイン一致を見る（表示名は当てにならない） */
+async function findGa4Property(h: AuthHeader, host: string, known?: Ga4Prop[]): Promise<string | null> {
+  const props = known ?? (await listGa4Properties(h));
+  const hits = await Promise.all(
+    props.slice(0, 30).map(async (p) => {
+      try {
+        const streams = await fetch(`https://analyticsadmin.googleapis.com/v1beta/${p.property}/dataStreams?pageSize=20`, {
+          headers: h,
+          signal: AbortSignal.timeout(15000),
+        }).then((r) => r.json());
+        const hit = (streams.dataStreams ?? []).some((s: { webStreamData?: { defaultUri?: string } }) =>
+          s.webStreamData?.defaultUri?.includes(host)
+        );
+        return hit ? p.property : null;
+      } catch {
+        return null;
+      }
+    })
+  );
+  return hits.find((x): x is string => !!x) ?? null;
+}
+
+/** 新規作成画面に出す、連携中のGoogleアカウントが持っているSearch Console・GA4の一覧と、URLに一致するもの */
+export type GoogleAssets = {
+  gsc: { sites: { siteUrl: string; permission: string }[]; match: string | null; error?: string };
+  ga4: { properties: Ga4Prop[]; match: string | null; error?: string };
+};
+
+export async function listGoogleAssets(refreshToken: string, url: string | null): Promise<GoogleAssets> {
+  const token = await accessToken(refreshToken);
+  const h = { authorization: `Bearer ${token}` };
+  let host = "";
+  try {
+    host = url ? new URL(url).host.replace(/^www\./, "") : "";
+  } catch {
+    host = "";
+  }
+  const out: GoogleAssets = { gsc: { sites: [], match: null }, ga4: { properties: [], match: null } };
+
+  await Promise.all([
+    (async () => {
+      try {
+        const r = await fetch("https://searchconsole.googleapis.com/webmasters/v3/sites", { headers: h, signal: AbortSignal.timeout(15000) });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+        const sites = ((j.siteEntry ?? []) as { siteUrl: string; permissionLevel: string }[]).map((x) => ({
+          siteUrl: x.siteUrl,
+          permission: x.permissionLevel,
+        }));
+        out.gsc.sites = sites;
+        out.gsc.match = host ? (sites.find((x) => x.siteUrl.includes(host))?.siteUrl ?? null) : null;
+      } catch (e) {
+        out.gsc.error = e instanceof Error ? e.message : String(e);
+      }
+    })(),
+    (async () => {
+      try {
+        const props = await listGa4Properties(h);
+        out.ga4.properties = props;
+        out.ga4.match = host ? await findGa4Property(h, host, props) : null;
+      } catch (e) {
+        out.ga4.error = e instanceof Error ? e.message : String(e);
+      }
+    })(),
+  ]);
+  return out;
+}
+
+async function runGa4Report(h: AuthHeader, target: string): Promise<Ga4Data> {
   const to = new Date();
   const from = new Date(Date.now() - 28 * 864e5);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
