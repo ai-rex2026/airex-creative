@@ -56,7 +56,19 @@ export type SpeedScan = {
   testedUrl: string | null;
   reason: string | null;
   fetchedAt: string;
+  /**
+   * 計測できなかった理由が一時的なもの（時間切れ・Google側の瞬断）なら true。
+   * true のうちは、後の工程でもう一度測り直す（lib/analysis.ts の speedNeedsRetry）
+   */
+  retryable?: boolean;
+  /** 計測を試みた回数。再試行の上限判定に使う */
+  attempts?: number;
 };
+
+/** 時間切れなどで測れなかったときに、後の工程で測り直してよいか（最大3回まで） */
+export function speedNeedsRetry(s: SpeedScan | null): boolean {
+  return !!s && s.score === null && s.retryable === true && (s.attempts ?? 1) < 3;
+}
 
 const FIELD_LABEL: Record<string, { label: string; note: string }> = {
   LARGEST_CONTENTFUL_PAINT_MS: { label: "LCP（主役の表示）", note: "一番大きい要素が表示されるまで。2.5秒以内が良好" },
@@ -122,10 +134,10 @@ function parseSaving(displayValue: string | undefined): ParsedSaving | null {
   return null;
 }
 
-function empty(reason: string): SpeedScan {
+function empty(reason: string, retryable = false): SpeedScan {
   return {
     strategy: "mobile", score: null, field: [], lab: [], opportunities: [],
-    testedUrl: null, reason, fetchedAt: new Date().toISOString(),
+    testedUrl: null, reason, fetchedAt: new Date().toISOString(), retryable,
   };
 }
 
@@ -159,17 +171,28 @@ type PsiResponse = {
  * 渡された値が OUTER_MS より大きくても OUTER_MS でクリップする（そもそもPSI自体に
  * 240秒以上かける意味が薄いため）
  */
-export async function scanSpeed(url: string | null, maxWaitMs: number = OUTER_MS): Promise<SpeedScan> {
+export async function scanSpeed(
+  url: string | null,
+  maxWaitMs: number = OUTER_MS,
+  previousAttempts = 0
+): Promise<SpeedScan> {
   const waitMs = Math.max(5_000, Math.min(OUTER_MS, maxWaitMs));
-  return Promise.race([
-    run(url),
+  const result = await Promise.race([
+    run(url, waitMs),
     new Promise<SpeedScan>((r) =>
       setTimeout(
-        () => r(empty("PageSpeed Insights の応答が時間内に返りませんでした。重いページでは測定に時間がかかります。もう一度お試しください。")),
+        () =>
+          r(
+            empty(
+              "PageSpeed Insights の応答が時間内に返りませんでした。重いページでは測定に時間がかかります。自動で測り直します。",
+              true
+            )
+          ),
         waitMs
       )
     ),
   ]);
+  return { ...result, attempts: previousAttempts + 1 };
 }
 
 type PsiCallResult =
@@ -182,7 +205,7 @@ type PsiCallResult =
  * そのようなエラーだけを再試行対象にする。APIキーやクォータの問題は
  * 何度呼んでも直らないので、再試行しても無駄なだけでなく待ち時間を無駄に伸ばす
  */
-async function callPsi(url: string, key: string | undefined): Promise<PsiCallResult> {
+async function callPsi(url: string, key: string | undefined, fetchMs: number = FETCH_MS): Promise<PsiCallResult> {
   const q = new URLSearchParams({ url, strategy: "mobile", category: "performance", locale: "ja" });
   if (key) q.set("key", key);
 
@@ -190,7 +213,7 @@ async function callPsi(url: string, key: string | undefined): Promise<PsiCallRes
   try {
     // 計測そのものに時間がかかる。工程を保存できないまま関数ごと切られないよう上限を置く
     const res = await fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${q}`, {
-      signal: AbortSignal.timeout(FETCH_MS),
+      signal: AbortSignal.timeout(fetchMs),
     });
     j = (await res.json()) as PsiResponse;
     if (res.status === 429) {
@@ -230,7 +253,7 @@ async function callPsi(url: string, key: string | undefined): Promise<PsiCallRes
   return { ok: true, j };
 }
 
-async function run(url: string | null): Promise<SpeedScan> {
+async function run(url: string | null, waitMs: number = OUTER_MS): Promise<SpeedScan> {
   if (!url) return empty("URLがないため測定できません");
 
   const key = process.env.PAGESPEED_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
@@ -239,15 +262,21 @@ async function run(url: string | null): Promise<SpeedScan> {
   // Google 側のクロール環境が一時的に詰まっているだけのことが多い。
   // 1回の再試行では直らないサイトもあったため、間隔を空けながら計3回まで試す
   // （OUTER_MS の外側タイムアウトが最終的な歯止めになる）
-  let result = await callPsi(url, key);
+  //
+  // 2026-10-05: 1回の呼び出しの待ち時間を固定100秒にしていたため、外側の待ち時間（waitMs）が
+  // それより短いと最初の1回で使い切り、再試行する前に「時間内に返らなかった」で終わっていた。
+  // 呼び出しごとに「残り時間」から待ち時間を決め、重いページでも1回目に使える時間を最大にする
+  const startedAt = Date.now();
+  const left = () => Math.max(5_000, waitMs - (Date.now() - startedAt) - 3_000);
+  let result = await callPsi(url, key, Math.min(FETCH_MS * 2, left()));
   let attempt = 1;
   const RETRY_DELAYS_MS = [4_000, 8_000];
-  while (!result.ok && result.retryable && attempt <= RETRY_DELAYS_MS.length) {
+  while (!result.ok && result.retryable && attempt <= RETRY_DELAYS_MS.length && left() > 25_000) {
     await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
-    result = await callPsi(url, key);
+    result = await callPsi(url, key, Math.min(FETCH_MS * 2, left()));
     attempt += 1;
   }
-  if (!result.ok) return empty(result.message);
+  if (!result.ok) return empty(result.message, result.retryable);
   const j = result.j;
 
   const field: SpeedMetric[] = [];

@@ -746,7 +746,6 @@ export function Report({
       {((gsc && gsc.queries.length > 0) || (ga4 && ga4.sessions > 0)) && (
         <>
           <div className="sec-head" style={{ marginTop: 0 }}>
-            <span className="ic">⇄</span>
             <div>
               <h2 id="sec-linked">連携データ<RealBadge label="実データ" /></h2>
               <div className="sub">Search Console / GA4 の実データです（推定ではありません）</div>
@@ -805,7 +804,6 @@ export function Report({
       {summary && summary.personas?.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">☺</span>
             <div>
               <h2 id="sec-persona">お客様像</h2>
               <div className="sub">この人たちに向けてコピーを書いています</div>
@@ -827,7 +825,6 @@ export function Report({
         </>
       )}
       <div className="sec-head">
-        <span className="ic">◎</span>
         <div>
           <h2 id="sec-overview">サイト概要</h2>
           <div className="sub">何を、誰に売っているか</div>
@@ -872,7 +869,6 @@ export function Report({
       )}
 
       <div className="sec-head">
-        <span className="ic">◆</span>
         <div>
           <h2 id="sec-strength">強みと、買わない理由</h2>
           <div className="sub">ここを潰すコピーが一番効く</div>
@@ -892,7 +888,6 @@ export function Report({
         ))}
       </div>
       <div className="sec-head">
-        <span className="ic">↗</span>
         <div>
           <h2 id="sec-angles">訴求軸</h2>
           <div className="sub">この切り口でコピーを作りました。生成と同時に景表法・薬機法も確認しています</div>
@@ -1053,7 +1048,6 @@ export function Report({
       {tactics && tactics.risks?.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">⚠</span>
             <div>
               <h2 id="sec-risk">リスクと注意点</h2>
               <div className="sub">先に潰しておくもの</div>
@@ -1073,7 +1067,6 @@ export function Report({
       {competitors && (
         <>
           <div className="sec-head" style={{ marginTop: 0 }}>
-            <span className="ic">⊕</span>
             <div>
               <h2 id="sec-comp">競合サイト比較<RealBadge /></h2>
               <div className="sub">実際に検索して、上位に出ていたサイトです</div>
@@ -1106,6 +1099,76 @@ export function Report({
                   </div>
                 ))}
               </div>
+              {competitors.analysis && competitors.analysis.rows.some((r) => r.total > 0) && (() => {
+                const an = competitors.analysis!;
+                const readable = an.profiles.filter((p) => p.readable);
+                const unreadable = an.profiles.filter((p) => !p.readable);
+                return (
+                  <>
+                    <div className="rows measure" style={{ marginTop: 16 }}>
+                      <div className="rh">
+                        自社との比較
+                        <span className="hint">
+                          上位に出ていた競合ページ{readable.length}件と、自社トップページを、HTMLに書かれている範囲で読み比べています
+                        </span>
+                      </div>
+                      {an.rows
+                        .filter((r) => r.total > 0)
+                        .map((r) => (
+                          <div className="r" key={r.key}>
+                            <span
+                              className="st"
+                              style={{ color: r.own === null ? "var(--muted)" : r.own ? "var(--ok)" : "var(--ng)" }}
+                            >
+                              {r.own === null ? "?" : r.own ? "✓" : "✕"}
+                            </span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <b>{r.label}</b>
+                              <small>
+                                自社：{r.own === null ? "確認できず" : r.own ? "あり" : "確認できず（ページに見当たらない）"}
+                                ／ 競合：{r.total}件中{r.competitors}件が掲載
+                              </small>
+                            </div>
+                          </div>
+                        ))}
+                      {an.numbers
+                        .filter((n) => n.own !== null && n.median !== null)
+                        .map((n) => (
+                          <div className="r" key={n.label}>
+                            <span className="st" style={{ color: "var(--muted)" }}>≒</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <b>{n.label}</b>
+                              <small>
+                                自社：{n.own!.toLocaleString()} ／ 競合の中央値：{n.median!.toLocaleString()}
+                              </small>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                    {an.insights.length > 0 && (
+                      <div className="measure" style={{ display: "grid", gap: 12, marginTop: 12 }}>
+                        <div className="tactic">
+                          <div className="top"><b>比較から分かること</b></div>
+                          <ul>{an.insights.map((t, k) => <li key={k}>{t}</li>)}</ul>
+                        </div>
+                      </div>
+                    )}
+                    <div className="note measure">
+                      <i className="i">i</i>
+                      <span>
+                        競合は「検索で上位に出ていたページ」、自社は「トップページ」を読んでいるため、ページの種類が違う項目（文字数・見出し数）は優劣を示すものではありません。
+                        {an.own && !an.own.readable && <>自社ページは読めませんでした（{an.own.reason}）。</>}
+                        {unreadable.length > 0 && (
+                          <>
+                            読めなかった競合ページ：{unreadable.map((u) => `${u.name}（${u.reason}）`).join("、")}。
+                          </>
+                        )}
+                        {an.insightError && <>示唆の文章は生成できなかったため、集計の差だけを示しています（{an.insightError}）。</>}
+                      </span>
+                    </div>
+                  </>
+                );
+              })()}
               <div className="note measure">
                 <i className="i">i</i>
                 <span>
@@ -1121,7 +1184,6 @@ export function Report({
       {adOps && adOps.tags && adOps.tags.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">▣</span>
             <div>
               <h2 id="sec-tags">計測タグの導入状況<RealBadge /></h2>
               <div className="sub">サイトを実際に読んで判定しています</div>
@@ -1160,7 +1222,6 @@ export function Report({
       {plan && plan.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">◈</span>
             <div>
               <h2 id="sec-plan">広告手法一覧</h2>
               <div className="sub">サイト分析をもとに、使うべき媒体を優先順位付きで出しています</div>
@@ -1238,7 +1299,6 @@ export function Report({
       {adOps?.done && adOps.campaigns.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">▣</span>
             <div>
               <h2 id="sec-adops">広告運用設計</h2>
               <div className="sub">管理画面にそのまま入稿できる粒度で出しています</div>
@@ -1425,7 +1485,6 @@ export function Report({
       {seo && site && (
         <>
           <div className="sec-head">
-            <span className="ic">⛓</span>
             <div style={{ display: "flex", alignItems: "center" }}>
               <div>
                 <h2 id="sec-seo">ドメインパワー（SEO強度）</h2>
@@ -1467,7 +1526,6 @@ export function Report({
           {keywords && keywords.rows.length > 0 && (
             <>
               <div className="sec-head">
-                <span className="ic">⌕</span>
                 <div>
                   <h2 id="sec-kw">対策キーワード{keywords?.hasRealData && <RealBadge label="Search Consoleの実データで分析" />}</h2>
                   <div className="sub">検索広告とSEOの両方で使う語です</div>
@@ -1529,7 +1587,6 @@ export function Report({
           {seoArticles && seoArticles.articles.length > 0 && (
             <>
               <div className="sec-head">
-                <span className="ic">✎</span>
                 <div>
                   <h2 id="sec-seoart">SEO記事設計</h2>
                   <div className="sub">構成案（H2/H3）。詳細を開くと見出しと要旨が見られます</div>
@@ -1581,7 +1638,6 @@ export function Report({
           {suggests && (
             <>
               <div className="sec-head">
-                <span className="ic">⌕</span>
                 <div>
                   <h2 id="sec-suggest">検索サジェスト{(suggests?.rows?.length ?? 0) > 0 && <RealBadge label="実測データで分析" />}</h2>
                   <div className="sub">いま実際に出ているサジェストです（{suggests?.source === "Bing" ? "Googleから取得できなかったため、Bingの候補を表示しています" : "Googleから取得"}）</div>
@@ -1651,7 +1707,6 @@ export function Report({
       {meo && (
         <>
           <div className="sec-head">
-            <span className="ic">◉</span>
             <div>
               <h2 id="sec-meo">MEO（Googleマップ対策）{meo.self && <RealBadge label="Googleマップの実データで分析" />}</h2>
               <div className="sub">Googleマップの実データで、近隣の同業と比べています</div>
@@ -1668,6 +1723,12 @@ export function Report({
             </div>
           ) : (
             <>
+              {meo.partial && (
+                <div className="note warn" style={{ marginBottom: 10 }}>
+                  <i className="i">!</i>
+                  <span>{meo.partial}</span>
+                </div>
+              )}
               <MeoStoreList meo={meo} selectedIdx={meoStoreIdx} onSelect={setMeoStoreIdx} />
               <MeoStoreDetail store={meo.stores[meoStoreIdx] ?? meo.stores[0]} />
             </>
@@ -1696,7 +1757,6 @@ export function Report({
             return (
               <>
                 <div className="sec-head">
-                  <span className="ic">▤</span>
                   <div>
                     <h2 id="sec-lpo">LP改善（受け皿の直し方）</h2>
                     <div className="sub">広告を出す前に直すと、同じ予算で獲得数が変わります</div>
@@ -1735,7 +1795,6 @@ export function Report({
                 {hasSpeedData && (
                   <>
                     <div className="sec-head" style={{ marginTop: hasLpo || hasSpeedMissing ? 24 : 0 }}>
-                      <span className="ic">⚡</span>
                       <div>
                         <h2 id="sec-speed">表示速度（実測）<RealBadge label="実測値" /></h2>
                         <div className="sub">PageSpeed Insights・モバイル。推測ではなく計測値です</div>
@@ -1796,7 +1855,6 @@ export function Report({
       {site && (site.social.length > 0 || siItems.length > 0 || snsChannels.length > 0) && (
         <>
           <div className="sec-head">
-            <span className="ic">◍</span>
             <div>
               <h2 id="sec-social">公式SNSアカウント{(social?.accounts ?? []).some((x) => hasRealData(x)) && <RealBadge label="取得できた実データで分析" />}</h2>
               <div className="sub">情報取得→分析→運用プランの順に、媒体ごとにまとめています</div>
@@ -1896,7 +1954,6 @@ export function Report({
           {outreach && (
             <>
               <div className="sec-head">
-                <span className="ic">↗</span>
                 <div>
                   <h2 id="sec-outreach">外部施策（自社サイトの外でやること）</h2>
                   <div className="sub">掲載・アフィリエイト・PR</div>
@@ -1995,7 +2052,6 @@ export function Report({
           {tactics && tactics.items?.length > 0 && tactics.schedule?.length > 0 && (
             <>
               <div className="sec-head">
-                <span className="ic">▤</span>
                 <div>
                   <h2 id="sec-sched">実行スケジュール</h2>
                   <div className="sub">どの順で手を付けるか</div>
@@ -2018,7 +2074,6 @@ export function Report({
       {copies.length > 0 && (
         <section className="block no-print">
           <div className="sec-head" style={{ marginTop: 0 }}>
-            <span className="ic">▤</span>
             <div>
               <h2 id="sec-banners">バナー書き出し</h2>
               <div className="sub">Meta・Google・Yahoo の各サイズを同時に出します</div>
@@ -2245,6 +2300,13 @@ export function Report({
                     そのため今回はすべての写真を未判定のまま候補に表示しています。
                     価格表記やキャッチコピーなどの文字が写っている写真を選ぶと、切り抜いたときに
                     文字が途中で切れることがあるため、選ぶ前にご自身でご確認ください。
+                    {imageScan?.error && (
+                      <>
+                        <br />
+                        <b style={{ fontWeight: 600 }}>要因：</b>
+                        {imageScan.error}
+                      </>
+                    )}
                   </span>
                 </div>
               )}
@@ -2286,6 +2348,7 @@ export function Report({
                               {excluded.length > 0 && " "}
                               文字が入っているか確認できなかった写真 <b style={{ fontWeight: 600 }}>{unverified.length}枚</b> も、
                               念のため候補から外しています。
+                              {imageScan?.error && <>（要因：{imageScan.error}）</>}
                             </>
                           )}
                           <button className="linkbtn" onClick={() => setShowTexted(!showTexted)}>
@@ -2446,7 +2509,6 @@ export function Report({
       {LP_GENERATION_ENABLED && chosen.length > 0 && (
         <section className="block no-print">
           <div className="sec-head" style={{ marginTop: 0 }}>
-            <span className="ic">▣</span>
             <div>
               <h2 id="sec-lp">LP生成（ベータ）</h2>
               <div className="sub">広告と同じ訴求軸で着地を作ります</div>

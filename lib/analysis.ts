@@ -4,6 +4,7 @@ import { generateCopies, scoreCopies } from "./copy";
 import { generateMediaPlan } from "./media-plan";
 import { generateSummary } from "./summary";
 import { findCompetitors, type CompetitorScan } from "./competitors";
+import { analyzeCompetitors } from "./competitor-analysis";
 import { generateTactics, type TacticPlan } from "./tactics";
 import { generateSnsPlan, type SnsPlan } from "./sns-plan";
 import { finishAdOps, generateCampaign, opsTargets, planChannel, type AdOps } from "./ad-ops";
@@ -11,7 +12,7 @@ import { hasPlacesApi, scanMeo, type MeoScan } from "./meo";
 import { generateKeywords, generateLine, generateLpo, type KeywordPlan, type LinePlan, type LpoPlan } from "./deep";
 import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } from "./outreach";
 import { scanPrices, type PriceScan } from "./pricing";
-import { scanSpeed, type SpeedScan } from "./pagespeed";
+import { scanSpeed, speedNeedsRetry, type SpeedScan } from "./pagespeed";
 import { scanSocial, type SocialScan } from "./social";
 import { findSocialCompetitors, type SocialCompetitorPlatform, type SocialCompetitorScan } from "./social-competitors";
 import { generateSocialInsights, type SocialInsightPlan } from "./social-insights";
@@ -230,16 +231,19 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       // 2026-10-05: 取得を何度やり直しても保存できない媒体があると、有料のApify取得を繰り返して
       // 予算を使い切る（実際に起きた）。試行回数に上限を設け、超えたら「取れなかった」事実だけを
       // 保存して先へ進む。保存済みの媒体には触れない（DBの最新状態に足すだけ）
-      const MAX_SOCIAL_ATTEMPTS = 4;
+      const MAX_SOCIAL_ATTEMPTS = 3;
       if (wantedPlatforms.length > 0 && stillMissing && a.social_attempt_count >= MAX_SOCIAL_ATTEMPTS) {
         const { data: cur } = await sb.from("analyses").select("social").eq("id", id).single();
-        const existing = ((cur?.social as SocialScan | null)?.accounts ?? []);
+        const curSocial = (cur?.social as SocialScan | null) ?? null;
+        const existing = curSocial?.accounts ?? [];
         const have = new Set(existing.map((x) => x.platform));
         const targets = [...(a.site?.social ?? []), ...(a.social_manual ?? [])];
         const added = wantedPlatforms
           .filter((p) => !have.has(p))
           .map((p) => {
             const t = targets.find((x) => x.platform === p);
+            // 保存に失敗したときのエラー内容（lib/social.ts の persist が diag に残す）があれば理由に含める
+            const why = curSocial?.diag?.[p];
             return {
               platform: p,
               url: t?.url ?? "",
@@ -251,14 +255,22 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
               bio: null,
               views: null,
               via: null,
-              reason: `取得を${MAX_SOCIAL_ATTEMPTS}回試しましたが結果を保存できなかったため、取得を打ち切りました`,
+              reason: why
+                ? `取得を${MAX_SOCIAL_ATTEMPTS}回試しましたが保存できなかったため、打ち切りました（保存時のエラー: ${why}）`
+                : `取得を${MAX_SOCIAL_ATTEMPTS}回試しましたが結果が保存されなかったため、打ち切りました（保存時のエラーは記録されていません。実行環境のログの確認が必要です）`,
               recentContent: null,
               recentPosts: null,
             };
           });
         await sb
           .from("analyses")
-          .update({ social: { accounts: [...existing, ...added], fetchedAt: new Date().toISOString() } })
+          .update({
+            social: {
+              ...(curSocial ?? {}),
+              accounts: [...existing, ...added],
+              fetchedAt: new Date().toISOString(),
+            },
+          })
           .eq("id", id);
         return await save({ step: "サイトを読んでいます", progress: 20 });
       }
@@ -283,6 +295,13 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
         }
         return await save({ step: "サイトを読んでいます", progress: 20 });
       }
+    }
+    // 表示速度（PageSpeed Insights）。以前は工程の最後だけで測っていたが、その時点では
+    // このバーストに残っている時間が短くて「時間内に返らなかった」で終わりやすかった。
+    // 時間に余裕のある早い段階（バーストの前半）でも1回測り、測れなければ最後の工程で測り直す
+    if (a.url && a.mode !== "meo" && !a.speed && deadline - Date.now() > 120_000) {
+      const speed = await scanSpeed(a.url, deadline - Date.now() - 30_000);
+      return await save({ speed, step: "サイトを読んでいます", progress: 21 });
     }
     if (a.url && hasPlacesApi() && !a.meo) {
       // 失敗しても分析全体は止めない。取れなければ画面に理由を出す
@@ -371,6 +390,15 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
         comp = await findCompetitors(a.diagnosis, a.url);
       } catch {
         // 取れなければ空のまま進む（画面には「取得できず」と出す）
+      }
+      // 一覧に出た競合のページを自社と同じ項目で読み比べ、示唆を出す。無料の取得＋AI1回。
+      // 失敗しても一覧は残す（比較は付加情報）
+      if (comp.items.length > 0) {
+        try {
+          comp.analysis = await analyzeCompetitors(a.diagnosis, a.url, comp.items);
+        } catch {
+          comp.analysis = null;
+        }
       }
       return await save({ competitors: comp, step: "広告手法を選んでいます", progress: 50 });
     }
@@ -609,7 +637,13 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
         // 候補から外すために先に判定しておく
         jobs2.push({
           key: "image_scan",
-          run: () => checkImages(a.site!.images).catch(() => ({ items: [], checkedAt: new Date().toISOString() })),
+          // 失敗しても理由を残す（捨てると「なぜ自動チェックできなかったか」が後から分からない）
+          run: () =>
+            checkImages(a.site!.images).catch((e) => ({
+              items: [],
+              checkedAt: new Date().toISOString(),
+              error: `画像の判定で想定外のエラーが起きました（${e instanceof Error ? e.message.slice(0, 160) : String(e).slice(0, 160)}）`,
+            })),
         });
       }
 
@@ -645,7 +679,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
     // 呼び出し元の時間切れ判定に引っかかるまでDBへの問い合わせを空回りさせて
     // しまうため、残り時間ぶんだけ待ってから抜けることで、次のバースト
     // （triggerContinue による継続。満額の時間予算を持つ）に確実に回す）
-    if (a.url && !a.speed) {
+    if (a.url && (!a.speed || speedNeedsRetry(a.speed))) {
       const SAVE_MARGIN_MS = 15_000; // save() や後処理に残しておく分
       const MIN_ATTEMPT_MS = 45_000; // これより短いとPSIを試す意味が薄い
       const remaining = deadline - Date.now();
@@ -653,7 +687,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
         await new Promise((r) => setTimeout(r, Math.max(0, remaining)));
         return a;
       }
-      const speed = await scanSpeed(a.url, remaining - SAVE_MARGIN_MS);
+      const speed = await scanSpeed(a.url, remaining - SAVE_MARGIN_MS, a.speed?.attempts ?? 0);
       return await save({ speed, step: "要約をまとめています", progress: 95 });
     }
     // サマリータブ（カテゴリ別評価＋優先度の高い施策）。2026-10-04新設。
@@ -677,6 +711,8 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
           lpo: a.lpo,
           social: a.social,
           suggests: a.suggests,
+          socialCompetitors: a.social_competitors,
+          diagnosis,
         });
       const measures =
         a.measures ??

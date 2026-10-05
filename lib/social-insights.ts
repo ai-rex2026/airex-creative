@@ -4,6 +4,7 @@ import type { Diagnosis, GuardHit, Industry } from "./types";
 import type { SocialAccount, SocialPost, SocialScan } from "./social";
 import type { SocialCompetitorPlatform, SocialCompetitorScan } from "./social-competitors";
 import type { YoutubeAnalyticsData } from "./google";
+import { isB2c } from "./biz-model";
 
 /**
  * YouTube・X・TikTok・Instagramの「分析結果」と「施策詳細」。
@@ -133,6 +134,7 @@ export async function generateSocialInsights(
   const own = ownAccountsByPlatform(social);
   const targets = PLATFORMS.filter((p) => own[p]);
   if (targets.length === 0) return { items: [] };
+  const b2c = isB2c(d);
 
   const blocks = targets.map((p) => {
     const a = own[p]!;
@@ -161,6 +163,17 @@ export async function generateSocialInsights(
   ・渡されていない数字を作らない（「エンゲージメント率が高い」のような、渡していない指標の断定は禁止）
   ・Facebookは、ページのフォロワー数と、直近の投稿のいいね・コメント・シェアだけが実測。
     再生数・リーチ・インプレッションは渡していないので書かない
+${
+  b2c
+    ? `  ・**このビジネスは一般消費者向け（B2C）。Facebookは他媒体より優先度が低い媒体**。
+    フォロワー数が他媒体より少ないこと、反応が少ないことを、問題・弱み・課題として書かない
+    （優先度が低い媒体で数字が小さいのは自然なため）。Facebook の findings は事実の整理にとどめ、
+    「他媒体を優先し、Facebookは情報の掲載と最低限の更新を保つ位置づけ」という前提で書く
+  ・Facebook の measures は1件だけ。フォロワー拡大や広告・キャンペーンを狙う施策は書かず、
+    営業時間・アクセス・予約導線などの基本情報を最新に保つ、他媒体の投稿を転載するなど、
+    手間をかけずに維持する施策にする`
+    : ""
+}
   ・一般論（「動画は伸びやすい」等）や最上級・断定（「必ず」「業界随一」）は禁止
 - measures は媒体ごとに2〜3件。**すでに運用している前提**で書く（新規開設は書かない）
   ・title は「何をするか」を動詞で。「〜の検討」「〜の強化」のような、やったか判断できない書き方は禁止

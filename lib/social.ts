@@ -61,6 +61,11 @@ export type SocialPost = {
 export type SocialScan = {
   accounts: SocialAccount[];
   fetchedAt: string;
+  /**
+   * 媒体ごとの「取得・保存でうまくいかなかったこと」（エラー文）。取れなかった要因を後から確認できるように残す。
+   * 保存に失敗して項目を減らして保存し直した場合も、最初に失敗した理由を残す
+   */
+  diag?: Record<string, string>;
 };
 
 /**
@@ -880,21 +885,40 @@ export async function scanSocial(
   // この呼び出し内では常に直前の保存を待ってから次の保存を始めることで、
   // 1プロセス内での書き込みを直列化して守る（DB側に専用RPCを作るほどの規模ではないため）
   let saveChain: Promise<void> = Promise.resolve();
-  const persist = (account: SocialAccount) => {
-    saveChain = saveChain.then(async () => {
-      const { data: cur } = await sb.from("analyses").select("social").eq("id", analysisId).single();
-      const existing = (cur?.social as SocialScan | null)?.accounts ?? [];
-      // 2026-10-05: 既に実測できている媒体を、後から来た「取れなかった」結果で上書きしない。
-      // 別プロセスと取得が重なったとき、成功済みのデータが失敗結果で消えて再取得（再課金）される
-      // 原因になっていた
-      const prev = existing.find((x) => x.platform === account.platform);
-      if (prev?.readable && !account.readable) return;
-      const others = existing.filter((x) => x.platform !== account.platform);
-      // 保存に失敗したのに黙って次へ進むと、取得済みの結果（＝課金済み）が残らず、次の試行で同じ
-      // 取得をやり直す。失敗したら本文などの重い項目を落として再保存し、最低でも「取得した事実」を残す
-      const attempts: SocialAccount[] = [
-        deepClean(account),
-        deepClean({ ...account, recentContent: null, recentPosts: null, bio: null }),
+  const errText = (e: { message?: string; code?: string } | null | undefined) =>
+    cleanText(`${e?.code ? `${e.code}: ` : ""}${e?.message ?? "原因不明"}`).slice(0, 240);
+
+  const persistOnce = async (account: SocialAccount) => {
+    // 現在の保存内容を読む。読めなかったのに「何も無い」として上書きすると、保存済みの
+    // 他の媒体まで消してしまうので、読めるまで待ち直し、それでも読めなければ保存しない
+    let cur: { social: unknown } | null = null;
+    for (let i = 0; i < 3; i++) {
+      const r = await sb.from("analyses").select("social").eq("id", analysisId).single();
+      if (!r.error && r.data) {
+        cur = r.data as { social: unknown };
+        break;
+      }
+      console.error(`[scanSocial] ${account.platform}: 現在の保存内容を読めませんでした: ${r.error?.message}`);
+      await new Promise((res) => setTimeout(res, 400 * (i + 1)));
+    }
+    if (!cur) return;
+    const curSocial = (cur.social as SocialScan | null) ?? null;
+    const existing = curSocial?.accounts ?? [];
+    // 2026-10-05: 既に実測できている媒体を、後から来た「取れなかった」結果で上書きしない。
+    // 別プロセスと取得が重なったとき、成功済みのデータが失敗結果で消えて再取得（再課金）される
+    // 原因になっていた
+    const prev = existing.find((x) => x.platform === account.platform);
+    if (prev?.readable && !account.readable) return;
+    const others = existing.filter((x) => x.platform !== account.platform);
+    // 保存に失敗したのに黙って次へ進むと、取得済みの結果（＝課金済み）が残らず、次の試行で同じ
+    // 取得をやり直す。失敗したら本文などの重い項目を落として再保存し、最低でも「取得した事実」を残す。
+    // 最後の手段として、保存エラーの内容そのものを理由にした「取れなかった」記録を残す
+    // （これも保存できなければ何も残せないが、有料の取得を繰り返さないよう呼び出し側の回数上限が止める）
+    let firstError: string | null = null;
+    const variants: ((err: string | null) => SocialAccount)[] = [
+      () => deepClean(account),
+      () => deepClean({ ...account, recentContent: null, recentPosts: null, bio: null }),
+      () =>
         deepClean({
           ...account,
           recentContent: null,
@@ -903,14 +927,49 @@ export async function scanSocial(
           title: null,
           reason: account.reason ?? "取得はできましたが、結果を保存できなかったため数値のみ残しています",
         }),
-      ];
-      for (const acc of attempts) {
-        const { error } = await sb
-          .from("analyses")
-          .update({ social: { accounts: [...others, acc], fetchedAt: new Date().toISOString() } })
-          .eq("id", analysisId);
-        if (!error) return;
-        console.error(`[scanSocial] ${account.platform} の保存に失敗: ${error.message}`);
+      (err) =>
+        deepClean({
+          ...account,
+          readable: false,
+          followers: null,
+          posts: null,
+          views: null,
+          title: null,
+          bio: null,
+          recentContent: null,
+          recentPosts: null,
+          via: null,
+          reason: `取得はできましたが、保存時にエラーになりました（${err ?? "原因不明"}）`,
+        }),
+    ];
+    for (const make of variants) {
+      const acc = make(firstError);
+      const diag = firstError
+        ? { ...(curSocial?.diag ?? {}), [account.platform]: firstError }
+        : curSocial?.diag;
+      const { error } = await sb
+        .from("analyses")
+        .update({
+          social: {
+            accounts: [...others, acc],
+            fetchedAt: new Date().toISOString(),
+            ...(diag && Object.keys(diag).length > 0 ? { diag } : {}),
+          },
+        })
+        .eq("id", analysisId);
+      if (!error) return;
+      firstError ??= errText(error);
+      console.error(`[scanSocial] ${account.platform} の保存に失敗: ${error.message}`);
+    }
+  };
+
+  const persist = (account: SocialAccount) => {
+    saveChain = saveChain.then(async () => {
+      try {
+        await persistOnce(account);
+      } catch (e) {
+        // 1件の保存の失敗で、後ろに控えている媒体の保存まで止めない（Promise の連鎖が壊れると以降が全部飛ぶ）
+        console.error(`[scanSocial] ${account.platform} の保存で例外: ${e instanceof Error ? e.message : String(e)}`);
       }
     });
     return saveChain;
@@ -920,7 +979,18 @@ export async function scanSocial(
   // 取れた媒体はその場で保存する（全件揃うのを待たない）
   const settled = await Promise.allSettled(
     pending.map(async (a) => {
-      const acc = await readSocialAccount(a, ownerId, analysisId);
+      let acc: SocialAccount;
+      try {
+        acc = await readSocialAccount(a, ownerId, analysisId);
+      } catch (e) {
+        // readSocialAccount は自前で例外を捕まえる設計だが、想定外の例外でも「取れなかった」記録は残す
+        // （残さないと次の試行で同じ媒体のApifyをまた呼ぶ）
+        acc = {
+          ...a, readable: false, followers: null, posts: null, views: null, via: null, title: null, bio: null,
+          reason: `取得中に想定外のエラーが起きました（${e instanceof Error ? e.message : String(e)}）`,
+          recentContent: null, recentPosts: null,
+        };
+      }
       await persist(acc);
       return acc;
     })

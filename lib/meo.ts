@@ -86,6 +86,11 @@ export type MeoScan = {
   breakdown: { label: string; got: number; max: number; note: string }[];
   /** 特定できなかったときの理由 */
   reason: string | null;
+  /**
+   * 検索の一部がGoogle側のエラーで取れず、店舗が実際より少なく出ている可能性があるときの注記。
+   * 取れていれば null / 無し
+   */
+  partial?: string | null;
   searchedAt: string;
 };
 
@@ -116,34 +121,64 @@ const FIELDS = [
 ].join(",");
 
 async function call(path: string, body: unknown, withToken = false): Promise<{ places: RawPlace[]; next?: string }> {
-  const res = await fetch(`${ENDPOINT}/${path}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "X-Goog-Api-Key": process.env.GOOGLE_MAPS_API_KEY!,
-      "X-Goog-FieldMask": withToken ? `${FIELDS},nextPageToken` : FIELDS,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!res.ok) throw new Error(`Places API: ${res.status}`);
-  const j = (await res.json()) as { places?: RawPlace[]; nextPageToken?: string };
-  return { places: j.places ?? [], next: j.nextPageToken };
+  // 429（呼び出しが多すぎる）・5xx・ネットワークの瞬断は一時的なことが多い。
+  // 以前は1回失敗した時点でその検索ごと捨てていて、多拠点のクライアントで店舗が1つしか
+  // 取れない回があった（同じサイトで8店舗取れた分析と、1店舗だけの分析が混在した）。
+  // 少し待って最大3回まで試す。それ以外のエラー（キー無効・権限等）は待っても直らないのでそのまま返す
+  const DELAYS_MS = [700, 1800];
+  let lastError: Error = new Error("Places API を呼べませんでした");
+  for (let i = 0; i <= DELAYS_MS.length; i++) {
+    let retryable = false;
+    try {
+      const res = await fetch(`${ENDPOINT}/${path}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-Goog-Api-Key": process.env.GOOGLE_MAPS_API_KEY!,
+          "X-Goog-FieldMask": withToken ? `${FIELDS},nextPageToken` : FIELDS,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (res.ok) {
+        const j = (await res.json()) as { places?: RawPlace[]; nextPageToken?: string };
+        return { places: j.places ?? [], next: j.nextPageToken };
+      }
+      lastError = new Error(`Places API: ${res.status}`);
+      retryable = res.status === 429 || res.status >= 500;
+    } catch (e) {
+      // ネットワークの瞬断・タイムアウトは再試行の対象
+      lastError = e instanceof Error ? e : new Error(String(e));
+      retryable = true;
+    }
+    if (!retryable || i === DELAYS_MS.length) throw lastError;
+    await new Promise((r) => setTimeout(r, DELAYS_MS[i]));
+  }
+  throw lastError;
 }
 
 /**
  * テキスト検索を最後のページまで辿る。
  * 1ページ20件までなので、多拠点のチェーンは1回の呼び出しでは拾い切れない。
  */
-async function searchAllPages(textQuery: string, pages: number): Promise<RawPlace[]> {
+async function searchAllPages(textQuery: string, pages: number, onPartial?: () => void): Promise<RawPlace[]> {
   const out: RawPlace[] = [];
   let token: string | undefined;
   for (let i = 0; i < pages; i++) {
-    const r = await call(
-      "places:searchText",
-      { textQuery, languageCode: "ja", regionCode: "JP", pageSize: 20, ...(token ? { pageToken: token } : {}) },
-      true
-    );
+    let r: { places: RawPlace[]; next?: string };
+    try {
+      r = await call(
+        "places:searchText",
+        { textQuery, languageCode: "ja", regionCode: "JP", pageSize: 20, ...(token ? { pageToken: token } : {}) },
+        true
+      );
+    } catch (e) {
+      // 1ページ目が取れなければ呼び出し元に失敗として返す。2ページ目以降の失敗は、
+      // ここまでに取れたページを捨てずに返す（全部捨てると店舗が欠ける）
+      if (i === 0) throw e;
+      onPartial?.();
+      break;
+    }
     out.push(...r.places);
     if (!r.next) break;
     token = r.next;
@@ -284,15 +319,17 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
   let sawAny = false;
   let apiError: string | null = null;
   let matchedName: string | null = null;
-  for (const name of candidates) {
-    if (mine.size >= MAX_STORES || Date.now() > deadline) break;
-    const query = [name, site?.bizAddress ?? ""].filter(Boolean).join(" ");
+  let partialPages = false;
+  const failedQueries: string[] = [];
+  const runQuery = async (name: string, query: string): Promise<boolean> => {
     let found: RawPlace[];
     try {
-      found = await searchAllPages(query, 3);
+      found = await searchAllPages(query, 3, () => {
+        partialPages = true;
+      });
     } catch (e) {
       apiError = e instanceof Error ? e.message : "Places API を呼べませんでした";
-      continue;
+      return false;
     }
     if (found.length) sawAny = true;
     for (const p of found) {
@@ -301,6 +338,29 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
       mine.set(keyOf(p), p);
       matchedName ??= name;
     }
+    return true;
+  };
+  for (const name of candidates) {
+    if (mine.size >= MAX_STORES || Date.now() > deadline) break;
+    const query = [name, site?.bizAddress ?? ""].filter(Boolean).join(" ");
+    if (!(await runQuery(name, query))) failedQueries.push(name);
+    // 住所を足した検索は、その住所の店舗に絞られて他の拠点が出てこない。
+    // 店名だけの検索も重ねて、同じサイトを登録している他の拠点も拾う
+    if (site?.bizAddress && Date.now() < deadline && !(await runQuery(name, name))) failedQueries.push(name);
+  }
+  // 失敗した検索は少し間をおいて1回だけやり直す（Google側の一時的なエラーで店舗が欠けるのを防ぐ）
+  let stillFailed: string[] = [];
+  if (failedQueries.length > 0 && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 2_000));
+    for (const name of failedQueries) {
+      if (Date.now() > deadline) {
+        stillFailed.push(name);
+        continue;
+      }
+      if (!(await runQuery(name, name))) stillFailed.push(name);
+    }
+  } else {
+    stillFailed = failedQueries;
   }
 
   // 多拠点と分かったら、都道府県ごとに引き直して取りこぼしを拾う。
@@ -310,7 +370,9 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     for (const pref of PREFECTURES) {
       if (mine.size >= MAX_STORES || Date.now() > deadline) break;
       try {
-        for (const p of await searchAllPages(`${brand} ${pref}`, 1)) {
+        for (const p of await searchAllPages(`${brand} ${pref}`, 1, () => {
+          partialPages = true;
+        })) {
           if (host(p.websiteUri) === ourHost) mine.set(keyOf(p), p);
         }
       } catch {
@@ -404,6 +466,10 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     scoreMax: head.scoreMax,
     breakdown: head.breakdown,
     reason: null,
+    partial:
+      stillFailed.length > 0 || partialPages
+        ? "Google側のエラーで検索の一部が取得できませんでした。店舗が実際より少なく表示されている可能性があります（再分析で取り直せます）。"
+        : null,
     searchedAt: new Date().toISOString(),
   };
 }

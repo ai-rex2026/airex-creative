@@ -41,21 +41,44 @@ export type ImageCheck = {
   note: string;
 };
 
-export type ImageScan = { items: ImageCheck[]; checkedAt: string };
+export type ImageScan = {
+  items: ImageCheck[];
+  checkedAt: string;
+  /**
+   * 判定できなかった画像があったときの理由（取得できなかった・AIの判定が失敗した等）。
+   * 全部判定できていれば無い。画面の「自動チェックが実行できませんでした」に添えて、要因を確認できるようにする
+   */
+  error?: string | null;
+  /** 判定の対象にした枚数と、画像として取得できた枚数 */
+  total?: number;
+  fetched?: number;
+};
 
 // site-scan.ts の readImages() も 20 枚で打ち切っている。ここを合わせておかないと、
 // 上限に収まらなかった画像が「文字チェックされないまま候補に残る」ことになる
 const MAX = 20;
-/** 1枚あたりの上限。大きすぎる画像は送らない */
+/** 1枚あたりの上限。大きすぎる画像は送らない（Claudeは1枚5MBまで） */
 const MAX_BYTES = 3_500_000;
+/**
+ * 1回のAI呼び出しに載せる画像の合計（base64後の文字数）と枚数の上限。
+ * 以前は最大20枚を1回の呼び出しにまとめて送っていて、画像が重いサイトでは合計が
+ * AIの受け付けるサイズ（Geminiのインライン送信は約20MB、Claudeは約32MB）を超えて
+ * 判定全体が失敗し、「自動チェックが実行できませんでした」になりうる作りだった。
+ * 小さな塊に分け、1つが失敗しても他の塊の判定は残す
+ */
+const BATCH_MAX_CHARS = 8_000_000;
+const BATCH_MAX_IMAGES = 6;
+
+type Fetched = { ok: true; media: string; base64: string } | { ok: false; why: string };
 
 /**
  * 画像を取得する。ホットリンク対策で Referer を見るサイトがあるため、
  * 画像の置き場（オリジン）を Referer に付けて送る。それでも失敗したら
- * Referer 無しでもう一度だけ試す（逆に Referer を嫌うサイトもあるため）
+ * Referer 無しでもう一度だけ試す（逆に Referer を嫌うサイトもあるため）。
+ * 取れなかったときは、何が原因かを返す（呼び出し元が集計して画面に出す）
  */
-async function fetchImage(url: string): Promise<{ media: string; base64: string } | null> {
-  const attempt = async (withReferer: boolean) => {
+async function fetchImage(url: string): Promise<Fetched> {
+  const attempt = async (withReferer: boolean): Promise<Fetched> => {
     const headers: Record<string, string> = { "user-agent": "Mozilla/5.0", accept: "image/*" };
     if (withReferer) {
       try {
@@ -66,42 +89,25 @@ async function fetchImage(url: string): Promise<{ media: string; base64: string 
     }
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) });
     const media = res.headers.get("content-type")?.split(";")[0] ?? "";
-    // Claude が受け取れる形式だけ。webp は受け取れないので対象外にする
-    if (!res.ok || !/^image\/(png|jpeg|gif|webp)$/.test(media)) return null;
+    if (!res.ok) return { ok: false, why: `HTTP ${res.status}` };
+    // Claude が受け取れる形式だけ（jpeg / png / gif / webp）。svg・avif などは対象外
+    if (!/^image\/(png|jpeg|gif|webp)$/.test(media)) return { ok: false, why: `未対応の形式（${media || "不明"}）` };
     const buf = await res.arrayBuffer();
-    if (buf.byteLength > MAX_BYTES) return null;
-    return { media, base64: Buffer.from(buf).toString("base64") };
+    if (buf.byteLength > MAX_BYTES) return { ok: false, why: "ファイルが大きすぎる" };
+    return { ok: true, media, base64: Buffer.from(buf).toString("base64") };
   };
-  try {
-    return (await attempt(true)) ?? (await attempt(false));
-  } catch {
+  const tryOnce = async (withReferer: boolean): Promise<Fetched> => {
     try {
-      return await attempt(false);
-    } catch {
-      return null;
+      return await attempt(withReferer);
+    } catch (e) {
+      return { ok: false, why: e instanceof Error && e.name === "TimeoutError" ? "取得がタイムアウト" : "接続できない" };
     }
-  }
+  };
+  const first = await tryOnce(true);
+  return first.ok ? first : tryOnce(false);
 }
 
-export async function checkImages(urls: string[]): Promise<ImageScan> {
-  const list = urls.slice(0, MAX);
-  const fetched = await Promise.all(list.map(async (u) => ({ url: u, im: await fetchImage(u) })));
-  const usable = fetched.filter((x): x is { url: string; im: { media: string; base64: string } } => !!x.im);
-  if (usable.length === 0) return { items: [], checkedAt: new Date().toISOString() };
-
-  let res: {
-    items: {
-      index: number;
-      hasText: boolean;
-      hasFace: boolean;
-      safeCrop: SafeCrop | null;
-      facePosition: SafeCrop | null;
-      note: string;
-    }[];
-  };
-  try {
-    res = await askJsonWithImages(
-      `あなたは広告バナーに使う写真を選ぶ人です。渡された画像を1枚ずつ見て、判定します。
+const SYSTEM = `あなたは広告バナーに使う写真を選ぶ人です。渡された画像を1枚ずつ見て、判定します。
 
 hasText は、画像の中に**読める文字が焼き込まれているか**。
 　ロゴの中の社名、キャッチコピー、価格表示、Before/After の文字なども文字に含める。
@@ -135,47 +141,105 @@ note は、その画像がバナーに向くか向かないかを15文字以内�
 
 判定は見えたままを答えること。推測で補わない。safeCrop も、実際に文字が
 1文字もかかっていないと確信できる範囲だけを返すこと（少しでもかかる可能性が
-あるなら小さく見積もるか null にする）。`,
-      `画像は ${usable.length} 枚です。index は 0 から始まる画像の番号です。
+あるなら小さく見積もるか null にする）。`;
+
+type RawItem = {
+  index: number;
+  hasText: boolean;
+  hasFace: boolean;
+  safeCrop: SafeCrop | null;
+  facePosition: SafeCrop | null;
+  note: string;
+};
+
+/** 同じ理由をまとめて「HTTP 403 ×5」のように数える */
+function tally(reasons: string[]): string {
+  const m = new Map<string, number>();
+  for (const r of reasons) m.set(r, (m.get(r) ?? 0) + 1);
+  return [...m.entries()].map(([r, n]) => (n > 1 ? `${r} ×${n}` : r)).join("、");
+}
+
+export async function checkImages(urls: string[]): Promise<ImageScan> {
+  const list = urls.slice(0, MAX);
+  const fetched = await Promise.all(list.map(async (u) => ({ url: u, im: await fetchImage(u) })));
+  const usable = fetched.flatMap((x) => (x.im.ok ? [{ url: x.url, im: { media: x.im.media, base64: x.im.base64 } }] : []));
+  const fetchFailures = fetched.flatMap((x) => (x.im.ok ? [] : [x.im.why]));
+  const base = { total: list.length, fetched: usable.length };
+  const fetchNote = fetchFailures.length > 0 ? `画像${list.length}枚のうち${fetchFailures.length}枚を取得できませんでした（${tally(fetchFailures)}）` : null;
+  if (usable.length === 0) {
+    return { items: [], checkedAt: new Date().toISOString(), error: fetchNote ?? "判定できる画像がありませんでした", ...base };
+  }
+
+  // 合計サイズと枚数で塊に分ける
+  const batches: (typeof usable)[] = [];
+  let cur: typeof usable = [];
+  let curChars = 0;
+  for (const u of usable) {
+    if (cur.length > 0 && (cur.length >= BATCH_MAX_IMAGES || curChars + u.im.base64.length > BATCH_MAX_CHARS)) {
+      batches.push(cur);
+      cur = [];
+      curChars = 0;
+    }
+    cur.push(u);
+    curChars += u.im.base64.length;
+  }
+  if (cur.length > 0) batches.push(cur);
+
+  const results = await Promise.allSettled(
+    batches.map((batch) =>
+      askJsonWithImages<{ items: RawItem[] }>(
+        SYSTEM,
+        `画像は ${batch.length} 枚です。index は 0 から始まる画像の番号です。
 
 出力: {"items":[{"index":0,"hasText":false,"hasFace":false,"safeCrop":null,"facePosition":null,"note":""}]}
 safeCrop の例（文字が上部1/3にある場合）: {"x0":0,"y0":34,"x1":100,"y1":100}
 facePosition の例（顔が画面中央やや上にある場合）: {"x0":30,"y0":10,"x1":70,"y1":45}`,
-      usable.map((x) => x.im),
-      // 最大20枚ぶんの判定をまとめて出させるため、項目数が多いと出力が
-      // 途中で切れてJSONとして読めなくなることがあった。枚数を12→20に
-      // 増やした分、上限も余裕を見て引き上げている
-      { maxTokens: 5200 }
-    );
-  } catch {
-    return { items: [], checkedAt: new Date().toISOString() };
-  }
+        batch.map((x) => x.im),
+        // 1枚ごとの判定が出力に占める量に合わせて上限を決める。項目数が多いと出力が
+        // 途中で切れてJSONとして読めなくなることがあった
+        { maxTokens: 900 + batch.length * 650 }
+      )
+    )
+  );
 
   const items: ImageCheck[] = [];
-  for (const r of res.items ?? []) {
-    const src = usable[r.index];
-    if (!src) continue;
-    const c = r.safeCrop;
-    // 壊れた座標（幅/高さが40%未満、範囲外、順序逆転）は使わない。判定ミスで
-    // 文字入りのまま切り出されるより、除外側に倒すほうが安全
-    const validCrop =
-      !!c &&
-      c.x0 >= 0 && c.y0 >= 0 && c.x1 <= 100 && c.y1 <= 100 &&
-      c.x1 - c.x0 >= 40 && c.y1 - c.y0 >= 40;
-    const fp = r.facePosition;
-    // facePosition は「テキストを重ねてよい場所」を避けるためだけに使う。
-    // safeCrop ほど厳密な最小サイズは要らないが、座標として壊れているものは捨てる
-    // （はみ出した座標をそのまま使うと、避けたはずの位置に文字を置いてしまう）
-    const validFace =
-      !!fp && fp.x0 >= 0 && fp.y0 >= 0 && fp.x1 <= 100 && fp.y1 <= 100 && fp.x1 > fp.x0 && fp.y1 > fp.y0;
-    items.push({
-      url: src.url,
-      hasText: !!r.hasText,
-      hasFace: !!r.hasFace,
-      safeCrop: r.hasText && validCrop ? c : null,
-      facePosition: r.hasFace && validFace ? fp : null,
-      note: r.note ?? "",
-    });
-  }
-  return { items, checkedAt: new Date().toISOString() };
+  const aiFailures: string[] = [];
+  results.forEach((r, bi) => {
+    if (r.status === "rejected") {
+      const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      aiFailures.push(msg.replace(/\s+/g, " ").slice(0, 120));
+      return;
+    }
+    for (const it of r.value.items ?? []) {
+      const src = batches[bi][it.index];
+      if (!src) continue;
+      const c = it.safeCrop;
+      // 壊れた座標（幅/高さが40%未満、範囲外、順序逆転）は使わない。判定ミスで
+      // 文字入りのまま切り出されるより、除外側に倒すほうが安全
+      const validCrop =
+        !!c &&
+        c.x0 >= 0 && c.y0 >= 0 && c.x1 <= 100 && c.y1 <= 100 &&
+        c.x1 - c.x0 >= 40 && c.y1 - c.y0 >= 40;
+      const fp = it.facePosition;
+      // facePosition は「テキストを重ねてよい場所」を避けるためだけに使う。
+      // safeCrop ほど厳密な最小サイズは要らないが、座標として壊れているものは捨てる
+      // （はみ出した座標をそのまま使うと、避けたはずの位置に文字を置いてしまう）
+      const validFace =
+        !!fp && fp.x0 >= 0 && fp.y0 >= 0 && fp.x1 <= 100 && fp.y1 <= 100 && fp.x1 > fp.x0 && fp.y1 > fp.y0;
+      items.push({
+        url: src.url,
+        hasText: !!it.hasText,
+        hasFace: !!it.hasFace,
+        safeCrop: it.hasText && validCrop ? c : null,
+        facePosition: it.hasFace && validFace ? fp : null,
+        note: it.note ?? "",
+      });
+    }
+  });
+
+  const notes = [
+    fetchNote,
+    aiFailures.length > 0 ? `AIによる判定が${batches.length}回中${aiFailures.length}回失敗しました（${[...new Set(aiFailures)].join(" / ")}）` : null,
+  ].filter((x): x is string => !!x);
+  return { items, checkedAt: new Date().toISOString(), error: notes.length > 0 ? notes.join("。") : null, ...base };
 }

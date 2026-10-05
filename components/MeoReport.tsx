@@ -43,7 +43,6 @@ export function MeoReport({ id, meo, site, url }: { id: string; meo: MeoScan | n
       ) : (
         <>
           <div className="sec-head">
-            <span className="ic">◉</span>
             <div>
               <h2 id="sec-meo">Googleマップでの位置づけ</h2>
               <div className="sub">
@@ -101,7 +100,6 @@ export function MeoReport({ id, meo, site, url }: { id: string; meo: MeoScan | n
           </div>
 
           <div className="sec-head">
-            <span className="ic">▤</span>
             <div>
               <h2>点数の内訳</h2>
               <div className="sub">何を測って何点にしたか</div>
@@ -123,7 +121,6 @@ export function MeoReport({ id, meo, site, url }: { id: string; meo: MeoScan | n
           {selectedStore!.competitors.length > 0 && (
             <>
               <div className="sec-head">
-                <span className="ic">◈</span>
                 <div>
                   <h2>近隣の同業</h2>
                   <div className="sub">レビュー数の多い順</div>

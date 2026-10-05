@@ -2,6 +2,7 @@ import { askJson } from "./anthropic";
 import { checkGuardDict } from "./guardrail";
 import type { Diagnosis, GuardHit } from "./types";
 import { socialFacts, type SocialScan } from "./social";
+import { isB2c } from "./biz-model";
 
 /**
  * SNSオーガニック運用とSNSキャンペーン企画（AI-REX 本体 ch2_sns_organic / ch6_pr.sns_campaign_* の移植）。
@@ -72,7 +73,15 @@ export async function generateSnsPlan(d: Diagnosis, social: SocialScan | null): 
 channels は Instagram / TikTok / X / YouTube / Facebook のうち、**この商材とターゲットに効く媒体だけ**を2〜5件。
 効かない媒体は入れない（ターゲットの年齢層・検討期間・商材の見せ方で判断する）。
 ただし、下の【運用中の公式SNS】に実測がある媒体は、すでに運用している以上、必ず channels に含める（status は「運用中」）。
-
+${
+  isB2c(d)
+    ? `このビジネスは一般消費者向け（B2C）。**Facebookは他媒体より優先度が低い媒体**として扱う。
+Facebookが運用中でも、フォロワーが少ないことを弱みとして書かず、goals・themes は「基本情報を最新に保つ」
+「他媒体の投稿を転載する」など手間をかけない維持運用にする。フォロワー拡大や広告を主目的にした内容は書かない。
+Instagram・X・TikTok・YouTube のうち、この商材に効く媒体の育成を優先する。
+`
+    : ""
+}
 守ること（channels）:
 - status は、下の【運用中の公式SNS】に実測がある媒体は「運用中」、無い媒体は「新規」
 - 運用中の媒体は新規開設の話を書かず、今のフォロワー数・投稿数を動かす前提で書く

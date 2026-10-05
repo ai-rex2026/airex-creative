@@ -134,7 +134,6 @@ export function Inputs({
   return (
     <>
       <div className="sec-head">
-        <span className="ic">↓</span>
         <div>
           <h2 id="sec-inputs">分析に使っている材料</h2>
           <div className="sub">サイトから取れたものと、足していただいたもの</div>
@@ -206,7 +205,6 @@ export function Inputs({
       </div>
 
       <div className="sec-head">
-        <span className="ic">＋</span>
         <div>
           <h2>追加情報（必要に応じて入力ください）</h2>
           <div className="sub">サイトから辿れないものは、こちらで拾えません</div>
@@ -251,7 +249,6 @@ export function Inputs({
 
       {/* id="sec-budget" は「広告手法一覧」タブの「入力タブで予算を見直す」リンク先 */}
       <div className="sec-head" id="sec-budget">
-        <span className="ic">¥</span>
         <div>
           <h2>予算と粗利率（任意）</h2>
           <div className="sub">入れると、媒体ごとの実額と損益分岐CPAが出ます</div>
@@ -319,7 +316,6 @@ export function Inputs({
       {pricing?.main && (
         <>
           <div className="sec-head">
-            <span className="ic">¥</span>
             <div>
               <h2 id="sec-cpa">CPAはいくらまで出せるか（任意）</h2>
               <div className="sub">サイトに載っている価格から計算しています</div>

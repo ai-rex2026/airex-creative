@@ -132,7 +132,6 @@ export function Measures({
       {evaluations && evaluations.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">◉</span>
             <div>
               <h2 id="sec-category-eval">カテゴリ別評価</h2>
               <div className="sub">実測できたものだけを評価しています。クリックで詳細に移動します</div>
@@ -153,7 +152,6 @@ export function Measures({
       )}
 
       <div className="sec-head">
-        <span className="ic">▸</span>
         <div>
           <h2 id="sec-measures">優先度の高い施策</h2>
           <div className="sub">スコアが低いカテゴリ・分析不可のカテゴリに効くものを優先して並べています</div>
@@ -260,7 +258,6 @@ export function Measures({
       {logs.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">✓</span>
             <div>
               <h2 id="sec-log">実施した施策の記録</h2>
               <div className="sub">施策を作り直しても、ここは消えません</div>
@@ -281,7 +278,6 @@ export function Measures({
       {hygiene.length > 0 && (
         <>
           <div className="sec-head">
-            <span className="ic">✓</span>
             <div>
               <h2 id="sec-hygiene">ついでに直すもの</h2>
               <div className="sub">KPIには直結しませんが、放置する理由もない項目です</div>

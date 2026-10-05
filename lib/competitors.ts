@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { currentProvider, recordAiCall } from "./ai-context";
 import { geminiOrFallback } from "./gemini";
 import type { Diagnosis } from "./types";
+import type { CompetitorAnalysis } from "./competitor-analysis";
 
 /**
  * 競合サイト比較。
@@ -21,6 +22,8 @@ export type CompetitorScan = {
   keywords: string[];
   items: Competitor[];
   searchedAt: string;
+  /** 一覧の競合ページを自社と同じ項目で読み比べた結果（lib/competitor-analysis.ts）。古い分析・読めなかった場合は無い */
+  analysis?: CompetitorAnalysis | null;
 };
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";

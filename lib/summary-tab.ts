@@ -4,7 +4,9 @@ import type { SeoEstimate, SiteScan } from "./site-scan";
 import type { KpiTree } from "./kpi";
 import type { MeoScan } from "./meo";
 import type { PriceScan } from "./pricing";
-import type { SocialScan } from "./social";
+import type { SocialAccount, SocialScan } from "./social";
+import type { SocialCompetitorScan } from "./social-competitors";
+import { canonPlatform, isB2c } from "./biz-model";
 import type { SpeedScan } from "./pagespeed";
 import type { KeywordPlan, LpoPlan } from "./deep";
 import type { SuggestScan } from "./outreach";
@@ -166,22 +168,106 @@ function evalLp(speed: SpeedScan | null, lpo: LpoPlan | null): CategoryEvaluatio
   };
 }
 
-function evalSocial(social: SocialScan | null): CategoryEvaluation {
+const TIER_POINT = { 強: 2, 標準: 1, 弱: 0 } as const;
+const pointToTier = (avg: number): "強" | "標準" | "弱" => (avg >= 1.5 ? "強" : avg >= 0.75 ? "標準" : "弱");
+
+/** 投稿1件あたりの反応（いいね＋コメント＋シェア）の平均 ÷ フォロワー数。反応数が1つも取れていなければ null */
+function engagementRate(a: SocialAccount): number | null {
+  const posts = (a.recentPosts ?? []).filter((p) => p.likes !== null || p.comments !== null || p.shares !== null);
+  if (!a.followers || posts.length === 0) return null;
+  const total = posts.reduce((n, p) => n + (p.likes ?? 0) + (p.comments ?? 0) + (p.shares ?? 0), 0);
+  return total / posts.length / a.followers;
+}
+
+/** いちばん新しい投稿が何日前か。投稿日時が取れていなければ null */
+function daysSinceLatestPost(a: SocialAccount, now: number): number | null {
+  const times = (a.recentPosts ?? [])
+    .map((p) => (p.postedAt ? Date.parse(p.postedAt) : NaN))
+    .filter((t) => Number.isFinite(t));
+  if (times.length === 0) return null;
+  return Math.max(0, Math.round((now - Math.max(...times)) / 86_400_000));
+}
+
+function median(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  const s = [...xs].sort((x, y) => x - y);
+  return s[Math.floor(s.length / 2)];
+}
+
+/**
+ * SNS。取得できた媒体数ではなく、取得したデータを分析した結果で評価する。
+ * 見るのは次の3つ（媒体ごとに、取れているものだけ。取れていない指標は数えない）:
+ *  - 更新の新しさ（最新の投稿が何日前か）
+ *  - 投稿への反応（投稿1件あたりの反応数 ÷ フォロワー数）
+ *  - 競合との比較（競合の実測が取れた媒体だけ。フォロワー数を競合の中央値と比べる）
+ * LINEは友だち数が公開されず分析できないので対象に含めない。
+ * 一般消費者向け（B2C）ではFacebookの優先度が低いため、評価には入れない。
+ */
+function evalSocial(
+  social: SocialScan | null,
+  competitors: SocialCompetitorScan | null,
+  b2c: boolean,
+  now: number = Date.now()
+): CategoryEvaluation {
   const anchor = "sec-social";
-  if (!social || social.accounts.length === 0) {
-    return { category: "SNS", score: null, measured: false, basis: "公式SNSアカウントが見つかっていません", sectionAnchor: anchor };
+  const detected = (social?.accounts ?? []).filter((a) => canonPlatform(a.platform) !== "LINE");
+  if (detected.length === 0) {
+    return { category: "SNS", score: null, measured: false, basis: "分析できるSNSアカウントが見つかっていません", sectionAnchor: anchor };
   }
-  const readable = social.accounts.filter((a) => a.readable).length;
-  const ratio = readable / social.accounts.length;
+
+  const lines: string[] = [];
+  const points: number[] = [];
+  for (const a of detected) {
+    if (!a.readable) continue;
+    const plat = canonPlatform(a.platform);
+    if (b2c && plat === "Facebook") continue; // 優先度が低い媒体は評価に入れない
+    const signals: { name: string; t: "強" | "標準" | "弱"; text: string }[] = [];
+
+    const days = daysSinceLatestPost(a, now);
+    if (days !== null) {
+      signals.push({ name: "更新", t: days <= 14 ? "強" : days <= 45 ? "標準" : "弱", text: days === 0 ? "最新の投稿は今日" : `最新の投稿は${days}日前` });
+    }
+    const er = engagementRate(a);
+    if (er !== null) {
+      const lowBar = plat === "X" ? [0.002, 0.0005] : [0.01, 0.003];
+      signals.push({ name: "反応", t: er >= lowBar[0] ? "強" : er >= lowBar[1] ? "標準" : "弱", text: `投稿あたりの反応はフォロワーの${(er * 100).toFixed(2)}%` });
+    }
+    const comp = (competitors?.items ?? []).filter((c) => canonPlatform(c.account.platform) === plat && c.account.followers);
+    const med = median(comp.map((c) => c.account.followers as number));
+    if (med && a.followers) {
+      const r = a.followers / med;
+      signals.push({ name: "競合比", t: r >= 1 ? "強" : r >= 0.3 ? "標準" : "弱", text: `フォロワーは競合${comp.length}件の中央値の${Math.round(r * 100)}%` });
+    }
+    if (signals.length === 0) continue;
+    const avg = signals.reduce((n, s) => n + TIER_POINT[s.t], 0) / signals.length;
+    points.push(avg);
+    lines.push(`${plat ?? a.platform}（${signals.map((s) => s.text).join("、")}）`);
+  }
+
+  if (points.length === 0) {
+    return {
+      category: "SNS",
+      score: null,
+      measured: false,
+      basis: "投稿の更新・反応を分析できる媒体がありません（投稿内容が取得できていません）",
+      sectionAnchor: anchor,
+    };
+  }
+  const overall = pointToTier(points.reduce((n, p) => n + p, 0) / points.length);
   return {
     category: "SNS",
-    score: tier(ratio * 100, 70, 30),
+    score: overall,
     measured: true,
-    basis: `検出した${social.accounts.length}媒体中${readable}媒体の実測ができています`,
+    basis: `${points.length}媒体を分析：${lines.join("／")}`,
     sectionAnchor: anchor,
   };
 }
 
+/**
+ * 検索サジェスト。取得できた件数ではなく、取れた語を分類した結果で評価する。
+ * 「注意が必要な語」「誘導先に注意」「同名の別物」は放置すると不利になる語なので、
+ * 全体に占める割合が低いほど良いとみなす。
+ */
 function evalSuggest(suggests: SuggestScan | null): CategoryEvaluation {
   const anchor = "sec-suggest";
   if (!suggests || suggests.error || suggests.rows.length === 0) {
@@ -189,15 +275,23 @@ function evalSuggest(suggests: SuggestScan | null): CategoryEvaluation {
       category: "検索サジェスト",
       score: null,
       measured: false,
-      basis: suggests?.error ? `取得できませんでした（${suggests.error}）` : "取得できていません",
+      basis: suggests?.error ? `分析できませんでした（${suggests.error}）` : "サジェストが取得できておらず、分析できていません",
       sectionAnchor: anchor,
     };
   }
+  const rows = suggests.rows;
+  const count = (k: string) => rows.filter((r) => r.kind === k).length;
+  const caution = count("注意");
+  const detour = count("誘導先に注意");
+  const sameName = count("同名の別物");
+  const neutral = rows.length - caution - detour - sameName;
+  const riskShare = (caution + detour + sameName) / rows.length;
+  const score = riskShare <= 0.1 ? "強" : riskShare <= 0.3 ? "標準" : "弱";
   return {
     category: "検索サジェスト",
-    score: tier(suggests.rows.length, 8, 3),
+    score,
     measured: true,
-    basis: `${suggests.rows.length}件のサジェストが取得できています`,
+    basis: `${rows.length}語を分類：注意が必要${caution}語・誘導先に注意${detour}語・同名の別物${sameName}語・問題なし${neutral}語（不利になりうる語は${Math.round(riskShare * 100)}%）`,
     sectionAnchor: anchor,
   };
 }
@@ -217,6 +311,10 @@ export function evaluateCategories(input: {
   lpo: LpoPlan | null;
   social: SocialScan | null;
   suggests: SuggestScan | null;
+  /** SNS競合の実測。自社との比較に使う。無くても評価できる */
+  socialCompetitors?: SocialCompetitorScan | null;
+  /** 一般消費者向けかの判定に使う。無ければB2Cとみなす */
+  diagnosis?: Diagnosis | null;
 }): CategoryEvaluation[] {
   return [
     evalAdTags(input.adOps),
@@ -224,7 +322,7 @@ export function evaluateCategories(input: {
     evalSeo(input.seo),
     evalKeywordCoverage(input.gsc, input.keywords),
     evalLp(input.speed, input.lpo),
-    evalSocial(input.social),
+    evalSocial(input.social, input.socialCompetitors ?? null, isB2c(input.diagnosis)),
     evalSuggest(input.suggests),
     evalOutreach(),
   ];
