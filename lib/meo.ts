@@ -25,6 +25,10 @@ const BUDGET_MS = 120_000;
  * （湘南美容クリニックで37件。都道府県を足さないとこれ以上増えない）
  */
 const CHAIN_THRESHOLD = 10;
+/** 屋号＋支店名の店舗が1つだけ見つかったときに、取りこぼしを確かめる主要都市 */
+const METRO_PREFECTURES = [
+  "東京都","大阪府","愛知県","神奈川県","福岡県","埼玉県","千葉県","兵庫県","京都府","北海道","宮城県","広島県",
+];
 const PREFECTURES = [
   "北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県",
   "茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県",
@@ -197,6 +201,8 @@ function toPlace(p: RawPlace): MeoPlace {
   };
 }
 
+/** 店舗ごとにサブドメイン（tokyo.example.com など）を持つサイトがあるので、親子のドメインも同じサイトとみなす */
+const sameSite = (a: string, b: string) => !!a && !!b && (a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`));
 const host = (u: string | null | undefined) => {
   if (!u) return "";
   try {
@@ -284,7 +290,7 @@ function nameCandidates(site: SiteScan | null): string[] {
   push(parts[parts.length - 1]);
   push(parts[0]);
   push(site?.title);
-  return out.slice(0, 3);
+  return out.slice(0, 5);
 }
 
 /**
@@ -333,7 +339,7 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     }
     if (found.length) sawAny = true;
     for (const p of found) {
-      if (host(p.websiteUri) !== ourHost) continue;
+      if (!sameSite(host(p.websiteUri), ourHost)) continue;
       // 同じ店舗が別クエリで重複しないよう、住所で束ねる
       mine.set(keyOf(p), p);
       matchedName ??= name;
@@ -363,9 +369,38 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     stillFailed = failedQueries;
   }
 
+  // 「屋号＋支店名」の形（例：メディカルブロー表参道院）の店舗が見つかったときは、多拠点の可能性が高い。
+  // 最初の検索で1店舗しか拾えなかった回があった（同じサイトで8店舗取れる回と混在した）ので、
+  // 屋号だけの検索を言い方を変えて取り直し、主要都市の分も引いて取りこぼしを拾う。
+  const branchBrand = (() => {
+    const names = [...mine.values()].map((p) => p.displayName?.text ?? "");
+    for (const c of candidates) {
+      if (c.length >= 3 && names.some((n) => n.startsWith(c) && n.length >= c.length + 2)) return c;
+    }
+    return null;
+  })();
+  if (branchBrand && mine.size < CHAIN_THRESHOLD && Date.now() < deadline) {
+    for (const q of [branchBrand, `${branchBrand} クリニック`, `${branchBrand} 院`, `${branchBrand} 店`]) {
+      if (Date.now() > deadline) break;
+      if (!(await runQuery(branchBrand, q))) stillFailed.push(q);
+    }
+    for (const pref of METRO_PREFECTURES) {
+      if (mine.size >= CHAIN_THRESHOLD || Date.now() > deadline) break;
+      try {
+        for (const p of await searchAllPages(`${branchBrand} ${pref}`, 1, () => {
+          partialPages = true;
+        })) {
+          if (sameSite(host(p.websiteUri), ourHost)) mine.set(keyOf(p), p);
+        }
+      } catch {
+        stillFailed.push(`${branchBrand} ${pref}`);
+      }
+    }
+  }
+
   // 多拠点と分かったら、都道府県ごとに引き直して取りこぼしを拾う。
   // 1店舗のクライアントでここまで呼ぶと呼び出しの無駄なので、件数で切り分ける。
-  const brand = brandOf([...mine.values()].map((p) => p.displayName?.text ?? "")) ?? matchedName;
+  const brand = branchBrand ?? brandOf([...mine.values()].map((p) => p.displayName?.text ?? "")) ?? matchedName;
   if (brand && mine.size >= CHAIN_THRESHOLD && mine.size < MAX_STORES) {
     for (const pref of PREFECTURES) {
       if (mine.size >= MAX_STORES || Date.now() > deadline) break;
@@ -373,7 +408,7 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
         for (const p of await searchAllPages(`${brand} ${pref}`, 1, () => {
           partialPages = true;
         })) {
-          if (host(p.websiteUri) === ourHost) mine.set(keyOf(p), p);
+          if (sameSite(host(p.websiteUri), ourHost)) mine.set(keyOf(p), p);
         }
       } catch {
         break; // 途中で落ちても、ここまでに拾えた店舗で返す
@@ -418,7 +453,7 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     }
 
     const competitors = nearby
-      .filter((p) => host(p.websiteUri) !== ourHost && p.displayName?.text !== one.displayName?.text)
+      .filter((p) => !sameSite(host(p.websiteUri), ourHost) && p.displayName?.text !== one.displayName?.text)
       .map(toPlace)
       .sort((a, b) => b.reviews - a.reviews)
       .slice(0, 10);
@@ -469,7 +504,9 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     partial:
       stillFailed.length > 0 || partialPages
         ? "Google側のエラーで検索の一部が取得できませんでした。店舗が実際より少なく表示されている可能性があります（再分析で取り直せます）。"
-        : null,
+        : branchBrand && mine.size === 1
+          ? `「${branchBrand}」の店名で他の店舗を検索しましたが、このサイトのものとして見つかったのは1店舗だけでした。他の店舗のGoogleビジネスプロフィールに、このサイトのURLが登録されていない可能性があります。`
+          : null,
     searchedAt: new Date().toISOString(),
   };
 }

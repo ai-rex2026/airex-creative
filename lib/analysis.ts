@@ -4,7 +4,6 @@ import { generateCopies, scoreCopies } from "./copy";
 import { generateMediaPlan } from "./media-plan";
 import { generateSummary } from "./summary";
 import { findCompetitors, type CompetitorScan } from "./competitors";
-import { analyzeCompetitors } from "./competitor-analysis";
 import { generateTactics, type TacticPlan } from "./tactics";
 import { generateSnsPlan, type SnsPlan } from "./sns-plan";
 import { finishAdOps, generateCampaign, opsTargets, planChannel, type AdOps } from "./ad-ops";
@@ -395,16 +394,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       } catch {
         // 取れなければ空のまま進む（画面には「取得できず」と出す）
       }
-      // 一覧に出た競合のページを自社と同じ項目で読み比べ、示唆を出す。無料の取得＋AI1回。
-      // 失敗しても一覧は残す（比較は付加情報）
-      if (comp.items.length > 0) {
-        try {
-          comp.analysis = await analyzeCompetitors(a.diagnosis, a.url, comp.items);
-        } catch (e) {
-          comp.analysis = null;
-          comp.analysisError = e instanceof Error ? e.message.slice(0, 120) : "比較に失敗しました";
-        }
-      }
+      // 競合ページの読み比べは、施策に影響しないため行わない（画面にも出さない）
       return await save({ competitors: comp, step: "広告手法を選んでいます", progress: 50 });
     }
     if (!a.media_plan) {

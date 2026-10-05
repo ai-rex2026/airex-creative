@@ -17,8 +17,6 @@ import type { SocialScan } from "@/lib/social";
 import type { SocialCompetitorScan } from "@/lib/social-competitors";
 import { generateSocialInsights, type SocialInsightPlan } from "@/lib/social-insights";
 import type { YoutubeAnalyticsData } from "@/lib/google";
-import { analyzeCompetitors } from "@/lib/competitor-analysis";
-import type { CompetitorScan } from "@/lib/competitors";
 import type { SnsPlan } from "@/lib/sns-plan";
 import { isB2c } from "@/lib/biz-model";
 
@@ -71,8 +69,6 @@ export async function missingSections(id: string): Promise<string[]> {
   if (k && k.rows.length > 0 && k.rows.every((r) => r.volume === undefined)) out.push("月間検索数の推定");
   if (!row.industry_vertical) out.push("業種別優先度の判定");
   if (!row.seo_articles) out.push("SEO記事設計");
-  const comp = row.competitors as CompetitorScan | null;
-  if (comp && (comp.items?.length ?? 0) > 0 && !comp.analysis) out.push("競合サイトの比較分析");
   const stale = staleFacebook(row, row.diagnosis as Diagnosis);
   if (stale.insights || stale.plan) out.push("Facebookの扱い（一般消費者向けの前提を反映したSNS分析）");
   return out;
@@ -144,21 +140,6 @@ export async function addMissingSections(id: string) {
             if (articles.articles.length) patch.seo_articles = articles;
           })
           .catch(() => undefined)
-      );
-    }
-    const comp = row.competitors as CompetitorScan | null;
-    if (comp && (comp.items?.length ?? 0) > 0 && !comp.analysis) {
-      tasks.push(
-        analyzeCompetitors(d, (row.url as string | null) ?? null, comp.items)
-          .then((analysis) => {
-            if (analysis) patch.competitors = { ...comp, analysis, analysisError: undefined };
-          })
-          .catch((e) => {
-            patch.competitors = {
-              ...comp,
-              analysisError: e instanceof Error ? e.message.slice(0, 120) : "比較に失敗しました",
-            };
-          })
       );
     }
     const stale = staleFacebook(row, d);
