@@ -309,7 +309,18 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
     if (a.url && hasPlacesApi() && !a.meo) {
       // 失敗しても分析全体は止めない。取れなければ画面に理由を出す
       const meo = await scanMeo(a.site, a.url).catch(() => null);
-      if (meo) return await save({ meo, step: "サイトを読んでいます", progress: 22 });
+      if (meo) {
+        // 2026-10-05: 同じ分析の工程が複数のプロセス（自己継続・cron）で重なると、MEOの検索も
+        // 並行して走り、後から終わった方が先に保存された結果を上書きしていた。検索結果は
+        // Google側の都合で回ごとに揺れるため、店舗の多い結果が少ない結果で消えることがある。
+        // 保存の直前に読み直し、すでに保存済みの方が店舗が多ければそちらを残す
+        const { data: cur } = await sb.from("analyses").select("meo").eq("id", id).maybeSingle();
+        const saved = (cur?.meo ?? null) as MeoScan | null;
+        if (saved && (saved.stores?.length ?? 0) >= meo.stores.length) {
+          return await save({ step: "サイトを読んでいます", progress: 22 });
+        }
+        return await save({ meo, step: "サイトを読んでいます", progress: 22 });
+      }
     }
     // MEO だけを見に来た人に、8分かかるレポート一式を作らせない
     if (a.mode === "meo") {

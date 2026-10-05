@@ -29,6 +29,14 @@ const CHAIN_THRESHOLD = 10;
 const METRO_PREFECTURES = [
   "東京都","大阪府","愛知県","神奈川県","福岡県","埼玉県","千葉県","兵庫県","京都府","北海道","宮城県","広島県",
 ];
+/**
+ * テキスト検索の位置の寄せ先（日本全体）。
+ * 位置を指定しないと、Google は呼び出し元（サーバー）の位置に寄せて結果を選ぶ。
+ * サーバーは日本国外にあり、屋号だけの検索（「メディカルブロー」など）で
+ * 「一番それらしい1件」だけが返る回があった（同じサイト・同じ入力で8店舗の回と1店舗の回が混在）。
+ * 日本全体を寄せ先に指定して、国内の拠点が候補に並ぶようにする
+ */
+const JAPAN_BIAS = { rectangle: { low: { latitude: 24.0, longitude: 122.9 }, high: { latitude: 45.6, longitude: 153.99 } } };
 const PREFECTURES = [
   "北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県",
   "茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県",
@@ -173,7 +181,14 @@ async function searchAllPages(textQuery: string, pages: number, onPartial?: () =
     try {
       r = await call(
         "places:searchText",
-        { textQuery, languageCode: "ja", regionCode: "JP", pageSize: 20, ...(token ? { pageToken: token } : {}) },
+        {
+          textQuery,
+          languageCode: "ja",
+          regionCode: "JP",
+          pageSize: 20,
+          locationBias: JAPAN_BIAS,
+          ...(token ? { pageToken: token } : {}),
+        },
         true
       );
     } catch (e) {
@@ -327,6 +342,9 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
   let matchedName: string | null = null;
   let partialPages = false;
   const failedQueries: string[] = [];
+  // 制限時間で打ち切って試せなかった検索。黙って打ち切ると、店舗が少ないのに
+  // 「全部取れた」ように見えてしまうので、画面の注記に回す
+  let skipped = false;
   const runQuery = async (name: string, query: string): Promise<boolean> => {
     let found: RawPlace[];
     try {
@@ -347,7 +365,11 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     return true;
   };
   for (const name of candidates) {
-    if (mine.size >= MAX_STORES || Date.now() > deadline) break;
+    if (mine.size >= MAX_STORES) break;
+    if (Date.now() > deadline) {
+      skipped = true;
+      break;
+    }
     const query = [name, site?.bizAddress ?? ""].filter(Boolean).join(" ");
     if (!(await runQuery(name, query))) failedQueries.push(name);
     // 住所を足した検索は、その住所の店舗に絞られて他の拠点が出てこない。
@@ -381,11 +403,18 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
   })();
   if (branchBrand && mine.size < CHAIN_THRESHOLD && Date.now() < deadline) {
     for (const q of [branchBrand, `${branchBrand} クリニック`, `${branchBrand} 院`, `${branchBrand} 店`]) {
-      if (Date.now() > deadline) break;
+      if (Date.now() > deadline) {
+        skipped = true;
+        break;
+      }
       if (!(await runQuery(branchBrand, q))) stillFailed.push(q);
     }
     for (const pref of METRO_PREFECTURES) {
-      if (mine.size >= CHAIN_THRESHOLD || Date.now() > deadline) break;
+      if (mine.size >= CHAIN_THRESHOLD) break;
+      if (Date.now() > deadline) {
+        skipped = true;
+        break;
+      }
       try {
         for (const p of await searchAllPages(`${branchBrand} ${pref}`, 1, () => {
           partialPages = true;
@@ -504,6 +533,8 @@ export async function scanMeo(site: SiteScan | null, url: string | null): Promis
     partial:
       stillFailed.length > 0 || partialPages
         ? "Google側のエラーで検索の一部が取得できませんでした。店舗が実際より少なく表示されている可能性があります（再分析で取り直せます）。"
+        : skipped
+          ? "Googleマップの検索に時間がかかり、途中で打ち切りました。店舗が実際より少なく表示されている可能性があります（再分析で取り直せます）。"
         : branchBrand && mine.size === 1
           ? `「${branchBrand}」の店名で他の店舗を検索しましたが、このサイトのものとして見つかったのは1店舗だけでした。他の店舗のGoogleビジネスプロフィールに、このサイトのURLが登録されていない可能性があります。`
           : null,
