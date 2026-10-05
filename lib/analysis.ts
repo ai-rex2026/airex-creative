@@ -227,6 +227,41 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       const wantedPlatforms = [...wanted.keys()].slice(0, 8); // scanSocial 自体も最大8件に絞っているので揃える
       const gotPlatforms = new Set((a.social?.accounts ?? []).map((x) => x.platform));
       const stillMissing = wantedPlatforms.some((p) => !gotPlatforms.has(p));
+      // 2026-10-05: 取得を何度やり直しても保存できない媒体があると、有料のApify取得を繰り返して
+      // 予算を使い切る（実際に起きた）。試行回数に上限を設け、超えたら「取れなかった」事実だけを
+      // 保存して先へ進む。保存済みの媒体には触れない（DBの最新状態に足すだけ）
+      const MAX_SOCIAL_ATTEMPTS = 4;
+      if (wantedPlatforms.length > 0 && stillMissing && a.social_attempt_count >= MAX_SOCIAL_ATTEMPTS) {
+        const { data: cur } = await sb.from("analyses").select("social").eq("id", id).single();
+        const existing = ((cur?.social as SocialScan | null)?.accounts ?? []);
+        const have = new Set(existing.map((x) => x.platform));
+        const targets = [...(a.site?.social ?? []), ...(a.social_manual ?? [])];
+        const added = wantedPlatforms
+          .filter((p) => !have.has(p))
+          .map((p) => {
+            const t = targets.find((x) => x.platform === p);
+            return {
+              platform: p,
+              url: t?.url ?? "",
+              handle: t?.handle ?? "",
+              readable: false,
+              followers: null,
+              posts: null,
+              title: null,
+              bio: null,
+              views: null,
+              via: null,
+              reason: `取得を${MAX_SOCIAL_ATTEMPTS}回試しましたが結果を保存できなかったため、取得を打ち切りました`,
+              recentContent: null,
+              recentPosts: null,
+            };
+          });
+        await sb
+          .from("analyses")
+          .update({ social: { accounts: [...existing, ...added], fetchedAt: new Date().toISOString() } })
+          .eq("id", id);
+        return await save({ step: "サイトを読んでいます", progress: 20 });
+      }
       if (wantedPlatforms.length > 0 && stillMissing) {
         // 2026-10-05: 同じ分析のSNS取得が複数のプロセス（自己継続・cron・旧デプロイの実行中バースト等）
         // で重なると、同じ媒体のApifyを何度も呼んで予算（1分析あたり20回）を使い切り、

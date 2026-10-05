@@ -44,6 +44,7 @@ export function Measures({
   log,
   hygiene,
   onNavigate,
+  trackingMissing = false,
 }: {
   id: string;
   measures: Measure[];
@@ -53,9 +54,11 @@ export function Measures({
   hygiene: { label: string; how: string }[];
   /** カテゴリカードをクリックしたとき、分析データタブの該当セクションへ切り替えてスクロールする */
   onNavigate: (anchor: string) => void;
+  /** サイトからGTM・広告タグのどちらも検出できなかったか（計測まわりの施策を出してよいか） */
+  trackingMissing?: boolean;
 }) {
   // 計測タグ設置系の施策は設置済みか確認できないため出さない（古い分析に残っていても表示しない）
-  const [list, setList] = useState<Measure[]>(() => measures.filter((m) => !isUnverifiableTagMeasure(m)));
+  const [list, setList] = useState<Measure[]>(() => measures.filter((m) => !isUnverifiableTagMeasure(m, trackingMissing)));
   const [evaluations, setEvaluations] = useState<CategoryEvaluation[] | null>(categoryEvaluations);
   const [doneIds, setDoneIds] = useState<string[]>(done);
   const [logs, setLogs] = useState(log);
@@ -96,7 +99,7 @@ export function Measures({
     start(async () => {
       try {
         const res = await regenerateSummaryTab(id);
-        setList(res.items.filter((m) => !isUnverifiableTagMeasure(m)));
+        setList(res.items.filter((m) => !isUnverifiableTagMeasure(m, trackingMissing)));
         setEvaluations(res.evaluations);
         setDoneIds(res.done);
         setOpen(null);

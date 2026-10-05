@@ -82,8 +82,10 @@ export const RULES = `守ること:
   予約フォームは自社とは別ドメイン（外部の予約システム等）で動いていることが多く、
   その場合は自社のGTMタグを完了画面に設置できない
 - **電話番号タップ・LINE友だち追加リンク・フォーム送信などへの計測タグ（GTM・コンバージョンタグ・
-  ピクセル）の設置は施策として出さない。** 設置済みかどうかをこちらでは確認できないため、
-  設置が必要かどうかを判断する材料が無い。計測の設定・確認を促す施策も出さない`;
+  ピクセル）や、リンクへの計測用パラメータ（UTM等）の付与は施策として出さない。** 設置・設定済みかどうかを
+  こちらでは確認できないため、必要かどうかを判断する材料が無い
+- **計測まわりの施策は、渡された事実に「未設置が確認できた」と明記されている項目についてだけ出す。**
+  確認できていないものを「設定されていないかもしれない」前提で書かない`;
 
 export function facts(
   d: Diagnosis,
@@ -106,6 +108,7 @@ export function facts(
 ${pricing?.main ? `主力商材: ${pricing.main.name} ${pricing.main.yen.toLocaleString()}円` : ""}
 申し込みの受け口: ${cv.length ? cv.map((c) => `${c.kind}${c.measurable ? "（計測可）" : "（計測不可）"}`).join(" / ") : "検出できず"}
 ${cv.every((c) => !c.measurable) && cv.length > 0 ? "※ 計測できる受け口が無いため、広告を出しても成果を数えられません" : ""}
+計測タグ: ${site && !site.gtmId && (site.adTags?.length ?? 0) === 0 ? "サイトのHTMLからGTMも広告タグも検出できなかった（未設置を確認）" : "設置の有無は確認できていない（計測の施策は出さない）"}
 広告タグ: ${site?.adTags.join("・") || "なし"}
 ${site ? `構造化データ: ${site.structuredData ? "有" : "無"} / 内部リンク: ${site.internalLinks}` : ""}
 ${meo?.self ? `Googleマップ: 評価${meo.self.rating}（近隣平均${meo.avgRating}）レビュー${meo.self.reviews}件（近隣平均${meo.avgReviews}件・${meo.totalShops}店中${meo.reviewRank}位）` : ""}

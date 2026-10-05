@@ -154,7 +154,34 @@ function fromDescription(desc: string): { followers: number | null; posts: numbe
 }
 
 /** 直近の投稿本文を見出し表示用に短くする。via=公式連携・Apify のどちらからでも使う */
-const shorten = (s: string) => (s.length > 30 ? `${s.slice(0, 30)}…` : s);
+/**
+ * 2026-10-05: 文字数で切ると、絵文字などの「サロゲートペア」を真ん中で割ってしまい、
+ * 孤立したサロゲートがDB（Postgres jsonb）への保存でエラーになる。TikTokの投稿文は絵文字が多く、
+ * 「取得は成功しているのに保存だけが毎回失敗し、同じ取得（＝Apifyの課金）を繰り返す」原因になっていた。
+ * コードポイント単位で切る。
+ */
+const shorten = (s: string) => {
+  const chars = Array.from(s);
+  return chars.length > 30 ? `${chars.slice(0, 30).join("")}…` : s;
+};
+
+/** Postgres jsonb が拒否する文字（NUL・孤立サロゲート）を取り除く */
+export function cleanText(s: string): string {
+  return s
+    .replace(/\u0000/g, "")
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "")
+    .replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "$1");
+}
+
+/** 保存する値の、全ての文字列を cleanText に通す */
+export function deepClean<T>(v: T): T {
+  if (typeof v === "string") return cleanText(v) as unknown as T;
+  if (Array.isArray(v)) return v.map((x) => deepClean(x)) as unknown as T;
+  if (v && typeof v === "object") {
+    return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, deepClean(x)])) as T;
+  }
+  return v;
+}
 
 /** 日付文字列・UNIX秒をISO 8601に正規化する。パースできなければnull（推測で埋めない） */
 function toIsoDate(raw: unknown): string | null {
@@ -862,8 +889,29 @@ export async function scanSocial(
       // 原因になっていた
       const prev = existing.find((x) => x.platform === account.platform);
       if (prev?.readable && !account.readable) return;
-      const accounts = [...existing.filter((x) => x.platform !== account.platform), account];
-      await sb.from("analyses").update({ social: { accounts, fetchedAt: new Date().toISOString() } }).eq("id", analysisId);
+      const others = existing.filter((x) => x.platform !== account.platform);
+      // 保存に失敗したのに黙って次へ進むと、取得済みの結果（＝課金済み）が残らず、次の試行で同じ
+      // 取得をやり直す。失敗したら本文などの重い項目を落として再保存し、最低でも「取得した事実」を残す
+      const attempts: SocialAccount[] = [
+        deepClean(account),
+        deepClean({ ...account, recentContent: null, recentPosts: null, bio: null }),
+        deepClean({
+          ...account,
+          recentContent: null,
+          recentPosts: null,
+          bio: null,
+          title: null,
+          reason: account.reason ?? "取得はできましたが、結果を保存できなかったため数値のみ残しています",
+        }),
+      ];
+      for (const acc of attempts) {
+        const { error } = await sb
+          .from("analyses")
+          .update({ social: { accounts: [...others, acc], fetchedAt: new Date().toISOString() } })
+          .eq("id", analysisId);
+        if (!error) return;
+        console.error(`[scanSocial] ${account.platform} の保存に失敗: ${error.message}`);
+      }
     });
     return saveChain;
   };

@@ -272,7 +272,8 @@ ${CATEGORY_NAMES.map((c) => `- ${c}`).join("\n")}
     { maxTokens: 6000 }
   );
   const items = fixNodes(res.items ?? [], kpi).map((m) => ({ ...m, category: normalizeCategory(m) }));
-  return await flag(items.filter((m) => !isUnverifiableTagMeasure(m)), d.industry);
+  const trackingMissing = trackingKnownMissing(site);
+  return await flag(items.filter((m) => !isUnverifiableTagMeasure(m, trackingMissing)), d.industry);
 }
 
 /** 「カテゴリ別評価」のカテゴリ名（evaluateCategories が返す category と同じ語） */
@@ -320,11 +321,20 @@ function normalizeCategory(m: Measure): string | undefined {
  * 予約フォームが別ドメインで自社のGTMでは計測できないことも多いため、施策としては出さない
  * （プロンプト側のRULESにも明記しているが、AIが守らない場合の保険として生成後にも機械的に除く）
  */
-export function isUnverifiableTagMeasure(m: Pick<Measure, "title" | "impactWhy">): boolean {
+export function isUnverifiableTagMeasure(m: Pick<Measure, "title" | "impactWhy">, trackingMissing = false): boolean {
+  // 「計測まわりの施策」かどうかはタイトルで判定する（本文には SEO の「タイトルタグ」など別の語が混ざるため）
+  const isTracking = /計測|トラッキング|パラメータ|UTM|GTM|タグマネージャー|GA4|アナリティクス|ピクセル|Pixel|コンバージョンタグ|CVタグ|タグ(の)?設置|タグを設置|イベント(設定|計測)|アトリビューション/i.test(m.title);
+  if (!isTracking) return false;
+  // 電話・LINE・予約完了・フォーム送信・URLパラメータ等の個別の計測は、設置済みかをプログラムで確認できないので常に出さない
   const text = `${m.title} ${m.impactWhy ?? ""}`;
-  const mentionsTag = /GTM|タグマネージャー|計測タグ|コンバージョンタグ|CVタグ|ピクセル|Pixel|計測の設置|計測設定|タグ設置|タグを設置|タグの設置/i.test(text);
-  const mentionsTarget = /電話|LINE|友だち追加|友達追加|予約(完了|申込|申し込み)|完了画面|フォーム送信|問い合わせ完了|コンバージョン/.test(text);
-  return mentionsTag && mentionsTarget;
+  if (/電話|LINE|友だち追加|友達追加|予約(完了|申込|申し込み)|完了画面|フォーム送信|問い合わせ完了|パラメータ|UTM/i.test(text)) return true;
+  // それ以外の計測の施策は、サイトを読んで「GTM・広告タグが入っていない」ことが分かっているときだけ出す
+  return !trackingMissing;
+}
+
+/** サイトのHTMLから、GTM・広告タグのどちらも検出できなかったか（＝計測タグが未設置と分かっている状態） */
+export function trackingKnownMissing(site: { gtmId: string | null; adTags: string[] } | null | undefined): boolean {
+  return !!site && !site.gtmId && (site.adTags?.length ?? 0) === 0;
 }
 
 /**

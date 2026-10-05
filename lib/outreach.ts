@@ -31,6 +31,10 @@ export type SuggestScan = {
   fetchedAt: string;
   /** 取得に失敗したときの理由 */
   error?: string;
+  /** 候補を採った取得元。Googleから1件も取れなかったときだけ Bing で代替する */
+  source?: "Google" | "Bing";
+  /** 検索語ごとの取得結果（原因調査用。「検出なし」の内訳を残す） */
+  trace?: { q: string; source: string; n: number; error?: string }[];
 };
 
 /**
@@ -40,34 +44,51 @@ export type SuggestScan = {
  * 「検出なし」と「取得自体に失敗した」が画面上は区別できなかった。
  * 失敗した場合はその理由を返し、呼び出し元（scanSuggests）が SuggestScan.error に記録する。
  */
-async function suggestFor(q: string): Promise<{ items: string[]; error?: string }> {
-  const first = await suggestOnce(q, "firefox");
-  // 一時的な制限・失敗のときだけ、別のクライアント指定でもう一度試す（正常に0件のときは再試行しない）
-  if (first.error) {
-    const second = await suggestOnce(q, "chrome");
-    if (!second.error) return second;
-  }
-  return first;
+type SuggestSource = "google-firefox" | "google-chrome" | "bing";
+
+function suggestUrl(source: SuggestSource, q: string): string {
+  const enc = encodeURIComponent(q);
+  if (source === "bing") return `https://api.bing.com/osjson.aspx?query=${enc}&mkt=ja-JP`;
+  const client = source === "google-chrome" ? "chrome" : "firefox";
+  return `https://suggestqueries.google.com/complete/search?client=${client}&hl=ja&gl=jp&q=${enc}`;
 }
 
-async function suggestOnce(q: string, client: "firefox" | "chrome"): Promise<{ items: string[]; error?: string }> {
-  const url =
-    `https://suggestqueries.google.com/complete/search?client=${client}&hl=ja&gl=jp&q=` +
-    encodeURIComponent(q);
+async function suggestOnce(q: string, source: SuggestSource): Promise<{ items: string[]; error?: string }> {
   try {
-    const res = await fetch(url, {
-      headers: { "user-agent": "Mozilla/5.0" },
+    const res = await fetch(suggestUrl(source, q), {
+      headers: { "user-agent": "Mozilla/5.0", "accept-language": "ja,en;q=0.8" },
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return { items: [], error: `サジェストの取得に失敗しました（HTTP ${res.status}）` };
     const j = (await res.json()) as [string, string[]];
-    return { items: Array.isArray(j?.[1]) ? j[1] : [] };
+    return { items: Array.isArray(j?.[1]) ? j[1].filter((x) => typeof x === "string") : [] };
   } catch (e) {
     if (e instanceof Error && e.name === "TimeoutError") {
       return { items: [], error: "サジェストの取得が時間内に終わりませんでした（8秒以内に応答がありませんでした）" };
     }
     return { items: [], error: e instanceof Error ? `サジェストの取得に失敗しました（${e.message}）` : "サジェストの取得に失敗しました" };
   }
+}
+
+/**
+ * 2026-10-05: Googleは共有のクラウドIPからだと、エラーにせず「空の候補」を返すことがある
+ * （実際に、利用者が手元で検索すると出るブランド名で、サーバーからは毎回0件・エラー無しだった）。
+ * そのため「失敗したときだけ」ではなく「0件だったとき」も別のクライアント指定で再試行し、
+ * 各試行の結果を trace に残す（何が起きたかを後から確認できるように）。
+ */
+async function suggestFor(
+  q: string,
+  sources: SuggestSource[]
+): Promise<{ items: string[]; error?: string; trace: { q: string; source: string; n: number; error?: string }[] }> {
+  const trace: { q: string; source: string; n: number; error?: string }[] = [];
+  let lastError: string | undefined;
+  for (const src of sources) {
+    const r = await suggestOnce(q, src);
+    trace.push({ q, source: src, n: r.items.length, ...(r.error ? { error: r.error } : {}) });
+    if (r.items.length > 0) return { items: r.items, trace };
+    if (r.error) lastError = r.error;
+  }
+  return { items: [], error: lastError, trace };
 }
 
 const JA = /[ぁ-んァ-ヶ一-龠]/;
@@ -167,39 +188,59 @@ export async function scanSuggests(
   site: SiteScan | null,
   areas: string[] = []
 ): Promise<SuggestScan> {
-  const rows: SuggestRow[] = [];
-  const got: string[] = [];
-  // 地名を足した2本目は1本目と結果が重なる。同じ語を2回出さない
-  const seen = new Set<string>();
-  // 取得自体に失敗した検索語の理由を集める。「検出なし（正常に取得できたが0件）」とは
-  // 区別し、全ての検索語で取得に失敗した場合だけ SuggestScan.error に出す
-  const errors: string[] = [];
-
   const cands = candidates(d, site, areas);
-  for (const q of cands) {
-    if (got.length >= 2) break;
-    const { items, error } = await suggestFor(q);
-    if (error) errors.push(error);
-    const list = items.filter(
-      // 検索語そのものは対策対象ではない
-      (x) => x.trim().toLowerCase() !== q.trim().toLowerCase()
-    );
-    const fresh = list.filter((x) => !seen.has(x.trim().toLowerCase()));
-    if (fresh.length === 0) continue; // 新しい語が無い検索語は画面に出さない
-    got.push(q);
-    for (const x of fresh.slice(0, 10)) {
-      seen.add(x.trim().toLowerCase());
-      rows.push({ keyword: q, suggestion: x, kind: classify(x, q) });
+  const trace: NonNullable<SuggestScan["trace"]> = [];
+
+  const run = async (sources: SuggestSource[], limit: number) => {
+    const rows: SuggestRow[] = [];
+    const got: string[] = [];
+    // 地名を足した2本目は1本目と結果が重なる。同じ語を2回出さない
+    const seen = new Set<string>();
+    // 取得自体に失敗した検索語の理由を集める。「検出なし（正常に取得できたが0件）」とは区別し、
+    // 全ての検索語で取得に失敗した場合だけ SuggestScan.error に出す
+    const errors: string[] = [];
+    for (const q of cands.slice(0, limit)) {
+      if (got.length >= 2) break;
+      const { items, error, trace: t } = await suggestFor(q, sources);
+      trace.push(...t);
+      if (error && items.length === 0) errors.push(error);
+      const list = items.filter(
+        // 検索語そのものは対策対象ではない
+        (x) => x.trim().toLowerCase() !== q.trim().toLowerCase()
+      );
+      const fresh = list.filter((x) => !seen.has(x.trim().toLowerCase()));
+      if (fresh.length === 0) continue; // 新しい語が無い検索語は画面に出さない
+      got.push(q);
+      for (const x of fresh.slice(0, 10)) {
+        seen.add(x.trim().toLowerCase());
+        rows.push({ keyword: q, suggestion: x, kind: classify(x, q) });
+      }
+    }
+    return { rows, got, errors };
+  };
+
+  // まずGoogle（firefox指定→0件・失敗ならchrome指定）。それでも1件も取れなければ Bing で代替する
+  let { rows, got, errors } = await run(["google-firefox", "google-chrome"], cands.length);
+  let source: "Google" | "Bing" = "Google";
+  if (got.length === 0 && cands.length > 0) {
+    const bing = await run(["bing"], 4);
+    if (bing.got.length > 0) {
+      rows = bing.rows;
+      got = bing.got;
+      source = "Bing";
     }
   }
+
   // 試した検索語が1つ以上あり、1件も拾えず、かつ全件が「取得失敗」だった場合だけ
   // エラーとして出す（検索ボリュームが少なくて0件、のような正常系は error を付けない）
-  const allFailed = cands.length > 0 && got.length === 0 && errors.length === cands.length;
+  const allFailed = cands.length > 0 && got.length === 0 && errors.length >= cands.length;
   return {
     rows,
     queried: got,
     fetchedAt: new Date().toISOString(),
     error: allFailed ? errors[errors.length - 1] : undefined,
+    source,
+    trace,
   };
 }
 

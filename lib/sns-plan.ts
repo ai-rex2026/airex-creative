@@ -48,7 +48,7 @@ export type SnsPlan = {
   error?: string;
 };
 
-export const SNS_PLATFORMS = ["Instagram", "TikTok", "X", "YouTube"] as const;
+export const SNS_PLATFORMS = ["Instagram", "TikTok", "X", "YouTube", "Facebook"] as const;
 
 /** 施策の見出し（「SNSオーガニック運用（Instagram）」など）から媒体を引き当てる */
 export function snsPlatformsIn(text: string): string[] {
@@ -57,6 +57,7 @@ export function snsPlatformsIn(text: string): string[] {
   if (/tiktok|ティックトック/i.test(text)) out.push("TikTok");
   if (/(^|[^A-Za-z])X([^A-Za-z]|$)|twitter|ツイッター/i.test(text)) out.push("X");
   if (/youtube|ユーチューブ/i.test(text)) out.push("YouTube");
+  if (/facebook|フェイスブック/i.test(text)) out.push("Facebook");
   return out;
 }
 
@@ -68,8 +69,9 @@ export async function generateSnsPlan(d: Diagnosis, social: SocialScan | null): 
   }>(
     `あなたはSNS運用の実務者です。広告費をかけずに育てるSNSの運用プランと、SNSキャンペーンの企画を作ります。
 
-channels は Instagram / TikTok / X / YouTube のうち、**この商材とターゲットに効く媒体だけ**を2〜4件。
+channels は Instagram / TikTok / X / YouTube / Facebook のうち、**この商材とターゲットに効く媒体だけ**を2〜5件。
 効かない媒体は入れない（ターゲットの年齢層・検討期間・商材の見せ方で判断する）。
+ただし、下の【運用中の公式SNS】に実測がある媒体は、すでに運用している以上、必ず channels に含める（status は「運用中」）。
 
 守ること（channels）:
 - status は、下の【運用中の公式SNS】に実測がある媒体は「運用中」、無い媒体は「新規」
@@ -110,7 +112,7 @@ ${sns ? `\n【運用中の公式SNS】※実測\n${sns}` : "\n【運用中の公
 
   const channels: SnsChannelPlan[] = (res.channels ?? [])
     .filter((c) => c && c.platform)
-    .slice(0, 4)
+    .slice(0, 5)
     .map((c) => ({
       platform: c.platform,
       status: c.status === "運用中" ? "運用中" : "新規",

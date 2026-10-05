@@ -47,6 +47,15 @@ import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
 
 type Tab = "inputs" | "summary" | "overview";
 
+/** 「実データを使って分析している」ことを示すバッジ（セクション見出し用） */
+function RealBadge({ label = "実データで分析" }: { label?: string }) {
+  return (
+    <span className="tag ok" style={{ marginLeft: 10, fontSize: 11, fontWeight: 500, verticalAlign: "middle" }}>
+      🟢{label}
+    </span>
+  );
+}
+
 /**
  * 「切り抜く」表示のとき、横・縦どちらの位置スライダーが実際に効くかを判定する。
  * Banner.tsx の枠サイズ計算（photoTop/photoSide・photoShare）をここでも再現し、
@@ -726,6 +735,7 @@ export function Report({
           log={measureLog ?? []}
           hygiene={hygiene(site)}
           onNavigate={goToOverviewSection}
+          trackingMissing={!!site && !site.gtmId && (site.adTags?.length ?? 0) === 0}
         />
       )}
 
@@ -738,7 +748,7 @@ export function Report({
           <div className="sec-head" style={{ marginTop: 0 }}>
             <span className="ic">⇄</span>
             <div>
-              <h2 id="sec-linked">連携データ</h2>
+              <h2 id="sec-linked">連携データ<RealBadge label="実データ" /></h2>
               <div className="sub">Search Console / GA4 の実データです（推定ではありません）</div>
             </div>
             <span className="rule" />
@@ -1065,7 +1075,7 @@ export function Report({
           <div className="sec-head" style={{ marginTop: 0 }}>
             <span className="ic">⊕</span>
             <div>
-              <h2 id="sec-comp">競合サイト比較</h2>
+              <h2 id="sec-comp">競合サイト比較<RealBadge /></h2>
               <div className="sub">実際に検索して、上位に出ていたサイトです</div>
             </div>
             <span className="rule" />
@@ -1113,7 +1123,7 @@ export function Report({
           <div className="sec-head">
             <span className="ic">▣</span>
             <div>
-              <h2 id="sec-tags">計測タグの導入状況</h2>
+              <h2 id="sec-tags">計測タグの導入状況<RealBadge /></h2>
               <div className="sub">サイトを実際に読んで判定しています</div>
             </div>
             <span className="rule" />
@@ -1459,7 +1469,7 @@ export function Report({
               <div className="sec-head">
                 <span className="ic">⌕</span>
                 <div>
-                  <h2 id="sec-kw">対策キーワード</h2>
+                  <h2 id="sec-kw">対策キーワード{keywords?.hasRealData && <RealBadge label="Search Consoleの実データで分析" />}</h2>
                   <div className="sub">検索広告とSEOの両方で使う語です</div>
                 </div>
                 <span className="rule" />
@@ -1573,8 +1583,8 @@ export function Report({
               <div className="sec-head">
                 <span className="ic">⌕</span>
                 <div>
-                  <h2 id="sec-suggest">検索サジェスト</h2>
-                  <div className="sub">いま実際に出ているサジェストです（Googleから取得）</div>
+                  <h2 id="sec-suggest">検索サジェスト{(suggests?.rows?.length ?? 0) > 0 && <RealBadge label="実測データで分析" />}</h2>
+                  <div className="sub">いま実際に出ているサジェストです（{suggests?.source === "Bing" ? "Googleから取得できなかったため、Bingの候補を表示しています" : "Googleから取得"}）</div>
                 </div>
                 <span className="rule" />
               </div>
@@ -1621,8 +1631,18 @@ export function Report({
                 <div className="note">
                   <i className="i">i</i>
                   <span>
-                    指名検索のサジェストは検出されませんでした。社名・サービス名の検索ボリュームが
+                    指名検索のサジェストは取得できませんでした。社名・サービス名の検索ボリュームが
                     まだ少ない、またはGoogle側の一時的な制限の可能性があります。
+                    {suggests.error && <> 取得の失敗：{suggests.error}。</>}
+                    {suggests.trace && suggests.trace.length > 0 && (
+                      <small style={{ display: "block", marginTop: 6, color: "var(--muted)" }}>
+                        試した検索語と結果：
+                        {[...new Set(suggests.trace.map((t) => t.q))].map((q) => {
+                          const rs = suggests.trace!.filter((t) => t.q === q);
+                          return `「${q}」${rs.map((t) => `${t.source === "bing" ? "Bing" : "Google"}${t.error ? "失敗" : `${t.n}件`}`).join("・")}`;
+                        }).join(" ／ ")}
+                      </small>
+                    )}
                   </span>
                 </div>
               )}
@@ -1633,7 +1653,7 @@ export function Report({
           <div className="sec-head">
             <span className="ic">◉</span>
             <div>
-              <h2 id="sec-meo">MEO（Googleマップ対策）</h2>
+              <h2 id="sec-meo">MEO（Googleマップ対策）{meo.self && <RealBadge label="Googleマップの実データで分析" />}</h2>
               <div className="sub">Googleマップの実データで、近隣の同業と比べています</div>
             </div>
             <span className="rule" />
@@ -1717,7 +1737,7 @@ export function Report({
                     <div className="sec-head" style={{ marginTop: hasLpo || hasSpeedMissing ? 24 : 0 }}>
                       <span className="ic">⚡</span>
                       <div>
-                        <h2 id="sec-speed">表示速度（実測）</h2>
+                        <h2 id="sec-speed">表示速度（実測）<RealBadge label="実測値" /></h2>
                         <div className="sub">PageSpeed Insights・モバイル。推測ではなく計測値です</div>
                       </div>
                       <span className="rule" />
@@ -1778,7 +1798,7 @@ export function Report({
           <div className="sec-head">
             <span className="ic">◍</span>
             <div>
-              <h2 id="sec-social">公式SNSアカウント</h2>
+              <h2 id="sec-social">公式SNSアカウント{(social?.accounts ?? []).some((x) => hasRealData(x)) && <RealBadge label="取得できた実データで分析" />}</h2>
               <div className="sub">情報取得→分析→運用プランの順に、媒体ごとにまとめています</div>
             </div>
             <span className="rule" />
@@ -1794,7 +1814,7 @@ export function Report({
            * 情報取得だけの行として最後にまとめる
            */}
           {(() => {
-            const CANON = ["YouTube", "X", "TikTok", "Instagram"] as const;
+            const CANON = ["YouTube", "X", "TikTok", "Instagram", "Facebook"] as const;
             const usedUrls = new Set<string>();
             const blocks = CANON.map((p) => {
               const info = site.social.find((x) => PLATFORM_RE[p].test(x.platform));

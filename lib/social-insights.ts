@@ -19,7 +19,7 @@ import type { YoutubeAnalyticsData } from "./google";
  * 突き合わせた「分析結果」と、そこから導く「施策詳細」（手順・担当・完了条件つき）を出す。
  */
 
-export type SocialInsightPlatform = SocialCompetitorPlatform;
+export type SocialInsightPlatform = SocialCompetitorPlatform | "Facebook";
 
 export type SocialInsightMeasure = {
   title: string;
@@ -48,9 +48,10 @@ export const PLATFORM_RE: Record<SocialInsightPlatform, RegExp> = {
   X: /twitter|^x$/i,
   TikTok: /tiktok/i,
   Instagram: /instagram/i,
+  Facebook: /facebook/i,
 };
 
-const PLATFORMS: SocialInsightPlatform[] = ["YouTube", "X", "TikTok", "Instagram"];
+const PLATFORMS: SocialInsightPlatform[] = ["YouTube", "X", "TikTok", "Instagram", "Facebook"];
 
 /** 実測できている（readable）自社アカウントだけを対象にする */
 function ownAccountsByPlatform(social: SocialScan | null): Partial<Record<SocialInsightPlatform, SocialAccount>> {
@@ -146,7 +147,7 @@ export async function generateSocialInsights(
   });
 
   const res = await askJson<SocialInsightPlan>(
-    `あなたはSNS運用の実務者です。実測できているYouTube・X・TikTok・Instagramのアカウントについて、
+    `あなたはSNS運用の実務者です。実測できているYouTube・X・TikTok・Instagram・Facebookのアカウントについて、
 「分析結果（findings）」と、そこから導く「施策詳細（measures）」を媒体ごとに作ります。
 
 守ること:
@@ -158,6 +159,8 @@ export async function generateSocialInsights(
   「反応数の差」のような比較も書いてよい。競合が実測できていれば自社との比較で書き、
   競合が無ければ自社の実測値と投稿内容から分かることだけを書く
   ・渡されていない数字を作らない（「エンゲージメント率が高い」のような、渡していない指標の断定は禁止）
+  ・Facebookは、ページのフォロワー数と、直近の投稿のいいね・コメント・シェアだけが実測。
+    再生数・リーチ・インプレッションは渡していないので書かない
   ・一般論（「動画は伸びやすい」等）や最上級・断定（「必ず」「業界随一」）は禁止
 - measures は媒体ごとに2〜3件。**すでに運用している前提**で書く（新規開設は書かない）
   ・title は「何をするか」を動詞で。「〜の検討」「〜の強化」のような、やったか判断できない書き方は禁止
