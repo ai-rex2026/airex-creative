@@ -2,6 +2,10 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { googleAssetsFor, startAnalysis } from "@/app/actions";
+import { GuestLimitActions, guestUsedOnDevice } from "./GuestLimit";
+
+/** 「MEOだけ見る」を出すか（MEO機能の完成まで false） */
+const SHOW_MEO_MODE: boolean = false;
 import type { GoogleAssets, GoogleChoice } from "@/lib/google";
 import { MANUAL_SOCIAL_PLATFORMS } from "@/lib/social";
 import type { AnalysisMode } from "@/lib/types";
@@ -15,6 +19,8 @@ export function NewAnalysisForm({ initialUrl, googleConnected = false }: { initi
   const [mode, setMode] = useState<AnalysisMode>("report");
   const [social, setSocial] = useState<SocialRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  // 未登録の分析回数の上限に達したときは、登録・ログインのボタンを出す
+  const [needSignup, setNeedSignup] = useState(false);
   const [pending, start] = useTransition();
   // 連携中のGoogleアカウントのどのデータを使うか。"auto" は URL のドメインで自動的に探す
   const [gscSel, setGscSel] = useState<string>("auto");
@@ -66,6 +72,7 @@ export function NewAnalysisForm({ initialUrl, googleConnected = false }: { initi
     start(async () => {
       try {
         const res = await startAnalysis({
+          guestUsed: guestUsedOnDevice(),
           url: url || undefined,
           text: mode === "meo" ? undefined : text || undefined,
           mode,
@@ -80,7 +87,10 @@ export function NewAnalysisForm({ initialUrl, googleConnected = false }: { initi
                 } satisfies GoogleChoice)
               : undefined,
         });
-        if (res?.error) setErr(res.error);
+        if (res?.error) {
+          setErr(res.error);
+          setNeedSignup(!!res.needSignup);
+        }
       } catch (e) {
         const m = e instanceof Error ? e.message : String(e);
         if (!m.includes("NEXT_REDIRECT")) setErr(m);
@@ -90,19 +100,24 @@ export function NewAnalysisForm({ initialUrl, googleConnected = false }: { initi
 
   return (
     <div style={{ maxWidth: 620, margin: "64px auto 0", textAlign: "center" }}>
-      <h2 style={{ fontSize: 22 }}>広告の伸びしろ、今すぐ見つけましょう</h2>
+      <h2 style={{ fontSize: 22 }}>集客の伸びしろ、今すぐ見つけましょう</h2>
 
       {err && <div className="alert" style={{ marginTop: 20, textAlign: "left" }}>{err}</div>}
+      {needSignup && <GuestLimitActions />}
 
       <div className="modes">
         <button className={mode === "report" ? "on" : ""} onClick={() => setMode("report")}>
           <b>サイトレポート</b>
           <small>戦略・原稿・バナーまで一式</small>
         </button>
-        <button className={mode === "meo" ? "on" : ""} onClick={() => setMode("meo")}>
-          <b>MEOだけ見る</b>
-          <small>マップ順位を実データで即確認</small>
-        </button>
+        {/* 2026-10-06: MEOはAPIキーが未発行で機能が未完成のため、「MEOだけ見る」は一旦非表示。
+            再開するときは SHOW_MEO_MODE を true にする */}
+        {SHOW_MEO_MODE && (
+          <button className={mode === "meo" ? "on" : ""} onClick={() => setMode("meo")}>
+            <b>MEOだけ見る</b>
+            <small>マップ順位を実データで即確認</small>
+          </button>
+        )}
       </div>
 
       <div className="field" style={{ marginTop: 16 }}>

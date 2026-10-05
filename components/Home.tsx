@@ -4,19 +4,25 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { startAnalysis } from "@/app/actions";
 import { IconArrowRight, IconGlobe, Logo, SiteFooter } from "./Chrome";
+import { GuestLimitActions, guestUsedOnDevice } from "./GuestLimit";
 
 export function Home() {
   const [url, setUrl] = useState("");
   const [text, setText] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  // 未登録の分析回数の上限に達したときは、登録・ログインのボタンを出す
+  const [needSignup, setNeedSignup] = useState(false);
   const [pending, start] = useTransition();
 
   function submit() {
     setErr(null);
     start(async () => {
       try {
-        const res = await startAnalysis({ url: url || undefined, text: text || undefined });
-        if (res?.error) setErr(res.error);
+        const res = await startAnalysis({ url: url || undefined, text: text || undefined, guestUsed: guestUsedOnDevice() });
+        if (res?.error) {
+          setErr(res.error);
+          setNeedSignup(!!res.needSignup);
+        }
       } catch (e) {
         // redirect() は例外で飛ぶので、本物のエラーだけ拾う
         const m = e instanceof Error ? e.message : String(e);
@@ -57,6 +63,7 @@ export function Home() {
                 {err}
               </div>
             )}
+            {needSignup && <GuestLimitActions />}
 
             <div style={{ maxWidth: 620, margin: "30px auto 0" }}>
               <div className="field">

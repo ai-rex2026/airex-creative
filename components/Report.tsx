@@ -18,6 +18,10 @@ import type { MeoScan } from "@/lib/meo";
 import { meoStoreActions } from "@/lib/meo-actions";
 import { MeoStoreList, MeoStoreDetail } from "./MeoStores";
 import { MeoEntryCard } from "./meo/MeoEntryCard";
+import { markGuestUsed } from "./GuestLimit";
+
+/** 「MEO運用をはじめる」カード（MEO運用画面への入口）を出すか。MEO機能の完成まで false */
+const SHOW_MEO_ENTRY: boolean = false;
 import { Toc } from "./Toc";
 import { BANNER_CASE_WARNING, looksLikeCasePhoto } from "@/lib/case-photo";
 import type { KeywordPlan, LinePlan, LpoPlan } from "@/lib/deep";
@@ -260,6 +264,11 @@ export function Report({
   // （object-fit: cover の性質上、はみ出さない軸は動かしても変化しない）。
   // 判定には元画像の実サイズが要るので、選ばれた瞬間に読み込んでおく
   const [photoNatural, setPhotoNatural] = useState<{ w: number; h: number } | null>(null);
+  // 未登録のまま分析した端末に印を残す（1端末1回の判定。サーバー側のクッキーと二重にする）
+  useEffect(() => {
+    if (isGuest) markGuestUsed();
+  }, [isGuest]);
+
   useEffect(() => {
     if (!photoSrc) {
       setPhotoNatural(null);
@@ -586,23 +595,31 @@ export function Report({
     );
 
   return (
-    <div>
+    // 未登録ユーザーはブラウザの印刷機能からもPDFにできないようにする（globals.css の .guest-noprint）
+    <div className={isGuest ? "guest-noprint" : undefined}>
       {err && <div className="alert">{err}</div>}
 
       <div className="rep-top">
         <a className="icon-btn" href="/analysis">←</a>
         <div className="right">
-          <button
-            className="icon-btn"
-            onClick={() => {
-              // 畳んだ指摘・折り畳み（SEO記事設計の見出し構成など）が閉じたまま印刷されると
-              // 中身が落ちるので、先に全部開く
-              document.querySelectorAll("details").forEach((d) => ((d as HTMLDetailsElement).open = true));
-              window.print();
-            }}
-          >
-            ⤓ PDF出力
-          </button>
+          {isGuest ? (
+            // 未登録ユーザーはPDF出力できない。押したら無料登録へ進める
+            <a className="icon-btn" href="/login?mode=signup" title="PDF出力は無料の会員登録でご利用いただけます">
+              ⤓ PDF出力
+            </a>
+          ) : (
+            <button
+              className="icon-btn"
+              onClick={() => {
+                // 畳んだ指摘・折り畳み（SEO記事設計の見出し構成など）が閉じたまま印刷されると
+                // 中身が落ちるので、先に全部開く
+                document.querySelectorAll("details").forEach((d) => ((d as HTMLDetailsElement).open = true));
+                window.print();
+              }}
+            >
+              ⤓ PDF出力
+            </button>
+          )}
         </div>
       </div>
 
@@ -1521,7 +1538,8 @@ export function Report({
             <span className="rule" />
           </div>
 
-          <MeoEntryCard analysisId={id} address={meo.self?.address} />
+          {/* 2026-10-06: MEO運用画面は未完成のため、入口のカードを一旦非表示（再開時は SHOW_MEO_ENTRY を true に） */}
+          {SHOW_MEO_ENTRY && <MeoEntryCard analysisId={id} address={meo.self?.address} />}
 
           {!meo.self ? (
             <div className="note">

@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -93,6 +94,11 @@ export async function googleAssetsFor(
  * 媒体・入力のどちらかが読めなかったものは黙って無視する（フォームの選択肢外の値が
  * 来ることは通常無いが、念のため）。
  */
+/** 未登録（ゲスト）で分析したことがある端末の印。セッションが切れて一時アカウントが変わっても残す */
+const GUEST_USED_COOKIE = "airex_guest_used";
+const GUEST_LIMIT_MESSAGE =
+  "未登録のままご利用いただける分析は1回までです。無料の会員登録（登録済みの方はログイン）で、続けて分析できます。";
+
 export async function startAnalysis(input: {
   url?: string;
   text?: string;
@@ -101,7 +107,9 @@ export async function startAnalysis(input: {
   socialAccounts?: { platform: string; value: string }[];
   /** 連携中のGoogleアカウントのどのデータを使うか（任意） */
   google?: GoogleChoice;
-}) {
+  /** この端末（ブラウザの保存領域）で、未登録のまま分析したことがあるか */
+  guestUsed?: boolean;
+}): Promise<{ error: string; needSignup?: boolean } | undefined> {
   assertKey();
   const mode: AnalysisMode = input.mode === "meo" ? "meo" : "report";
   let url: string | undefined;
@@ -122,6 +130,19 @@ export async function startAnalysis(input: {
   let {
     data: { user },
   } = await sb.auth.getUser();
+
+  // 2026-10-06: 未登録（ゲスト）は1端末につき1回まで。一時アカウントはセッションが切れると
+  // 作り直されて別人扱いになるので、アカウントの分析件数に加えて、端末に残す印（クッキー・
+  // ブラウザの保存領域）でも判定する
+  const guest = !user || user.is_anonymous;
+  const jar = await cookies();
+  if (guest) {
+    if (jar.get(GUEST_USED_COOKIE)?.value || input.guestUsed) return { error: GUEST_LIMIT_MESSAGE, needSignup: true };
+    if (user) {
+      const { count } = await sb.from("analyses").select("id", { count: "exact", head: true }).eq("owner_id", user.id);
+      if ((count ?? 0) > 0) return { error: GUEST_LIMIT_MESSAGE, needSignup: true };
+    }
+  }
 
   if (!user) {
     const { data, error } = await sb.auth.signInAnonymously();
@@ -153,6 +174,16 @@ export async function startAnalysis(input: {
   }
   // 本番では throw したエラー本文が伏せられて画面に出ないので、値で返す
   if (error) return { error: `分析を登録できませんでした：${error.message}` };
+
+  if (guest) {
+    jar.set(GUEST_USED_COOKIE, "1", {
+      maxAge: 400 * 24 * 60 * 60, // ブラウザが認める上限（約13か月）
+      httpOnly: true,
+      sameSite: "lax",
+      secure: true,
+      path: "/",
+    });
+  }
 
   // 画面ではなくサーバー側で走らせる。ブラウザを閉じても止まらない
   after(async () => {
