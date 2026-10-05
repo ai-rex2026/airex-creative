@@ -261,7 +261,7 @@ export function Measures({
                   )}
 
                   <button className={`mk${isDone ? " on" : ""}`} onClick={() => markDone(m, !isDone)}>
-                    {isDone ? "済みを取り消す" : "やった"}
+                    {isDone ? "実施済みを取り消す" : "実施済み"}
                   </button>
                 </div>
               )}

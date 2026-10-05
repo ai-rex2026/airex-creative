@@ -152,6 +152,18 @@ function evalKeywordCoverage(gsc: GscData | null, keywords: KeywordPlan | null):
 function evalLp(speed: SpeedScan | null, lpo: LpoPlan | null): CategoryEvaluation {
   const anchor = "sec-lpo";
   if (!speed || speed.score === null) {
+    // その場の計測（スコア）が取れず、実ユーザーの計測値（CrUX）だけ取れた場合は、LCP の判定で評価する
+    const lcp = speed?.field.find((f) => f.id === "LARGEST_CONTENTFUL_PAINT_MS");
+    if (lcp?.rating) {
+      const t = lcp.rating === "良好" ? "強" : lcp.rating === "改善が必要" ? "標準" : "弱";
+      return {
+        category: "LP",
+        score: t,
+        measured: true,
+        basis: `実ユーザーの計測値でLCP（主役の表示）が${lcp.value}（${lcp.rating}）です（その場の計測スコアは取れていません）`,
+        sectionAnchor: anchor,
+      };
+    }
     return { category: "LP", score: null, measured: false, basis: "PageSpeed Insights の計測が取れていません", sectionAnchor: anchor };
   }
   const base = tier(speed.score, 70, 45);
@@ -373,7 +385,7 @@ ${priorityNote ? `\n${priorityNote}` : ""}`,
     `${facts(d, site, meo, pricing, extra, doneTitles, social)}
 ${useLedger ? `
 【分析データで提案済みの打ち手】※ 施策はここから選んでまとめる。sources にこの番号を入れる
-${ledger.map((x) => `- ${x.id}［${x.chapter}／${x.category}］${x.text}`).join("\n")}
+${ledger.map((x) => `- ${x.id}［${x.chapter}／${x.category}${x.unverified ? "／実施状況は未確認" : ""}］${x.text}`).join("\n")}
 ` : ""}
 【追うKPI】
 ${kpi.candidates.map((c) => `- ${c.id}：${c.name}（${c.node}）／ ${c.trackable}`).join("\n")}
@@ -403,7 +415,18 @@ ${CATEGORY_NAMES.map((c) => `- ${c}`).join("\n")}
 const LEDGER_RULES = `- **施策は【分析データで提案済みの打ち手】から選んでまとめる。** 近い打ち手は1つの施策に束ねてよい。
   各施策の sources に、元にした打ち手の番号（s1 など）を1つ以上入れる。打ち手の中身を変えて別の施策にしない
 - 分析データに無い施策は**2件まで**。その施策だけ sources を空の配列 [] にする
-- category は、元にした打ち手のカテゴリに合わせる`;
+- category は、元にした打ち手のカテゴリに合わせる
+- 「実施状況は未確認」の打ち手（広告キャンペーン・アフィリエイト・掲載先など）は、すでに実施しているかどうかが
+  分かっていない。「未実施です」「まだ行っていません」と決めつけて書かない。title の頭に注記は付けない（こちらで付ける）`;
+
+/** すでに実施しているかを確かめられない施策のタイトルの頭に付ける語 */
+export const UNVERIFIED_PREFIX = "（もし未実施であれば）";
+
+function withPrefix(m: Measure, unverified: boolean): Measure {
+  if (!unverified) return { ...m, unverified: false };
+  const title = m.title.startsWith(UNVERIFIED_PREFIX) ? m.title : `${UNVERIFIED_PREFIX}${m.title}`;
+  return { ...m, title, unverified: true };
+}
 
 /** 分析データに無い施策の上限 */
 const MAX_OUTSIDE = 2;
@@ -422,16 +445,18 @@ export function attachSources(items: Measure[], ledger: SourceItem[]): Measure[]
     if (found.length === 0) {
       if (outside >= MAX_OUTSIDE) continue;
       outside++;
-      out.push({ ...m, sources: [], outside: true });
+      // 分析データに無い施策は、実施しているかを何も確かめていない
+      out.push(withPrefix({ ...m, sources: [], outside: true }, true));
       continue;
     }
-    out.push({
+    // 元にした打ち手がすべて「実施状況は未確認」なら、冒頭に注記を付ける
+    out.push(withPrefix({
       ...m,
       sources: found.map((x) => ({ id: x.id, chapter: x.chapter, anchor: x.anchor })),
       outside: false,
       // カテゴリが空・不正なら、元にした打ち手のカテゴリを使う
       category: m.category && (CATEGORY_NAMES as readonly string[]).includes(m.category) ? m.category : found[0].category,
-    });
+    }, found.every((x) => x.unverified)));
   }
   return out;
 }
@@ -454,7 +479,7 @@ const OWNER: Record<string, string> = {
 export function measuresFromLedger(ledger: SourceItem[], kpi: KpiTree): Measure[] {
   const picked = CATEGORY_NAMES.map((c) => ledger.find((x) => x.category === c)).filter((x): x is SourceItem => !!x);
   const node = kpi.branches[0]?.node ?? kpi.candidates[0]?.node ?? "";
-  return picked.map((x, i) => ({
+  return picked.map((x, i) => withPrefix({
     id: `f${i + 1}`,
     title: x.text.length > 60 ? `${x.text.slice(0, 59)}…` : x.text,
     kpis: kpi.candidates[0] ? [kpi.candidates[0].id] : [],
@@ -464,11 +489,11 @@ export function measuresFromLedger(ledger: SourceItem[], kpi: KpiTree): Measure[
     impactWhy: `分析データの「${x.chapter}」で提案している打ち手です。詳しい根拠はその章をご覧ください。`,
     effort: "数日",
     owner: OWNER[x.category] ?? "Web担当者",
-    steps: [x.text, `分析データの「${x.chapter}」の内容を確認し、担当と期日を決める`, "対応したら、この施策を「やった」にする"],
+    steps: [x.text, `分析データの「${x.chapter}」の内容を確認し、担当と期日を決める`, "対応したら、この施策を「実施済み」にする"],
     done: `「${x.chapter}」の該当の打ち手を実施した`,
     sources: [{ id: x.id, chapter: x.chapter, anchor: x.anchor }],
     outside: false,
-  }));
+  }, !!x.unverified));
 }
 
 /** 「カテゴリ別評価」のカテゴリ名（evaluateCategories が返す category と同じ語） */

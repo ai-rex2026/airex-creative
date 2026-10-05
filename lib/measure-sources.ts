@@ -31,7 +31,15 @@ export type SourceItem = {
   category: CategoryKey;
   /** 打ち手の中身（1行） */
   text: string;
+  /**
+   * すでに実施しているかを実データで確かめられない打ち手か（広告キャンペーン・アフィリエイト・掲載先など）。
+   * これだけを元にした施策は、冒頭に「（もし未実施であれば）」を付ける（lib/summary-tab.ts）
+   */
+  unverified?: boolean;
 };
+
+/** 表示速度の話か。分析データのどの章に書かれていても、リンク先は表示速度の欄にする */
+const SPEED_RE = /表示速度|ページ速度|読み込み(速度|時間)|Core Web Vitals|LCP|WebP|AVIF|次世代(フォーマット|形式)|画像の?(圧縮|軽量化|最適化)|遅延読み込み|lazy ?load|キャッシュ|JavaScript|CSS/i;
 
 export type LedgerInput = {
   ad_ops: AdOps | null;
@@ -67,14 +75,26 @@ function clean(v: unknown): string {
 
 export function buildLedger(a: LedgerInput): SourceItem[] {
   const out: SourceItem[] = [];
-  const add = (chapter: string, anchor: string, category: CategoryKey, texts: unknown[]) => {
+  // 表示速度の欄が画面にあるか（測れていれば「表示速度（実測）」、測れなかったときは
+  // 「LP改善」の中に「測定できませんでした」の注記が出る）
+  const speedShown = !!a.speed && (a.speed.score !== null || (a.speed.field?.length ?? 0) > 0);
+  const add = (chapter: string, anchor: string, category: CategoryKey, texts: unknown[], unverified = false) => {
     const seen = new Set<string>();
     for (const raw of texts) {
       if (seen.size >= PER_CHAPTER) break;
       const text = clean(raw);
       if (!text || seen.has(text)) continue;
       seen.add(text);
-      out.push({ id: `s${out.length + 1}`, chapter, anchor, category, text });
+      // 表示速度の話は、書かれている章に関係なく表示速度の欄へリンクする
+      const speedTopic = anchor !== "sec-speed" && SPEED_RE.test(text);
+      out.push({
+        id: `s${out.length + 1}`,
+        chapter: speedTopic ? (speedShown ? "表示速度（実測）" : "LP改善") : chapter,
+        anchor: speedTopic ? (speedShown ? "sec-speed" : "sec-lpo") : anchor,
+        category: speedTopic ? "LP" : category,
+        text,
+        ...(unverified ? { unverified: true } : {}),
+      });
     }
   };
 
@@ -88,7 +108,9 @@ export function buildLedger(a: LedgerInput): SourceItem[] {
       "広告運用設計",
       "sec-adops",
       "広告の準備",
-      a.ad_ops.campaigns.map((c) => `${c.channel}で「${c.name}」を設計どおりに立ち上げる${c.purpose ? `（${c.purpose}）` : ""}`)
+      a.ad_ops.campaigns.map((c) => `${c.channel}で「${c.name}」を設計どおりに立ち上げる${c.purpose ? `（${c.purpose}）` : ""}`),
+      // 広告アカウントの中までは見ていないので、同じ狙いのキャンペーンが既にあるかは分からない
+      true
     );
   }
 
@@ -101,13 +123,15 @@ export function buildLedger(a: LedgerInput): SourceItem[] {
   );
 
   // SEO（技術面）とキーワード・記事
-  add("対策キーワード", "sec-kw", "SEO強度", a.keywords?.technical ?? []);
-  add("対策キーワード", "sec-kw", "対策キーワード充足度", a.keywords?.content ?? []);
+  // キーワード章の打ち手・記事案は、サイト内に同じ対応が既にあるかまでは確かめていない
+  add("対策キーワード", "sec-kw", "SEO強度", a.keywords?.technical ?? [], true);
+  add("対策キーワード", "sec-kw", "対策キーワード充足度", a.keywords?.content ?? [], true);
   add(
     "SEO記事設計",
     "sec-seoart",
     "対策キーワード充足度",
-    (a.seo_articles?.articles ?? []).map((x) => `SEO記事「${x.title}」（狙う語：${x.targetKeyword}）を公開する`)
+    (a.seo_articles?.articles ?? []).map((x) => `SEO記事「${x.title}」（狙う語：${x.targetKeyword}）を公開する`),
+    true
   );
 
   // LP改善（重・中の指摘。セキュリティは「ついでに直すもの」で扱うので除く）
@@ -129,27 +153,35 @@ export function buildLedger(a: LedgerInput): SourceItem[] {
     "公式SNSアカウント",
     "sec-social",
     "SNS",
+    (a.sns_plan?.channels ?? []).map(
+      (c) => `${c.platform}を${c.status === "新規" ? "開設して" : ""}運用プランどおりに投稿する（頻度：${c.frequency}）`
+    )
+  );
+  // キャンペーン・投稿の工夫・LINEの設定は、すでにやっているかを実データで確かめていない
+  add(
+    "公式SNSアカウント",
+    "sec-social",
+    "SNS",
     [
-      ...(a.sns_plan?.channels ?? []).map(
-        (c) => `${c.platform}を${c.status === "新規" ? "開設して" : ""}運用プランどおりに投稿する（頻度：${c.frequency}）`
-      ),
       ...(a.sns_plan?.campaign ? [`SNSキャンペーン「${a.sns_plan.campaign.title}」を実施する`] : []),
       ...(a.social_insights?.items ?? []).flatMap((i) => i.measures.map((m) => `${i.platform}：${m.title}`)),
-    ]
+      ...(a.line_plan && !a.line_plan.skip && (a.line_plan.richMenu?.length ?? 0) > 0
+        ? ["LINE公式アカウントのリッチメニューとステップ配信を、LINEプランどおりに作る"]
+        : []),
+    ],
+    true
   );
-  if (a.line_plan && !a.line_plan.skip && (a.line_plan.richMenu?.length ?? 0) > 0) {
-    add("公式SNSアカウント", "sec-social", "SNS", ["LINE公式アカウントのリッチメニューとステップ配信を、LINEプランどおりに作る"]);
-  }
 
   // 検索サジェスト・外部施策
-  add("検索サジェスト", "sec-suggest", "検索サジェスト", a.outreach?.suggestActions ?? []);
+  // 検索サジェスト・外部施策は、掲載・アフィリエイト・PRなどを既にやっているかを確かめていない
+  add("検索サジェスト", "sec-suggest", "検索サジェスト", a.outreach?.suggestActions ?? [], true);
   const o = a.outreach;
   add("外部施策", "sec-outreach", "外部施策", [
     ...(o?.citations ?? []).map((c) => `${c.site}への掲載を狙う：${str(c.how)}`),
     ...(o?.affiliate?.fit ? [`アフィリエイトを始める（${(o.affiliate.asps ?? []).join("・")}）。${o.affiliate.terms ?? ""}`] : []),
     ...(o?.prThemes ?? []).map((t) => `PRで出す：${str(t)}`),
     ...(o?.negatives ?? []).map((t) => `ネガティブ対策：${str(t)}`),
-  ]);
+  ], true);
 
   return out;
 }

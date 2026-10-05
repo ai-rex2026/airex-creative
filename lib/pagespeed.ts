@@ -63,11 +63,40 @@ export type SpeedScan = {
   retryable?: boolean;
   /** 計測を試みた回数。再試行の上限判定に使う */
   attempts?: number;
+  /**
+   * 専用の計測（lib/speed-job.ts）が分析と並行して測っている最中か。
+   * true の間は、分析の工程側では測らずに結果を待つ
+   */
+  measuring?: boolean;
+  /** 専用の計測が最後に動き出した時刻。止まっていないかの判定に使う */
+  startedAt?: string;
+  /** 実ユーザーの計測値（CrUX）だけを、PSIとは別の取得口から補って出しているか */
+  cruxOnly?: boolean;
 };
 
 /** 時間切れなどで測れなかったときに、後の工程で測り直してよいか（最大3回まで） */
 export function speedNeedsRetry(s: SpeedScan | null): boolean {
-  return !!s && s.score === null && s.retryable === true && (s.attempts ?? 1) < 3;
+  return !!s && !s.measuring && s.score === null && s.retryable === true && (s.attempts ?? 1) < 3;
+}
+
+/**
+ * 専用の計測が今も動いているとみなせるか。1回の計測は最長でも5分弱で終わるので、
+ * 最後に動き出してから6分以上たっていれば止まった（起動に失敗した等）とみなす
+ */
+export function speedMeasuringActive(s: SpeedScan | null): boolean {
+  if (!s?.measuring) return false;
+  const t = s.startedAt ? Date.parse(s.startedAt) : NaN;
+  return Number.isFinite(t) && Date.now() - t < 6 * 60_000;
+}
+
+/** 専用の計測を始めた印。分析の行に先に書いておく */
+export function speedPlaceholder(): SpeedScan {
+  return {
+    ...empty("表示速度を測定しています。", true),
+    measuring: true,
+    startedAt: new Date().toISOString(),
+    attempts: 0,
+  };
 }
 
 const FIELD_LABEL: Record<string, { label: string; note: string }> = {
@@ -253,6 +282,98 @@ async function callPsi(url: string, key: string | undefined, fetchMs: number = F
   return { ok: true, j };
 }
 
+/**
+ * PSI を時間差で2本走らせ、先に成功した方を使う。
+ * 重いページの計測は Google 側で詰まって返ってこない回があり（2026-10-05、3回続けて
+ * 時間切れになった）、1本ずつ順に待つと待ち時間を使い切ってしまう。
+ * 2本目は40秒遅らせて出す（すぐ返る回は1本で済ませ、呼び出し回数を増やしすぎない）
+ */
+async function callPsiHedged(url: string, key: string | undefined, budgetMs: number): Promise<PsiCallResult> {
+  const HEDGE_AFTER_MS = 40_000;
+  if (budgetMs < HEDGE_AFTER_MS + 30_000) return callPsi(url, key, budgetMs);
+  return await new Promise<PsiCallResult>((resolve) => {
+    let finished = false;
+    let pending = 1;
+    let lastFailure: PsiCallResult | null = null;
+    const settle = (r: PsiCallResult) => {
+      if (finished) return;
+      pending -= 1;
+      // 成功、または待っても直らない失敗（キー・上限）なら、もう1本を待たずに返す
+      if (r.ok || !r.retryable) {
+        finished = true;
+        clearTimeout(timer);
+        return resolve(r);
+      }
+      lastFailure = r;
+      if (pending === 0 && !hedgePending) {
+        finished = true;
+        resolve(lastFailure);
+      }
+    };
+    let hedgePending = true;
+    void callPsi(url, key, budgetMs).then(settle);
+    const timer = setTimeout(() => {
+      hedgePending = false;
+      if (finished) return;
+      pending += 1;
+      void callPsi(url, key, budgetMs - HEDGE_AFTER_MS).then(settle);
+    }, HEDGE_AFTER_MS);
+    // 1本目が40秒より前に一時的な失敗で返った場合も、2本目は予定どおり出す（上の pending 判定で待つ）
+  });
+}
+
+const CRUX_METRICS: Record<string, { id: string; good: number; poor: number; cls?: boolean }> = {
+  largest_contentful_paint: { id: "LARGEST_CONTENTFUL_PAINT_MS", good: 2500, poor: 4000 },
+  interaction_to_next_paint: { id: "INTERACTION_TO_NEXT_PAINT", good: 200, poor: 500 },
+  cumulative_layout_shift: { id: "CUMULATIVE_LAYOUT_SHIFT_SCORE", good: 0.1, poor: 0.25, cls: true },
+  first_contentful_paint: { id: "FIRST_CONTENTFUL_PAINT_MS", good: 1800, poor: 3000 },
+};
+
+/**
+ * 実ユーザーの計測値（CrUX）を Chrome UX Report API から取る。PSI の実ユーザー値と同じデータ。
+ * そのページの値が無ければサイト全体（オリジン）の値を使う。取れなければ空配列
+ * （APIキーで Chrome UX Report API が許可されていない場合も空になる）
+ */
+export async function fetchCrux(url: string, key: string | undefined): Promise<SpeedMetric[]> {
+  if (!key) return [];
+  const query = async (body: Record<string, string>) => {
+    try {
+      const res = await fetch(`https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${encodeURIComponent(key)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...body, formFactor: "PHONE" }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as { record?: { metrics?: Record<string, { percentiles?: { p75?: number | string } }> } };
+    } catch {
+      return null;
+    }
+  };
+  let origin = "";
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return [];
+  }
+  const j = (await query({ url })) ?? (await query({ origin }));
+  const out: SpeedMetric[] = [];
+  for (const [name, m] of Object.entries(j?.record?.metrics ?? {})) {
+    const def = CRUX_METRICS[name];
+    const p75 = Number(m.percentiles?.p75);
+    if (!def || !Number.isFinite(p75)) continue;
+    const label = FIELD_LABEL[def.id];
+    out.push({
+      id: def.id,
+      label: label.label,
+      value: def.cls ? p75.toFixed(2) : ms(p75),
+      rating: p75 <= def.good ? "良好" : p75 <= def.poor ? "改善が必要" : "不良",
+      note: label.note,
+    });
+  }
+  return out;
+}
+
 async function run(url: string | null, waitMs: number = OUTER_MS): Promise<SpeedScan> {
   if (!url) return empty("URLがないため測定できません");
 
@@ -268,15 +389,31 @@ async function run(url: string | null, waitMs: number = OUTER_MS): Promise<Speed
   // 呼び出しごとに「残り時間」から待ち時間を決め、重いページでも1回目に使える時間を最大にする
   const startedAt = Date.now();
   const left = () => Math.max(5_000, waitMs - (Date.now() - startedAt) - 3_000);
-  let result = await callPsi(url, key, Math.min(FETCH_MS * 2, left()));
+  let result = await callPsiHedged(url, key, left());
   let attempt = 1;
   const RETRY_DELAYS_MS = [4_000, 8_000];
   while (!result.ok && result.retryable && attempt <= RETRY_DELAYS_MS.length && left() > 25_000) {
     await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
-    result = await callPsi(url, key, Math.min(FETCH_MS * 2, left()));
+    result = await callPsiHedged(url, key, left());
     attempt += 1;
   }
-  if (!result.ok) return empty(result.message, result.retryable);
+  if (!result.ok) {
+    // その場の計測（Lighthouse）が取れなくても、実ユーザーの計測値（CrUX）は別の取得口から
+    // すぐ取れることが多い。取れたぶんだけでも出す（再試行の対象のまま残す）
+    const crux = await fetchCrux(url, key);
+    if (crux.length > 0) {
+      return {
+        ...empty(
+          "その場での計測（PageSpeed Insights）は時間内に終わらなかったため、実ユーザーの計測値（CrUX）だけを表示しています。",
+          result.retryable
+        ),
+        field: crux,
+        testedUrl: url,
+        cruxOnly: true,
+      };
+    }
+    return empty(result.message, result.retryable);
+  }
   const j = result.j;
 
   const field: SpeedMetric[] = [];

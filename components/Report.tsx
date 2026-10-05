@@ -1628,9 +1628,11 @@ export function Report({
                     <div className="note">
                       <i className="i">i</i>
                       <span>
-                        {speed!.field.length > 0
-                          ? "上の数字は実際にこのサイトを見た人の計測値（Chrome ユーザーエクスペリエンスレポート）です。"
-                          : speed!.reason}
+                        {speed!.cruxOnly
+                          ? speed!.reason
+                          : speed!.field.length > 0
+                            ? "上の数字は実際にこのサイトを見た人の計測値（Chrome ユーザーエクスペリエンスレポート）です。"
+                            : speed!.reason}
                         {speed!.testedUrl && <> 測定URL：{speed!.testedUrl.replace(/^https?:\/\//, "")}</>}
                       </span>
                     </div>

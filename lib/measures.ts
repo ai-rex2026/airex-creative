@@ -63,6 +63,8 @@ export type Measure = {
   sources?: { id: string; chapter: string; anchor: string }[];
   /** 分析データタブで触れていない、AIが追加した施策か（1分析につき2件まで） */
   outside?: boolean;
+  /** すでに実施しているかを実データで確かめられない施策か。タイトルの冒頭に「（もし未実施であれば）」が付く */
+  unverified?: boolean;
 };
 
 export type MeasurePlan = { items: Measure[] };

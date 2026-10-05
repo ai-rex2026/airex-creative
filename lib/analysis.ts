@@ -12,7 +12,8 @@ import { buildLedger } from "./measure-sources";
 import { generateKeywords, generateLine, generateLpo, type KeywordPlan, type LinePlan, type LpoPlan } from "./deep";
 import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } from "./outreach";
 import { scanPrices, type PriceScan } from "./pricing";
-import { scanSpeed, speedNeedsRetry, type SpeedScan } from "./pagespeed";
+import { scanSpeed, speedMeasuringActive, speedNeedsRetry, speedPlaceholder, type SpeedScan } from "./pagespeed";
+import { kickSpeed } from "./speed-job";
 import { scanSocial, type SocialScan } from "./social";
 import { findSocialCompetitors, type SocialCompetitorPlatform, type SocialCompetitorScan } from "./social-competitors";
 import { generateSocialInsights, type SocialInsightPlan } from "./social-insights";
@@ -205,6 +206,14 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
     if (a.url && !a.site) {
       await save({ status: "running", step: "サイトの構成を調べています", progress: 8 });
       const site = await scanSite(a.url);
+      // 表示速度は、分析の工程とは別の専用の計測で、ここから並行して測り始める（lib/speed-job.ts）。
+      // 先に「測定中」の印を書いてから起動する（工程側が同時に測り始めないように）
+      if (a.mode !== "meo" && !a.speed) {
+        const saved = await save({ site, seo: estimateSeo(site), speed: speedPlaceholder(), step: "サイトを読んでいます", progress: 18 });
+        // 起動できなかったときは印を外し、従来どおり工程の中で測る
+        if (!(await kickSpeed(id))) return await save({ speed: null });
+        return saved;
+      }
       return await save({ site, seo: estimateSeo(site), step: "サイトを読んでいます", progress: 18 });
     }
     // サイトから辿れた公式SNSに、新規分析フォームで利用者が指定したSNSアカウント（social_manual。
@@ -686,7 +695,14 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
     // 呼び出し元の時間切れ判定に引っかかるまでDBへの問い合わせを空回りさせて
     // しまうため、残り時間ぶんだけ待ってから抜けることで、次のバースト
     // （triggerContinue による継続。満額の時間予算を持つ）に確実に回す）
-    if (a.url && (!a.speed || speedNeedsRetry(a.speed))) {
+    // 専用の計測がまだ動いている間は、自分では測らずに待つ。止まっていれば（起動に失敗した等）
+    // 従来どおりこの工程で測る
+    if (a.url && speedMeasuringActive(a.speed)) {
+      if (a.step !== "表示速度を測定しています") await save({ step: "表示速度を測定しています", progress: 94 });
+      await new Promise((r) => setTimeout(r, Math.max(0, Math.min(20_000, deadline - Date.now() - 5_000))));
+      return a;
+    }
+    if (a.url && (!a.speed || speedNeedsRetry(a.speed) || a.speed.measuring)) {
       const SAVE_MARGIN_MS = 15_000; // save() や後処理に残しておく分
       const MIN_ATTEMPT_MS = 45_000; // これより短いとPSIを試す意味が薄い
       const remaining = deadline - Date.now();
@@ -695,6 +711,10 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
         return a;
       }
       const speed = await scanSpeed(a.url, remaining - SAVE_MARGIN_MS, a.speed?.attempts ?? 0);
+      // 専用の計測が同時に測り終えていたら、そちらを残す（測れた結果を失敗で上書きしない）
+      const { data: cur } = await sb.from("analyses").select("speed").eq("id", id).maybeSingle();
+      const done = (cur?.speed ?? null) as SpeedScan | null;
+      if (typeof done?.score === "number" && typeof speed.score !== "number") return await save({ step: "要約をまとめています", progress: 95 });
       return await save({ speed, step: "要約をまとめています", progress: 95 });
     }
     // サマリータブ（カテゴリ別評価＋優先度の高い施策）。2026-10-04新設。
