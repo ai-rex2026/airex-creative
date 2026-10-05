@@ -24,6 +24,8 @@ export type CompetitorScan = {
   searchedAt: string;
   /** 一覧の競合ページを自社と同じ項目で読み比べた結果（lib/competitor-analysis.ts）。古い分析・読めなかった場合は無い */
   analysis?: CompetitorAnalysis | null;
+  /** 比較を作れなかったときの理由（画面に出す。無言で消えないようにする） */
+  analysisError?: string;
 };
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5";

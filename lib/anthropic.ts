@@ -176,10 +176,14 @@ export async function askJson<T>(system: string, user: string, opts: AskOpts = {
     try {
       return conformToExample<T>(parse(retry.text), system, user);
     } catch {
-      throw new Error(
-        truncated
-          ? "AIの応答が長すぎて途中で切れました"
-          : "AIの応答をJSONとして読めませんでした"
+      throw Object.assign(
+        new Error(
+          truncated
+            ? "AIの応答が長すぎて途中で切れました"
+            : "AIの応答をJSONとして読めませんでした"
+        ),
+        // 原因調査用。画面には出さず、呼び出し側が必要なら保存する
+        { raw: `${retry.text.slice(0, 200)} … ${retry.text.slice(-200)}`, stop: retry.stop }
       );
     }
   }

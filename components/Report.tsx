@@ -1094,6 +1094,28 @@ export function Report({
                   </>
                 );
               })()}
+              {!(competitors.analysis && competitors.analysis.rows.some((r) => r.total > 0)) && (
+                <div className="note measure" style={{ marginTop: 12 }}>
+                  <i className="i">!</i>
+                  <span>
+                    <b style={{ fontWeight: 600 }}>自社との比較は作れていません。</b>
+                    {competitors.analysis ? (
+                      <>
+                        {" "}競合ページの中身を読み取れなかったためです
+                        {competitors.analysis.profiles.length > 0 && (
+                          <>（{competitors.analysis.profiles.map((u) => `${u.name}：${u.reason ?? "読めました"}`).join("、")}）</>
+                        )}
+                        {competitors.analysis.own && !competitors.analysis.own.readable && <>。自社ページも読めませんでした（{competitors.analysis.own.reason}）</>}
+                        。
+                      </>
+                    ) : competitors.analysisError ? (
+                      <> 比較の処理が失敗しました（{competitors.analysisError}）。ページ上部の「追加する」からやり直せます。</>
+                    ) : (
+                      <> このレポートは比較機能が入る前、または比較が実行される前に作られたものです。ページ上部の「追加する」から、再分析なしで追加できます。</>
+                    )}
+                  </span>
+                </div>
+              )}
               <div className="note measure">
                 <i className="i">i</i>
                 <span>
@@ -1864,7 +1886,7 @@ export function Report({
           {snsPlan?.error && snsChannels.length === 0 && (
             <div className="note" style={{ marginTop: 16 }}>
               <i className="i">i</i>
-              <span>SNSの運用プランを作れませんでした（{snsPlan.error}）</span>
+              <span>SNSの運用プランを作れませんでした（{snsPlan.error}）。ページ上部の「追加する」から、作り直せます。</span>
             </div>
           )}
 

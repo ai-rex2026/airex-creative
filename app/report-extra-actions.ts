@@ -64,7 +64,7 @@ export async function missingSections(id: string): Promise<string[]> {
   );
   if (row.status !== "done" || !row.diagnosis) return [];
   const out: string[] = [];
-  if (!row.sns_plan) out.push("SNSオーガニック運用・SNSキャンペーン企画");
+  if (!row.sns_plan || (row.sns_plan as SnsPlan).error) out.push("SNSオーガニック運用・SNSキャンペーン企画");
   const o = row.outreach as OutreachPlan | null;
   if (o && !o.negatives) out.push("ネガティブ対策");
   const k = row.keywords as KeywordPlan | null;
@@ -95,7 +95,7 @@ export async function addMissingSections(id: string) {
     const admin = createAdminClient();
     const patch: Record<string, unknown> = {};
     const tasks: Promise<void>[] = [];
-    if (!row.sns_plan) {
+    if (!row.sns_plan || (row.sns_plan as SnsPlan).error) {
       tasks.push(
         generateSnsPlan(d, (row.social as SocialScan | null) ?? null)
           .then((p) => {
@@ -151,9 +151,14 @@ export async function addMissingSections(id: string) {
       tasks.push(
         analyzeCompetitors(d, (row.url as string | null) ?? null, comp.items)
           .then((analysis) => {
-            if (analysis) patch.competitors = { ...comp, analysis };
+            if (analysis) patch.competitors = { ...comp, analysis, analysisError: undefined };
           })
-          .catch(() => undefined)
+          .catch((e) => {
+            patch.competitors = {
+              ...comp,
+              analysisError: e instanceof Error ? e.message.slice(0, 120) : "比較に失敗しました",
+            };
+          })
       );
     }
     const stale = staleFacebook(row, d);

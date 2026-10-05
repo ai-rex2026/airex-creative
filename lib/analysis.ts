@@ -400,8 +400,9 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       if (comp.items.length > 0) {
         try {
           comp.analysis = await analyzeCompetitors(a.diagnosis, a.url, comp.items);
-        } catch {
+        } catch (e) {
           comp.analysis = null;
+          comp.analysisError = e instanceof Error ? e.message.slice(0, 120) : "比較に失敗しました";
         }
       }
       return await save({ competitors: comp, step: "広告手法を選んでいます", progress: 50 });

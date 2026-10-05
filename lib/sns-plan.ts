@@ -49,6 +49,8 @@ export type SnsPlan = {
   b2cAware?: boolean;
   /** 生成に失敗したときの理由 */
   error?: string;
+  /** 失敗時のAI応答の抜粋（原因調査用。画面には出さない） */
+  errorDetail?: string;
 };
 
 export const SNS_PLATFORMS = ["Instagram", "TikTok", "X", "YouTube", "Facebook"] as const;
@@ -64,13 +66,24 @@ export function snsPlatformsIn(text: string): string[] {
   return out;
 }
 
+type RawChannel = Omit<SnsChannelPlan, "flags">;
+type RawCampaign = Omit<SnsCampaign, "flags">;
+
+/** 運用プランは「媒体ごとの計画」と「キャンペーン企画」を1回のAI呼び出しで書かせると出力が長くなり、
+ *  JSONが壊れたときに両方とも失うため、独立した2回に分けて、成功した方は必ず残す */
 export async function generateSnsPlan(d: Diagnosis, social: SocialScan | null): Promise<SnsPlan> {
   const sns = socialFacts(social);
-  const res = await askJson<{
-    channels: Omit<SnsChannelPlan, "flags">[];
-    campaign: Omit<SnsCampaign, "flags"> | null;
-  }>(
-    `あなたはSNS運用の実務者です。広告費をかけずに育てるSNSの運用プランと、SNSキャンペーンの企画を作ります。
+  const context = `商材: ${d.product}
+ターゲット: ${d.audience}
+業種: ${d.industry}
+強み: ${d.strengths.join(" / ")}
+買わない理由: ${d.objections.join(" / ")}
+訴求軸: ${d.angles.map((a) => a.name).join(" / ")}
+${sns ? `\n【運用中の公式SNS】※実測\n${sns}` : "\n【運用中の公式SNS】サイトから辿れるアカウントは見つかっていません"}`;
+  const jsonRule = "JSONの文字列の中でダブルクォート（\"）は使わない。強調したい語は「」で囲む。改行を文字列に入れない。";
+
+  const channelsCall = askJson<{ channels: RawChannel[] }>(
+    `あなたはSNS運用の実務者です。広告費をかけずに育てるSNSの運用プランを作ります。
 
 channels は Instagram / TikTok / X / YouTube / Facebook のうち、**この商材とターゲットに効く媒体だけ**を2〜5件。
 効かない媒体は入れない（ターゲットの年齢層・検討期間・商材の見せ方で判断する）。
@@ -84,7 +97,7 @@ Instagram・X・TikTok・YouTube のうち、この商材に効く媒体の育�
 `
     : ""
 }
-守ること（channels）:
+守ること:
 - status は、下の【運用中の公式SNS】に実測がある媒体は「運用中」、無い媒体は「新規」
 - 運用中の媒体は新規開設の話を書かず、今のフォロワー数・投稿数を動かす前提で書く
 - goals は2〜3件。数えられる形で書く（例：「保存数を投稿あたり30件にする」）。根拠のない大きな数字を置かない
@@ -94,50 +107,59 @@ Instagram・X・TikTok・YouTube のうち、この商材に効く媒体の育�
 - hashtags は運用の考え方と、実際に付けるタグの例（5〜10個）を1段落で。X はハッシュタグの付けすぎを避ける前提で書く
 - engagement は3〜4件。コメント返信・保存を促す締め方・ストーリーズの質問箱など、その媒体の機能名で書く
 - kpi は1つ。数えられるもの
+- 「必ず」「No.1」「最高」など根拠の要る断定・最上級は使わない。効果を断定しない
+- 医療・美容など規制のある業種では、ビフォーアフター写真や体験談の扱いに触れる
+- ${jsonRule}`,
+    `${context}
 
-守ること（campaign）:
-- この商材で**実施できる**SNSキャンペーンを1件。実施できないなら null
+出力:
+{"channels":[{"platform":"Instagram","status":"新規","goals":[""],"themes":[""],"frequency":"","hashtags":"","engagement":[""],"kpi":""}]}`,
+    { maxTokens: 4500, timeoutMs: 110_000 }
+  );
+
+  const campaignCall = askJson<{ campaign: RawCampaign | null }>(
+    `あなたはSNS運用の実務者です。この商材で実施できるSNSキャンペーンの企画を作ります。
+
+守ること:
+- この商材で**実施できる**SNSキャンペーンを1件。実施できないなら campaign を null にする
 - concept は企画の狙いと中身を3〜4文で。mechanics は参加の仕組みを3〜4手順で（フォロー＆投稿、UGC募集など）
-- platforms は channels で選んだ媒体から。period は「2週間」など
+- platforms は Instagram / TikTok / X / YouTube のうち、この商材に効く媒体から。period は「2週間」など
 - imagePrompt は**英語**で、キャンペーンのキービジュアルを作るための画像生成AIへの指示。
   **画像の中に文字・ロゴ・数字を入れさせない**（日本語の文字は画像生成で崩れるため。文字は後から載せる）。
   被写体・構図・光・色味・雰囲気を具体的に書く
 - cautions は2〜3件。景品表示法（懸賞の景品上限）、各SNSのキャンペーン規約、業種の広告規制など、実施前に確認すること
-
-共通:
 - 「必ず」「No.1」「最高」など根拠の要る断定・最上級は使わない。効果を断定しない
-- 医療・美容など規制のある業種では、ビフォーアフター写真や体験談の扱いに触れる`,
-    `商材: ${d.product}
-ターゲット: ${d.audience}
-業種: ${d.industry}
-強み: ${d.strengths.join(" / ")}
-買わない理由: ${d.objections.join(" / ")}
-訴求軸: ${d.angles.map((a) => a.name).join(" / ")}
-${sns ? `\n【運用中の公式SNS】※実測\n${sns}` : "\n【運用中の公式SNS】サイトから辿れるアカウントは見つかっていません"}
+- 医療・美容など規制のある業種では、ビフォーアフター写真や体験談の扱いに触れる
+- ${jsonRule}`,
+    `${context}
 
 出力:
-{"channels":[{"platform":"Instagram","status":"新規","goals":[""],"themes":[""],"frequency":"","hashtags":"","engagement":[""],"kpi":""}],
- "campaign":{"title":"","concept":"","mechanics":[""],"platforms":[""],"period":"","imagePrompt":"","cautions":[""]}}`,
-    { maxTokens: 5000, timeoutMs: 120_000 }
+{"campaign":{"title":"","concept":"","mechanics":[""],"platforms":[""],"period":"","imagePrompt":"","cautions":[""]}}`,
+    { maxTokens: 2500, timeoutMs: 90_000 }
   );
 
-  const channels: SnsChannelPlan[] = (res.channels ?? [])
-    .filter((c) => c && c.platform)
-    .slice(0, 5)
-    .map((c) => ({
-      platform: c.platform,
-      status: c.status === "運用中" ? "運用中" : "新規",
-      goals: c.goals ?? [],
-      themes: c.themes ?? [],
-      frequency: c.frequency ?? "",
-      hashtags: c.hashtags ?? "",
-      engagement: c.engagement ?? [],
-      kpi: c.kpi ?? "",
-      // 投稿ネタ・ハッシュタグはそのまま外に出る文面なので、生成と同時に辞書で見る
-      flags: checkGuardDict([...(c.themes ?? []), c.hashtags ?? "", ...(c.goals ?? [])], d.industry),
-    }));
+  const [chRes, cpRes] = await Promise.allSettled([channelsCall, campaignCall]);
 
-  const c = res.campaign;
+  const channels: SnsChannelPlan[] =
+    chRes.status === "fulfilled"
+      ? (chRes.value.channels ?? [])
+          .filter((c) => c && c.platform)
+          .slice(0, 5)
+          .map((c) => ({
+            platform: c.platform,
+            status: c.status === "運用中" ? "運用中" : "新規",
+            goals: c.goals ?? [],
+            themes: c.themes ?? [],
+            frequency: c.frequency ?? "",
+            hashtags: c.hashtags ?? "",
+            engagement: c.engagement ?? [],
+            kpi: c.kpi ?? "",
+            // 投稿ネタ・ハッシュタグはそのまま外に出る文面なので、生成と同時に辞書で見る
+            flags: checkGuardDict([...(c.themes ?? []), c.hashtags ?? "", ...(c.goals ?? [])], d.industry),
+          }))
+      : [];
+
+  const c = cpRes.status === "fulfilled" ? cpRes.value.campaign : null;
   const campaign: SnsCampaign | null =
     c && c.title && c.concept
       ? {
@@ -152,5 +174,15 @@ ${sns ? `\n【運用中の公式SNS】※実測\n${sns}` : "\n【運用中の公
         }
       : null;
 
+  // 媒体ごとの計画が作れなかったときだけ失敗として返す（キャンペーンだけ作れた場合も残す）
+  if (channels.length === 0 && chRes.status === "rejected") {
+    const e = chRes.reason as (Error & { raw?: string }) | undefined;
+    return {
+      channels: [],
+      campaign,
+      error: e instanceof Error ? e.message : "生成に失敗しました",
+      errorDetail: e?.raw,
+    };
+  }
   return { channels, campaign, b2cAware: true };
 }
