@@ -1,4 +1,4 @@
-import { askJsonWithImages } from "./anthropic";
+import { askJsonWithImages, hasAnthropic } from "./anthropic";
 
 /**
  * バナーに使える写真かどうかを見る。
@@ -143,20 +143,65 @@ note は、その画像がバナーに向くか向かないかを15文字以内�
 1文字もかかっていないと確信できる範囲だけを返すこと（少しでもかかる可能性が
 あるなら小さく見積もるか null にする）。`;
 
-type RawItem = {
-  index: number;
-  hasText: boolean;
-  hasFace: boolean;
-  safeCrop: SafeCrop | null;
-  facePosition: SafeCrop | null;
-  note: string;
-};
-
 /** 同じ理由をまとめて「HTTP 403 ×5」のように数える */
 function tally(reasons: string[]): string {
   const m = new Map<string, number>();
   for (const r of reasons) m.set(r, (m.get(r) ?? 0) + 1);
   return [...m.entries()].map(([r, n]) => (n > 1 ? `${r} ×${n}` : r)).join("、");
+}
+
+/**
+ * AIの返答を画像に対応付ける。軽いモデルは外枠や番号の付け方が揺れるので、
+ * よくある揺れ（配列だけで返す・別の名前で包む・番号を文字列や1始まりで返す・番号を省く）を吸収する。
+ * 対応付けられなかった画像は含めない（呼び出し側が再判定する）
+ */
+export function toItems(raw: unknown, batch: { url: string }[]): ImageCheck[] {
+  let list: unknown = raw;
+  if (list && typeof list === "object" && !Array.isArray(list)) {
+    const o = list as Record<string, unknown>;
+    list = Array.isArray(o.items) ? o.items : Object.values(o).find((v) => Array.isArray(v));
+  }
+  if (!Array.isArray(list)) return [];
+  const rows = list.filter((x): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x));
+  const num = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" && /^\d+$/.test(v.trim()) ? Number(v) : NaN);
+  const idx = rows.map((x) => num(x.index));
+  const allHave = idx.every((n) => Number.isInteger(n));
+  // 「画像 1」〜「画像 n」のように1始まりで振られた場合（0 が無く n がある）
+  const oneBased = allHave && idx.length > 0 && !idx.includes(0) && idx.includes(batch.length);
+  const bool = (v: unknown) => v === true || v === "true";
+  const out: ImageCheck[] = [];
+  const seen = new Set<string>();
+  rows.forEach((it, pos) => {
+    // 番号が付いていない返答は、件数が画像の枚数と一致するときだけ並び順で対応付ける
+    const i = allHave ? idx[pos] - (oneBased ? 1 : 0) : rows.length === batch.length ? pos : -1;
+    const src = batch[i];
+    if (!src || seen.has(src.url)) return;
+    seen.add(src.url);
+    const hasText = bool(it.hasText);
+    const hasFace = bool(it.hasFace);
+    const c = it.safeCrop as SafeCrop | null | undefined;
+    // 壊れた座標（幅/高さが40%未満、範囲外、順序逆転）は使わない。判定ミスで
+    // 文字入りのまま切り出されるより、除外側に倒すほうが安全
+    const validCrop =
+      !!c &&
+      c.x0 >= 0 && c.y0 >= 0 && c.x1 <= 100 && c.y1 <= 100 &&
+      c.x1 - c.x0 >= 40 && c.y1 - c.y0 >= 40;
+    const fp = it.facePosition as SafeCrop | null | undefined;
+    // facePosition は「テキストを重ねてよい場所」を避けるためだけに使う。
+    // safeCrop ほど厳密な最小サイズは要らないが、座標として壊れているものは捨てる
+    // （はみ出した座標をそのまま使うと、避けたはずの位置に文字を置いてしまう）
+    const validFace =
+      !!fp && fp.x0 >= 0 && fp.y0 >= 0 && fp.x1 <= 100 && fp.y1 <= 100 && fp.x1 > fp.x0 && fp.y1 > fp.y0;
+    out.push({
+      url: src.url,
+      hasText,
+      hasFace,
+      safeCrop: hasText && validCrop ? c! : null,
+      facePosition: hasFace && validFace ? fp! : null,
+      note: typeof it.note === "string" ? it.note : "",
+    });
+  });
+  return out;
 }
 
 export async function checkImages(urls: string[]): Promise<ImageScan> {
@@ -185,61 +230,75 @@ export async function checkImages(urls: string[]): Promise<ImageScan> {
   }
   if (cur.length > 0) batches.push(cur);
 
-  const results = await Promise.allSettled(
-    batches.map((batch) =>
-      askJsonWithImages<{ items: RawItem[] }>(
-        SYSTEM,
-        `画像は ${batch.length} 枚です。index は 0 から始まる画像の番号です。
+  const prompt = (n: number) => `画像は ${n} 枚です。index は 0 から始まる画像の番号です。
 
 出力: {"items":[{"index":0,"hasText":false,"hasFace":false,"safeCrop":null,"facePosition":null,"note":""}]}
 safeCrop の例（文字が上部1/3にある場合）: {"x0":0,"y0":34,"x1":100,"y1":100}
-facePosition の例（顔が画面中央やや上にある場合）: {"x0":30,"y0":10,"x1":70,"y1":45}`,
-        batch.map((x) => x.im),
-        // 1枚ごとの判定が出力に占める量に合わせて上限を決める。項目数が多いと出力が
-        // 途中で切れてJSONとして読めなくなることがあった
-        { maxTokens: 900 + batch.length * 650 }
-      )
-    )
-  );
+facePosition の例（顔が画面中央やや上にある場合）: {"x0":30,"y0":10,"x1":70,"y1":45}`;
+
+  type Batch = (typeof usable)[number][];
+  const ask = (batch: Batch, forceAnthropic: boolean) =>
+    askJsonWithImages<unknown>(
+      SYSTEM,
+      prompt(batch.length),
+      batch.map((x) => x.im),
+      // 1枚ごとの判定が出力に占める量に合わせて上限を決める。項目数が多いと出力が
+      // 途中で切れてJSONとして読めなくなることがあった
+      { maxTokens: 900 + batch.length * 650, forceAnthropic }
+    );
+
+  /**
+   * 1つの塊を判定する。返ってきた判定が1件も画像に対応付けられなかったとき
+   * （出力の形が想定と違う等）は、エラー無しの「判定0件」として黙って保存しない。
+   * 2026-10-02〜10-05 はこの経路で全レポートの判定が0件になり、文字入りの写真が
+   * 上から順に候補に並んでいた。対応付けられなかった画像だけを Claude でもう一度見る
+   */
+  const judge = async (batch: Batch): Promise<{ items: ImageCheck[]; note: string | null }> => {
+    let firstErr: unknown = null;
+    const raw = await ask(batch, false).catch((e) => {
+      firstErr = e;
+      return null;
+    });
+    const first = raw === null ? [] : toItems(raw, batch);
+    const missing = batch.filter((b) => !first.some((x) => x.url === b.url));
+    if (missing.length === 0) return { items: first, note: null };
+    if (!hasAnthropic()) {
+      if (firstErr) throw firstErr;
+      return { items: first, note: `${batch.length}枚中${missing.length}枚の判定結果を読み取れませんでした` };
+    }
+    try {
+      const second = toItems(await ask(missing, true), missing);
+      const left = missing.length - second.length;
+      return {
+        items: [...first, ...second],
+        note: left > 0 ? `${batch.length}枚中${left}枚の判定結果を読み取れませんでした` : null,
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return {
+        items: first,
+        note: `${batch.length}枚中${missing.length}枚の判定結果を読み取れませんでした（再判定も失敗：${msg.replace(/\s+/g, " ").slice(0, 80)}）`,
+      };
+    }
+  };
+
+  const results = await Promise.allSettled(batches.map((batch) => judge(batch)));
 
   const items: ImageCheck[] = [];
   const aiFailures: string[] = [];
-  results.forEach((r, bi) => {
+  results.forEach((r) => {
     if (r.status === "rejected") {
       const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
       aiFailures.push(msg.replace(/\s+/g, " ").slice(0, 120));
       return;
     }
-    for (const it of r.value.items ?? []) {
-      const src = batches[bi][it.index];
-      if (!src) continue;
-      const c = it.safeCrop;
-      // 壊れた座標（幅/高さが40%未満、範囲外、順序逆転）は使わない。判定ミスで
-      // 文字入りのまま切り出されるより、除外側に倒すほうが安全
-      const validCrop =
-        !!c &&
-        c.x0 >= 0 && c.y0 >= 0 && c.x1 <= 100 && c.y1 <= 100 &&
-        c.x1 - c.x0 >= 40 && c.y1 - c.y0 >= 40;
-      const fp = it.facePosition;
-      // facePosition は「テキストを重ねてよい場所」を避けるためだけに使う。
-      // safeCrop ほど厳密な最小サイズは要らないが、座標として壊れているものは捨てる
-      // （はみ出した座標をそのまま使うと、避けたはずの位置に文字を置いてしまう）
-      const validFace =
-        !!fp && fp.x0 >= 0 && fp.y0 >= 0 && fp.x1 <= 100 && fp.y1 <= 100 && fp.x1 > fp.x0 && fp.y1 > fp.y0;
-      items.push({
-        url: src.url,
-        hasText: !!it.hasText,
-        hasFace: !!it.hasFace,
-        safeCrop: it.hasText && validCrop ? c : null,
-        facePosition: it.hasFace && validFace ? fp : null,
-        note: it.note ?? "",
-      });
-    }
+    items.push(...r.value.items);
+    if (r.value.note) aiFailures.push(r.value.note);
   });
 
   const notes = [
     fetchNote,
-    aiFailures.length > 0 ? `AIによる判定が${batches.length}回中${aiFailures.length}回失敗しました（${[...new Set(aiFailures)].join(" / ")}）` : null,
+    aiFailures.length > 0 ? `AIによる判定で一部うまくいきませんでした（${[...new Set(aiFailures)].join(" / ")}）` : null,
   ].filter((x): x is string => !!x);
   return { items, checkedAt: new Date().toISOString(), error: notes.length > 0 ? notes.join("。") : null, ...base };
 }

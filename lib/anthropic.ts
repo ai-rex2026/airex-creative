@@ -19,7 +19,18 @@ function client() {
 
 export type AiUsage = { model: string; input_tokens: number; output_tokens: number };
 
-export type AskOpts = { maxTokens?: number; model?: string; timeoutMs?: number; meter?: (u: AiUsage) => void };
+export type AskOpts = {
+  maxTokens?: number;
+  model?: string;
+  timeoutMs?: number;
+  meter?: (u: AiUsage) => void;
+  /**
+   * true のとき、レポートの設定（Gemini）に関係なく Claude で呼ぶ。
+   * Gemini の結果が使い物にならなかった処理の、その呼び出しだけを Claude でやり直すために使う。
+   * fallbackToAnthropic() と違い、同じ工程で並行して走っている他の生成には影響しない
+   */
+  forceAnthropic?: boolean;
+};
 
 function stripFence(raw: string) {
   return raw
@@ -208,7 +219,7 @@ export async function askJsonWithImages<T>(
   const retryTimeoutMs = Math.max(MIN_CALL_MS, TOTAL_BUDGET_MS_IMAGES - firstTimeoutMs);
 
   const call = async (maxTokens: number, extraSystem: string, timeoutMs: number) => {
-    if (currentProvider() === "gemini") {
+    if (!opts.forceAnthropic && currentProvider() === "gemini") {
       const g = await geminiOrFallback({
         system: system + "\n\n必ず JSON のみを出力すること。前置き・後置き・コードフェンスを付けない。" + extraSystem,
         parts: [
@@ -249,14 +260,20 @@ export async function askJsonWithImages<T>(
     return { text: stripFence(res.content.map((b) => (b.type === "text" ? b.text : "")).join("")), stop: res.stop_reason };
   };
 
+  // 2026-10-05: askJson と同じく、指示の「出力:」の外枠に合わせる。これが無かったため、
+  // Gemini（軽量モデル）が {"items":[...]} を [...] だけで返すと items が undefined になり、
+  // 画像の文字チェックが「エラー無し・判定0件」で保存され、文字入りの写真まで
+  // 候補に並ぶ状態になっていた（10/2 以降の Gemini で作ったレポートすべて）
   const parse = (cleaned: string): T => {
+    let v: unknown;
     try {
-      return JSON.parse(cleaned) as T;
+      v = JSON.parse(cleaned);
     } catch {
       const m = cleaned.match(/[[{][\s\S]*[\]}]/);
       if (!m) throw new Error("no-json");
-      return JSON.parse(m[0]) as T;
+      v = JSON.parse(m[0]);
     }
+    return conformToExample<T>(v, system, user);
   };
 
   const maxTokens = opts.maxTokens ?? 1500;

@@ -38,6 +38,7 @@ import { Banner, pickFacts } from "./Banner";
 import { ReportChat } from "./ReportChat";
 import { Measures } from "./Measures";
 import { Inputs } from "./Inputs";
+import { ContactCta } from "./ContactCta";
 import { hygiene } from "@/lib/measures";
 import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
@@ -652,6 +653,7 @@ export function Report({
           trackingMissing={!!site && !site.gtmId && (site.adTags?.length ?? 0) === 0}
         />
       )}
+      {tab === "summary" && kpi && <ContactCta label="施策の実装・自動化について相談する" />}
 
       {tab === "overview" && <Toc watch={tab} />}
 
@@ -1277,6 +1279,7 @@ export function Report({
               </span>
             </div>
           )}
+          <ContactCta label="広告運用・自動化について相談する" />
         </>
       )}
       {seo && site && (
@@ -1430,6 +1433,7 @@ export function Report({
                   </details>
                 ))}
               </div>
+              <ContactCta label="SEO運用・自動化について相談する" />
             </>
           )}
           {suggests && (
@@ -1544,6 +1548,7 @@ export function Report({
               </div>
             );
           })()}
+          <ContactCta label="MEO運用・自動化について相談する" />
         </>
       )}
           {(() => {
@@ -1644,6 +1649,7 @@ export function Report({
                         ))}
                       </div>
                     )}
+                    <ContactCta label="LPO運用・自動化について相談する" />
                   </>
                 )}
               </>
@@ -1746,6 +1752,7 @@ export function Report({
               {renderLine()}
             </div>
           )}
+          <ContactCta label="SNSアカウント運用・自動化について相談する" />
         </>
       )}
           {outreach && (
@@ -1801,6 +1808,7 @@ export function Report({
                   )}
                 </div>
               )}
+              {outreach.affiliate && <ContactCta label="アフィリエイト運用・自動化について相談する" />}
 
               {outreach.prThemes?.length > 0 && (
                 <div className="tactic measure" style={{ marginTop: 12 }}>
