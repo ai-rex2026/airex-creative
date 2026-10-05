@@ -46,6 +46,7 @@ export function Measures({
   onNavigate,
   trackingMissing = false,
   speedShown = true,
+  isGuest = false,
 }: {
   id: string;
   measures: Measure[];
@@ -59,6 +60,8 @@ export function Measures({
   trackingMissing?: boolean;
   /** 分析データタブに「表示速度（実測）」の欄があるか（表示速度の施策のリンク先に使う） */
   speedShown?: boolean;
+  /** 未登録（ゲスト）なら「施策を作り直す」は無料登録へ進める */
+  isGuest?: boolean;
 }) {
   // 計測タグ設置系の施策は設置済みか確認できないため出さない（古い分析に残っていても表示しない）
   // ただし分析データの「計測タグの導入状況」で未導入と確認できたタグを元にした施策は出す
@@ -261,9 +264,16 @@ export function Measures({
           <div className="sub">スコアが低いカテゴリ・分析不可のカテゴリに効くものを優先して並べています</div>
         </div>
         <span className="rule" />
-        <button className="redo" onClick={rebuild} disabled={busy}>
-          {busy ? <Spinner label="作り直しています" /> : "施策を作り直す"}
-        </button>
+        {isGuest ? (
+          // 未登録ユーザーは作り直せない（AIを呼ぶため）。押したら無料登録へ進める
+          <a className="redo" href="/login?mode=signup" title="施策の作り直しは無料の会員登録でご利用いただけます">
+            施策を作り直す
+          </a>
+        ) : (
+          <button className="redo" onClick={rebuild} disabled={busy}>
+            {busy ? <Spinner label="作り直しています" /> : "施策を作り直す"}
+          </button>
+        )}
       </div>
 
       {busy && (

@@ -625,6 +625,9 @@ export async function regenerateSummaryTab(id: string) {
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
 
+  // 未登録（ゲスト）は作り直せない（画面では登録画面へ進めているが、念のためサーバー側でも止める）
+  if (user.is_anonymous) throw new Error("施策の作り直しは無料の会員登録でご利用いただけます");
+
   const { data } = await sb.from("analyses").select("*").eq("id", id).eq("owner_id", user.id).single();
   if (!data) throw new Error("分析が見つかりません");
   const a = data as Analysis;

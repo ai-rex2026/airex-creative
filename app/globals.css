@@ -1025,6 +1025,8 @@ h2[id^="sec-"]{scroll-margin-top:64px}
   padding:7px 14px;font:inherit;font-size:12px;color:var(--muted);cursor:pointer}
 .sec-head .redo:hover:not(:disabled){border-color:var(--gold);color:var(--head)}
 .sec-head .redo:disabled{opacity:.7;cursor:default}
+/* 未登録ユーザー向けのリンク版（登録画面へ進む）も、ボタンと同じ見た目にする */
+a.redo{text-decoration:none;display:inline-flex;align-items:center}
 
 /* ── バナーに載せる写真の選択 ── */
 .photopick{margin-top:16px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:14px}

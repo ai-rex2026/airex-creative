@@ -670,6 +670,7 @@ export function Report({
           onNavigate={goToOverviewSection}
           trackingMissing={!!site && !site.gtmId && (site.adTags?.length ?? 0) === 0}
           speedShown={!!speed && (speed.score !== null || (speed.field?.length ?? 0) > 0)}
+          isGuest={isGuest}
         />
       )}
       {tab === "summary" && kpi && <ContactCta label="施策の実装・自動化について相談する" />}
