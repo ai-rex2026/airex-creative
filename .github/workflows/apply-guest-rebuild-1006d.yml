@@ -1,0 +1,43 @@
+name: apply-guest-rebuild-1006d
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-guest-rebuild-1006d.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Concatenate chunks, decode, gunzip and apply patch
+        run: |
+          cat .buildtmp/guest-rebuild-1006d/chunks/chunk-*.b64 | tr -d '\n' > /tmp/combined.b64
+          base64 -d /tmp/combined.b64 | gunzip > /tmp/combined.patch
+          echo "7b09a652e67435ae2fe58b7cb4461bf829198295e134b66a8c727a29689edff2  /tmp/combined.patch" | sha256sum -c -
+          git apply --check /tmp/combined.patch
+          git apply /tmp/combined.patch
+
+      - name: Commit applied changes
+        run: |
+          git config user.name "suzuki"
+          git config user.email "suzuki@ad-rex.com"
+          git add -A -- . ':!.buildtmp' ':!.github/workflows/apply-guest-rebuild-1006d.yml'
+          git commit \
+            -m "fix: 未登録ユーザーの「施策を作り直す」は無料登録画面へ（1006d）" \
+            -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
+
+      - name: Remove staging files and this workflow
+        run: |
+          git rm -r -q .buildtmp
+          git rm -q .github/workflows/apply-guest-rebuild-1006d.yml
+          git commit -m "chore: remove temporary push-apply workflow and staging files"
+
+      - name: Push to main
+        run: git push origin HEAD:main
