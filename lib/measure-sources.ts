@@ -38,6 +38,14 @@ export type SourceItem = {
   unverified?: boolean;
 };
 
+/**
+ * 実データ（実測・サイトの読み取り）を元にした章。ここにリンクする打ち手は「（もし未実施であれば）」を付けない。
+ * 計測タグ（未導入を確認）・MEO（Googleマップの実測）・LP改善（サイトを読んだ指摘）・表示速度（PageSpeedの実測）。
+ * 2026-10-06: 以前は「どの章の打ち手か」で付ける・付けないを決めていたため、対策キーワード章の表示速度の打ち手を
+ * 表示速度の欄にリンクし直したときに、未確認の印だけが残って注記が付いていた
+ */
+export const MEASURED_ANCHORS = new Set(["sec-tags", "sec-meo", "sec-lpo", "sec-speed"]);
+
 /** 表示速度の話か。分析データのどの章に書かれていても、リンク先は表示速度の欄にする */
 const SPEED_RE = /表示速度|ページ速度|読み込み(速度|時間)|Core Web Vitals|LCP|WebP|AVIF|次世代(フォーマット|形式)|画像の?(圧縮|軽量化|最適化)|遅延読み込み|lazy ?load|キャッシュ|JavaScript|CSS/i;
 
@@ -87,13 +95,15 @@ export function buildLedger(a: LedgerInput): SourceItem[] {
       seen.add(text);
       // 表示速度の話は、書かれている章に関係なく表示速度の欄へリンクする
       const speedTopic = anchor !== "sec-speed" && SPEED_RE.test(text);
+      const finalAnchor = speedTopic ? (speedShown ? "sec-speed" : "sec-lpo") : anchor;
       out.push({
         id: `s${out.length + 1}`,
         chapter: speedTopic ? (speedShown ? "表示速度（実測）" : "LP改善") : chapter,
-        anchor: speedTopic ? (speedShown ? "sec-speed" : "sec-lpo") : anchor,
+        anchor: finalAnchor,
         category: speedTopic ? "LP" : category,
         text,
-        ...(unverified ? { unverified: true } : {}),
+        // 実データの章にリンクする打ち手には付けない（リンク先と注記の有無を必ず一致させる）
+        ...(unverified && !MEASURED_ANCHORS.has(finalAnchor) ? { unverified: true } : {}),
       });
     }
   };

@@ -638,6 +638,7 @@ export function Report({
           social={social}
           pricing={pricing}
           onPricing={setPricing}
+          isGuest={isGuest}
         />
       )}
 
@@ -1105,6 +1106,9 @@ export function Report({
             <span className="rule" />
           </div>
 
+          {/* 2026-10-06: 未登録ユーザーには広告運用設計を丸ごと見せない（中の部分マスクは外側に任せる） */}
+          <GuestMask guest={isGuest} label="広告運用設計（キャンペーン構成・配信設定・広告文）は会員登録で確認できます">
+          <>
           {adOps.plan && adOps.plan.length > 0 ? (
             <AdStructureTable plan={adOps.plan} />
           ) : (
@@ -1165,7 +1169,7 @@ export function Report({
                     </div>
                     {g.purpose && <p className="purpose">{g.purpose}</p>}
 
-                    <GuestMask guest={isGuest} label="配信設定・キーワードの詳細は会員登録で確認できます">
+                    <GuestMask guest={false} label="配信設定・キーワードの詳細は会員登録で確認できます">
                       <>
                         {g.targeting && <p>{g.targeting}</p>}
 
@@ -1210,7 +1214,7 @@ export function Report({
                         {spec.long ? ` / ロング見出し案${longHeadlineCount}件` : ""} 作成済み
                       </p>
                     )}
-                    <GuestMask guest={isGuest} label="見出し案・説明文案の本文は会員登録で確認できます">
+                    <GuestMask guest={false} label="見出し案・説明文案の本文は会員登録で確認できます">
                       <>
                         {g.headlines?.length > 0 && (
                           <details className="flags">
@@ -1279,6 +1283,8 @@ export function Report({
               </span>
             </div>
           )}
+          </>
+          </GuestMask>
           <ContactCta label="広告運用・自動化について相談する" />
         </>
       )}
@@ -1701,13 +1707,15 @@ export function Report({
                     {b.si && (
                       <div style={{ marginTop: 10 }}>
                         <p className="eyebrow">SNS分析{hasRealData(findAcct(b.platform, b.info?.url)) && <span className="tag ok" style={{ marginLeft: 6 }}>🟢実データで分析</span>}</p>
-                        {renderSI(b.si)}
+                        <GuestMask guest={isGuest} label="SNS分析は会員登録で確認できます">{renderSI(b.si)}</GuestMask>
                       </div>
                     )}
                     {b.ch && (
                       <div style={{ marginTop: 10 }}>
                         <p className="eyebrow">SNS運用プラン{hasRealData(findAcct(b.platform, b.info?.url)) && <span className="tag ok" style={{ marginLeft: 6 }}>🟢実データで分析</span>}</p>
-                        <SnsChannelBlock c={b.ch} />
+                        <GuestMask guest={isGuest} label="SNS運用プランは会員登録で確認できます">
+                          <SnsChannelBlock c={b.ch} />
+                        </GuestMask>
                       </div>
                     )}
                   </div>
@@ -1737,7 +1745,9 @@ export function Report({
           {snsPlan?.campaign && (
             <div className="measure" style={{ marginTop: 16 }}>
               <p className="eyebrow">SNSキャンペーン案</p>
-              <SnsCampaignCard c={snsPlan.campaign} />
+              <GuestMask guest={isGuest} label="SNSキャンペーン案は会員登録で確認できます">
+                <SnsCampaignCard c={snsPlan.campaign} />
+              </GuestMask>
             </div>
           )}
 

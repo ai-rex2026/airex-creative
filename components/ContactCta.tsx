@@ -8,7 +8,8 @@ import { IconArrowRight } from "./Chrome";
 export function ContactCta({ label }: { label: string }) {
   return (
     <div className="no-print" style={{ display: "flex", justifyContent: "center", marginTop: 20 }}>
-      <Link className="btn" href="/contact">
+      {/* 会員登録の「無料で会員登録して続きを見る」（塗り）と見分けるため、白抜きにする */}
+      <Link className="btn ghost" href="/contact">
         {label}
         <span className="arw">
           <IconArrowRight size={13} />

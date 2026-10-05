@@ -92,6 +92,7 @@ export function Inputs({
   social,
   pricing,
   onPricing,
+  isGuest = false,
 }: {
   id: string;
   url: string | null;
@@ -105,6 +106,8 @@ export function Inputs({
   social: SocialScan | null;
   pricing: PriceScan | null;
   onPricing: (p: PriceScan) => void;
+  /** 未登録（ゲスト）なら、連携ボタンは無料登録へ進める */
+  isGuest?: boolean;
 }) {
   const [list, setList] = useState(extra ?? []);
   const [platform, setPlatform] = useState(PLATFORMS[0]);
@@ -200,7 +203,7 @@ export function Inputs({
             <b>Google 連携（Search Console / GA4）</b>
             <small>{hasGoogle ? "実測データをレポートに反映しています" : "連携すると、検索順位とアクセス数が推定ではなく実測になります"}</small>
           </div>
-          {hasGoogle ? <span className="tag ok">連携済み</span> : <a className="tag" href="/settings">連携する</a>}
+          {hasGoogle ? <span className="tag ok">連携済み</span> : <a className="tag" href={isGuest ? "/login?mode=signup" : "/settings"}>連携する</a>}
         </div>
       </div>
 

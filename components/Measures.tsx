@@ -4,7 +4,18 @@ import { useState, useTransition } from "react";
 import { makeRunbook, regenerateSummaryTab, toggleMeasure } from "@/app/actions";
 import type { Measure } from "@/lib/measures";
 import type { CategoryEvaluation } from "@/lib/summary-tab";
-import { categoryForMeasure, fromConfirmedTags, isUnverifiableTagMeasure, sortMeasuresByPriority } from "@/lib/summary-tab";
+import { categoryForMeasure, fromConfirmedTags, isUnverifiableTagMeasure, sortMeasuresByPriority, UNVERIFIED_PREFIX } from "@/lib/summary-tab";
+import { MEASURED_ANCHORS } from "@/lib/measure-sources";
+
+/**
+ * 実データの章（計測タグ・MEO・LP改善・表示速度）だけを元にした施策には「（もし未実施であれば）」を出さない。
+ * 2026-10-06以前に作った施策に誤って付いた注記を、表示の時点で外す（保存し直しはしない）
+ */
+function displayTitle(m: Measure): string {
+  if (!m.title.startsWith(UNVERIFIED_PREFIX) || m.outside) return m.title;
+  const src = m.sources ?? [];
+  return src.length > 0 && src.every((s) => MEASURED_ANCHORS.has(s.anchor)) ? m.title.slice(UNVERIFIED_PREFIX.length) : m.title;
+}
 import { Spinner } from "./Loading";
 import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
 import { CasePhotoFrame } from "./CasePhotoFrame";
@@ -184,7 +195,7 @@ export function Measures({
             <div className={`m${isDone ? " done" : ""}`} key={m.id}>
               <button className="hd" onClick={() => setOpen(isOpen ? null : m.id)} aria-expanded={isOpen}>
                 <span className={`imp ${m.impact === "大" ? "hi" : m.impact === "中" ? "mid" : "lo"}`}>効果 {m.impact}</span>
-                <span className="tt">{normalizePlatform(m.title) !== "unknown" && <><PlatformIcon platform={m.title} size={14} />{" "}</>}{m.title}</span>
+                <span className="tt">{normalizePlatform(m.title) !== "unknown" && <><PlatformIcon platform={m.title} size={14} />{" "}</>}{displayTitle(m)}</span>
                 <span className="ef">{m.effort}</span>
                 <span className="ar">{isOpen ? "閉じる" : "手順を見る"}</span>
               </button>

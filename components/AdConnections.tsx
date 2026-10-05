@@ -85,8 +85,9 @@ export function AdConnections({
                   連携する
                 </a>
               ) : (
-                <a className="btn ghost sm" href="/login?mode=signup">
-                  本登録が必要
+                // 未登録（ゲスト）は連携できないので、押したら無料登録へ進める
+                <a className="btn sm" href="/login?mode=signup" title="連携には無料の会員登録が必要です">
+                  連携する
                 </a>
               )}
             </div>
