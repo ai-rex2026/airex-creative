@@ -1,0 +1,45 @@
+name: apply-report-fixes-1005c
+on:
+  push:
+    paths:
+      - '.buildtmp/report-fixes-1005c/GO.marker'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Concatenate chunks, decode, gunzip and apply patch
+        run: |
+          cat .buildtmp/report-fixes-1005c/chunks/chunk-*.b64 | tr -d '\n' > /tmp/combined.b64
+          wc -c /tmp/combined.b64
+          base64 -d /tmp/combined.b64 | gunzip > /tmp/combined.patch
+          wc -c /tmp/combined.patch
+          git apply --check /tmp/combined.patch
+          git apply /tmp/combined.patch
+
+      - name: Commit applied changes
+        run: |
+          git config user.name "suzuki"
+          git config user.email "suzuki@ad-rex.com"
+          git add -A -- . ':!.buildtmp' ':!.github/workflows/apply-report-fixes-1005c.yml'
+          git commit \
+            -m "fix: レポート再確認で出た不具合の修正・改善（Apify重複取得対策・施策表示・MEO・サジェスト・ロゴ/バッジ）" \
+            -m "SNS取得の保存を後着の失敗結果で上書きしない・取得の同時実行ロック（SQL適用待ち、未適用でも動作）、計測タグ設置系施策の非表示、優先施策のカテゴリ表示、MEO施策を選択店舗の実測から生成、指名検索サジェストのブランド候補改善、SNS分析の改行・注記文・LINEカード削除、媒体ロゴと実データバッジの全体展開。" \
+            -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+
+      - name: Remove staging files and this workflow
+        run: |
+          git rm -r .buildtmp
+          git rm .github/workflows/apply-report-fixes-1005c.yml
+          git commit -m "chore: remove temporary push-apply workflow and staging files"
+
+      - name: Push to main
+        run: git push origin HEAD:main
