@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__remote-devices__AI_OSI_URI_Deploy__github_put_files",
+      "mcp__remote-devices__AI_OSI_URI_Deploy__github_get_file",
+      "mcp__remote-devices__AI_OSI_URI_Deploy__vercel_get_project",
+      "mcp__remote-devices__AI_OSI_URI_Deploy__vercel_get_deployment_status",
+      "mcp__remote-devices__AI_OSI_URI_Deploy__vercel_get_build_logs",
+      "mcp__remote-devices__AI_OSI_URI_Deploy__vercel_redeploy"
+    ]
+  }
+}
