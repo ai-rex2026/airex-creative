@@ -1,0 +1,44 @@
+name: apply-meo-stable-1005l
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-meo-stable-1005l.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Concatenate chunks, decode, gunzip and apply patch
+        run: |
+          cat .buildtmp/meo-stable-1005l/chunks/chunk-*.b64 | tr -d '\n' > /tmp/combined.b64
+          base64 -d /tmp/combined.b64 | gunzip > /tmp/combined.patch
+          echo "10033dda6fda31423e27e68645d4a8f52c5d74c0605e1957712e14399e15a08c  /tmp/combined.patch" | sha256sum -c -
+          git apply --check /tmp/combined.patch
+          git apply /tmp/combined.patch
+
+      - name: Commit applied changes
+        run: |
+          git config user.name "suzuki"
+          git config user.email "suzuki@ad-rex.com"
+          git add -A -- . ':!.buildtmp' ':!.github/workflows/apply-meo-stable-1005l.yml'
+          git commit \
+            -m "fix: MEOの店舗数が回ごとに揺れる問題を修正（1005l）" \
+            -m "テキスト検索に日本全体の位置の寄せ先を指定（サーバーの位置に寄って1件だけ返る回を防ぐ）。制限時間での打ち切りを黙って捨てず画面に注記。同じ分析の並行実行で、店舗の多い保存済み結果を少ない結果で上書きしない。" \
+            -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
+
+      - name: Remove staging files and this workflow
+        run: |
+          git rm -r -q .buildtmp
+          git rm -q .github/workflows/apply-meo-stable-1005l.yml
+          git commit -m "chore: remove temporary push-apply workflow and staging files"
+
+      - name: Push to main
+        run: git push origin HEAD:main
