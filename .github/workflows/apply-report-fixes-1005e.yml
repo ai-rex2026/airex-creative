@@ -1,0 +1,45 @@
+name: apply-report-fixes-1005e
+on:
+  push:
+    paths:
+      - '.buildtmp/report-fixes-1005e/GO.marker'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Concatenate chunks, decode, gunzip and apply patch
+        run: |
+          cat .buildtmp/report-fixes-1005e/chunks/chunk-*.b64 | tr -d '\n' > /tmp/combined.b64
+          wc -c /tmp/combined.b64
+          base64 -d /tmp/combined.b64 | gunzip > /tmp/combined.patch
+          wc -c /tmp/combined.patch
+          git apply --check /tmp/combined.patch
+          git apply /tmp/combined.patch
+
+      - name: Commit applied changes
+        run: |
+          git config user.name "suzuki"
+          git config user.email "suzuki@ad-rex.com"
+          git add -A -- . ':!.buildtmp' ':!.github/workflows/apply-report-fixes-1005e.yml'
+          git commit \
+            -m "fix: レポート再確認（3回目）の不具合修正・改善（SNS・サジェスト評価の分析化、競合比較、MEO複数店舗、表示速度、画像チェック、TikTok保存診断、アイコン削除）" \
+            -m "カテゴリ別評価のSNS・検索サジェストを取得できたかではなく分析結果で評価、B2CではFacebookを低優先として扱う、競合サイトの実際の比較分析、MEOのGoogleエラー再試行と一部取得の注記、PageSpeedの前倒し実行と再試行、画像チェックの分割実行と失敗要因の表示、TikTok保存失敗の要因記録、見出しアイコンの削除。" \
+            -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+
+      - name: Remove staging files and this workflow
+        run: |
+          git rm -r .buildtmp
+          git rm .github/workflows/apply-report-fixes-1005e.yml
+          git commit -m "chore: remove temporary push-apply workflow and staging files"
+
+      - name: Push to main
+        run: git push origin HEAD:main
