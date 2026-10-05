@@ -228,9 +228,25 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       const gotPlatforms = new Set((a.social?.accounts ?? []).map((x) => x.platform));
       const stillMissing = wantedPlatforms.some((p) => !gotPlatforms.has(p));
       if (wantedPlatforms.length > 0 && stillMissing) {
-        await save({ social_attempt_count: a.social_attempt_count + 1, social_attempted_at: new Date().toISOString() });
-        const social = await scanSocial(a.site, a.owner_id, a.social_manual ?? [], a.id);
-        return await save({ social, step: "サイトを読んでいます", progress: 20 });
+        // 2026-10-05: 同じ分析のSNS取得が複数のプロセス（自己継続・cron・旧デプロイの実行中バースト等）
+        // で重なると、同じ媒体のApifyを何度も呼んで予算（1分析あたり20回）を使い切り、
+        // 成功済みのデータまで失敗結果で上書きされる事故が起きた。取得は1分析につき同時に1つだけにする。
+        // （claim_social_scan: DB側で原子的に取得権を取る。権利は180秒で失効するので、
+        // 取得中にプロセスが落ちても次のtickが引き継げる）
+        const { data: claimed, error: claimErr } = await sb.rpc("claim_social_scan", { p_id: id, p_ttl_seconds: 180 });
+        if (!claimErr && claimed !== true) {
+          // 別のプロセスが取得中。二重に呼ばず、少し待って最新の状態を読み直させる
+          await new Promise((r) => setTimeout(r, 5_000));
+          return a;
+        }
+        try {
+          await save({ social_attempt_count: a.social_attempt_count + 1, social_attempted_at: new Date().toISOString() });
+          // 保存は scanSocial が媒体ごとに済ませている。ここで手元の集計を書き戻さない（上書き事故の防止）
+          await scanSocial(a.site, a.owner_id, a.social_manual ?? [], a.id);
+        } finally {
+          if (!claimErr) await sb.from("analyses").update({ social_scan_claimed_at: null }).eq("id", id);
+        }
+        return await save({ step: "サイトを読んでいます", progress: 20 });
       }
     }
     if (a.url && hasPlacesApi() && !a.meo) {

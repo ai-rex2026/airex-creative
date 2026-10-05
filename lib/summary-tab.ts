@@ -263,26 +263,68 @@ ${kpi.candidates.map((c) => `- ${c.id}：${c.name}（${c.node}）／ ${c.trackab
 【KPIツリーのノード】※ node にはこの中の語をそのまま使う
 ${kpi.branches.map((b) => `- ${b.node}（${b.formula}）`).join("\n")}
 
+【カテゴリ】※ category にはこの中の語をそのまま1つ使う（その施策が主に改善するもの）
+${CATEGORY_NAMES.map((c) => `- ${c}`).join("\n")}
+
 出力:
-{"items":[{"id":"m1","title":"","kpis":["k1"],"node":"","impact":"大","impactWhy":"",
+{"items":[{"id":"m1","title":"","kpis":["k1"],"node":"","category":"","impact":"大","impactWhy":"",
  "effort":"すぐ","owner":"","steps":[""],"done":""}]}`,
     { maxTokens: 6000 }
   );
-  const items = fixNodes(res.items ?? [], kpi);
-  return await flag(items.filter((m) => !isBookingGtmMeasure(m)), d.industry);
+  const items = fixNodes(res.items ?? [], kpi).map((m) => ({ ...m, category: normalizeCategory(m) }));
+  return await flag(items.filter((m) => !isUnverifiableTagMeasure(m)), d.industry);
+}
+
+/** 「カテゴリ別評価」のカテゴリ名（evaluateCategories が返す category と同じ語） */
+export const CATEGORY_NAMES = ["広告の準備", "MEO", "SEO強度", "対策キーワード充足度", "LP", "SNS", "検索サジェスト", "外部施策"] as const;
+
+/**
+ * 施策の文面から、どのカテゴリの施策かを推定する（AIが category を返さなかった・古い分析向け）。
+ * 語の出現数が最も多いカテゴリを採る。1語も当たらなければ null。
+ */
+const CATEGORY_HINTS: Record<(typeof CATEGORY_NAMES)[number], RegExp> = {
+  広告の準備: /広告アカウント|リマーケ|広告タグ|広告媒体|運用型広告|リスティング|P-?MAX|出稿|入札|予算配分/g,
+  MEO: /MEO|Googleマップ|ビジネスプロフィール|GBP|口コミ|店舗情報|写真投稿|営業時間/g,
+  SEO強度: /SEO|内部リンク|メタ|タイトルタグ|構造化データ|サイトマップ|見出し|robots|canonical|被リンク/g,
+  対策キーワード充足度: /キーワード|検索クエリ|Search Console|記事|コラム|コンテンツ|検索順位|検索流入/g,
+  LP: /LP|ランディング|表示速度|ファーストビュー|CTA|予約フォーム|入力フォーム|導線|料金表|ページ速度/g,
+  SNS: /SNS|Instagram|インスタ|TikTok|YouTube|ショート動画|リール|X（|Twitter|Facebook|LINE|投稿|フォロワー/g,
+  検索サジェスト: /サジェスト|指名検索|ブランド名で検索|ブランド検索/g,
+  外部施策: /プレスリリース|PR|被リンク|メディア掲載|ポータル|比較サイト|インフルエンサー|アフィリエイト|取材|寄稿/g,
+};
+
+export function inferCategory(m: Pick<Measure, "title" | "impactWhy" | "steps">): (typeof CATEGORY_NAMES)[number] | null {
+  const text = `${m.title} ${m.impactWhy ?? ""} ${(m.steps ?? []).join(" ")}`;
+  let best: (typeof CATEGORY_NAMES)[number] | null = null;
+  let bestN = 0;
+  for (const c of CATEGORY_NAMES) {
+    const n = text.match(CATEGORY_HINTS[c])?.length ?? 0;
+    if (n > bestN) {
+      best = c;
+      bestN = n;
+    }
+  }
+  return best;
+}
+
+/** AIが返した category が正しい語ならそれを使い、そうでなければ文面から推定する */
+function normalizeCategory(m: Measure): string | undefined {
+  if (m.category && (CATEGORY_NAMES as readonly string[]).includes(m.category)) return m.category;
+  return inferCategory(m) ?? undefined;
 }
 
 /**
- * 「予約完了画面へのGoogleタグマネージャー（GTM）計測タグ設置」系の施策を落とす。
- * 予約フォームが別ドメイン（別サービス）のことが多く、自社のGTMでは計測できないため
- * 出さない方針（プロンプト側のRULESにも明記しているが、AIが守らない場合の保険として
- * 生成後にも機械的に除く）
+ * 「計測タグ（GTM・コンバージョンタグ・ピクセル）を設置する」系の施策を落とす。
+ * 対象は、電話番号タップ・LINE友だち追加リンク・予約/申込の完了画面・フォーム送信など。
+ * これらは設置済みかどうかをプログラムでは確認できない（実際には設置済みの場合が多い）うえ、
+ * 予約フォームが別ドメインで自社のGTMでは計測できないことも多いため、施策としては出さない
+ * （プロンプト側のRULESにも明記しているが、AIが守らない場合の保険として生成後にも機械的に除く）
  */
-function isBookingGtmMeasure(m: Measure): boolean {
-  const text = `${m.title} ${m.impactWhy}`;
-  const mentionsBookingCompletion = /予約(完了|申込|申し込み)|完了画面/.test(text);
-  const mentionsTag = /GTM|タグマネージャー|計測タグ|コンバージョンタグ/.test(text);
-  return mentionsBookingCompletion && mentionsTag;
+export function isUnverifiableTagMeasure(m: Pick<Measure, "title" | "impactWhy">): boolean {
+  const text = `${m.title} ${m.impactWhy ?? ""}`;
+  const mentionsTag = /GTM|タグマネージャー|計測タグ|コンバージョンタグ|CVタグ|ピクセル|Pixel|計測の設置|計測設定|タグ設置|タグを設置|タグの設置/i.test(text);
+  const mentionsTarget = /電話|LINE|友だち追加|友達追加|予約(完了|申込|申し込み)|完了画面|フォーム送信|問い合わせ完了|コンバージョン/.test(text);
+  return mentionsTag && mentionsTarget;
 }
 
 /**
@@ -330,6 +372,10 @@ const EFFORT_RANK: Record<string, number> = { すぐ: 0, 数日: 1, 数週間: 2
  * 分からない場合は null（画面側・並び順側の両方で「不明」として扱う）。
  */
 export function categoryForMeasure(m: Measure, evaluations: CategoryEvaluation[]): CategoryEvaluation | null {
+  // 1) 生成時に付けたカテゴリ 2) 文面からの推定 3) 従来のノード名の部分一致、の順に使う
+  const named = m.category ?? inferCategory(m);
+  const byName = named ? evaluations.find((e) => e.category === named) : undefined;
+  if (byName) return byName;
   return evaluations.find((e) => m.node && (m.node.includes(e.category) || e.category.includes(m.node))) ?? null;
 }
 

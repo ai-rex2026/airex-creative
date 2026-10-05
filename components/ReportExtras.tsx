@@ -5,6 +5,7 @@ import { addMissingSections, missingSections, rebuildAdPlan } from "@/app/report
 import type { SnsCampaign, SnsChannelPlan } from "@/lib/sns-plan";
 import type { ChannelStructure } from "@/lib/ad-ops";
 import type { GuardHit } from "@/lib/types";
+import { PlatformIcon } from "./PlatformIcons";
 
 /**
  * AI-REX 本体から取り込んだ項目の表示（SNSオーガニック運用・SNSキャンペーン企画・広告の構成表）と、
@@ -33,7 +34,7 @@ export function SnsChannelBlock({ c }: { c: SnsChannelPlan }) {
   return (
     <div className="snsplan">
       <div className="top">
-        <b>{c.platform}の運用プラン</b>
+        <b><PlatformIcon platform={c.platform} size={15} /> {c.platform}の運用プラン</b>
         <span className="tag">{c.status === "運用中" ? "運用中のアカウントを伸ばす" : "これから始める"}</span>
         {c.frequency && <span className="kpi">投稿頻度：{c.frequency}</span>}
       </div>

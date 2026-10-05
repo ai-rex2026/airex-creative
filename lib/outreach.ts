@@ -41,8 +41,18 @@ export type SuggestScan = {
  * 失敗した場合はその理由を返し、呼び出し元（scanSuggests）が SuggestScan.error に記録する。
  */
 async function suggestFor(q: string): Promise<{ items: string[]; error?: string }> {
+  const first = await suggestOnce(q, "firefox");
+  // 一時的な制限・失敗のときだけ、別のクライアント指定でもう一度試す（正常に0件のときは再試行しない）
+  if (first.error) {
+    const second = await suggestOnce(q, "chrome");
+    if (!second.error) return second;
+  }
+  return first;
+}
+
+async function suggestOnce(q: string, client: "firefox" | "chrome"): Promise<{ items: string[]; error?: string }> {
   const url =
-    "https://suggestqueries.google.com/complete/search?client=firefox&hl=ja&gl=jp&q=" +
+    `https://suggestqueries.google.com/complete/search?client=${client}&hl=ja&gl=jp&q=` +
     encodeURIComponent(q);
   try {
     const res = await fetch(url, {
@@ -86,27 +96,70 @@ const GENERIC_TITLE_WORD = /^(公式(サイト|ホームページ)?|ホームペ
  * 「検出されませんでした」になっていた可能性が高い。先頭・末尾の両方を候補にして、
  * 実際にサジェストが返った方を採用する（scanSuggests側は返りがあった語だけ画面に出す）。
  */
-function brandCandidatesFromTitle(site: SiteScan | null): string[] {
-  if (site?.bizName) return [site.bizName];
+/** 法人格。サジェストに投げるときは外す（「株式会社〇〇」より「〇〇」で検索される） */
+const LEGAL_FORM = /(株式会社|有限会社|合同会社|合資会社|一般社団法人|一般財団法人|公益社団法人|公益財団法人|医療法人社団|医療法人財団|医療法人|社会福祉法人|学校法人|特定非営利活動法人|NPO法人)/g;
+
+/**
+ * ブランド名の候補を、確からしい順に集める。
+ *
+ * 2026-10-05（再修正）: 実際の失敗例は、構造化データの事業者名（bizName）が
+ * 「一般社団法人 表参道メディカルクリニックグループ」のような**法人名**で、一方ブランド名
+ * （メディカルブロー）はタイトルや商材名にあるケースだった。従来は bizName があると
+ * それだけを検索していたため、利用者が実際に検索する名前（ブランド名）が一度も試されず
+ * 「検出されませんでした」になっていた。
+ *
+ * そこで次をすべて候補にし、実際にサジェストが返った語だけを画面に出す：
+ *  1. 商材名の先頭（「メディカルブロー（医療アートメイク）」→「メディカルブロー」）
+ *  2. タイトルの区切りの両端（短い語のみ。長いキャッチコピーは除く）
+ *  3. ドメインの名前部分（medicalbrows.jp → medicalbrows）。英字表記で検索する人向け
+ *  4. 事業者名（法人格を除いたもの）
+ */
+export function brandCandidates(d: Diagnosis | null, site: SiteScan | null): string[] {
+  const out: string[] = [];
+  const add = (s: string | null | undefined) => {
+    const v = (s ?? "").replace(/\s+/g, " ").trim();
+    if (v.length >= 2 && v.length <= 20 && !GENERIC_TITLE_WORD.test(v)) out.push(v);
+  };
+
+  // 1. 商材名の先頭。括弧・スラッシュ・読点の手前までをブランド名とみなす
+  const product = (d?.product ?? "").split(/[（(／/、,・]/)[0];
+  add(product);
+
+  // 2. タイトルの両端（長いキャッチコピーは検索語にならないので 14 文字までに絞る）
   const parts = (site?.title ?? "")
     .split(/[|｜\-–—:：]/)
     .map((s) => s.trim())
     .filter(Boolean);
-  if (parts.length === 0) return [];
-  const edges = [...new Set([parts[0], parts[parts.length - 1]])];
-  return edges.filter((x) => !GENERIC_TITLE_WORD.test(x));
+  if (parts.length > 0) {
+    for (const p of [parts[0], parts[parts.length - 1]]) if (p.length <= 14) add(p);
+  }
+
+  // 3. ドメインの名前部分（英字3文字以上のときだけ）
+  try {
+    const host = new URL(site?.finalUrl ?? "").hostname.replace(/^www\./, "");
+    const label = host.split(".")[0];
+    if (/^[a-z][a-z0-9-]{3,}$/i.test(label)) add(label);
+  } catch {
+    // finalUrl が無い・不正なら使わない
+  }
+
+  // 4. 事業者名（法人格を外す）。長い法人名はそのままだと検索語として長すぎるので末尾を優先
+  if (site?.bizName) add(site.bizName.replace(LEGAL_FORM, "").trim());
+
+  return [...new Set(out)];
 }
 
 /**
  * サジェストに投げる語。
  * 商材の説明文のような長い文はサジェストが返らないので、短い語だけを使う。
  * 地名は候補を順に試し、実際に返ったものだけ採用する（町名まで細かいと何も返らない）。
+ * 地名つきの語は先頭のブランド名にだけ付ける（候補が多いと問い合わせ回数が増えすぎるため）。
  */
-function candidates(site: SiteScan | null, areas: string[]): string[] {
-  const brands = brandCandidatesFromTitle(site).filter((b) => b.length >= 2);
+function candidates(d: Diagnosis | null, site: SiteScan | null, areas: string[]): string[] {
+  const brands = brandCandidates(d, site);
   if (brands.length === 0) return [];
-  const out = brands.flatMap((brand) => [brand, ...areas.map((a) => `${brand} ${a}`)]);
-  return [...new Set(out.map((x) => x.trim()).filter((x) => x.length >= 2 && x.length <= 25))];
+  const out = [...brands, ...areas.map((a) => `${brands[0]} ${a}`)];
+  return [...new Set(out.map((x) => x.trim()).filter((x) => x.length >= 2 && x.length <= 25))].slice(0, 8);
 }
 
 export async function scanSuggests(
@@ -122,7 +175,7 @@ export async function scanSuggests(
   // 区別し、全ての検索語で取得に失敗した場合だけ SuggestScan.error に出す
   const errors: string[] = [];
 
-  const cands = candidates(site, areas);
+  const cands = candidates(d, site, areas);
   for (const q of cands) {
     if (got.length >= 2) break;
     const { items, error } = await suggestFor(q);

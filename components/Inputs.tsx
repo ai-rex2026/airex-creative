@@ -8,6 +8,7 @@ import type { SocialScan } from "@/lib/social";
 import { breakEvenCpa, type PriceScan } from "@/lib/pricing";
 import { MainPrice } from "./MainPrice";
 import { Spinner } from "./Loading";
+import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
 
 /**
  * 分析の材料を集める画面。
@@ -150,7 +151,8 @@ export function Inputs({
           </div>
         )}
         {(site?.social ?? []).map((s, i) => {
-          const m = social?.accounts.find((a) => a.url === s.url);
+          const m = social?.accounts.find((a) => a.url === s.url)
+            ?? social?.accounts.find((a) => normalizePlatform(a.platform) === normalizePlatform(s.platform) && (a.followers != null || a.posts != null || a.views != null));
           const label = /youtube/i.test(s.platform) ? "登録者" : "フォロワー";
           // 手入力した数字が実際に分析（施策の書き分け・競合との比較）に使われるのは
           // 現状YouTube・Xだけ。他媒体は「検出」以上の意味を持たないため、入力欄は出さない
@@ -158,7 +160,7 @@ export function Inputs({
           return (
             <div className="r" key={i}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <b>{s.platform}</b>
+                <b><PlatformIcon platform={s.platform} size={15} /> {s.platform}</b>
                 <small>{m?.title ?? s.handle}</small>
                 {m?.reason && <small className="warn">{m.reason}</small>}
               </div>
@@ -170,7 +172,7 @@ export function Inputs({
               ) : (
                 usesFollowerCount && m && <FollowerEdit id={id} url={s.url} label={`${label}数`} />
               )}
-              <span className={`tag${m?.readable ? " ok" : ""}`}>{m?.readable ? "分析済み" : "検出"}</span>
+              <span className={`tag${m?.readable ? " ok" : ""}`}>{m?.readable ? "🟢実データで分析" : "検出"}</span>
               {/* アカウント連携（OAuth）は未実装。LINEはデータ取得APIが無いため対象外。
                   実装までは押せない見た目にして「対応予定」であることだけ伝える */}
               {s.platform !== "LINE" && (
@@ -216,7 +218,7 @@ export function Inputs({
         <div className="rows measure">
           {list.map((x, i) => (
             <div className="r" key={i}>
-              <div style={{ flex: 1, minWidth: 0 }}><b>{x.platform}</b><small>{x.url}</small></div>
+              <div style={{ flex: 1, minWidth: 0 }}><b><PlatformIcon platform={x.platform} size={15} /> {x.platform}</b><small>{x.url}</small></div>
               <span className="tag">追加済み</span>
             </div>
           ))}

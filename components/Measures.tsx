@@ -4,8 +4,9 @@ import { useState, useTransition } from "react";
 import { makeRunbook, regenerateSummaryTab, toggleMeasure } from "@/app/actions";
 import type { Measure } from "@/lib/measures";
 import type { CategoryEvaluation } from "@/lib/summary-tab";
-import { categoryForMeasure, sortMeasuresByPriority } from "@/lib/summary-tab";
+import { categoryForMeasure, isUnverifiableTagMeasure, sortMeasuresByPriority } from "@/lib/summary-tab";
 import { Spinner } from "./Loading";
+import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
 import { CasePhotoFrame } from "./CasePhotoFrame";
 import { isCasePhoto } from "@/lib/case-photo";
 
@@ -53,7 +54,8 @@ export function Measures({
   /** カテゴリカードをクリックしたとき、分析データタブの該当セクションへ切り替えてスクロールする */
   onNavigate: (anchor: string) => void;
 }) {
-  const [list, setList] = useState<Measure[]>(measures);
+  // 計測タグ設置系の施策は設置済みか確認できないため出さない（古い分析に残っていても表示しない）
+  const [list, setList] = useState<Measure[]>(() => measures.filter((m) => !isUnverifiableTagMeasure(m)));
   const [evaluations, setEvaluations] = useState<CategoryEvaluation[] | null>(categoryEvaluations);
   const [doneIds, setDoneIds] = useState<string[]>(done);
   const [logs, setLogs] = useState(log);
@@ -94,7 +96,7 @@ export function Measures({
     start(async () => {
       try {
         const res = await regenerateSummaryTab(id);
-        setList(res.items);
+        setList(res.items.filter((m) => !isUnverifiableTagMeasure(m)));
         setEvaluations(res.evaluations);
         setDoneIds(res.done);
         setOpen(null);
@@ -179,7 +181,7 @@ export function Measures({
             <div className={`m${isDone ? " done" : ""}`} key={m.id}>
               <button className="hd" onClick={() => setOpen(isOpen ? null : m.id)} aria-expanded={isOpen}>
                 <span className={`imp ${m.impact === "大" ? "hi" : m.impact === "中" ? "mid" : "lo"}`}>効果 {m.impact}</span>
-                <span className="tt">{m.title}</span>
+                <span className="tt">{normalizePlatform(m.title) !== "unknown" && <><PlatformIcon platform={m.title} size={14} />{" "}</>}{m.title}</span>
                 <span className="ef">{m.effort}</span>
                 <span className="ar">{isOpen ? "閉じる" : "手順を見る"}</span>
               </button>
@@ -188,7 +190,6 @@ export function Measures({
                   const cat = categoryForMeasure(m, evaluations);
                   return cat ? <span className="chip cat">{cat.category}</span> : null;
                 })()}
-                {m.node && <span className="chip node">{m.node}</span>}
                 {m.flags && m.flags.length > 0 && <span className="chip law">法令の指摘 {m.flags.length}</span>}
               </div>
               {isOpen && (

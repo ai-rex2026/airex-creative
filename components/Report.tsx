@@ -15,6 +15,7 @@ import { AdStructureTable, MissingSectionsBanner, RebuildAdPlanNote, SnsCampaign
 import { adWidth, type AdOps } from "@/lib/ad-ops";
 import { lengthIn, limitLabel, specFor, type CountMode } from "@/lib/ad-specs";
 import type { MeoScan } from "@/lib/meo";
+import { meoStoreActions } from "@/lib/meo-actions";
 import { MeoStoreList, MeoStoreDetail } from "./MeoStores";
 import { MeoEntryCard } from "./meo/MeoEntryCard";
 import { Toc } from "./Toc";
@@ -42,7 +43,7 @@ import { hygiene } from "@/lib/measures";
 import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
 import type { CategoryEvaluation } from "@/lib/summary-tab";
-import { PlatformIcon } from "./PlatformIcons";
+import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
 
 type Tab = "inputs" | "summary" | "overview";
 
@@ -484,15 +485,26 @@ export function Report({
   // 「情報取得」1媒体分の行。以前はsite.socialの全件をここで直接map()していたが、
   // 媒体ごとに情報取得→分析→運用プランを束ねる構成（sec-social）に変えたため、
   // 1媒体分だけを描く関数として切り出した
+  // 取得結果は URL 一致を優先し、URL が揺れていても同じ媒体の結果を拾う（バッジが消えないように）
+  const hasRealData = (a?: { followers?: number | null; posts?: number | null; views?: number | null } | null) =>
+    !!a && (a.followers != null || a.posts != null || a.views != null);
+  const findAcct = (platform: string, url?: string) => {
+    const list = social?.accounts ?? [];
+    const byUrl = url ? list.find((a) => a.url === url) : undefined;
+    if (byUrl && (hasRealData(byUrl) || !list.some((a) => a.platform === byUrl.platform && hasRealData(a)))) return byUrl;
+    const key = normalizePlatform(platform);
+    const byPf = key === "unknown" ? [] : list.filter((a) => normalizePlatform(a.platform) === key);
+    return byPf.find((a) => hasRealData(a)) ?? byUrl ?? byPf[0];
+  };
   const renderSocialInfoRow = (x: { platform: string; url: string; handle: string }) => {
-    const m = social?.accounts.find((a) => a.url === x.url);
+    const m = findAcct(x.platform, x.url);
     return (
       <div className="r" key={x.url}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <PlatformIcon platform={x.platform} size={15} />
           {" "}
           <b>{x.platform}</b>
-          {m && (m.followers != null || m.posts != null || m.views != null) ? (
+          {hasRealData(m) ? (
             <span className="tag ok" style={{ marginLeft: 6 }}>🟢実データ取得済み</span>
           ) : (
             <span className="tag" style={{ marginLeft: 6 }}>⚪データ未取得</span>
@@ -550,8 +562,8 @@ export function Report({
         <div key={k} style={{ marginTop: 10 }}>
           <div className="top">
             <b>{m.title}</b>
-            {m.kpi && <span className="kpi">見る数字：{m.kpi}</span>}
           </div>
+          {m.kpi && <p className="kpi" style={{ display: "block", margin: "6px 0 0" }}>見る数字：{m.kpi}</p>}
           <p>{m.why}</p>
           <ul>{m.steps?.map((s, j) => <li key={j}>{s}</li>)}</ul>
           <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1641,14 +1653,19 @@ export function Report({
             </>
           )}
 
-          {keywords && keywords.meo.length > 0 && (
-            <div className="measure" style={{ display: "grid", gap: 12, marginTop: 16 }}>
-              <div className="tactic">
-                <div className="top"><b>MEO（Googleマップ）</b></div>
-                <ul>{keywords.meo.map((y, k) => <li key={k}>{y}</li>)}</ul>
+          {meo.self && (() => {
+            // 選択中の店舗の実測だけから作る（店舗を切り替えると内容も変わる）
+            const store = meo.stores[meoStoreIdx] ?? meo.stores[0];
+            if (!store) return null;
+            return (
+              <div className="measure" style={{ display: "grid", gap: 12, marginTop: 16 }}>
+                <div className="tactic">
+                  <div className="top"><b>MEO（Googleマップ）</b><span className="tag" style={{ marginLeft: 8 }}>{store.self.name}の実測から</span></div>
+                  <ul>{meoStoreActions(store).map((y, k) => <li key={k}>{y}</li>)}</ul>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </>
       )}
           {(() => {
@@ -1786,7 +1803,7 @@ export function Report({
               if (info) usedUrls.add(info.url);
               return info || si || ch ? { platform: p, info, si, ch } : null;
             }).filter((b): b is NonNullable<typeof b> => b !== null);
-            const rest = site.social.filter((x) => !usedUrls.has(x.url));
+            const rest = site.social.filter((x) => !usedUrls.has(x.url) && normalizePlatform(x.platform) !== "line");
 
             return (
               <>
@@ -1800,13 +1817,13 @@ export function Report({
                     )}
                     {b.si && (
                       <div style={{ marginTop: 10 }}>
-                        <p className="eyebrow">SNS分析</p>
+                        <p className="eyebrow">SNS分析{hasRealData(findAcct(b.platform, b.info?.url)) && <span className="tag ok" style={{ marginLeft: 6 }}>🟢実データで分析</span>}</p>
                         {renderSI(b.si)}
                       </div>
                     )}
                     {b.ch && (
                       <div style={{ marginTop: 10 }}>
-                        <p className="eyebrow">SNS運用プラン</p>
+                        <p className="eyebrow">SNS運用プラン{hasRealData(findAcct(b.platform, b.info?.url)) && <span className="tag ok" style={{ marginLeft: 6 }}>🟢実データで分析</span>}</p>
                         <SnsChannelBlock c={b.ch} />
                       </div>
                     )}
@@ -1825,13 +1842,7 @@ export function Report({
           <div className="note" style={{ marginTop: 16 }}>
             <i className="i">i</i>
             <span>
-              YouTube は公式APIから取得しています（連携不要です）。
-              X・TikTok・Instagram・Facebookは外部の取得サービス経由で公開プロフィールの情報を取得しています（ログイン・連携は不要です）。
-              媒体がログインを求める場合や取得上限に達した場合は数値を取得できないことがあります。
-              <b style={{ fontWeight: 600 }}>取れなかった数字は推測で埋めていません。</b>
-              取得できた数値は施策の生成にも渡していて、すでに運用しているSNSを
-              「新しく開設する」施策としては出しません。
-              LINEは友だち数が非公開のため取得していません。
+              取得できたデータは施策立案に活用しており、すでに運用しているSNSを「新しく開設する」施策としては出しません。
             </span>
           </div>
 

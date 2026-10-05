@@ -856,8 +856,13 @@ export async function scanSocial(
   const persist = (account: SocialAccount) => {
     saveChain = saveChain.then(async () => {
       const { data: cur } = await sb.from("analyses").select("social").eq("id", analysisId).single();
-      const curAccounts = ((cur?.social as SocialScan | null)?.accounts ?? []).filter((x) => x.platform !== account.platform);
-      const accounts = [...curAccounts, account];
+      const existing = (cur?.social as SocialScan | null)?.accounts ?? [];
+      // 2026-10-05: 既に実測できている媒体を、後から来た「取れなかった」結果で上書きしない。
+      // 別プロセスと取得が重なったとき、成功済みのデータが失敗結果で消えて再取得（再課金）される
+      // 原因になっていた
+      const prev = existing.find((x) => x.platform === account.platform);
+      if (prev?.readable && !account.readable) return;
+      const accounts = [...existing.filter((x) => x.platform !== account.platform), account];
       await sb.from("analyses").update({ social: { accounts, fetchedAt: new Date().toISOString() } }).eq("id", analysisId);
     });
     return saveChain;
@@ -873,18 +878,19 @@ export async function scanSocial(
     })
   );
 
-  const fetchedNow: SocialAccount[] = [];
-  for (const r of settled) {
-    if (r.status === "fulfilled") {
-      fetchedNow.push(r.value);
-    }
-    // readSocialAccount は各媒体内で自前の例外を捕まえて reason を返す設計のため、
-    // rejected はここに来るのは想定外の例外のみ。取れなかった事実を残し、次回は再試行させる
-    // （保存しない＝savedPlatformsに入らないので、次のtickで自動的に対象へ戻る）
-  }
+  // readSocialAccount は各媒体内で自前の例外を捕まえて reason を返す設計のため、
+  // rejected はここに来るのは想定外の例外のみ。取れなかった事実を残し、次回は再試行させる
+  // （保存しない＝savedPlatformsに入らないので、次のtickで自動的に対象へ戻る）
+  void settled;
+  void already;
 
-  const accounts = [...already, ...fetchedNow];
-  return { accounts, fetchedAt: new Date().toISOString() };
+  // 返す値は、この呼び出しの手元の集計ではなく、DBに実際に保存されている最新の状態にする。
+  // 手元の集計（取得開始時点の保存済み＋今回取れた分）で呼び出し元が上書き保存すると、
+  // 取得中に別プロセスが保存した媒体を消してしまい、再取得（再課金）の原因になる
+  await saveChain;
+  const { data: fin } = await sb.from("analyses").select("social").eq("id", analysisId).single();
+  const finalAccounts = ((fin?.social as SocialScan | null)?.accounts ?? []);
+  return { accounts: finalAccounts, fetchedAt: new Date().toISOString() };
 }
 
 /** 施策の生成に渡す「すでに運用しているもの」の記述 */
