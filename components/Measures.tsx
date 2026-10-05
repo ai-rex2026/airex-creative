@@ -4,18 +4,7 @@ import { useState, useTransition } from "react";
 import { makeRunbook, regenerateSummaryTab, toggleMeasure } from "@/app/actions";
 import type { Measure } from "@/lib/measures";
 import type { CategoryEvaluation } from "@/lib/summary-tab";
-import { categoryForMeasure, fromConfirmedTags, isUnverifiableTagMeasure, sortMeasuresByPriority, UNVERIFIED_PREFIX } from "@/lib/summary-tab";
-import { MEASURED_ANCHORS } from "@/lib/measure-sources";
-
-/**
- * 実データの章（計測タグ・MEO・LP改善・表示速度）だけを元にした施策には「（もし未実施であれば）」を出さない。
- * 2026-10-06以前に作った施策に誤って付いた注記を、表示の時点で外す（保存し直しはしない）
- */
-function displayTitle(m: Measure): string {
-  if (!m.title.startsWith(UNVERIFIED_PREFIX) || m.outside) return m.title;
-  const src = m.sources ?? [];
-  return src.length > 0 && src.every((s) => MEASURED_ANCHORS.has(s.anchor)) ? m.title.slice(UNVERIFIED_PREFIX.length) : m.title;
-}
+import { categoryForMeasure, fromConfirmedTags, isUnverifiableTagMeasure, reconcileSources, sortMeasuresByPriority } from "@/lib/summary-tab";
 import { Spinner } from "./Loading";
 import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
 import { CasePhotoFrame } from "./CasePhotoFrame";
@@ -56,6 +45,7 @@ export function Measures({
   hygiene,
   onNavigate,
   trackingMissing = false,
+  speedShown = true,
 }: {
   id: string;
   measures: Measure[];
@@ -67,6 +57,8 @@ export function Measures({
   onNavigate: (anchor: string) => void;
   /** サイトからGTM・広告タグのどちらも検出できなかったか（計測まわりの施策を出してよいか） */
   trackingMissing?: boolean;
+  /** 分析データタブに「表示速度（実測）」の欄があるか（表示速度の施策のリンク先に使う） */
+  speedShown?: boolean;
 }) {
   // 計測タグ設置系の施策は設置済みか確認できないため出さない（古い分析に残っていても表示しない）
   // ただし分析データの「計測タグの導入状況」で未導入と確認できたタグを元にした施策は出す
@@ -138,64 +130,23 @@ export function Measures({
 
   // 旧形式の分析（category_evaluationsがまだ無い）はカード無しで施策だけ表示する。
   // 再計算・移行バッチは行わない方針（2026-10-04決定）
-  const shown = evaluations ? sortMeasuresByPriority(list, evaluations) : list;
+  // 作成済みの施策も、題名の話題（LP・表示速度）に合わせてリンク先と「（もし未実施であれば）」を補正して出す
+  const fixed = list.map((m) => reconcileSources(m, speedShown));
+  const shown = evaluations ? sortMeasuresByPriority(fixed, evaluations) : fixed;
+  // 効果「大」は常に見せ、「中・小」は件数が多いときだけ折り畳む
+  const FOLD_AT = 8;
+  const fold = shown.length > FOLD_AT && shown.some((m) => m.impact === "大");
+  const top = fold ? shown.filter((m) => m.impact === "大") : shown;
+  const rest = fold ? shown.filter((m) => m.impact !== "大") : [];
 
-  return (
-    <>
-      {evaluations && evaluations.length > 0 && (
-        <>
-          <div className="sec-head">
-            <div>
-              <h2 id="sec-category-eval">カテゴリ別評価</h2>
-              <div className="sub">実測できたものだけを評価しています。クリックで詳細に移動します</div>
-            </div>
-            <span className="rule" />
-          </div>
-          <div className="cat-grid measure">
-            {evaluations.map((ev) => <CategoryCard ev={ev} key={ev.category} onNavigate={onNavigate} />)}
-          </div>
-        </>
-      )}
-
-      {!evaluations && (
-        <div className="note">
-          <i className="i">i</i>
-          <span>この分析はカテゴリ別評価の導入前に作られたため、カードは表示できません。下の施策は引き続き確認できます。</span>
-        </div>
-      )}
-
-      <div className="sec-head">
-        <div>
-          <h2 id="sec-measures">優先度の高い施策</h2>
-          <div className="sub">スコアが低いカテゴリ・分析不可のカテゴリに効くものを優先して並べています</div>
-        </div>
-        <span className="rule" />
-        <button className="redo" onClick={rebuild} disabled={busy}>
-          {busy ? <Spinner label="作り直しています" /> : "施策を作り直す"}
-        </button>
-      </div>
-
-      {busy && (
-        <div className="note">
-          <i className="i">…</i>
-          <span>
-            いま作り直しています。1〜2分かかります。
-            この画面を開いたままにしてください。終わると下の一覧が入れ替わります。
-          </span>
-        </div>
-      )}
-      {err && <div className="alert" style={{ marginTop: 10 }}>{err}</div>}
-
-      <div className="mlist measure">
-        {shown.length === 0 && <div className="note"><i className="i">i</i><span>まだ施策がありません。</span></div>}
-        {shown.map((m) => {
+  const renderItem = (m: Measure) => {
           const isDone = doneIds.includes(m.id);
           const isOpen = open === m.id;
           return (
             <div className={`m${isDone ? " done" : ""}`} key={m.id}>
               <button className="hd" onClick={() => setOpen(isOpen ? null : m.id)} aria-expanded={isOpen}>
                 <span className={`imp ${m.impact === "大" ? "hi" : m.impact === "中" ? "mid" : "lo"}`}>効果 {m.impact}</span>
-                <span className="tt">{normalizePlatform(m.title) !== "unknown" && <><PlatformIcon platform={m.title} size={14} />{" "}</>}{displayTitle(m)}</span>
+                <span className="tt">{normalizePlatform(m.title) !== "unknown" && <><PlatformIcon platform={m.title} size={14} />{" "}</>}{m.title}</span>
                 <span className="ef">{m.effort}</span>
                 <span className="ar">{isOpen ? "閉じる" : "手順を見る"}</span>
               </button>
@@ -278,7 +229,63 @@ export function Measures({
               )}
             </div>
           );
-        })}
+  };
+
+  return (
+    <>
+      {evaluations && evaluations.length > 0 && (
+        <>
+          <div className="sec-head">
+            <div>
+              <h2 id="sec-category-eval">カテゴリ別評価</h2>
+              <div className="sub">実測できたものだけを評価しています。クリックで詳細に移動します</div>
+            </div>
+            <span className="rule" />
+          </div>
+          <div className="cat-grid measure">
+            {evaluations.map((ev) => <CategoryCard ev={ev} key={ev.category} onNavigate={onNavigate} />)}
+          </div>
+        </>
+      )}
+
+      {!evaluations && (
+        <div className="note">
+          <i className="i">i</i>
+          <span>この分析はカテゴリ別評価の導入前に作られたため、カードは表示できません。下の施策は引き続き確認できます。</span>
+        </div>
+      )}
+
+      <div className="sec-head">
+        <div>
+          <h2 id="sec-measures">優先度の高い施策</h2>
+          <div className="sub">スコアが低いカテゴリ・分析不可のカテゴリに効くものを優先して並べています</div>
+        </div>
+        <span className="rule" />
+        <button className="redo" onClick={rebuild} disabled={busy}>
+          {busy ? <Spinner label="作り直しています" /> : "施策を作り直す"}
+        </button>
+      </div>
+
+      {busy && (
+        <div className="note">
+          <i className="i">…</i>
+          <span>
+            いま作り直しています。1〜2分かかります。
+            この画面を開いたままにしてください。終わると下の一覧が入れ替わります。
+          </span>
+        </div>
+      )}
+      {err && <div className="alert" style={{ marginTop: 10 }}>{err}</div>}
+
+      <div className="mlist measure">
+        {shown.length === 0 && <div className="note"><i className="i">i</i><span>まだ施策がありません。</span></div>}
+        {top.map((m) => renderItem(m))}
+        {rest.length > 0 && (
+          <details className="mfold">
+            <summary>効果 中・小の施策（{rest.length}件）を表示する</summary>
+            {rest.map((m) => renderItem(m))}
+          </details>
+        )}
       </div>
 
       {logs.length > 0 && (

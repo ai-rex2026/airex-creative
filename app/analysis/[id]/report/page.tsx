@@ -4,6 +4,7 @@ import { Report } from "@/components/Report";
 import { MeoReport } from "@/components/MeoReport";
 import { Shell } from "@/components/Shell";
 import type { Analysis } from "@/lib/analysis";
+import { evaluateCategories } from "@/lib/summary-tab";
 
 export const metadata = { title: "レポート｜AI-REX Studio" };
 
@@ -34,9 +35,25 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
   }
   if (!a.diagnosis || !a.copies) notFound();
 
+  // カテゴリ別評価のうちSNSの説明文は、2026-10-06に短い書き方へ変えた。保存済みの分析も新しい書き方で
+  // 出すため、表示のたびに計算し直して差し替える（実測値からの計算だけでAIは使わない）
+  const categoryEvaluations = a.category_evaluations
+    ? (() => {
+        try {
+          const fresh = evaluateCategories({
+            site: a.site, adOps: a.ad_ops, meo: a.meo, seo: a.seo, gsc: a.gsc, keywords: a.keywords, speed: a.speed,
+            lpo: a.lpo, social: a.social, suggests: a.suggests, socialCompetitors: a.social_competitors, diagnosis: a.diagnosis,
+          }).find((e) => e.category === "SNS");
+          return fresh ? a.category_evaluations.map((e) => (e.category === "SNS" ? fresh : e)) : a.category_evaluations;
+        } catch {
+          return a.category_evaluations;
+        }
+      })()
+    : null;
+
   return (
     <Shell active="analysis">
-      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} site={a.site} seo={a.seo} plan={a.media_plan} summary={a.summary} competitors={a.competitors} tactics={a.tactics} adOps={a.ad_ops} meo={a.meo} lpo={a.lpo} keywords={a.keywords} seoArticles={a.seo_articles} industryVertical={a.industry_vertical} linePlan={a.line_plan} suggests={a.suggests} outreach={a.outreach} pricing={a.pricing} speed={a.speed} social={a.social} socialInsights={a.social_insights} imageScan={a.image_scan} customImages={a.custom_images} margin={a.margin} kpi={a.kpi} measures={a.measures} categoryEvaluations={a.category_evaluations} measuresDone={a.measures_done} extraInputs={a.extra_inputs} measureLog={a.measure_log} budget={a.budget} id={a.id} gsc={a.gsc} ga4={a.ga4} snsPlan={a.sns_plan} />
+      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} site={a.site} seo={a.seo} plan={a.media_plan} summary={a.summary} competitors={a.competitors} tactics={a.tactics} adOps={a.ad_ops} meo={a.meo} lpo={a.lpo} keywords={a.keywords} seoArticles={a.seo_articles} industryVertical={a.industry_vertical} linePlan={a.line_plan} suggests={a.suggests} outreach={a.outreach} pricing={a.pricing} speed={a.speed} social={a.social} socialInsights={a.social_insights} imageScan={a.image_scan} customImages={a.custom_images} margin={a.margin} kpi={a.kpi} measures={a.measures} categoryEvaluations={categoryEvaluations} measuresDone={a.measures_done} extraInputs={a.extra_inputs} measureLog={a.measure_log} budget={a.budget} id={a.id} gsc={a.gsc} ga4={a.ga4} snsPlan={a.sns_plan} />
     </Shell>
   );
 }

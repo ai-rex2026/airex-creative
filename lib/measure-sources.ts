@@ -46,8 +46,15 @@ export type SourceItem = {
  */
 export const MEASURED_ANCHORS = new Set(["sec-tags", "sec-meo", "sec-lpo", "sec-speed"]);
 
+/**
+ * LP（受け皿のページ）の改修の話か。分析データのどの章に書かれていても、リンク先は「LP改善」にする。
+ * 2026-10-06: 対策キーワード章の「FAQセクションを各LPに配置する」が、対策キーワードへのリンクと
+ * 「（もし未実施であれば）」付きで出ていた
+ */
+export const LP_RE = /(^|[^A-Za-z])LP([^A-Za-z]|$)|ランディングページ|ファーストビュー|CTA|予約ボタン|申込ボタン|入力フォーム|予約フォーム|申込フォーム|問い合わせフォーム/i;
+
 /** 表示速度の話か。分析データのどの章に書かれていても、リンク先は表示速度の欄にする */
-const SPEED_RE = /表示速度|ページ速度|読み込み(速度|時間)|Core Web Vitals|LCP|WebP|AVIF|次世代(フォーマット|形式)|画像の?(圧縮|軽量化|最適化)|遅延読み込み|lazy ?load|キャッシュ|JavaScript|CSS/i;
+export const SPEED_RE = /表示速度|ページ速度|読み込み(速度|時間)|Core Web Vitals|LCP|WebP|AVIF|次世代(フォーマット|形式)|画像の?(圧縮|軽量化|最適化)|遅延読み込み|lazy ?load|キャッシュ|JavaScript|CSS/i;
 
 export type LedgerInput = {
   ad_ops: AdOps | null;
@@ -81,6 +88,16 @@ function clean(v: unknown): string {
   return t.length > MAX_TEXT ? `${t.slice(0, MAX_TEXT - 1)}…` : t;
 }
 
+/**
+ * 文面の話題から、分析データのどの欄にリンクすべきかを決める。表示速度 → 「表示速度（実測）」
+ * （測れていなければ「LP改善」）、LPの改修 → 「LP改善」。どちらでもなければ null（書かれている章のまま）
+ */
+export function topicSection(text: string, speedShown: boolean): { chapter: string; anchor: string } | null {
+  if (SPEED_RE.test(text)) return speedShown ? { chapter: "表示速度（実測）", anchor: "sec-speed" } : { chapter: "LP改善", anchor: "sec-lpo" };
+  if (LP_RE.test(text)) return { chapter: "LP改善", anchor: "sec-lpo" };
+  return null;
+}
+
 export function buildLedger(a: LedgerInput): SourceItem[] {
   const out: SourceItem[] = [];
   // 表示速度の欄が画面にあるか（測れていれば「表示速度（実測）」、測れなかったときは
@@ -94,13 +111,14 @@ export function buildLedger(a: LedgerInput): SourceItem[] {
       if (!text || seen.has(text)) continue;
       seen.add(text);
       // 表示速度の話は、書かれている章に関係なく表示速度の欄へリンクする
-      const speedTopic = anchor !== "sec-speed" && SPEED_RE.test(text);
-      const finalAnchor = speedTopic ? (speedShown ? "sec-speed" : "sec-lpo") : anchor;
+      const topic = topicSection(text, speedShown);
+      const moved = !!topic && topic.anchor !== anchor && !(anchor === "sec-speed" && topic.anchor === "sec-lpo");
+      const finalAnchor = moved ? topic!.anchor : anchor;
       out.push({
         id: `s${out.length + 1}`,
-        chapter: speedTopic ? (speedShown ? "表示速度（実測）" : "LP改善") : chapter,
+        chapter: moved ? topic!.chapter : chapter,
         anchor: finalAnchor,
-        category: speedTopic ? "LP" : category,
+        category: moved ? "LP" : category,
         text,
         // 実データの章にリンクする打ち手には付けない（リンク先と注記の有無を必ず一致させる）
         ...(unverified && !MEASURED_ANCHORS.has(finalAnchor) ? { unverified: true } : {}),

@@ -13,7 +13,7 @@ import type { SuggestScan } from "./outreach";
 import type { GscData } from "./google";
 import type { AdOps } from "./ad-ops";
 import { facts, fixNodes, flag, RULES, type Measure, type MeasurePlan } from "./measures";
-import type { SourceItem } from "./measure-sources";
+import { MEASURED_ANCHORS, topicSection, type SourceItem } from "./measure-sources";
 
 /**
  * サマリータブ（旧「施策」タブ）の生成。
@@ -243,23 +243,25 @@ function evalSocial(
 
     const days = daysSinceLatestPost(a, now);
     if (days !== null) {
-      signals.push({ name: "更新", t: days <= 14 ? "強" : days <= 45 ? "標準" : "弱", text: days === 0 ? "最新の投稿は今日" : `最新の投稿は${days}日前` });
+      signals.push({ name: "更新", t: days <= 14 ? "強" : days <= 45 ? "標準" : "弱", text: days === 0 ? "最終投稿が今日" : `最終投稿${days}日前` });
     }
     const er = engagementRate(a);
     if (er !== null) {
       const lowBar = plat === "X" ? [0.002, 0.0005] : [0.01, 0.003];
-      signals.push({ name: "反応", t: er >= lowBar[0] ? "強" : er >= lowBar[1] ? "標準" : "弱", text: `投稿あたりの反応はフォロワーの${(er * 100).toFixed(2)}%` });
+      signals.push({ name: "反応", t: er >= lowBar[0] ? "強" : er >= lowBar[1] ? "標準" : "弱", text: `反応率${(er * 100).toFixed(2)}%` });
     }
     const comp = (competitors?.items ?? []).filter((c) => canonPlatform(c.account.platform) === plat && c.account.followers);
     const med = median(comp.map((c) => c.account.followers as number));
     if (med && a.followers) {
       const r = a.followers / med;
-      signals.push({ name: "競合比", t: r >= 1 ? "強" : r >= 0.3 ? "標準" : "弱", text: `フォロワーは競合${comp.length}件の中央値の${Math.round(r * 100)}%` });
+      signals.push({ name: "競合比", t: r >= 1 ? "強" : r >= 0.3 ? "標準" : "弱", text: `フォロワーが競合の${Math.round(r * 100)}%` });
     }
     if (signals.length === 0) continue;
     const avg = signals.reduce((n, s) => n + TIER_POINT[s.t], 0) / signals.length;
     points.push(avg);
-    lines.push(`${plat ?? a.platform}（${signals.map((s) => s.text).join("、")}）`);
+    // 2026-10-06: 全項目を並べると長すぎたので、評価が「弱」の項目だけを媒体ごとに出す
+    const weak = signals.filter((s) => s.t === "弱").map((s) => s.text);
+    if (weak.length > 0) lines.push(`${plat ?? a.platform}は${weak.join("・")}`);
   }
 
   if (points.length === 0) {
@@ -276,7 +278,10 @@ function evalSocial(
     category: "SNS",
     score: overall,
     measured: true,
-    basis: `${points.length}媒体を分析：${lines.join("／")}`,
+    basis:
+      lines.length > 0
+        ? `${points.length}媒体を分析。弱い点：${lines.join("／")}`
+        : `${points.length}媒体を分析。更新頻度・反応・競合比に弱い点はありません`,
     sectionAnchor: anchor,
   };
 }
@@ -377,7 +382,7 @@ export async function generateSummaryMeasures(
     `あなたは集客の実務者です。下のKPIに効く施策を設計します。
 
 ${RULES}
-- items は6〜9件
+- items は10〜14件。効果の見込みが大きいものから考え、分析データの打ち手をなるべく広く拾う
 - **node を1つに集中させない。** 上のノードのうち少なくとも3つに散らす。
   「問い合わせを増やす」だけでなく、来院率・単価・リピートを動かす施策も考える
 ${useLedger ? LEDGER_RULES : ""}
@@ -399,14 +404,21 @@ ${CATEGORY_NAMES.map((c) => `- ${c}`).join("\n")}
 出力:
 {"items":[{"id":"m1","title":"","kpis":["k1"],"node":"","category":"","impact":"大","impactWhy":"",
  "effort":"すぐ","owner":"","steps":[""],"done":""${useLedger ? `,"sources":["s1"]` : ""}}]}`,
-    { maxTokens: 6000 }
+    { maxTokens: 10000 }
   );
   } catch (e) {
     // 施策を空のまま保存しない。台帳があれば、分析データの打ち手をそのまま施策として出す
     if (!useLedger) throw e;
     return await flag(measuresFromLedger(ledger, kpi), d.industry);
   }
-  const raw = useLedger ? attachSources(res.items ?? [], ledger) : (res.items ?? []);
+  let raw = useLedger ? attachSources(res.items ?? [], ledger) : (res.items ?? []);
+  // 施策に使われなかった実データの章の打ち手（MEO・LP改善・表示速度・計測タグ）は、効果中の施策として足す。
+  // 分析データで出した打ち手がサマリーに出ない、ということを減らす（全体で MAX_MEASURES 件まで）
+  if (useLedger) {
+    const used = new Set(raw.flatMap((m) => (m.sources ?? []).map((s) => s.id)));
+    const rest = ledger.filter((x) => !used.has(x.id) && MEASURED_ANCHORS.has(x.anchor));
+    raw = [...raw, ...ledgerToMeasures(rest, kpi, "x").slice(0, Math.max(0, MAX_MEASURES - raw.length))];
+  }
   const items = fixNodes(raw, kpi).map((m) => ({ ...m, category: normalizeCategory(m) }));
   const trackingMissing = trackingKnownMissing(site);
   return await flag(items.filter((m) => !isUnverifiableTagMeasure(m, trackingMissing || fromConfirmedTags(m))), d.industry);
@@ -430,6 +442,25 @@ function withPrefix(m: Measure, unverified: boolean): Measure {
 
 /** 分析データに無い施策の上限 */
 const MAX_OUTSIDE = 2;
+/** サマリーに出す施策の上限（AIが作った分＋台帳から足した分） */
+const MAX_MEASURES = 18;
+
+/**
+ * 施策のリンク先を、題名の話題（表示速度・LPの改修）に合わせる。AIが別の章の打ち手を元にしていても、
+ * 題名がLPの改修ならリンク先は「LP改善」にする。リンク先が実データの章だけなら「（もし未実施であれば）」は付けない。
+ * 画面側（components/Measures.tsx）でも、作成済みの施策に同じ補正をかける
+ */
+export function reconcileSources(m: Measure, speedShown = true): Measure {
+  if (m.outside) return m;
+  const topic = topicSection(m.title, speedShown);
+  let sources = m.sources ?? [];
+  if (topic && sources.length > 0 && !sources.some((s) => s.anchor === topic.anchor)) {
+    sources = [{ id: sources[0].id, chapter: topic.chapter, anchor: topic.anchor }];
+  }
+  const allMeasured = sources.length > 0 && sources.every((s) => MEASURED_ANCHORS.has(s.anchor));
+  const title = allMeasured && m.title.startsWith(UNVERIFIED_PREFIX) ? m.title.slice(UNVERIFIED_PREFIX.length) : m.title;
+  return { ...m, sources, title, unverified: allMeasured ? false : m.unverified };
+}
 
 /**
  * AIが付けた sources（台帳の番号）を検証して、画面用の章名・移動先に置き換える。
@@ -458,7 +489,8 @@ export function attachSources(items: Measure[], ledger: SourceItem[]): Measure[]
       category: m.category && (CATEGORY_NAMES as readonly string[]).includes(m.category) ? m.category : found[0].category,
     }, found.every((x) => x.unverified)));
   }
-  return out;
+  const speedShown = ledger.some((x) => x.anchor === "sec-speed");
+  return out.map((m) => reconcileSources(m, speedShown));
 }
 
 const OWNER: Record<string, string> = {
@@ -478,9 +510,14 @@ const OWNER: Record<string, string> = {
  */
 export function measuresFromLedger(ledger: SourceItem[], kpi: KpiTree): Measure[] {
   const picked = CATEGORY_NAMES.map((c) => ledger.find((x) => x.category === c)).filter((x): x is SourceItem => !!x);
+  return ledgerToMeasures(picked, kpi, "f");
+}
+
+/** 台帳の打ち手を、そのまま施策の形にする（AIを使わない）。効果の見込みは「中」 */
+function ledgerToMeasures(picked: SourceItem[], kpi: KpiTree, prefix: string): Measure[] {
   const node = kpi.branches[0]?.node ?? kpi.candidates[0]?.node ?? "";
   return picked.map((x, i) => withPrefix({
-    id: `f${i + 1}`,
+    id: `${prefix}${i + 1}`,
     title: x.text.length > 60 ? `${x.text.slice(0, 59)}…` : x.text,
     kpis: kpi.candidates[0] ? [kpi.candidates[0].id] : [],
     node,
@@ -625,11 +662,13 @@ export function sortMeasuresByPriority(measures: Measure[], evaluations: Categor
     const matched = categoryForMeasure(m, evaluations);
     return matched ? (matched.score === null ? SCORE_RANK["弱"] : SCORE_RANK[matched.score]) : 1;
   };
+  // 2026-10-06: 効果の見込みが大きいものを先頭に並べる（一次）。同じ効果の中では、評価の弱いカテゴリ、
+  // 手間の少ないものの順
   return [...measures].sort((a, b) => {
+    const impact = (IMPACT_RANK[a.impact] ?? 1) - (IMPACT_RANK[b.impact] ?? 1);
+    if (impact !== 0) return impact;
     const primary = rankOf(a) - rankOf(b);
     if (primary !== 0) return primary;
-    const impact = IMPACT_RANK[a.impact] - IMPACT_RANK[b.impact];
-    if (impact !== 0) return impact;
-    return EFFORT_RANK[a.effort] - EFFORT_RANK[b.effort];
+    return (EFFORT_RANK[a.effort] ?? 1) - (EFFORT_RANK[b.effort] ?? 1);
   });
 }
