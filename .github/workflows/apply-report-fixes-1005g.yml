@@ -1,0 +1,45 @@
+name: apply-report-fixes-1005g
+on:
+  push:
+    paths:
+      - '.buildtmp/yt-disable-1005g/GO.marker'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Concatenate chunks, decode, gunzip and apply patch
+        run: |
+          cat .buildtmp/yt-disable-1005g/chunks/chunk-*.b64 | tr -d '\n' > /tmp/combined.b64
+          wc -c /tmp/combined.b64
+          base64 -d /tmp/combined.b64 | gunzip > /tmp/combined.patch
+          wc -c /tmp/combined.patch
+          git apply --check /tmp/combined.patch
+          git apply /tmp/combined.patch
+
+      - name: Commit applied changes
+        run: |
+          git config user.name "suzuki"
+          git config user.email "suzuki@ad-rex.com"
+          git add -A -- . ':!.buildtmp' ':!.github/workflows/apply-report-fixes-1005g.yml'
+          git commit \
+            -m "fix: 新規分析画面のYouTube非公開指標チェックを非活性にし対応予定と明記（1005g）" \
+            -m "連携アカウントのチャンネルが対象サイトの公式チャンネルか確認できないため、非公開指標は使わない。公開情報は連携なしで従来通り取得。" \
+            -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+
+      - name: Remove staging files and this workflow
+        run: |
+          git rm -r .buildtmp
+          git rm .github/workflows/apply-report-fixes-1005g.yml
+          git commit -m "chore: remove temporary push-apply workflow and staging files"
+
+      - name: Push to main
+        run: git push origin HEAD:main
