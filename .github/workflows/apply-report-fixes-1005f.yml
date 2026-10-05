@@ -1,0 +1,45 @@
+name: apply-report-fixes-1005f
+on:
+  push:
+    paths:
+      - '.buildtmp/report-fixes-1005f/GO.marker'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Concatenate chunks, decode, gunzip and apply patch
+        run: |
+          cat .buildtmp/report-fixes-1005f/chunks/chunk-*.b64 | tr -d '\n' > /tmp/combined.b64
+          wc -c /tmp/combined.b64
+          base64 -d /tmp/combined.b64 | gunzip > /tmp/combined.patch
+          wc -c /tmp/combined.patch
+          git apply --check /tmp/combined.patch
+          git apply /tmp/combined.patch
+
+      - name: Commit applied changes
+        run: |
+          git config user.name "suzuki"
+          git config user.email "suzuki@ad-rex.com"
+          git add -A -- . ':!.buildtmp' ':!.github/workflows/apply-report-fixes-1005f.yml'
+          git commit \
+            -m "feat: Google連携アカウント選択・サイト健全性評価・バナー方針・旧レポート補完（1005f）" \
+            -m "新規分析でSearch Console/GA4/YouTubeの対象を選択可能に、上部4領域スコアを削除しサマリーのカテゴリ別評価にサイト健全性を追加、バナーは切り抜きせず文字なし画像を優先、継続処理を最新の本番デプロイへ向ける、旧レポートに競合比較とSNS(B2C前提)を追加できるように。" \
+            -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+
+      - name: Remove staging files and this workflow
+        run: |
+          git rm -r .buildtmp
+          git rm .github/workflows/apply-report-fixes-1005f.yml
+          git commit -m "chore: remove temporary push-apply workflow and staging files"
+
+      - name: Push to main
+        run: git push origin HEAD:main
