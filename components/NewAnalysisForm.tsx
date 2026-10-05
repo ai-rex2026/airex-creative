@@ -19,7 +19,6 @@ export function NewAnalysisForm({ initialUrl, googleConnected = false }: { initi
   // 連携中のGoogleアカウントのどのデータを使うか。"auto" は URL のドメインで自動的に探す
   const [gscSel, setGscSel] = useState<string>("auto");
   const [ga4Sel, setGa4Sel] = useState<string>("auto");
-  const [useYoutube, setUseYoutube] = useState(true);
   const [assets, setAssets] = useState<GoogleAssets | null>(null);
   const [assetsErr, setAssetsErr] = useState<string | null>(null);
   const [assetsBusy, setAssetsBusy] = useState(false);
@@ -76,7 +75,8 @@ export function NewAnalysisForm({ initialUrl, googleConnected = false }: { initi
               ? ({
                   gsc: gscSel === "auto" ? null : gscSel,
                   ga4: ga4Sel === "auto" ? null : ga4Sel,
-                  youtube: useYoutube,
+                  // 連携アカウントのチャンネルが対象サイトの公式チャンネルか確認できるまで、非公開指標は使わない
+                  youtube: false,
                 } satisfies GoogleChoice)
               : undefined,
         });
@@ -168,13 +168,14 @@ export function NewAnalysisForm({ initialUrl, googleConnected = false }: { initi
               </select>
               {assets?.ga4.error && <small style={{ color: "var(--ng)" }}>GA4の一覧を取得できませんでした：{assets.ga4.error}</small>}
 
-              <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, marginTop: 12 }}>
-                <input type="checkbox" checked={useYoutube} onChange={(e) => setUseYoutube(e.target.checked)} />
+              <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, marginTop: 12, opacity: 0.55 }}>
+                <input type="checkbox" checked={false} disabled />
                 YouTube：連携中のアカウントのチャンネルの非公開指標（視聴時間・登録者の増減など）を使う
+                <span style={{ fontSize: 11, border: "1px solid var(--line, #ccc)", borderRadius: 4, padding: "1px 6px" }}>対応予定</span>
               </label>
               <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "var(--faint)" }}>
-                YouTubeはチャンネルの一覧を取得できないため、連携中のアカウントのチャンネルがこのサイトの公式チャンネルかどうかは
-                この画面では確認できません。別のチャンネルの場合はチェックを外してください。
+                YouTubeの非公開指標は、連携中のアカウントのチャンネルが対象サイトの公式チャンネルか確認する仕組みを用意してから対応します（現在は使いません）。
+                登録者数・動画数などの公開情報は、連携なしでこれまで通り取得します。
                 Search Console・GA4で別のサイトを選ぶと、そのデータがこのレポートに入ります。このURLと同じサイトを選んでください。
               </p>
             </div>
