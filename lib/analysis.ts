@@ -8,6 +8,7 @@ import { generateTactics, type TacticPlan } from "./tactics";
 import { generateSnsPlan, type SnsPlan } from "./sns-plan";
 import { finishAdOps, generateCampaign, opsTargets, planChannel, type AdOps } from "./ad-ops";
 import { hasPlacesApi, scanMeo, type MeoScan } from "./meo";
+import { buildLedger } from "./measure-sources";
 import { generateKeywords, generateLine, generateLpo, type KeywordPlan, type LinePlan, type LpoPlan } from "./deep";
 import { generateOutreach, scanSuggests, type OutreachPlan, type SuggestScan } from "./outreach";
 import { scanPrices, type PriceScan } from "./pricing";
@@ -721,10 +722,12 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
           socialCompetitors: a.social_competitors,
           diagnosis,
         });
+      // 分析データタブで提案済みの打ち手から施策を組む（2026-10-05〜。lib/measure-sources.ts）
+      const ledger = buildLedger(a);
       const measures =
         a.measures ??
         (await generateSummaryMeasures(
-          diagnosis, a.site, kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social, priorityNoteFor(a, "measures")
+          diagnosis, a.site, kpi, a.meo, a.pricing, a.extra_inputs ?? [], [], a.social, priorityNoteFor(a, "measures"), ledger
         ).catch(() => [] as Measure[]));
       return await save({ category_evaluations, measures, step: "要約をまとめています", progress: 96 });
     }

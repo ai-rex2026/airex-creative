@@ -17,6 +17,7 @@ import { normalizeManualSocialInput } from "@/lib/social";
 import { processAnalysis } from "@/lib/worker";
 import { hasGoogleApp, listGoogleAssets, type GoogleAssets, type GoogleChoice } from "@/lib/google";
 import { generateLp } from "@/lib/lp";
+import { buildLedger } from "@/lib/measure-sources";
 import { hasAnthropic } from "@/lib/anthropic";
 import type { BannerCopy, Diagnosis, GuardHit } from "@/lib/types";
 
@@ -602,9 +603,10 @@ export async function regenerateSummaryTab(id: string) {
   const doneIds = a.measures_done ?? [];
   const doneTitles = (a.measures ?? []).filter((m) => doneIds.includes(m.id)).map((m) => m.title);
 
+  // 分析データタブで提案済みの打ち手から施策を組む（2026-10-05〜。古い分析も作り直すとこの方式になる）
   const plan = await generateSummaryTab(
     a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.seo, a.gsc, a.keywords, a.speed, a.lpo,
-    a.social, a.suggests, a.ad_ops, a.extra_inputs ?? [], doneTitles
+    a.social, a.suggests, a.ad_ops, a.extra_inputs ?? [], doneTitles, undefined, buildLedger(a)
   );
   const items = plan.measures.map((m, i) => ({ ...m, id: `m${Date.now()}-${i}` }));
 

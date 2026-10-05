@@ -13,6 +13,7 @@ import type { SuggestScan } from "./outreach";
 import type { GscData } from "./google";
 import type { AdOps } from "./ad-ops";
 import { facts, fixNodes, flag, RULES, type Measure, type MeasurePlan } from "./measures";
+import type { SourceItem } from "./measure-sources";
 
 /**
  * サマリータブ（旧「施策」タブ）の生成。
@@ -350,18 +351,30 @@ export async function generateSummaryMeasures(
   extra: { platform: string; url: string }[] = [],
   doneTitles: string[] = [],
   social: SocialScan | null = null,
-  priorityNote?: string
+  priorityNote?: string,
+  /**
+   * 分析データタブで提案済みの打ち手（lib/measure-sources.ts）。2026-10-05から、施策はここから選んで
+   * まとめる（分析データに無い施策は2件まで）。空なら従来どおり、材料だけから考える
+   */
+  ledger: SourceItem[] = []
 ): Promise<Measure[]> {
-  const res = await askJson<MeasurePlan>(
+  const useLedger = ledger.length > 0;
+  let res: MeasurePlan;
+  try {
+    res = await askJson<MeasurePlan>(
     `あなたは集客の実務者です。下のKPIに効く施策を設計します。
 
 ${RULES}
 - items は6〜9件
 - **node を1つに集中させない。** 上のノードのうち少なくとも3つに散らす。
   「問い合わせを増やす」だけでなく、来院率・単価・リピートを動かす施策も考える
+${useLedger ? LEDGER_RULES : ""}
 ${priorityNote ? `\n${priorityNote}` : ""}`,
     `${facts(d, site, meo, pricing, extra, doneTitles, social)}
-
+${useLedger ? `
+【分析データで提案済みの打ち手】※ 施策はここから選んでまとめる。sources にこの番号を入れる
+${ledger.map((x) => `- ${x.id}［${x.chapter}／${x.category}］${x.text}`).join("\n")}
+` : ""}
 【追うKPI】
 ${kpi.candidates.map((c) => `- ${c.id}：${c.name}（${c.node}）／ ${c.trackable}`).join("\n")}
 
@@ -373,12 +386,89 @@ ${CATEGORY_NAMES.map((c) => `- ${c}`).join("\n")}
 
 出力:
 {"items":[{"id":"m1","title":"","kpis":["k1"],"node":"","category":"","impact":"大","impactWhy":"",
- "effort":"すぐ","owner":"","steps":[""],"done":""}]}`,
+ "effort":"すぐ","owner":"","steps":[""],"done":""${useLedger ? `,"sources":["s1"]` : ""}}]}`,
     { maxTokens: 6000 }
   );
-  const items = fixNodes(res.items ?? [], kpi).map((m) => ({ ...m, category: normalizeCategory(m) }));
+  } catch (e) {
+    // 施策を空のまま保存しない。台帳があれば、分析データの打ち手をそのまま施策として出す
+    if (!useLedger) throw e;
+    return await flag(measuresFromLedger(ledger, kpi), d.industry);
+  }
+  const raw = useLedger ? attachSources(res.items ?? [], ledger) : (res.items ?? []);
+  const items = fixNodes(raw, kpi).map((m) => ({ ...m, category: normalizeCategory(m) }));
   const trackingMissing = trackingKnownMissing(site);
-  return await flag(items.filter((m) => !isUnverifiableTagMeasure(m, trackingMissing)), d.industry);
+  return await flag(items.filter((m) => !isUnverifiableTagMeasure(m, trackingMissing || fromConfirmedTags(m))), d.industry);
+}
+
+const LEDGER_RULES = `- **施策は【分析データで提案済みの打ち手】から選んでまとめる。** 近い打ち手は1つの施策に束ねてよい。
+  各施策の sources に、元にした打ち手の番号（s1 など）を1つ以上入れる。打ち手の中身を変えて別の施策にしない
+- 分析データに無い施策は**2件まで**。その施策だけ sources を空の配列 [] にする
+- category は、元にした打ち手のカテゴリに合わせる`;
+
+/** 分析データに無い施策の上限 */
+const MAX_OUTSIDE = 2;
+
+/**
+ * AIが付けた sources（台帳の番号）を検証して、画面用の章名・移動先に置き換える。
+ * 存在しない番号は捨てる。元が1つも無い施策は「分析データ外」とし、2件を超えた分は捨てる
+ */
+export function attachSources(items: Measure[], ledger: SourceItem[]): Measure[] {
+  const byId = new Map(ledger.map((x) => [x.id, x]));
+  let outside = 0;
+  const out: Measure[] = [];
+  for (const m of items) {
+    const ids = Array.isArray(m.sources) ? m.sources.map((s) => (typeof s === "string" ? s : (s as { id?: string })?.id ?? "")) : [];
+    const found = [...new Set(ids)].map((id) => byId.get(String(id).trim())).filter((x): x is SourceItem => !!x);
+    if (found.length === 0) {
+      if (outside >= MAX_OUTSIDE) continue;
+      outside++;
+      out.push({ ...m, sources: [], outside: true });
+      continue;
+    }
+    out.push({
+      ...m,
+      sources: found.map((x) => ({ id: x.id, chapter: x.chapter, anchor: x.anchor })),
+      outside: false,
+      // カテゴリが空・不正なら、元にした打ち手のカテゴリを使う
+      category: m.category && (CATEGORY_NAMES as readonly string[]).includes(m.category) ? m.category : found[0].category,
+    });
+  }
+  return out;
+}
+
+const OWNER: Record<string, string> = {
+  広告の準備: "広告運用担当",
+  MEO: "店舗責任者",
+  SEO強度: "サイト制作会社",
+  対策キーワード充足度: "Web担当者",
+  LP: "サイト制作会社",
+  SNS: "SNS担当者",
+  検索サジェスト: "Web担当者",
+  外部施策: "広報担当",
+};
+
+/**
+ * AIの生成に失敗したときの代わり。台帳からカテゴリごとに先頭の1件を施策にする（AIを使わない）。
+ * 文面は分析データに書いてあるものをそのまま使い、効果の見込みは数字を出さない
+ */
+export function measuresFromLedger(ledger: SourceItem[], kpi: KpiTree): Measure[] {
+  const picked = CATEGORY_NAMES.map((c) => ledger.find((x) => x.category === c)).filter((x): x is SourceItem => !!x);
+  const node = kpi.branches[0]?.node ?? kpi.candidates[0]?.node ?? "";
+  return picked.map((x, i) => ({
+    id: `f${i + 1}`,
+    title: x.text.length > 60 ? `${x.text.slice(0, 59)}…` : x.text,
+    kpis: kpi.candidates[0] ? [kpi.candidates[0].id] : [],
+    node,
+    category: x.category,
+    impact: "中",
+    impactWhy: `分析データの「${x.chapter}」で提案している打ち手です。詳しい根拠はその章をご覧ください。`,
+    effort: "数日",
+    owner: OWNER[x.category] ?? "Web担当者",
+    steps: [x.text, `分析データの「${x.chapter}」の内容を確認し、担当と期日を決める`, "対応したら、この施策を「やった」にする"],
+    done: `「${x.chapter}」の該当の打ち手を実施した`,
+    sources: [{ id: x.id, chapter: x.chapter, anchor: x.anchor }],
+    outside: false,
+  }));
 }
 
 /** 「カテゴリ別評価」のカテゴリ名（evaluateCategories が返す category と同じ語） */
@@ -437,6 +527,14 @@ export function isUnverifiableTagMeasure(m: Pick<Measure, "title" | "impactWhy">
   return !trackingMissing;
 }
 
+/**
+ * 分析データの「計測タグの導入状況」で未導入と確認できたタグ（GTMのコンテナまで読んだうえでの判定）を
+ * 元にした施策か。この場合は計測の施策でも出してよい（電話・LINE等の個別計測は引き続き出さない）
+ */
+export function fromConfirmedTags(m: Pick<Measure, "sources">): boolean {
+  return (m.sources ?? []).some((s) => s.anchor === "sec-tags");
+}
+
 /** サイトのHTMLから、GTM・広告タグのどちらも検出できなかったか（＝計測タグが未設置と分かっている状態） */
 export function trackingKnownMissing(site: { gtmId: string | null; adTags: string[] } | null | undefined): boolean {
   return !!site && !site.gtmId && (site.adTags?.length ?? 0) === 0;
@@ -465,10 +563,11 @@ export async function generateSummaryTab(
   adOps: AdOps | null,
   extra: { platform: string; url: string }[] = [],
   doneTitles: string[] = [],
-  priorityNote?: string
+  priorityNote?: string,
+  ledger: SourceItem[] = []
 ): Promise<SummaryTab> {
   const evaluations = evaluateCategories({ site, adOps, meo, seo, gsc, keywords, speed, lpo, social, suggests });
-  const measures = await generateSummaryMeasures(d, site, kpi, meo, pricing, extra, doneTitles, social, priorityNote);
+  const measures = await generateSummaryMeasures(d, site, kpi, meo, pricing, extra, doneTitles, social, priorityNote, ledger);
   return { evaluations, measures };
 }
 

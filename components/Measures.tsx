@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { makeRunbook, regenerateSummaryTab, toggleMeasure } from "@/app/actions";
 import type { Measure } from "@/lib/measures";
 import type { CategoryEvaluation } from "@/lib/summary-tab";
-import { categoryForMeasure, isUnverifiableTagMeasure, sortMeasuresByPriority } from "@/lib/summary-tab";
+import { categoryForMeasure, fromConfirmedTags, isUnverifiableTagMeasure, sortMeasuresByPriority } from "@/lib/summary-tab";
 import { Spinner } from "./Loading";
 import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
 import { CasePhotoFrame } from "./CasePhotoFrame";
@@ -58,7 +58,9 @@ export function Measures({
   trackingMissing?: boolean;
 }) {
   // 計測タグ設置系の施策は設置済みか確認できないため出さない（古い分析に残っていても表示しない）
-  const [list, setList] = useState<Measure[]>(() => measures.filter((m) => !isUnverifiableTagMeasure(m, trackingMissing)));
+  // ただし分析データの「計測タグの導入状況」で未導入と確認できたタグを元にした施策は出す
+  const visible = (m: Measure) => !isUnverifiableTagMeasure(m, trackingMissing || fromConfirmedTags(m));
+  const [list, setList] = useState<Measure[]>(() => measures.filter(visible));
   const [evaluations, setEvaluations] = useState<CategoryEvaluation[] | null>(categoryEvaluations);
   const [doneIds, setDoneIds] = useState<string[]>(done);
   const [logs, setLogs] = useState(log);
@@ -99,7 +101,7 @@ export function Measures({
     start(async () => {
       try {
         const res = await regenerateSummaryTab(id);
-        setList(res.items.filter((m) => !isUnverifiableTagMeasure(m, trackingMissing)));
+        setList(res.items.filter(visible));
         setEvaluations(res.evaluations);
         setDoneIds(res.done);
         setOpen(null);
@@ -192,6 +194,19 @@ export function Measures({
                   return cat ? <span className="chip cat">{cat.category}</span> : null;
                 })()}
                 {m.flags && m.flags.length > 0 && <span className="chip law">法令の指摘 {m.flags.length}</span>}
+                {/* 元にした分析データの章へのリンク。同じ章を元にした打ち手が複数あっても1つにまとめる */}
+                {[...new Map((m.sources ?? []).map((x) => [x.anchor, x])).values()].map((x) => (
+                  <button
+                    type="button"
+                    key={x.anchor}
+                    className="chip src"
+                    onClick={() => onNavigate(x.anchor)}
+                    title="分析データタブの該当の章へ移動します"
+                  >
+                    分析データ：{x.chapter} →
+                  </button>
+                ))}
+                {m.outside && <span className="chip outside">分析データ外の提案</span>}
               </div>
               {isOpen && (
                 <div className="bd">

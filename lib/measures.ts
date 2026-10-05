@@ -56,6 +56,13 @@ export type Measure = {
   flags?: { text: string; law: string; reason: string; suggestion: string }[];
   /** 実行用のプロンプト。使うときに作るので、最初は無い */
   runbook?: Runbook;
+  /**
+   * この施策の元になった分析データタブの打ち手（lib/measure-sources.ts の台帳）。
+   * 画面で「分析データの◯◯から」として該当の章へ移動できるようにする。2026-10-05以前の分析には無い
+   */
+  sources?: { id: string; chapter: string; anchor: string }[];
+  /** 分析データタブで触れていない、AIが追加した施策か（1分析につき2件まで） */
+  outside?: boolean;
 };
 
 export type MeasurePlan = { items: Measure[] };
