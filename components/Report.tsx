@@ -124,6 +124,16 @@ function GuestMask({ guest, label, children }: { guest: boolean; label: string; 
 // booleanの変数を経由させている
 const LP_GENERATION_ENABLED: boolean = false;
 
+/** AIが文字列の配列を {"action": "..."} のようなオブジェクトの配列で返すことがある。そのまま描画すると画面ごと落ちるため、文字列に直す */
+function txt(x: unknown): string {
+  if (typeof x === "string") return x;
+  if (x && typeof x === "object") {
+    const v = Object.values(x as Record<string, unknown>).find((y) => typeof y === "string");
+    return typeof v === "string" ? v : "";
+  }
+  return x == null ? "" : String(x);
+}
+
 export function Report({
   d,
   copies,
@@ -1622,7 +1632,7 @@ export function Report({
                   {outreach && outreach.suggestActions?.length > 0 && (
                     <div className="tactic measure" style={{ marginTop: 12 }}>
                       <div className="top"><b>この状態に対してやること</b></div>
-                      <ul>{outreach.suggestActions.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                      <ul>{outreach.suggestActions.map((x, i) => <li key={i}>{txt(x)}</li>)}</ul>
                     </div>
                   )}
                 </>
@@ -1955,7 +1965,7 @@ export function Report({
               {outreach.prThemes?.length > 0 && (
                 <div className="tactic measure" style={{ marginTop: 12 }}>
                   <div className="top"><b>PRで出せる話</b></div>
-                  <ul>{outreach.prThemes.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                  <ul>{outreach.prThemes.map((x, i) => <li key={i}>{txt(x)}</li>)}</ul>
                 </div>
               )}
 
@@ -1963,7 +1973,7 @@ export function Report({
                 <div className="tactic measure" style={{ marginTop: 12 }}>
                   <div className="top"><b>ネガティブ対策</b></div>
                   <p>悪い評判や誤解が広がったときに備えて、先にやっておくことです。</p>
-                  <ul>{outreach.negatives!.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                  <ul>{outreach.negatives!.map((x, i) => <li key={i}>{txt(x)}</li>)}</ul>
                 </div>
               )}
             </>

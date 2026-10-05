@@ -293,7 +293,7 @@ export async function generateOutreach(
 ): Promise<OutreachPlan> {
   const risky = suggests.rows.filter((r) => r.kind !== "中立");
 
-  return askJson<OutreachPlan>(
+  const plan = await askJson<OutreachPlan>(
     `あなたは外部露出（PR・掲載・アフィリエイト）の実務者です。自社サイトの外側で何をするかを設計します。
 
 守ること:
@@ -332,6 +332,22 @@ ${competitors?.items?.length ? `\n競合: ${competitors.items.slice(0, 5).map((c
  "suggestActions":[""],"prThemes":[""],"negatives":[""]}`,
     { maxTokens: 4000 }
   );
+  // 文字列の配列のはずが {"action":"..."} のようなオブジェクトで返ることがある。画面が落ちるので文字列に直して保存する
+  const str = (x: unknown): string => {
+    if (typeof x === "string") return x;
+    if (x && typeof x === "object") {
+      const v = Object.values(x as Record<string, unknown>).find((y) => typeof y === "string");
+      return typeof v === "string" ? v : "";
+    }
+    return x == null ? "" : String(x);
+  };
+  const strs = (xs: unknown): string[] => (Array.isArray(xs) ? xs.map(str).filter((s) => s.trim()) : []);
+  return {
+    ...plan,
+    suggestActions: strs(plan.suggestActions),
+    prThemes: strs(plan.prThemes),
+    negatives: plan.negatives === undefined ? undefined : strs(plan.negatives),
+  };
 }
 
 /** 古い分析に、ネガティブ対策だけを後から足す */
