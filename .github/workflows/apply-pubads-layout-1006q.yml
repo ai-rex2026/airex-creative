@@ -1,0 +1,43 @@
+name: apply-pubads-layout-1006q
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-pubads-layout-1006q.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Concatenate chunks, decode, gunzip and apply patch
+        run: |
+          cat .buildtmp/pubads-layout-1006q/chunks/chunk-*.b64 | tr -d '\n' > /tmp/combined.b64
+          base64 -d /tmp/combined.b64 | gunzip > /tmp/combined.patch
+          echo "d70695f1b615bc7a4ef9849f11761084c7891fb67fca60b6fe7175c296e0824b  /tmp/combined.patch" | sha256sum -c -
+          git apply --check /tmp/combined.patch
+          git apply /tmp/combined.patch
+
+      - name: Commit applied changes
+        run: |
+          git config user.name "suzuki"
+          git config user.email "suzuki@ad-rex.com"
+          git add -A -- . ':!.buildtmp' ':!.github/workflows/apply-pubads-layout-1006q.yml'
+          git commit \
+            -m "feat: 出稿中の広告を媒体ごとに（現状→所見→施策案）・一覧は折りたたみ・番号を一覧に表示・広告運用設計の次へ（1006q）" \
+            -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
+
+      - name: Remove staging files and this workflow
+        run: |
+          git rm -r -q .buildtmp
+          git rm -q .github/workflows/apply-pubads-layout-1006q.yml
+          git commit -m "chore: remove temporary push-apply workflow and staging files"
+
+      - name: Push to main
+        run: git push origin HEAD:main
