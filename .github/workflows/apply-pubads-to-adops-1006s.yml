@@ -1,0 +1,43 @@
+name: apply-pubads-to-adops-1006s
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-pubads-to-adops-1006s.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Concatenate chunks, decode, gunzip and apply patch
+        run: |
+          cat .buildtmp/pubads-to-adops-1006s/chunks/chunk-*.b64 | tr -d '\n' > /tmp/combined.b64
+          base64 -d /tmp/combined.b64 | gunzip > /tmp/combined.patch
+          echo "9ca63ac998c802fdecb563d9f02f2059fcca879bcfd21bbe6815abf674697882  /tmp/combined.patch" | sha256sum -c -
+          git apply --check /tmp/combined.patch
+          git apply /tmp/combined.patch
+
+      - name: Commit applied changes
+        run: |
+          git config user.name "suzuki"
+          git config user.email "suzuki@ad-rex.com"
+          git add -A -- . ':!.buildtmp' ':!.github/workflows/apply-pubads-to-adops-1006s.yml'
+          git commit \
+            -m "feat: 出稿中の広告を広告運用設計の前に置き、制作案を運用設計の広告グループに反映（1006s）" \
+            -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
+
+      - name: Remove staging files and this workflow
+        run: |
+          git rm -r -q .buildtmp
+          git rm -q .github/workflows/apply-pubads-to-adops-1006s.yml
+          git commit -m "chore: remove temporary push-apply workflow and staging files"
+
+      - name: Push to main
+        run: git push origin HEAD:main
