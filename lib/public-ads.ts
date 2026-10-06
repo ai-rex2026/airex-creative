@@ -28,6 +28,10 @@ export type PublicMetaAd = {
   imageUrls: string[];
   videoUrls: string[];
   adLibraryUrl: string;
+  /** 同じ素材（見出し・本文・形式が同じ）で配信している広告の数（この広告を含む）。2026-10-06 夜〜 */
+  sameCount?: number;
+  /** 同じ素材の配信先LP（この広告以外） */
+  otherLinks?: string[];
 };
 
 export type PublicGoogleAd = {
@@ -38,6 +42,23 @@ export type PublicGoogleAd = {
   imageUrl: string;
   headline: string;
   body: string;
+  /** 同じ素材（同じ表示見本）の広告の数（この広告を含む）。2026-10-06 夜〜 */
+  sameCount?: number;
+};
+
+/** 画像・動画の制作案（コンセプトではなく、作る素材の粒度）。2026-10-06 夜〜 */
+export type CreativeProposal = {
+  /** 形式（例：縦型動画 9:16・15秒／静止画 4:5） */
+  format: string;
+  /** 狙い（今の広告のどこを埋めるか。番号を引用） */
+  aim: string;
+  /** 構成（動画は冒頭3秒・中盤・最後、静止画は主役・文字・CTA） */
+  structure: string[];
+  /** 画像・動画内に入れる文言の案 */
+  onscreenText: string;
+  /** 撮影・素材のメモ */
+  shoot: string;
+  flags?: { text: string; law: string; reason: string; suggestion: string }[];
 };
 
 export type CreativeNote = {
@@ -65,7 +86,10 @@ export type PublicAds = {
   /** platform：どちらの広告の表現か（2026-10-06 夜〜。それ以前の結果には無い） */
   legal?: { text: string; law: string; reason: string; suggestion: string; severity: string; platform?: "meta" | "google" }[];
   /** 所見・施策案を媒体ごとに分けたもの（2026-10-06 夜〜）。画面はこちらを優先して出す */
-  byPlatform?: { meta: { findings: string[]; measures: PublicAdsMeasure[] }; google: { findings: string[]; measures: PublicAdsMeasure[] } };
+  byPlatform?: {
+    meta: { findings: string[]; measures: PublicAdsMeasure[]; proposals?: CreativeProposal[] };
+    google: { findings: string[]; measures: PublicAdsMeasure[]; proposals?: CreativeProposal[] };
+  };
   /** 両媒体をまとめたもの（施策の台帳と、分ける前の結果の表示に使う） */
   findings?: string[];
   measures?: PublicAdsMeasure[];
@@ -75,6 +99,12 @@ export type PublicAds = {
 /** 2026-10-06：30件ずつでは同じ素材の使い回しが並ぶだけで読みにくかったため減らした */
 const MAX_META = 15;
 const MAX_GOOGLE = 10;
+/**
+ * 一覧と分析に使う広告の数（同じ素材をまとめた後）。2026-10-06 夜：所見・施策案は媒体ごとに数件なので、
+ * 分析対象も少なくてよい。取得は上の件数のまま（同じ素材の使い回しが多いと、少なく取ると別パターンを取りこぼすため）
+ */
+const SHOW_META = 5;
+const SHOW_GOOGLE = 5;
 const MAX_IMAGES = 10;
 const MAX_VIDEOS = 5;
 const MAX_GOOGLE_IMAGES = 8;
@@ -127,6 +157,36 @@ export function mapGoogleItems(items: Record<string, unknown>[]): PublicGoogleAd
   }));
 }
 
+const norm = (t: string) => t.replace(/\s+/g, "").toLowerCase();
+
+/** 見出し・本文・形式が同じ広告を1つにまとめる（配信先LPだけ違う使い回しが多いため）。並びは最初に出た順 */
+export function dedupeMeta(ads: PublicMetaAd[]): PublicMetaAd[] {
+  const map = new Map<string, PublicMetaAd>();
+  for (const a of ads) {
+    const key = `${a.format}|${norm(a.title)}|${norm(a.body)}`;
+    const cur = map.get(key);
+    if (!cur) {
+      map.set(key, { ...a, sameCount: 1, otherLinks: [] });
+      continue;
+    }
+    cur.sameCount = (cur.sameCount ?? 1) + 1;
+    if (a.linkUrl && a.linkUrl !== cur.linkUrl && !(cur.otherLinks ?? []).includes(a.linkUrl)) cur.otherLinks = [...(cur.otherLinks ?? []), a.linkUrl];
+  }
+  return [...map.values()];
+}
+
+/** 同じ表示見本（画像URL）の広告を1つにまとめる */
+export function dedupeGoogle(ads: PublicGoogleAd[]): PublicGoogleAd[] {
+  const map = new Map<string, PublicGoogleAd>();
+  for (const a of ads) {
+    const key = a.imageUrl || `${a.format}|${norm(a.headline)}|${norm(a.body)}|${a.id}`;
+    const cur = map.get(key);
+    if (cur) cur.sameCount = (cur.sameCount ?? 1) + 1;
+    else map.set(key, { ...a, sameCount: 1 });
+  }
+  return [...map.values()];
+}
+
 /** 工程1：Meta・Google の公開広告を取る。どちらかが失敗しても、もう一方は残す */
 export async function fetchPublicAds(analysisId: string, siteUrl: string | null, facebookUrl: string | null): Promise<PublicAds> {
   const domain = hostOf(siteUrl);
@@ -144,7 +204,7 @@ export async function fetchPublicAds(analysisId: string, siteUrl: string | null,
       : m.value === null
         ? { status: "skipped", pageUrl: null, ads: [] }
         : (() => {
-            const ads = mapMetaItems(m.value);
+            const ads = dedupeMeta(mapMetaItems(m.value)).slice(0, SHOW_META);
             return { status: ads.length ? "ok" : "none", pageUrl: facebookUrl, ads } as PublicAds["meta"];
           })();
 
@@ -154,7 +214,7 @@ export async function fetchPublicAds(analysisId: string, siteUrl: string | null,
       : g.value === null
         ? { status: "skipped", domain: null, ads: [] }
         : (() => {
-            const ads = mapGoogleItems(g.value);
+            const ads = dedupeGoogle(mapGoogleItems(g.value)).slice(0, SHOW_GOOGLE);
             return { status: ads.length ? "ok" : "none", domain, ads } as PublicAds["google"];
           })();
 
@@ -286,7 +346,7 @@ export async function reviewPublicAds(p: PublicAds, d: Diagnosis, siteUrl: strin
   const lines = [
     `【分析したサイト】${siteUrl ?? "（URLなし）"}`,
     `【Meta 広告（配信中 ${p.meta.ads.length}件）】`,
-    ...p.meta.ads.slice(0, 15).map((a, i) => `- M${i + 1}［${a.format}／${a.startDate}〜／${a.platforms.join("・")}］見出し：${a.title}／本文：${a.body.replace(/\s+/g, " ").slice(0, 160)}／LP：${a.linkUrl}`),
+    ...p.meta.ads.slice(0, 15).map((a, i) => `- M${i + 1}［${a.format}／${a.startDate}〜／${a.platforms.join("・")}${(a.sameCount ?? 1) > 1 ? `／同じ素材で${a.sameCount}本配信` : ""}］見出し：${a.title}／本文：${a.body.replace(/\s+/g, " ").slice(0, 160)}／LP：${a.linkUrl}`),
     `【Google 広告（${p.google.ads.length}件）】`,
     ...p.google.ads.slice(0, 15).map((a, i) => `- G${i + 1}［${a.format}／${a.firstShown}〜${a.lastShown}］${a.headline} ${a.body}`.trim()),
     `【画像・動画の中身（AIで書き起こし）】`,
@@ -296,7 +356,7 @@ export async function reviewPublicAds(p: PublicAds, d: Diagnosis, siteUrl: strin
   ].join("\n");
 
   try {
-    type Side = { findings: string[]; measures: PublicAdsMeasure[] };
+    type Side = { findings: string[]; measures: PublicAdsMeasure[]; proposals: CreativeProposal[] };
     const out = await askJson<{ meta: Side; google: Side; legal: { text: string; law: string; reason: string; suggestion: string; platform: string }[] }>(
       `あなたは運用型広告のクリエイティブと受け皿（LP）の実務者です。公開情報（広告ライブラリ・透明性センター）で見えている広告だけを材料に、所見と施策案を書きます。
 守ること:
@@ -305,12 +365,17 @@ export async function reviewPublicAds(p: PublicAds, d: Diagnosis, siteUrl: strin
 - 所見と施策案は、Meta 広告（meta）と Google 広告（google）に分けて書く。広告が0件の媒体は空の配列にする
 - findings は媒体ごとに2〜4件。広告の番号（Meta は M1・M2…、Google は G1・G2…。小文字にしない）と文言を引用して「何が起きているか」を書く
 - measures は媒体ごとに2〜4件。title は「何をするか」を動詞で（「〜の検討」「〜の強化」は禁止）。why は引用した事実、steps は3〜5手順、impact は 大／中／小
+- proposals（制作案）は媒体ごとに2〜3件。方針ではなく「この形式で、この構成の素材を作る」粒度で書く：
+  format（例：縦型動画 9:16・15秒／静止画 4:5／静止画 1:1。Google は表示見本の文言を想定したレスポンシブ広告の見出し・説明文でもよい）、
+  aim（今の広告で足りない訴求・配信面のどこを埋めるか。広告の番号を引用）、
+  structure（動画は「冒頭3秒」「中盤」「最後（CTA）」、静止画は「主役のビジュアル」「文字の配置」「CTA」をそれぞれ1行ずつ）、
+  onscreenText（画像・動画内に入れる文言の案。下の法令上の注意に触れない表現にする）、shoot（撮影・素材のメモ）
 - LPが分析したサイトと別のドメインなら、広告の受け皿のLPを確認・改善する施策を入れる
 - 縦横比が偏っている（例：画像が1:1だけ）なら、配信面に合わせた作り分けを施策に入れる
 - legal は、渡された【法令チェックの指摘】に加えて、あなたが気づいた法令上の注意（無ければ空）。platform にどちらの広告の表現か（meta／google）を入れる
 ${d.industry === "medical" || d.industry === "beauty" ? MEDICAL_RULES : ""}`,
-      `【事業】${d.product}（対象：${d.audience}）\n${lines}\n\n出力:\n{"meta":{"findings":[""],"measures":[{"title":"","why":"","steps":[""],"impact":"中"}]},"google":{"findings":[""],"measures":[]},"legal":[{"text":"","law":"","reason":"","suggestion":"","platform":"meta"}]}`,
-      { maxTokens: 5000 }
+      `【事業】${d.product}（対象：${d.audience}）\n${lines}\n\n出力:\n{"meta":{"findings":[""],"measures":[{"title":"","why":"","steps":[""],"impact":"中"}],"proposals":[{"format":"","aim":"","structure":[""],"onscreenText":"","shoot":""}]},"google":{"findings":[""],"measures":[],"proposals":[]},"legal":[{"text":"","law":"","reason":"","suggestion":"","platform":"meta"}]}`,
+      { maxTokens: 8000 }
     );
     const legal = [
       ...guard.map((h) => ({ text: h.text, law: h.law, reason: h.reason, suggestion: h.suggestion, severity: h.severity, platform: platformOfText(p, h.text) })),
@@ -330,9 +395,32 @@ ${d.industry === "medical" || d.industry === "beauty" ? MEDICAL_RULES : ""}`,
         ? {
             findings: (x?.findings ?? []).filter((f) => typeof f === "string" && f.trim()).slice(0, 4),
             measures: (x?.measures ?? []).filter((m) => m && typeof m.title === "string" && m.title.trim()).slice(0, 4),
+            proposals: (x?.proposals ?? [])
+              .filter((c) => c && typeof c.format === "string" && c.format.trim())
+              .slice(0, 3)
+              .map((c) => ({
+                format: s(c.format),
+                aim: s(c.aim),
+                structure: arr(c.structure).slice(0, 5),
+                onscreenText: s(c.onscreenText),
+                shoot: s(c.shoot),
+              })),
           }
-        : { findings: [], measures: [] };
+        : { findings: [], measures: [], proposals: [] };
     const byPlatform = { meta: side(out.meta, p.meta.ads.length > 0), google: side(out.google, p.google.ads.length > 0) };
+    // 制作案の文言も法令チェックを通す（AGENTS.md：生成と同時にチェックする）
+    const propTexts = [...byPlatform.meta.proposals, ...byPlatform.google.proposals].flatMap((c) => [c.onscreenText, ...c.structure]).filter(Boolean);
+    if (propTexts.length) {
+      try {
+        const hits = (await checkGuard([...new Set(propTexts)], d.industry)).hits.filter((h) => h.severity !== "low");
+        for (const c of [...byPlatform.meta.proposals, ...byPlatform.google.proposals]) {
+          const own = hits.filter((h) => [c.onscreenText, ...c.structure].some((t) => t.includes(h.text)));
+          if (own.length) c.flags = own.map((h) => ({ text: h.text, law: h.law, reason: h.reason, suggestion: h.suggestion }));
+        }
+      } catch {
+        // 検査できなくても制作案は出す
+      }
+    }
     return {
       ...p,
       stage: "done",

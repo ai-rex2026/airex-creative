@@ -21,6 +21,7 @@ const codes = (t: string) => t.replace(/(^|[^A-Za-z0-9])([mg])(\d{1,2})(?![0-9A-
 
 type Legal = NonNullable<PublicAds["legal"]>;
 type Measure = NonNullable<PublicAds["measures"]>[number];
+type Proposal = NonNullable<NonNullable<PublicAds["byPlatform"]>["meta"]["proposals"]>[number];
 
 function Review({ title, findings, measures, legal }: { title: string; findings: string[]; measures: Measure[]; legal: Legal }) {
   return (
@@ -76,6 +77,7 @@ function PlatformBlock({
   findings,
   measures,
   legal,
+  proposals = [],
 }: {
   name: string;
   count: number;
@@ -84,19 +86,48 @@ function PlatformBlock({
   findings: string[];
   measures: Measure[];
   legal: Legal;
+  proposals?: Proposal[];
 }) {
   return (
     <div className="pa-block">
       <h3 className="pa-h">{name}</h3>
       {count > 0 ? (
         <details className="pafold">
-          <summary>現状の広告（{count}件）を表示する</summary>
+          <summary>現状の広告（同じ素材をまとめて{count}件）を表示する</summary>
           <div className="rows measure" style={{ border: 0, marginTop: 0 }}>{list}</div>
         </details>
       ) : (
         <p className="sub">広告を取得できませんでした{error ? `（${error.slice(0, 80)}）` : ""}</p>
       )}
       <Review title={name} findings={findings} measures={measures} legal={legal} />
+      {proposals.length > 0 && (
+        <div className="rows measure" style={{ marginTop: 10 }}>
+          <div className="rh">{name}の制作案（画像・動画のパターン）</div>
+          {proposals.map((c, i) => (
+            <div className="r" key={i} style={{ display: "block" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                <span className="tag score">案{i + 1}</span>
+                <b style={{ flex: 1, minWidth: 160 }}>{c.format}</b>
+              </div>
+              {c.aim && <small style={{ display: "block", marginTop: 4 }}>狙い：{codes(c.aim)}</small>}
+              {c.structure.length > 0 && (
+                <ol style={{ margin: "8px 0 0 18px", fontSize: 12.5, color: "var(--muted)", lineHeight: 1.7 }}>
+                  {c.structure.map((t, j) => <li key={j}>{codes(t)}</li>)}
+                </ol>
+              )}
+              {c.onscreenText && (
+                <small style={{ display: "block", marginTop: 6, color: "var(--text)" }}>入れる文言の案：{c.onscreenText}</small>
+              )}
+              {c.shoot && <small style={{ display: "block", marginTop: 4, color: "var(--faint)" }}>撮影・素材：{c.shoot}</small>}
+              {c.flags && c.flags.length > 0 && (
+                <small style={{ display: "block", marginTop: 6, color: "var(--ng)" }}>
+                  法令上の注意：{c.flags.map((f) => `「${f.text}」（${f.law}）${f.suggestion ? `→ ${f.suggestion}` : ""}`).join("／")}
+                </small>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -168,6 +199,7 @@ export function PublicAdsSection({ data }: { data: PublicAds | null }) {
                     )}
                     <small style={{ display: "block", marginTop: 4, color: "var(--faint)" }}>
                       リンク先：{pathOf(a.linkUrl) || "—"}
+                      {(a.sameCount ?? 1) > 1 && `（同じ素材で${a.sameCount}本配信${(a.otherLinks?.length ?? 0) > 0 ? `・ほかのリンク先 ${a.otherLinks!.length}件` : ""}）`}
                       {a.adLibraryUrl && (
                         <>
                           {" ／ "}
@@ -180,6 +212,7 @@ export function PublicAdsSection({ data }: { data: PublicAds | null }) {
               })}
               findings={split ? split.meta.findings : []}
               measures={split ? split.meta.measures : []}
+              proposals={split?.meta.proposals ?? []}
               legal={split ? (data.legal ?? []).filter((l) => (l.platform ?? "meta") === "meta") : []}
             />
           )}
@@ -199,6 +232,7 @@ export function PublicAdsSection({ data }: { data: PublicAds | null }) {
                       <span className="tag">{a.format === "Text" ? "テキスト" : a.format === "Image" ? "画像" : a.format === "Video" ? "動画" : a.format || "—"}</span>
                       <small style={{ color: "var(--faint)" }}>
                         {a.firstShown}〜{a.lastShown}
+                        {(a.sameCount ?? 1) > 1 ? `（同じ素材 ${a.sameCount}件）` : ""}
                       </small>
                     </div>
                     {text && <small style={{ display: "block", marginTop: 4, color: "var(--text)" }}>{text}</small>}
@@ -207,6 +241,7 @@ export function PublicAdsSection({ data }: { data: PublicAds | null }) {
               })}
               findings={split ? split.google.findings : []}
               measures={split ? split.google.measures : []}
+              proposals={split?.google.proposals ?? []}
               legal={split ? (data.legal ?? []).filter((l) => l.platform === "google") : []}
             />
           )}
