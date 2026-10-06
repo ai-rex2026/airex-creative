@@ -28,6 +28,9 @@ import { addUsage, withAi, type AiProvider, type AiUsageTotal } from "./ai-conte
 import { hasGemini } from "./gemini";
 import { generateSeoArticles, type SeoArticleSet } from "./seoArticles";
 import { classifyIndustryVertical, buildPriorityInstruction, type IndustryVertical, type SectionKey } from "./industryMatrix";
+import { adReviewPeriod, analyzeAdReview, reviewFromCollection, type AdReview } from "./ad-review";
+import { collectAdPerformance, type AdPerfCollection } from "./ads/performance";
+import { AD_PLATFORMS } from "./ads/platforms";
 
 /** 本番と同じ見た目の短いID（英数20文字） */
 export function newAnalysisId() {
@@ -92,6 +95,8 @@ export type Analysis = {
   image_scan: ImageScan | null;
   custom_images: CustomImage[] | null;
   margin: number | null;
+  /** 広告アカウントの実績分析（2026-10-06〜。lib/ad-review.ts）。それ以前の分析には無い */
+  ad_review: AdReview | null;
   kpi: KpiTree | null;
   /** 選ばれたKPIのID。自由入力ぶんも id を振ってここに入る */
   kpi_selected: { id: string; name: string; custom?: boolean }[] | null;
@@ -716,6 +721,22 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       const done = (cur?.speed ?? null) as SpeedScan | null;
       if (typeof done?.score === "number" && typeof speed.score !== "number") return await save({ step: "要約をまとめています", progress: 95 });
       return await save({ speed, step: "要約をまとめています", progress: 95 });
+    }
+    // 広告の実績分析（2026-10-06新設。lib/ad-review.ts）。サマリーの施策の材料（台帳）に入れるので、
+    // その前に済ませる。実績の取得とAIの分析は別々に保存し、保存済みの段階はやり直さない
+    if (!a.ad_review) {
+      const period = adReviewPeriod();
+      const names = Object.fromEntries(AD_PLATFORMS.map((p) => [p.id, p.name]));
+      const collected = await collectAdPerformance(a.owner_id, period.from, period.to).catch(
+        () => ({ connected: [], accounts: [] }) as AdPerfCollection
+      );
+      return await save({ ad_review: reviewFromCollection(collected, period, names), step: "広告の実績を分析しています", progress: 95 });
+    }
+    if (!a.ad_review.analyzed) {
+      const diagnosis = a.diagnosis;
+      if (!diagnosis) throw new Error("診断結果が見つかりません");
+      const ad_review = await analyzeAdReview(a.ad_review, diagnosis, a.margin);
+      return await save({ ad_review, step: "要約をまとめています", progress: 95 });
     }
     // サマリータブ（カテゴリ別評価＋優先度の高い施策）。2026-10-04新設。
     // LPカテゴリの評価がPageSpeedの実測（speed）を使うため、speedが確定する

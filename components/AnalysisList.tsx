@@ -59,7 +59,7 @@ export function AnalysisList({ rows, adNames = [], isGuest = false }: { rows: An
             const to = a.status === "done" ? `/analysis/${a.id}/report` : `/analysis/${a.id}/waiting`;
             const site = a.url ? a.url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入力テキスト";
             const s = a.summary;
-            const evs = withAdAccounts(withSiteHealth(a.category_evaluations ?? null), adNames, isGuest);
+            const evs = withAdAccounts(withSiteHealth(a.category_evaluations ?? null), adNames, isGuest, a.ad_review);
             return (
               <div key={a.id} className="card" style={{ padding: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

@@ -48,6 +48,8 @@ import type { KpiTree } from "@/lib/kpi";
 import type { Measure } from "@/lib/measures";
 import { withSiteHealth, type CategoryEvaluation } from "@/lib/summary-tab";
 import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
+import { AdReviewSection } from "./AdReviewSection";
+import type { AdReview } from "@/lib/ad-review";
 
 type Tab = "inputs" | "summary" | "overview";
 
@@ -177,6 +179,7 @@ export function Report({
   gsc,
   ga4,
   snsPlan = null,
+  adReview = null,
 }: {
   d: Diagnosis;
   copies: BannerCopy[];
@@ -215,6 +218,8 @@ export function Report({
   gsc: GscData | null;
   ga4: Ga4Data | null;
   snsPlan?: SnsPlan | null;
+  /** 連携した広告アカウントの実績分析（lib/ad-review.ts）。2026-10-06以前の分析には無い */
+  adReview?: AdReview | null;
 }) {
   const [picked, setPicked] = useState<number[]>(copies.map((_, i) => i).slice(0, 3));
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "google-lb"]);
@@ -1038,6 +1043,8 @@ export function Report({
           </div>
         </>
       )}
+      {/* 連携した広告アカウントの実績分析（2026-10-06〜の分析のみ） */}
+      <AdReviewSection review={adReview} />
       {plan && plan.length > 0 && (
         <>
           <div className="sec-head">

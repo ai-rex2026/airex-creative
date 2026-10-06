@@ -12,6 +12,7 @@ import type { KeywordPlan, LpoPlan } from "./deep";
 import type { SuggestScan } from "./outreach";
 import type { GscData } from "./google";
 import type { AdOps } from "./ad-ops";
+import type { AdReview } from "./ad-review";
 import { facts, fixNodes, flag, RULES, type Measure, type MeasurePlan } from "./measures";
 import { MEASURED_ANCHORS, topicSection, type SourceItem } from "./measure-sources";
 
@@ -329,11 +330,24 @@ function evalSuggest(suggests: SuggestScan | null): CategoryEvaluation {
 export function withAdAccounts(
   evs: CategoryEvaluation[] | null,
   connectedNames: string[],
-  isGuest = false
+  isGuest = false,
+  /** その分析で読んだ広告の実績（2026-10-06〜の分析）。あればこちらを優先する */
+  review?: AdReview | null
 ): CategoryEvaluation[] | null {
   if (!evs) return evs;
+  const fromReview: CategoryEvaluation | null =
+    review?.status === "ok"
+      ? review.analysisError || !review.analyzed
+        ? { category: "広告", score: null, measured: false, basis: "広告の実績は取得できましたが、分析できませんでした", sectionAnchor: "sec-adreview" }
+        : { category: "広告", score: review.score ?? null, measured: (review.score ?? null) !== null, basis: review.basis || "広告の実績を分析しました", sectionAnchor: "sec-adreview" }
+      : review?.status === "noselection"
+        ? { category: "広告", score: null, measured: false, basis: "広告アカウント は連携済みですが、分析するアカウントが選ばれていません", sectionAnchor: "/analysis/new" }
+        : review?.status === "error"
+          ? { category: "広告", score: null, measured: false, basis: "広告の実績を取得できませんでした", sectionAnchor: "/settings" }
+          : null;
   const ad: CategoryEvaluation =
-    connectedNames.length > 0
+    fromReview ??
+    (connectedNames.length > 0
       ? {
           category: "広告",
           score: null,
@@ -347,7 +361,7 @@ export function withAdAccounts(
           measured: false,
           basis: "広告アカウント が連携されていません",
           sectionAnchor: isGuest ? "/login?mode=signup" : "/settings",
-        };
+        });
   const rest = evs.filter((e) => e.category !== "広告");
   const at = rest.findIndex((e) => e.category === "広告の準備");
   return at < 0 ? [ad, ...rest] : [...rest.slice(0, at + 1), ad, ...rest.slice(at + 1)];
@@ -582,7 +596,7 @@ function ledgerToMeasures(picked: SourceItem[], kpi: KpiTree, prefix: string): M
 }
 
 /** 「カテゴリ別評価」のカテゴリ名（evaluateCategories が返す category と同じ語） */
-export const CATEGORY_NAMES = ["広告の準備", "MEO", "SEO強度", "対策キーワード充足度", "LP", "SNS", "検索サジェスト", "外部施策"] as const;
+export const CATEGORY_NAMES = ["広告の準備", "広告", "MEO", "SEO強度", "対策キーワード充足度", "LP", "SNS", "検索サジェスト", "外部施策"] as const;
 
 /**
  * 施策の文面から、どのカテゴリの施策かを推定する（AIが category を返さなかった・古い分析向け）。
@@ -590,6 +604,7 @@ export const CATEGORY_NAMES = ["広告の準備", "MEO", "SEO強度", "対策キ
  */
 const CATEGORY_HINTS: Record<(typeof CATEGORY_NAMES)[number], RegExp> = {
   広告の準備: /広告アカウント|リマーケ|広告タグ|広告媒体|運用型広告|リスティング|P-?MAX|出稿|入札|予算配分/g,
+  広告: /CPA|ROAS|CTR|CVR|クリック単価|除外キーワード|入札単価|広告の実績|配信実績/g,
   MEO: /MEO|Googleマップ|ビジネスプロフィール|GBP|口コミ|店舗情報|写真投稿|営業時間/g,
   SEO強度: /SEO|内部リンク|メタ|タイトルタグ|構造化データ|サイトマップ|見出し|robots|canonical|被リンク/g,
   対策キーワード充足度: /キーワード|検索クエリ|Search Console|記事|コラム|コンテンツ|検索順位|検索流入/g,
