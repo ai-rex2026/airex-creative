@@ -1,0 +1,43 @@
+name: apply-hygiene-fold-1006f
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-hygiene-fold-1006f.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Concatenate chunks, decode, gunzip and apply patch
+        run: |
+          cat .buildtmp/hygiene-fold-1006f/chunks/chunk-*.b64 | tr -d '\n' > /tmp/combined.b64
+          base64 -d /tmp/combined.b64 | gunzip > /tmp/combined.patch
+          echo "c459038ad07214ea92cfa7d6ca283e02c5488db0c5062cb940b477d450d768e5  /tmp/combined.patch" | sha256sum -c -
+          git apply --check /tmp/combined.patch
+          git apply /tmp/combined.patch
+
+      - name: Commit applied changes
+        run: |
+          git config user.name "suzuki"
+          git config user.email "suzuki@ad-rex.com"
+          git add -A -- . ':!.buildtmp' ':!.github/workflows/apply-hygiene-fold-1006f.yml'
+          git commit \
+            -m "feat: 「ついでに直すもの」を施策一覧の下の折りたたみに移す（1006f）" \
+            -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" \
+            -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
+
+      - name: Remove staging files and this workflow
+        run: |
+          git rm -r -q .buildtmp
+          git rm -q .github/workflows/apply-hygiene-fold-1006f.yml
+          git commit -m "chore: remove temporary push-apply workflow and staging files"
+
+      - name: Push to main
+        run: git push origin HEAD:main
