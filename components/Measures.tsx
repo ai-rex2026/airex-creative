@@ -27,11 +27,20 @@ const SCORE_LABEL: Record<string, string> = { 強: "強", 標準: "標準", 弱:
 
 function CategoryCard({ ev, onNavigate }: { ev: CategoryEvaluation; onNavigate: (anchor: string) => void }) {
   const tone = ev.score === null ? "na" : ev.score === "強" ? "ok" : ev.score === "標準" ? "warn" : "ng";
-  return (
-    <button type="button" className={`cat-card ${tone}`} onClick={() => onNavigate(ev.sectionAnchor)}>
+  const body = (
+    <>
       <b>{ev.category}</b>
       <span className="sc">{ev.score === null ? "分析不可" : SCORE_LABEL[ev.score]}</span>
       <small>{ev.basis}</small>
+    </>
+  );
+  // 「広告」のように分析データタブに欄が無いものは、別のページ（設定など）へ移動する
+  if (ev.sectionAnchor.startsWith("/")) {
+    return <a className={`cat-card ${tone}`} href={ev.sectionAnchor}>{body}</a>;
+  }
+  return (
+    <button type="button" className={`cat-card ${tone}`} onClick={() => onNavigate(ev.sectionAnchor)}>
+      {body}
     </button>
   );
 }
@@ -108,7 +117,14 @@ export function Measures({
       try {
         const res = await regenerateSummaryTab(id);
         setList(res.items.filter(visible));
-        setEvaluations(res.evaluations);
+        // 「広告」は保存していない（画面を開くたびに連携の有無から作る）ので、作り直した後も残す
+        setEvaluations((prev) => {
+          const ad = prev?.find((e) => e.category === "広告");
+          if (!ad || !res.evaluations) return res.evaluations;
+          const rest = res.evaluations.filter((e) => e.category !== "広告");
+          const at = rest.findIndex((e) => e.category === "広告の準備");
+          return [...rest.slice(0, at + 1), ad, ...rest.slice(at + 1)];
+        });
         setDoneIds(res.done);
         setOpen(null);
       } catch (e) {

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { Analysis } from "@/lib/analysis";
 import type { ScoreLevel } from "@/lib/types";
-import { withSiteHealth } from "@/lib/summary-tab";
+import { withAdAccounts, withSiteHealth } from "@/lib/summary-tab";
 
 const PILL: Record<string, [string, string]> = {
   queued: ["分析中", ""],
@@ -15,7 +15,7 @@ const PILL: Record<string, [string, string]> = {
 
 const WIDTH: Record<ScoreLevel, number> = { 強: 92, 標準: 58, 弱: 26 };
 
-export function AnalysisList({ rows }: { rows: Analysis[] }) {
+export function AnalysisList({ rows, adNames = [], isGuest = false }: { rows: Analysis[]; adNames?: string[]; isGuest?: boolean }) {
   const [status, setStatus] = useState<string>("all");
   const [rating, setRating] = useState<string>("all");
 
@@ -59,7 +59,7 @@ export function AnalysisList({ rows }: { rows: Analysis[] }) {
             const to = a.status === "done" ? `/analysis/${a.id}/report` : `/analysis/${a.id}/waiting`;
             const site = a.url ? a.url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入力テキスト";
             const s = a.summary;
-            const evs = withSiteHealth(a.category_evaluations ?? null);
+            const evs = withAdAccounts(withSiteHealth(a.category_evaluations ?? null), adNames, isGuest);
             return (
               <div key={a.id} className="card" style={{ padding: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

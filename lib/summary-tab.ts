@@ -27,7 +27,7 @@ import { MEASURED_ANCHORS, topicSection, type SourceItem } from "./measure-sourc
  * そのまま使う（このファイル単体でPromise.allを使う箇所は無い）。
  */
 
-export type CategoryKey = "広告の準備" | "MEO" | "SEO強度" | "対策キーワード充足度" | "LP" | "SNS" | "検索サジェスト" | "外部施策";
+export type CategoryKey = "広告の準備" | "広告" | "MEO" | "SEO強度" | "対策キーワード充足度" | "LP" | "SNS" | "検索サジェスト" | "外部施策";
 
 export type CategoryEvaluation = {
   category: CategoryKey;
@@ -317,6 +317,40 @@ function evalSuggest(suggests: SuggestScan | null): CategoryEvaluation {
     basis: `${rows.length}語を分類：注意が必要${caution}語・誘導先に注意${detour}語・同名の別物${sameName}語・問題なし${neutral}語（不利になりうる語は${Math.round(riskShare * 100)}%）`,
     sectionAnchor: anchor,
   };
+}
+
+/**
+ * 「広告」（広告アカウントの運用実績）の評価を「広告の準備」の次に差し込む（表示専用・保存しない）。
+ * 2026-10-06: 広告アカウントの連携は分析ごとではなく利用者ごとなので、保存済みの評価には入れず、
+ * 画面を開くたびに連携の有無から作る。実績の良し悪しを判定する基準はまだ無いため、連携済みでも
+ * 評価は付けない（分析不可のまま、連携先だけを示す）。
+ * sectionAnchor が "/" で始まるときは、分析データタブ内ではなくそのページへ移動する（Measures.tsx）
+ */
+export function withAdAccounts(
+  evs: CategoryEvaluation[] | null,
+  connectedNames: string[],
+  isGuest = false
+): CategoryEvaluation[] | null {
+  if (!evs) return evs;
+  const ad: CategoryEvaluation =
+    connectedNames.length > 0
+      ? {
+          category: "広告",
+          score: null,
+          measured: false,
+          basis: `${connectedNames.join("・")} と連携済み。実績は新規分析の画面で確認できます（評価は準備中）`,
+          sectionAnchor: "/analysis/new",
+        }
+      : {
+          category: "広告",
+          score: null,
+          measured: false,
+          basis: "広告アカウント が連携されていません",
+          sectionAnchor: isGuest ? "/login?mode=signup" : "/settings",
+        };
+  const rest = evs.filter((e) => e.category !== "広告");
+  const at = rest.findIndex((e) => e.category === "広告の準備");
+  return at < 0 ? [ad, ...rest] : [...rest.slice(0, at + 1), ad, ...rest.slice(at + 1)];
 }
 
 /** 実測ソースが無いため常に分析不可（2026-10-04・既決） */
