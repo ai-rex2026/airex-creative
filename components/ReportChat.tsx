@@ -18,7 +18,7 @@ const PRESETS = [
   "見出しをもっと具体的に書き換えて",
 ];
 
-export function ReportChat({ id }: { id: string }) {
+export function ReportChat({ id, isGuest = false }: { id: string; isGuest?: boolean }) {
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [text, setText] = useState("");
@@ -58,6 +58,16 @@ export function ReportChat({ id }: { id: string }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  // 未登録（ゲスト）は質問できない（AIを呼ぶため）。押したら無料登録へ進める（2026-10-06）
+  if (isGuest) {
+    return (
+      <a className="chat-fab" href="/login?mode=signup" aria-label="レポートについて聞く（無料登録が必要です）">
+        <span className="ic">✦</span>
+        レポートについて聞く
+      </a>
+    );
   }
 
   return (

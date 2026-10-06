@@ -25,7 +25,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ platform: strin
   } = await sb.auth.getUser();
   if (!user) return NextResponse.redirect(new URL("/login?callbackUrl=%2Fsettings", url.origin));
   // SNSアカウントのトークンは、ゲスト（ログアウトすると開けなくなる一時アカウント）には預からない
-  if (user.is_anonymous) return back("SNSアカウントを連携するには、先に本登録してください");
+  if (user.is_anonymous) return back("SNSアカウントを連携するには、先に無料登録してください");
 
   const redirectUri = redirectUriFor(platform, req.url);
   const state = randomBytes(16).toString("hex");

@@ -42,12 +42,12 @@ export default async function SettingsPage({
               <b>{user.is_anonymous ? "一時アカウント（ゲスト）" : user.email}</b>
               <small>
                 {user.is_anonymous
-                  ? "このブラウザからのみ分析を見られます。本登録すると他の端末からも見られます。"
+                  ? "このブラウザからのみ分析を見られます。無料登録すると他の端末からも見られます。"
                   : "このメールアドレスでログインしています"}
               </small>
             </div>
             {user.is_anonymous && (
-              <a className="btn ghost sm" href="/login?mode=signup">本登録する</a>
+              <a className="btn ghost sm" href="/login?mode=signup">無料登録する</a>
             )}
           </div>
           <div className="r">
@@ -71,7 +71,7 @@ export default async function SettingsPage({
               </small>
             </div>
             {hasGoogleApp() ? (
-              <GoogleConnect connected={!!conn} />
+              <GoogleConnect connected={!!conn} isGuest={!!user.is_anonymous} />
             ) : (
               <span className="tag warn">未設定</span>
             )}
@@ -106,7 +106,7 @@ export default async function SettingsPage({
             <i className="i">i</i>
             <span>
               ゲストのままログアウトすると、<b style={{ fontWeight: 600 }}>いまの分析は二度と開けなくなります</b>。
-              先に本登録してください。
+              先に無料登録してください。
             </span>
           </p>
         )}

@@ -25,11 +25,11 @@ export default async function ResetPasswordPage() {
           <h1>
             URLひとつで、
             <br />
-            訴求軸からバナーと
+            次の集客の一手が
             <br />
-            LPまで
+            わかる
           </h1>
-          <p>サイト分析から訴求軸の抽出、コピー・バナー・LPの制作まで。1本の流れで作れます。</p>
+          <p>広告、SEO、MEO、LP、SNS、サジェストなど集客に必要な次の一手が作業レベルでわかります。</p>
           <div className="pt"><i>◆</i>訴求軸ごとにコピーを自動生成</div>
           <div className="pt"><i>◆</i>生成と同時に景表法・薬機法をチェック</div>
           <div className="pt"><i>◆</i>Meta・Google・Yahoo のサイズを一括書き出し</div>

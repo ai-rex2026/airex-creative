@@ -13,7 +13,7 @@ const SCOPES =
  * Search Console / GA4 を読む許可をもらう。
  * 更新トークンが要るので access_type=offline と prompt=consent を必ず付ける。
  */
-export function GoogleConnect({ connected }: { connected: boolean }) {
+export function GoogleConnect({ connected, isGuest = false }: { connected: boolean; isGuest?: boolean }) {
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -54,6 +54,11 @@ export function GoogleConnect({ connected }: { connected: boolean }) {
         {err && <p style={{ color: "var(--ng)", fontSize: 12 }}>{err}</p>}
       </>
     );
+  }
+
+  // 未登録（ゲスト）は連携の前に無料登録へ進める（2026-10-06）
+  if (isGuest) {
+    return <a className="btn sm" href="/login?mode=signup">Google と連携する</a>;
   }
 
   return (

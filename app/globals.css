@@ -709,7 +709,7 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
 /* ── レポートについて聞く ───────────────────── */
 .chat-fab{position:fixed;right:24px;bottom:24px;z-index:40;display:inline-flex;align-items:center;
   gap:8px;padding:12px 20px;border:0;border-radius:999px;background:var(--btn);color:#fff;
-  font:inherit;font-size:13px;cursor:pointer;box-shadow:0 2px 12px rgba(31,30,27,.18)}
+  font:inherit;font-size:13px;cursor:pointer;box-shadow:0 2px 12px rgba(31,30,27,.18);text-decoration:none}
 .chat-fab .ic{color:var(--gold)}
 .chat{position:fixed;top:0;right:0;bottom:0;width:min(400px,100vw);z-index:50;background:#fff;
   border-left:1px solid var(--line);display:flex;flex-direction:column}

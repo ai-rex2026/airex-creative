@@ -2374,7 +2374,7 @@ export function Report({
         );
       })()}
 
-      <ReportChat id={id} />
+      <ReportChat id={id} isGuest={isGuest} />
     </div>
   );
 }

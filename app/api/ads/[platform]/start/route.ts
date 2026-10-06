@@ -24,7 +24,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ platform: strin
   } = await sb.auth.getUser();
   if (!user) return NextResponse.redirect(new URL("/login?callbackUrl=%2Fsettings", url.origin));
   // 広告アカウントのトークンは、ゲスト（ログアウトすると開けなくなる一時アカウント）には預からない
-  if (user.is_anonymous) return back("広告アカウントを連携するには、先に本登録してください");
+  if (user.is_anonymous) return back("広告アカウントを連携するには、先に無料登録してください");
 
   const redirectUri = redirectUriFor(platform, req.url);
   let authUrl: string;

@@ -50,7 +50,7 @@ export function Home() {
             <h1>
               URLひとつで、
               <br />
-              <span className="gold">訴求軸からバナーとLPまで</span>
+              <span className="gold">次の集客の一手がわかる</span>
             </h1>
             <p className="lead">
               分析したいサイトのURLを入力するだけ。
