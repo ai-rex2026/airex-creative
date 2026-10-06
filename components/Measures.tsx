@@ -299,6 +299,20 @@ export function Measures({
             {rest.map((m) => renderItem(m))}
           </details>
         )}
+        {/* 2026-10-06: 「ついでに直すもの」も施策一覧の下に同じ形の折りたたみで出す（以前は独立した章だった） */}
+        {hygiene.length > 0 && (
+          <details className="mfold" id="sec-hygiene">
+            <summary>ついでに直すもの（KPIには直結しないものの直した方がよい項目、{hygiene.length}件）を表示する</summary>
+            {/* PDF（印刷）では summary を消して中身を開くので、見出しを代わりに出す */}
+            <div className="hyg-h">ついでに直すもの（KPIには直結しないものの直した方がよい項目）</div>
+            {hygiene.map((h, i) => (
+              <div className="hyg" key={i}>
+                <b>{h.label}</b>
+                <small>{h.how}</small>
+              </div>
+            ))}
+          </details>
+        )}
       </div>
 
       {logs.length > 0 && (
@@ -321,27 +335,6 @@ export function Measures({
         </>
       )}
 
-      {hygiene.length > 0 && (
-        <>
-          <div className="sec-head">
-            <div>
-              <h2 id="sec-hygiene">ついでに直すもの</h2>
-              <div className="sub">KPIには直結しませんが、放置する理由もない項目です</div>
-            </div>
-            <span className="rule" />
-          </div>
-          <div className="rows measure">
-            {hygiene.map((h, i) => (
-              <div className="r" key={i}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <b style={{ fontWeight: 400 }}>{h.label}</b>
-                  <small>{h.how}</small>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
     </>
   );
 }
