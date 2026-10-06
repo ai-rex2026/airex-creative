@@ -1048,10 +1048,6 @@ export function Report({
           </div>
         </>
       )}
-      {/* 連携した広告アカウントの実績分析（2026-10-06〜の分析のみ） */}
-      <AdReviewSection review={adReview} />
-      {/* 公開情報から見た出稿中の広告（2026-10-06〜の分析のみ） */}
-      <PublicAdsSection data={publicAds} />
       {plan && plan.length > 0 && (
         <>
           <div className="sec-head">
@@ -1321,6 +1317,9 @@ export function Report({
           <ContactCta label="広告運用・自動化について相談する" />
         </>
       )}
+      {/* 2026-10-06: 広告の実績分析と、公開情報から見た出稿中の広告は「広告運用設計」の次に置く */}
+      <AdReviewSection review={adReview} />
+      <PublicAdsSection data={publicAds} />
       {seo && site && (
         <>
           <div className="sec-head">

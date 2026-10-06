@@ -16,6 +16,91 @@ const pathOf = (u: string) => {
   }
 };
 
+/** 所見・施策案の中の広告の番号（m1・g1）を、一覧の表示（M1・G1）にそろえる */
+const codes = (t: string) => t.replace(/(^|[^A-Za-z0-9])([mg])(\d{1,2})(?![0-9A-Za-z])/g, (_, a: string, b: string, c: string) => `${a}${b.toUpperCase()}${c}`);
+
+type Legal = NonNullable<PublicAds["legal"]>;
+type Measure = NonNullable<PublicAds["measures"]>[number];
+
+function Review({ title, findings, measures, legal }: { title: string; findings: string[]; measures: Measure[]; legal: Legal }) {
+  return (
+    <>
+      {(findings.length > 0 || legal.length > 0) && (
+        <div className="rows measure" style={{ marginTop: 10 }}>
+          <div className="rh">{title}に対する所見</div>
+          {findings.map((f, i) => (
+            <div className="r" key={`f${i}`}>
+              <small style={{ color: "var(--text)", fontSize: 13 }}>{codes(f)}</small>
+            </div>
+          ))}
+          {legal.map((l, i) => (
+            <div className="r" key={`l${i}`} style={{ display: "block" }}>
+              <b style={{ color: "var(--ng)", fontWeight: 500 }}>法令上の注意：「{l.text}」</b>
+              <small style={{ display: "block", marginTop: 2 }}>
+                {l.law}：{codes(l.reason)}
+                {l.suggestion ? ` → ${l.suggestion}` : ""}
+              </small>
+            </div>
+          ))}
+        </div>
+      )}
+      {measures.length > 0 && (
+        <div className="rows measure" style={{ marginTop: 10 }}>
+          <div className="rh">{title}の施策案</div>
+          {measures.map((m, i) => (
+            <div className="r" key={i} style={{ display: "block" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                <b style={{ flex: 1 }}>{codes(m.title)}</b>
+                <span className={`tag${m.impact === "大" ? " ok" : ""}`}>効果 {m.impact}</span>
+              </div>
+              <small style={{ display: "block", marginTop: 4 }}>{codes(m.why)}</small>
+              {m.steps?.length > 0 && (
+                <ol style={{ margin: "8px 0 0 18px", fontSize: 12.5, color: "var(--muted)", lineHeight: 1.7 }}>
+                  {m.steps.map((s, j) => <li key={j}>{codes(s)}</li>)}
+                </ol>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** 媒体ごとのまとまり：現状の広告（折りたたみ）→ 所見 → 施策案 */
+function PlatformBlock({
+  name,
+  count,
+  error,
+  list,
+  findings,
+  measures,
+  legal,
+}: {
+  name: string;
+  count: number;
+  error?: string;
+  list: React.ReactNode[];
+  findings: string[];
+  measures: Measure[];
+  legal: Legal;
+}) {
+  return (
+    <div className="pa-block">
+      <h3 className="pa-h">{name}</h3>
+      {count > 0 ? (
+        <details className="pafold">
+          <summary>現状の広告（{count}件）を表示する</summary>
+          <div className="rows measure" style={{ border: 0, marginTop: 0 }}>{list}</div>
+        </details>
+      ) : (
+        <p className="sub">広告を取得できませんでした{error ? `（${error.slice(0, 80)}）` : ""}</p>
+      )}
+      <Review title={name} findings={findings} measures={measures} legal={legal} />
+    </div>
+  );
+}
+
 export function PublicAdsSection({ data }: { data: PublicAds | null }) {
   if (!data || data.stage !== "done") return null;
   const { meta, google } = data;
@@ -23,6 +108,7 @@ export function PublicAdsSection({ data }: { data: PublicAds | null }) {
   const total = meta.ads.length + google.ads.length;
   const notes = new Map((data.creatives ?? []).map((c) => [c.ref, c]));
   const facts = data.facts;
+  const split = data.byPlatform ?? null;
 
   return (
     <>
@@ -58,14 +144,17 @@ export function PublicAdsSection({ data }: { data: PublicAds | null }) {
             </div>
           )}
 
-          {meta.ads.length > 0 && (
-            <div className="rows measure" style={{ marginTop: 14 }}>
-              <div className="rh">Meta 広告（配信中 {meta.ads.length}件）</div>
-              {meta.ads.map((a, i) => {
+          {(meta.ads.length > 0 || meta.status === "error") && (
+            <PlatformBlock
+              name="Meta 広告"
+              count={meta.ads.length}
+              error={meta.error}
+              list={meta.ads.map((a, i) => {
                 const n = notes.get(`m${i + 1}`);
                 return (
                   <div className="r" key={a.id} style={{ display: "block" }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                      <span className="tag score">M{i + 1}</span>
                       <span className="tag">{a.format === "VIDEO" ? "動画" : a.format === "IMAGE" ? "画像" : a.format || "—"}</span>
                       <b style={{ flex: 1, minWidth: 160 }}>{a.title || "（見出しなし）"}</b>
                       <small style={{ color: "var(--faint)" }}>{a.startDate}〜</small>
@@ -89,18 +178,24 @@ export function PublicAdsSection({ data }: { data: PublicAds | null }) {
                   </div>
                 );
               })}
-            </div>
+              findings={split ? split.meta.findings : []}
+              measures={split ? split.meta.measures : []}
+              legal={split ? (data.legal ?? []).filter((l) => (l.platform ?? "meta") === "meta") : []}
+            />
           )}
 
-          {google.ads.length > 0 && (
-            <div className="rows measure" style={{ marginTop: 14 }}>
-              <div className="rh">Google 広告（{google.ads.length}件）</div>
-              {google.ads.map((a, i) => {
+          {(google.ads.length > 0 || google.status === "error") && (
+            <PlatformBlock
+              name="Google 広告"
+              count={google.ads.length}
+              error={google.error}
+              list={google.ads.map((a, i) => {
                 const n = notes.get(`g${i + 1}`);
                 const text = [a.headline, a.body].filter(Boolean).join(" ") || n?.onscreenText || "";
                 return (
                   <div className="r" key={a.id} style={{ display: "block" }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                      <span className="tag score">G{i + 1}</span>
                       <span className="tag">{a.format === "Text" ? "テキスト" : a.format === "Image" ? "画像" : a.format === "Video" ? "動画" : a.format || "—"}</span>
                       <small style={{ color: "var(--faint)" }}>
                         {a.firstShown}〜{a.lastShown}
@@ -110,53 +205,20 @@ export function PublicAdsSection({ data }: { data: PublicAds | null }) {
                   </div>
                 );
               })}
-            </div>
+              findings={split ? split.google.findings : []}
+              measures={split ? split.google.measures : []}
+              legal={split ? (data.legal ?? []).filter((l) => l.platform === "google") : []}
+            />
           )}
 
-          {(data.legal?.length ?? 0) > 0 && (
-            <div className="rows measure" style={{ marginTop: 14 }}>
-              <div className="rh">法令上の注意</div>
-              {data.legal!.map((l, i) => (
-                <div className="r" key={i} style={{ display: "block" }}>
-                  <b style={{ color: "var(--ng)", fontWeight: 500 }}>「{l.text}」</b>
-                  <small style={{ display: "block", marginTop: 2 }}>
-                    {l.law}：{l.reason}
-                    {l.suggestion ? ` → ${l.suggestion}` : ""}
-                  </small>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {(data.findings?.length ?? 0) > 0 && (
-            <div className="rows measure" style={{ marginTop: 14 }}>
-              <div className="rh">所見</div>
-              {data.findings!.map((f, i) => (
-                <div className="r" key={i}>
-                  <small style={{ color: "var(--text)", fontSize: 13 }}>{f}</small>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {(data.measures?.length ?? 0) > 0 && (
-            <div className="rows measure" style={{ marginTop: 14 }}>
-              <div className="rh">施策案</div>
-              {data.measures!.map((m, i) => (
-                <div className="r" key={i} style={{ display: "block" }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                    <b style={{ flex: 1 }}>{m.title}</b>
-                    <span className={`tag${m.impact === "大" ? " ok" : ""}`}>効果 {m.impact}</span>
-                  </div>
-                  <small style={{ display: "block", marginTop: 4 }}>{m.why}</small>
-                  {m.steps?.length > 0 && (
-                    <ol style={{ margin: "8px 0 0 18px", fontSize: 12.5, color: "var(--muted)", lineHeight: 1.7 }}>
-                      {m.steps.map((s, j) => <li key={j}>{s}</li>)}
-                    </ol>
-                  )}
-                </div>
-              ))}
-            </div>
+          {/* 媒体ごとに分ける前（2026-10-06 夕方）に作った分析は、所見と施策案をまとめて出す */}
+          {!split && (
+            <Review
+              title="Meta・Google 広告"
+              findings={data.findings ?? []}
+              measures={data.measures ?? []}
+              legal={data.legal ?? []}
+            />
           )}
 
           <div className="note">

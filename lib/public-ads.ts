@@ -62,14 +62,19 @@ export type PublicAds = {
   creativeError?: string;
   /** 機械的に出せる指摘（AIを使わない） */
   facts?: { lpDomains: string[]; lpOffSite: boolean; duplicateCreatives: number; aspects: Record<string, number> };
-  legal?: { text: string; law: string; reason: string; suggestion: string; severity: string }[];
+  /** platform：どちらの広告の表現か（2026-10-06 夜〜。それ以前の結果には無い） */
+  legal?: { text: string; law: string; reason: string; suggestion: string; severity: string; platform?: "meta" | "google" }[];
+  /** 所見・施策案を媒体ごとに分けたもの（2026-10-06 夜〜）。画面はこちらを優先して出す */
+  byPlatform?: { meta: { findings: string[]; measures: PublicAdsMeasure[] }; google: { findings: string[]; measures: PublicAdsMeasure[] } };
+  /** 両媒体をまとめたもの（施策の台帳と、分ける前の結果の表示に使う） */
   findings?: string[];
   measures?: PublicAdsMeasure[];
   reviewError?: string;
 };
 
-const MAX_META = 30;
-const MAX_GOOGLE = 30;
+/** 2026-10-06：30件ずつでは同じ素材の使い回しが並ぶだけで読みにくかったため減らした */
+const MAX_META = 15;
+const MAX_GOOGLE = 10;
 const MAX_IMAGES = 10;
 const MAX_VIDEOS = 5;
 const MAX_GOOGLE_IMAGES = 8;
@@ -241,6 +246,18 @@ export function publicAdFacts(p: PublicAds, siteUrl: string | null): NonNullable
   return { lpDomains, lpOffSite: !!site && lpDomains.length > 0 && lpDomains.every((d) => d !== site && !d.endsWith(`.${site}`)), duplicateCreatives, aspects };
 }
 
+/** 指摘された文言がどちらの広告のものか（Meta の文言・素材内の文字に含まれていれば Meta） */
+function platformOfText(p: PublicAds, text: string): "meta" | "google" {
+  const inMeta =
+    p.meta.ads.some((a) => a.title.includes(text) || a.body.includes(text)) ||
+    (p.creatives ?? []).some((c) => c.ref.startsWith("m") && c.onscreenText.includes(text));
+  if (inMeta) return "meta";
+  const inGoogle =
+    p.google.ads.some((a) => a.headline.includes(text) || a.body.includes(text)) ||
+    (p.creatives ?? []).some((c) => c.ref.startsWith("g") && c.onscreenText.includes(text));
+  return inGoogle ? "google" : "meta";
+}
+
 const MEDICAL_RULES = `- 医療・美容医療の広告では、医療広告ガイドラインの観点で次を必ず確認し、該当があれば legal に書く：
   ・患者の体験談・口コミ（「痛みも無く」「もっと早く受ければ良かった」など本人の感想の形）
   ・ビフォーアフター写真（治療内容・費用・リスク・副作用の併記が無い場合）
@@ -269,50 +286,68 @@ export async function reviewPublicAds(p: PublicAds, d: Diagnosis, siteUrl: strin
   const lines = [
     `【分析したサイト】${siteUrl ?? "（URLなし）"}`,
     `【Meta 広告（配信中 ${p.meta.ads.length}件）】`,
-    ...p.meta.ads.slice(0, 15).map((a, i) => `- m${i + 1}［${a.format}／${a.startDate}〜／${a.platforms.join("・")}］見出し：${a.title}／本文：${a.body.replace(/\s+/g, " ").slice(0, 160)}／LP：${a.linkUrl}`),
+    ...p.meta.ads.slice(0, 15).map((a, i) => `- M${i + 1}［${a.format}／${a.startDate}〜／${a.platforms.join("・")}］見出し：${a.title}／本文：${a.body.replace(/\s+/g, " ").slice(0, 160)}／LP：${a.linkUrl}`),
     `【Google 広告（${p.google.ads.length}件）】`,
-    ...p.google.ads.slice(0, 15).map((a, i) => `- g${i + 1}［${a.format}／${a.firstShown}〜${a.lastShown}］${a.headline} ${a.body}`.trim()),
+    ...p.google.ads.slice(0, 15).map((a, i) => `- G${i + 1}［${a.format}／${a.firstShown}〜${a.lastShown}］${a.headline} ${a.body}`.trim()),
     `【画像・動画の中身（AIで書き起こし）】`,
-    ...(p.creatives ?? []).map((c) => `- ${c.ref}［${c.kind}／${c.aspect}${c.subtitles ? `／字幕${c.subtitles}` : ""}］${c.what}／文字：${c.onscreenText}${c.first3s ? `／冒頭3秒：${c.first3s}` : ""}`),
+    ...(p.creatives ?? []).map((c) => `- ${c.ref.toUpperCase()}［${c.kind}／${c.aspect}${c.subtitles ? `／字幕${c.subtitles}` : ""}］${c.what}／文字：${c.onscreenText}${c.first3s ? `／冒頭3秒：${c.first3s}` : ""}`),
     `【機械的に分かったこと】LPのドメイン：${facts.lpDomains.join("・") || "不明"}${facts.lpOffSite ? "（分析したサイトとは別のドメイン）" : ""}／文字が同じ素材：${facts.duplicateCreatives}件／縦横比：${Object.entries(facts.aspects).map(([k, v]) => `${k}×${v}`).join("・") || "不明"}`,
     guard.length ? `【法令チェックの指摘】\n${guard.map((h) => `- 「${h.text}」${h.law}：${h.reason}`).join("\n")}` : "",
   ].join("\n");
 
   try {
-    const out = await askJson<{ findings: string[]; measures: PublicAdsMeasure[]; legal: { text: string; law: string; reason: string; suggestion: string }[] }>(
+    type Side = { findings: string[]; measures: PublicAdsMeasure[] };
+    const out = await askJson<{ meta: Side; google: Side; legal: { text: string; law: string; reason: string; suggestion: string; platform: string }[] }>(
       `あなたは運用型広告のクリエイティブと受け皿（LP）の実務者です。公開情報（広告ライブラリ・透明性センター）で見えている広告だけを材料に、所見と施策案を書きます。
 守ること:
 - 成果の数字（費用・CV・CTR）は分からない。推測で書かない。「配信が長く続いている」は事実として書いてよい
 - 効果や結果を断定しない。「必ず」「確実に」「最も」は使わない
-- findings は3〜5件。素材の番号（m1・g1 など）と文言を引用して「何が起きているか」を書く
-- measures は3〜6件。title は「何をするか」を動詞で（「〜の検討」「〜の強化」は禁止）。why は引用した事実、steps は3〜5手順、impact は 大／中／小
+- 所見と施策案は、Meta 広告（meta）と Google 広告（google）に分けて書く。広告が0件の媒体は空の配列にする
+- findings は媒体ごとに2〜4件。広告の番号（Meta は M1・M2…、Google は G1・G2…。小文字にしない）と文言を引用して「何が起きているか」を書く
+- measures は媒体ごとに2〜4件。title は「何をするか」を動詞で（「〜の検討」「〜の強化」は禁止）。why は引用した事実、steps は3〜5手順、impact は 大／中／小
 - LPが分析したサイトと別のドメインなら、広告の受け皿のLPを確認・改善する施策を入れる
 - 縦横比が偏っている（例：画像が1:1だけ）なら、配信面に合わせた作り分けを施策に入れる
-- legal は、渡された【法令チェックの指摘】に加えて、あなたが気づいた法令上の注意（無ければ空）
+- legal は、渡された【法令チェックの指摘】に加えて、あなたが気づいた法令上の注意（無ければ空）。platform にどちらの広告の表現か（meta／google）を入れる
 ${d.industry === "medical" || d.industry === "beauty" ? MEDICAL_RULES : ""}`,
-      `【事業】${d.product}（対象：${d.audience}）\n${lines}\n\n出力:\n{"findings":[""],"measures":[{"title":"","why":"","steps":[""],"impact":"中"}],"legal":[{"text":"","law":"","reason":"","suggestion":""}]}`,
+      `【事業】${d.product}（対象：${d.audience}）\n${lines}\n\n出力:\n{"meta":{"findings":[""],"measures":[{"title":"","why":"","steps":[""],"impact":"中"}]},"google":{"findings":[""],"measures":[]},"legal":[{"text":"","law":"","reason":"","suggestion":"","platform":"meta"}]}`,
       { maxTokens: 5000 }
     );
     const legal = [
-      ...guard.map((h) => ({ text: h.text, law: h.law, reason: h.reason, suggestion: h.suggestion, severity: h.severity })),
+      ...guard.map((h) => ({ text: h.text, law: h.law, reason: h.reason, suggestion: h.suggestion, severity: h.severity, platform: platformOfText(p, h.text) })),
       ...(out.legal ?? [])
         .filter((x) => x && s(x.text) && !guard.some((h) => h.text === x.text))
-        .map((x) => ({ text: s(x.text), law: s(x.law), reason: s(x.reason), suggestion: s(x.suggestion), severity: "medium" })),
+        .map((x) => ({
+          text: s(x.text),
+          law: s(x.law),
+          reason: s(x.reason),
+          suggestion: s(x.suggestion),
+          severity: "medium",
+          platform: x.platform === "google" ? ("google" as const) : x.platform === "meta" ? ("meta" as const) : platformOfText(p, s(x.text)),
+        })),
     ].slice(0, 12);
+    const side = (x: Side | undefined, has: boolean): Side =>
+      has
+        ? {
+            findings: (x?.findings ?? []).filter((f) => typeof f === "string" && f.trim()).slice(0, 4),
+            measures: (x?.measures ?? []).filter((m) => m && typeof m.title === "string" && m.title.trim()).slice(0, 4),
+          }
+        : { findings: [], measures: [] };
+    const byPlatform = { meta: side(out.meta, p.meta.ads.length > 0), google: side(out.google, p.google.ads.length > 0) };
     return {
       ...p,
       stage: "done",
       facts,
       legal,
-      findings: (out.findings ?? []).filter((x) => typeof x === "string" && x.trim()).slice(0, 5),
-      measures: (out.measures ?? []).filter((m) => m && typeof m.title === "string" && m.title.trim()).slice(0, 6),
+      byPlatform,
+      findings: [...byPlatform.meta.findings, ...byPlatform.google.findings],
+      measures: [...byPlatform.meta.measures, ...byPlatform.google.measures],
     };
   } catch (e) {
     return {
       ...p,
       stage: "done",
       facts,
-      legal: guard.map((h) => ({ text: h.text, law: h.law, reason: h.reason, suggestion: h.suggestion, severity: h.severity })),
+      legal: guard.map((h) => ({ text: h.text, law: h.law, reason: h.reason, suggestion: h.suggestion, severity: h.severity, platform: platformOfText(p, h.text) })),
       findings: [],
       measures: [],
       reviewError: e instanceof Error ? e.message : String(e),
