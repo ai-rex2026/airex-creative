@@ -412,13 +412,8 @@ ${CATEGORY_NAMES.map((c) => `- ${c}`).join("\n")}
     return await flag(measuresFromLedger(ledger, kpi), d.industry);
   }
   let raw = useLedger ? attachSources(res.items ?? [], ledger) : (res.items ?? []);
-  // 施策に使われなかった実データの章の打ち手（MEO・LP改善・表示速度・計測タグ）は、効果中の施策として足す。
-  // 分析データで出した打ち手がサマリーに出ない、ということを減らす（全体で MAX_MEASURES 件まで）
-  if (useLedger) {
-    const used = new Set(raw.flatMap((m) => (m.sources ?? []).map((s) => s.id)));
-    const rest = ledger.filter((x) => !used.has(x.id) && MEASURED_ANCHORS.has(x.anchor));
-    raw = [...raw, ...ledgerToMeasures(rest, kpi, "x").slice(0, Math.max(0, MAX_MEASURES - raw.length))];
-  }
+  // 施策に使われなかった分析データの打ち手も、効果中の施策として足す（supplementFromLedger）
+  if (useLedger) raw = supplementFromLedger(raw, ledger, kpi);
   const items = fixNodes(raw, kpi).map((m) => ({ ...m, category: normalizeCategory(m) }));
   const trackingMissing = trackingKnownMissing(site);
   return await flag(items.filter((m) => !isUnverifiableTagMeasure(m, trackingMissing || fromConfirmedTags(m))), d.industry);
@@ -443,7 +438,26 @@ function withPrefix(m: Measure, unverified: boolean): Measure {
 /** 分析データに無い施策の上限 */
 const MAX_OUTSIDE = 2;
 /** サマリーに出す施策の上限（AIが作った分＋台帳から足した分） */
-const MAX_MEASURES = 18;
+const MAX_MEASURES = 40;
+
+/**
+ * 分析データタブで出した打ち手のうち、どの施策にも使われていないものを「効果 中」の施策として足す（AIは使わない）。
+ * 2026-10-06: 分析データで出した打ち手をサマリーでもできるだけ見せる。件数が多いと画面では折り畳む。
+ * 実データの章（MEO・LP改善・表示速度・計測タグ）の打ち手を先に、それ以外を後に並べる。
+ * 作成済みの分析にも、レポートを開いたときに同じ処理で足す（app/analysis/[id]/report/page.tsx）
+ */
+export function supplementFromLedger(measures: Measure[], ledger: SourceItem[], kpi: KpiTree): Measure[] {
+  const used = new Set(measures.flatMap((m) => (m.sources ?? []).map((s) => s.id)));
+  const have = new Set(measures.map((m) => m.id));
+  const rest = ledger
+    .filter((x) => !used.has(x.id) && !have.has(`l-${x.id}`))
+    .sort((a, b) => Number(MEASURED_ANCHORS.has(b.anchor)) - Number(MEASURED_ANCHORS.has(a.anchor)));
+  const room = Math.max(0, MAX_MEASURES - measures.length);
+  if (rest.length === 0 || room === 0) return measures;
+  const speedShown = ledger.some((x) => x.anchor === "sec-speed");
+  const added = ledgerToMeasures(rest.slice(0, room), kpi, "").map((m, i) => ({ ...m, id: `l-${rest[i].id}` }));
+  return [...measures, ...added.map((m) => reconcileSources(m, speedShown))];
+}
 
 /**
  * 施策のリンク先を、題名の話題（表示速度・LPの改修）に合わせる。AIが別の章の打ち手を元にしていても、

@@ -138,9 +138,12 @@ export function Measures({
   const shown = evaluations ? sortMeasuresByPriority(fixed, evaluations) : fixed;
   // 効果「大」は常に見せ、「中・小」は件数が多いときだけ折り畳む
   const FOLD_AT = 8;
-  const fold = shown.length > FOLD_AT && shown.some((m) => m.impact === "大");
-  const top = fold ? shown.filter((m) => m.impact === "大") : shown;
-  const rest = fold ? shown.filter((m) => m.impact !== "大") : [];
+  const fold = shown.length > FOLD_AT;
+  // 効果「大」が無いときは、先頭（並べ替え済み）の数件だけを見せて残りを折り畳む
+  const bigCount = shown.filter((m) => m.impact === "大").length;
+  const head = bigCount > 0 ? bigCount : 5;
+  const top = fold ? shown.slice(0, head) : shown;
+  const rest = fold ? shown.slice(head) : [];
 
   const renderItem = (m: Measure) => {
           const isDone = doneIds.includes(m.id);
@@ -292,7 +295,7 @@ export function Measures({
         {top.map((m) => renderItem(m))}
         {rest.length > 0 && (
           <details className="mfold">
-            <summary>効果 中・小の施策（{rest.length}件）を表示する</summary>
+            <summary>{bigCount > 0 ? "効果 中・小の施策" : "ほかの施策"}（{rest.length}件）を表示する</summary>
             {rest.map((m) => renderItem(m))}
           </details>
         )}

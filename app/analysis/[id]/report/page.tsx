@@ -4,7 +4,8 @@ import { Report } from "@/components/Report";
 import { MeoReport } from "@/components/MeoReport";
 import { Shell } from "@/components/Shell";
 import type { Analysis } from "@/lib/analysis";
-import { evaluateCategories } from "@/lib/summary-tab";
+import { evaluateCategories, supplementFromLedger } from "@/lib/summary-tab";
+import { buildLedger } from "@/lib/measure-sources";
 
 export const metadata = { title: "レポート｜AI-REX Studio" };
 
@@ -51,9 +52,24 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
       })()
     : null;
 
+  // 分析データの打ち手のうち施策に使われていないものを、効果中の施策として足す（AIは使わない）。
+  // 作成済みの分析は、開いたときに1回だけ足して保存する（以後は足すものが無いので何もしない）
+  let measures = a.measures;
+  if (measures && measures.length > 0 && a.kpi) {
+    try {
+      const next = supplementFromLedger(measures, buildLedger(a), a.kpi);
+      if (next.length > measures.length) {
+        const { error } = await sb.from("analyses").update({ measures: next }).eq("id", a.id).eq("owner_id", user.id);
+        if (!error) measures = next;
+      }
+    } catch {
+      // 足せなくても、保存済みの施策はそのまま出す
+    }
+  }
+
   return (
     <Shell active="analysis">
-      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} site={a.site} seo={a.seo} plan={a.media_plan} summary={a.summary} competitors={a.competitors} tactics={a.tactics} adOps={a.ad_ops} meo={a.meo} lpo={a.lpo} keywords={a.keywords} seoArticles={a.seo_articles} industryVertical={a.industry_vertical} linePlan={a.line_plan} suggests={a.suggests} outreach={a.outreach} pricing={a.pricing} speed={a.speed} social={a.social} socialInsights={a.social_insights} imageScan={a.image_scan} customImages={a.custom_images} margin={a.margin} kpi={a.kpi} measures={a.measures} categoryEvaluations={categoryEvaluations} measuresDone={a.measures_done} extraInputs={a.extra_inputs} measureLog={a.measure_log} budget={a.budget} id={a.id} gsc={a.gsc} ga4={a.ga4} snsPlan={a.sns_plan} />
+      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} site={a.site} seo={a.seo} plan={a.media_plan} summary={a.summary} competitors={a.competitors} tactics={a.tactics} adOps={a.ad_ops} meo={a.meo} lpo={a.lpo} keywords={a.keywords} seoArticles={a.seo_articles} industryVertical={a.industry_vertical} linePlan={a.line_plan} suggests={a.suggests} outreach={a.outreach} pricing={a.pricing} speed={a.speed} social={a.social} socialInsights={a.social_insights} imageScan={a.image_scan} customImages={a.custom_images} margin={a.margin} kpi={a.kpi} measures={measures} categoryEvaluations={categoryEvaluations} measuresDone={a.measures_done} extraInputs={a.extra_inputs} measureLog={a.measure_log} budget={a.budget} id={a.id} gsc={a.gsc} ga4={a.ga4} snsPlan={a.sns_plan} />
     </Shell>
   );
 }
