@@ -31,7 +31,7 @@ import { classifyIndustryVertical, buildPriorityInstruction, type IndustryVertic
 import { adReviewPeriod, analyzeAdReview, reviewFromCollection, type AdReview } from "./ad-review";
 import { collectAdPerformance, type AdPerfCollection } from "./ads/performance";
 import { AD_PLATFORMS } from "./ads/platforms";
-import { fetchPublicAds, readCreatives, reviewPublicAds, type PublicAds } from "./public-ads";
+import { fetchPublicAds, publicAdsNote, readCreatives, reviewPublicAds, type PublicAds } from "./public-ads";
 import { createAdminClient } from "./supabase/admin";
 
 /** 本番と同じ見た目の短いID（英数20文字） */
@@ -427,6 +427,33 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       // 競合ページの読み比べは、施策に影響しないため行わない（画面にも出さない）
       return await save({ competitors: comp, step: "広告手法を選んでいます", progress: 50 });
     }
+    // 公開情報から見た出稿中の広告（2026-10-06新設。lib/public-ads.ts）。広告運用設計の原稿・制作案に反映するため、
+    // 広告手法・運用設計より前に行う（2026-10-06 夜に順番を変更）。取得→画像・動画の読み取り→所見の
+    // 3段階で、それぞれ終わった時点で保存する（済んだ段階はやり直さない）。未登録ユーザーの分析では行わない
+    // （1回あたり約20円かかり、レポートの該当欄も会員登録で見られる範囲のため）
+    if (a.url && !a.public_ads) {
+      const { data: owner } = await createAdminClient().auth.admin.getUserById(a.owner_id).catch(() => ({ data: { user: null } }));
+      if (!owner?.user || owner.user.is_anonymous) {
+        const skipped: PublicAds = {
+          stage: "done",
+          fetchedAt: new Date().toISOString(),
+          meta: { status: "skipped", pageUrl: null, ads: [] },
+          google: { status: "skipped", domain: null, ads: [] },
+        };
+        return await save({ public_ads: skipped, step: "出稿中の広告を調べています", progress: 51 });
+      }
+      const fb = (a.social?.accounts ?? []).find((x) => /facebook/i.test(x.platform) || /facebook\.com\//i.test(x.url))?.url ?? null;
+      const public_ads = await fetchPublicAds(a.id, a.url, fb);
+      return await save({ public_ads, step: "出稿中の広告を調べています", progress: 51 });
+    }
+    if (a.public_ads && a.public_ads.stage === "fetched") {
+      return await save({ public_ads: await readCreatives(a.public_ads), step: "出稿中の広告を調べています", progress: 51 });
+    }
+    if (a.public_ads && a.public_ads.stage === "creatives") {
+      const diagnosis = a.diagnosis;
+      if (!diagnosis) throw new Error("診断結果が見つかりません");
+      return await save({ public_ads: await reviewPublicAds(a.public_ads, diagnosis, a.url), step: "広告手法を選んでいます", progress: 52 });
+    }
     if (!a.media_plan) {
       const plan = await generateMediaPlan(a.diagnosis, a.site, a.budget, priorityNoteFor(a, "media_plan"));
       return await save({ media_plan: plan, step: "広告の運用設計を書いています", progress: 55 });
@@ -462,7 +489,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       });
       const missing = skeletons.filter((k) => !built.some((b) => b.channel === k.item.channel && b.name === k.c.name));
       if (missing.length > 0) {
-        const newCampaigns = await Promise.all(missing.map((k) => generateCampaign(diagnosis, a.site, k.item, k.c, a.budget)));
+        const newCampaigns = await Promise.all(missing.map((k) => generateCampaign(diagnosis, a.site, k.item, k.c, a.budget, publicAdsNote(a.public_ads, k.item.channel))));
         const ops: AdOps = { done: false, plan: structures, campaigns: [...built, ...newCampaigns], ...empty };
         return await save({
           ad_ops: ops,
@@ -725,32 +752,6 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       const done = (cur?.speed ?? null) as SpeedScan | null;
       if (typeof done?.score === "number" && typeof speed.score !== "number") return await save({ step: "要約をまとめています", progress: 95 });
       return await save({ speed, step: "要約をまとめています", progress: 95 });
-    }
-    // 公開情報から見た出稿中の広告（2026-10-06新設。lib/public-ads.ts）。取得→画像・動画の読み取り→所見の
-    // 3段階で、それぞれ終わった時点で保存する（済んだ段階はやり直さない）。未登録ユーザーの分析では行わない
-    // （1回あたり約20円かかり、レポートの該当欄も会員登録で見られる範囲のため）
-    if (a.url && !a.public_ads) {
-      const { data: owner } = await createAdminClient().auth.admin.getUserById(a.owner_id).catch(() => ({ data: { user: null } }));
-      if (!owner?.user || owner.user.is_anonymous) {
-        const skipped: PublicAds = {
-          stage: "done",
-          fetchedAt: new Date().toISOString(),
-          meta: { status: "skipped", pageUrl: null, ads: [] },
-          google: { status: "skipped", domain: null, ads: [] },
-        };
-        return await save({ public_ads: skipped, step: "出稿中の広告を調べています", progress: 94 });
-      }
-      const fb = (a.social?.accounts ?? []).find((x) => /facebook/i.test(x.platform) || /facebook\.com\//i.test(x.url))?.url ?? null;
-      const public_ads = await fetchPublicAds(a.id, a.url, fb);
-      return await save({ public_ads, step: "出稿中の広告を調べています", progress: 94 });
-    }
-    if (a.public_ads && a.public_ads.stage === "fetched") {
-      return await save({ public_ads: await readCreatives(a.public_ads), step: "出稿中の広告を調べています", progress: 94 });
-    }
-    if (a.public_ads && a.public_ads.stage === "creatives") {
-      const diagnosis = a.diagnosis;
-      if (!diagnosis) throw new Error("診断結果が見つかりません");
-      return await save({ public_ads: await reviewPublicAds(a.public_ads, diagnosis, a.url), step: "広告の実績を分析しています", progress: 95 });
     }
     // 広告の実績分析（2026-10-06新設。lib/ad-review.ts）。サマリーの施策の材料（台帳）に入れるので、
     // その前に済ませる。実績の取得とAIの分析は別々に保存し、保存済みの段階はやり直さない

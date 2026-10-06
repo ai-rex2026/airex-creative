@@ -34,6 +34,11 @@ export type AdGroup = {
   descriptions: string[];
   /** 媒体固有の3つ目の枠。Yahoo!ディスプレイの「長い見出し」など */
   longHeadlines?: string[];
+  /**
+   * 画像・動画の制作案（検索広告以外）。2026-10-06〜：公開情報から見た出稿中の広告（lib/public-ads.ts）の
+   * 制作案を、このグループの狙いに合わせて具体化したもの。古い分析には無い
+   */
+  creatives?: { format: string; aim: string; structure: string[]; onscreenText: string; shoot: string }[];
 };
 
 export type Campaign = {
@@ -274,7 +279,9 @@ export async function generateCampaign(
   site: SiteScan | null,
   item: MediaPlanItem,
   skeleton: ChannelStructure["campaigns"][number],
-  budget?: BudgetBand | null
+  budget?: BudgetBand | null,
+  /** 公開情報から見た出稿中の広告の要約（lib/public-ads.ts の publicAdsNote）。無ければ空 */
+  publicNote = ""
 ): Promise<Campaign> {
   const spec = specFor(item.channel);
   const search = spec.keywords;
@@ -305,6 +312,10 @@ ${spec.long ? `- longHeadlines は各グループ${spec.long.count}件。これ�
   （例：キャンペーンの目標、コンバージョン目標、地域、言語、ネットワーク、広告のローテーション、配信スケジュール、除外する配置、フリークエンシー など）
 - notes は「外し忘れると費用が漏れる設定」を2〜4件。一般論ではなく設定名で書く
 - targeting は各グループで誰にどこで出すかを1〜2文で
+${search ? "- creatives は空配列にする（検索広告は文字だけの広告）" : `- creatives は各グループ1〜2件。そのグループで使う画像・動画の制作案を「この形式で、この構成の素材を作る」粒度で書く：
+  format（例：縦型動画 9:16・15秒／静止画 4:5）、aim（このグループの狙いとの対応）、structure（動画は冒頭3秒・中盤・最後（CTA）、静止画は主役のビジュアル・文字の配置・CTA を1行ずつ）、
+  onscreenText（画像・動画内に入れる文言の案）、shoot（撮影・素材のメモ）${publicNote ? "\n  下の【出稿中の広告（公開情報）】に制作案があれば、それをこのグループの狙いに合わせて具体化して使う" : ""}`}
+${publicNote ? "- 【出稿中の広告（公開情報）】で既に使っている訴求・言い回しをそのまま繰り返さない。所見で足りないとされた訴求・形式を優先して埋める。法令上の注意に挙がった表現は使わない" : ""}
 - 効果を断定する表現・最上級表現は書かない（別で法令チェックにかけます）
 ${EFFICIENCY_RULES}`,
     `${mediaFacts(d, site)}
@@ -314,12 +325,13 @@ ${EFFICIENCY_RULES}`,
 キャンペーン: ${skeleton.name}（${skeleton.purpose}）
 広告グループ:
 ${groupList}
-
+${publicNote ? `\n${publicNote}\n` : ""}
 出力:
 {"name":"${skeleton.name}","channel":"${item.channel}","purpose":"","bidStrategy":"",
  "settings":[{"label":"","value":""}],"campaignNegatives":[""],
  "groups":[{"name":"","purpose":"","targeting":"","audience":[{"label":"","value":""}],"searchThemes":[""],
-            "keywords":[""],"negatives":[""],"headlines":[""],"descriptions":[""],"longHeadlines":[""]}],
+            "keywords":[""],"negatives":[""],"headlines":[""],"descriptions":[""],"longHeadlines":[""],
+            "creatives":[{"format":"","aim":"","structure":[""],"onscreenText":"","shoot":""}]}],
  "notes":[""]}`,
     { maxTokens: 9000, timeoutMs: 170_000 }
   );
@@ -333,6 +345,18 @@ ${groupList}
     negatives: search ? g.negatives ?? [] : [],
     searchThemes: pmax ? (g.searchThemes ?? []).filter(Boolean) : [],
     audience: (g.audience ?? []).filter((x) => x && x.label && x.value),
+    creatives: search
+      ? []
+      : (g.creatives ?? [])
+          .filter((x) => x && typeof x.format === "string" && x.format.trim())
+          .slice(0, 2)
+          .map((x) => ({
+            format: x.format,
+            aim: typeof x.aim === "string" ? x.aim : "",
+            structure: Array.isArray(x.structure) ? x.structure.filter((t) => typeof t === "string").slice(0, 5) : [],
+            onscreenText: typeof x.onscreenText === "string" ? x.onscreenText : "",
+            shoot: typeof x.shoot === "string" ? x.shoot : "",
+          })),
   }));
   return {
     ...c,
@@ -425,7 +449,13 @@ export async function finishAdOps(
 
   // 生成した原稿は全部ガードレールに通す。ここを素通りさせると入稿事故になる
   const texts = repaired.flatMap((c) =>
-    (c.groups ?? []).flatMap((g) => [...(g.headlines ?? []), ...(g.descriptions ?? []), ...(g.longHeadlines ?? [])])
+    (c.groups ?? []).flatMap((g) => [
+      ...(g.headlines ?? []),
+      ...(g.descriptions ?? []),
+      ...(g.longHeadlines ?? []),
+      // 画像・動画内に入れる文言の案も、入稿される文言なので同じくチェックする
+      ...(g.creatives ?? []).flatMap((x) => [x.onscreenText, ...x.structure]).filter(Boolean),
+    ])
   );
   const guard = await checkGuard(texts, industry);
   // 指摘語を含む原稿を特定して紐付ける。まとめて件数だけ出しても直せない

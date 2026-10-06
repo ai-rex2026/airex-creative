@@ -1125,6 +1125,10 @@ export function Report({
           </div>
         </>
       )}
+      {/* 2026-10-06: 広告手法一覧 → 広告の実績分析・出稿中の広告（公開情報）→ 広告運用設計 の順。
+          出稿中の広告の所見・制作案は、広告運用設計の原稿と制作案に反映している */}
+      <AdReviewSection review={adReview} />
+      <PublicAdsSection data={publicAds} />
       {adOps?.done && adOps.campaigns.length > 0 && (
         <>
           <div className="sec-head">
@@ -1281,6 +1285,36 @@ export function Report({
                             </div>
                           </details>
                         )}
+                        {(g.creatives?.length ?? 0) > 0 && (
+                          <details className="flags">
+                            <summary>画像・動画の制作案（{g.creatives!.length}件）</summary>
+                            <div className="lines">
+                              {g.creatives!.map((x, i) => {
+                                const fl = flagOf(x.onscreenText);
+                                return (
+                                  <div key={i} style={{ padding: "8px 0", borderTop: i ? "1px solid var(--line)" : undefined }}>
+                                    <b style={{ fontSize: 13 }}>{x.format}</b>
+                                    {x.aim && <small style={{ display: "block", marginTop: 2 }}>狙い：{x.aim}</small>}
+                                    {x.structure.length > 0 && (
+                                      <ol style={{ margin: "6px 0 0 18px", fontSize: 12.5, color: "var(--muted)", lineHeight: 1.7 }}>
+                                        {x.structure.map((t, j) => <li key={j}>{t}</li>)}
+                                      </ol>
+                                    )}
+                                    {x.onscreenText && (
+                                      <small style={{ display: "block", marginTop: 4, color: "var(--text)" }}>入れる文言の案：{x.onscreenText}</small>
+                                    )}
+                                    {x.shoot && <small style={{ display: "block", marginTop: 2, color: "var(--faint)" }}>撮影・素材：{x.shoot}</small>}
+                                    {fl && (
+                                      <small style={{ display: "block", marginTop: 4, color: "var(--ng)" }}>
+                                        法令上の注意：{fl.law}（{fl.reason}）{fl.suggestion ? ` → ${fl.suggestion}` : ""}
+                                      </small>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </details>
+                        )}
                       </>
                     </GuestMask>
                     <div className="specnote">
@@ -1317,9 +1351,6 @@ export function Report({
           <ContactCta label="広告運用・自動化について相談する" />
         </>
       )}
-      {/* 2026-10-06: 広告の実績分析と、公開情報から見た出稿中の広告は「広告運用設計」の次に置く */}
-      <AdReviewSection review={adReview} />
-      <PublicAdsSection data={publicAds} />
       {seo && site && (
         <>
           <div className="sec-head">

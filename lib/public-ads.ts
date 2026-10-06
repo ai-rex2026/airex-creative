@@ -442,3 +442,35 @@ ${d.industry === "medical" || d.industry === "beauty" ? MEDICAL_RULES : ""}`,
     };
   }
 }
+
+/**
+ * 広告運用設計（lib/ad-ops.ts の generateCampaign）に渡す要約。2026-10-06〜：
+ * 公開情報で見えている今の広告と所見・制作案を踏まえて、広告運用設計の原稿と制作案を作る（重複させない）。
+ * まだ調べ終わっていない・広告が無いときは空文字
+ */
+export function publicAdsNote(p: PublicAds | null | undefined, channel: string): string {
+  if (!p || p.stage !== "done") return "";
+  const isMeta = /meta|facebook|instagram|インスタ/i.test(channel);
+  // ヤフー・Microsoft の検索・ディスプレイは Google の公開情報と無関係なので渡さない
+  const isGoogle = !/yahoo|ヤフー|microsoft|bing/i.test(channel) && /google|youtube|p-?max|ディスプレイ|gdn|検索/i.test(channel);
+  const side = isMeta ? "meta" : isGoogle ? "google" : null;
+  if (!side) return "";
+  const ads = side === "meta" ? p.meta.ads : p.google.ads;
+  if (ads.length === 0) return "";
+  const bp = p.byPlatform?.[side];
+  const notes = new Map((p.creatives ?? []).map((c) => [c.ref, c]));
+  const lines = [
+    `【出稿中の広告（公開情報）：${side === "meta" ? "Meta" : "Google"}】`,
+    ...(side === "meta"
+      ? p.meta.ads.map((a, i) => `- M${i + 1}［${a.format}］${a.title}／${a.body.replace(/\s+/g, " ").slice(0, 80)}${notes.get(`m${i + 1}`)?.onscreenText ? `／素材内：${notes.get(`m${i + 1}`)!.onscreenText.slice(0, 80)}` : ""}`)
+      : p.google.ads.map((a, i) => `- G${i + 1}［${a.format}］${[a.headline, a.body].filter(Boolean).join(" ") || notes.get(`g${i + 1}`)?.onscreenText?.slice(0, 80) || ""}`)),
+    ...(bp?.findings?.length ? ["所見：", ...bp.findings.map((f) => `- ${f}`)] : []),
+    ...(bp?.proposals?.length
+      ? ["制作案：", ...bp.proposals.map((c) => `- ${c.format}：${c.aim}／${c.structure.join("→")}／文言案：${c.onscreenText}`)]
+      : []),
+    ...((p.legal ?? []).filter((l) => (l.platform ?? "meta") === side).length
+      ? ["法令上の注意（使わない表現）：", ...(p.legal ?? []).filter((l) => (l.platform ?? "meta") === side).map((l) => `- 「${l.text}」${l.law}`)]
+      : []),
+  ];
+  return lines.join("\n").slice(0, 3000);
+}

@@ -100,32 +100,11 @@ function PlatformBlock({
         <p className="sub">広告を取得できませんでした{error ? `（${error.slice(0, 80)}）` : ""}</p>
       )}
       <Review title={name} findings={findings} measures={measures} legal={legal} />
+      {/* 2026-10-06: 制作案は「広告運用設計」の各広告グループに反映して出す（ここでは重ねて出さない） */}
       {proposals.length > 0 && (
-        <div className="rows measure" style={{ marginTop: 10 }}>
-          <div className="rh">{name}の制作案（画像・動画のパターン）</div>
-          {proposals.map((c, i) => (
-            <div className="r" key={i} style={{ display: "block" }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-                <span className="tag score">案{i + 1}</span>
-                <b style={{ flex: 1, minWidth: 160 }}>{c.format}</b>
-              </div>
-              {c.aim && <small style={{ display: "block", marginTop: 4 }}>狙い：{codes(c.aim)}</small>}
-              {c.structure.length > 0 && (
-                <ol style={{ margin: "8px 0 0 18px", fontSize: 12.5, color: "var(--muted)", lineHeight: 1.7 }}>
-                  {c.structure.map((t, j) => <li key={j}>{codes(t)}</li>)}
-                </ol>
-              )}
-              {c.onscreenText && (
-                <small style={{ display: "block", marginTop: 6, color: "var(--text)" }}>入れる文言の案：{c.onscreenText}</small>
-              )}
-              {c.shoot && <small style={{ display: "block", marginTop: 4, color: "var(--faint)" }}>撮影・素材：{c.shoot}</small>}
-              {c.flags && c.flags.length > 0 && (
-                <small style={{ display: "block", marginTop: 6, color: "var(--ng)" }}>
-                  法令上の注意：{c.flags.map((f) => `「${f.text}」（${f.law}）${f.suggestion ? `→ ${f.suggestion}` : ""}`).join("／")}
-                </small>
-              )}
-            </div>
-          ))}
+        <div className="note" style={{ marginTop: 10 }}>
+          <i className="i">i</i>
+          <span>この所見をもとにした画像・動画の制作案は、下の「広告運用設計」の各広告グループに反映しています。</span>
         </div>
       )}
     </div>
