@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { Analysis } from "@/lib/analysis";
 import type { ScoreLevel } from "@/lib/types";
+import { withSiteHealth } from "@/lib/summary-tab";
 
 const PILL: Record<string, [string, string]> = {
   queued: ["分析中", ""],
@@ -58,13 +59,16 @@ export function AnalysisList({ rows }: { rows: Analysis[] }) {
             const to = a.status === "done" ? `/analysis/${a.id}/report` : `/analysis/${a.id}/waiting`;
             const site = a.url ? a.url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入力テキスト";
             const s = a.summary;
+            const evs = withSiteHealth(a.category_evaluations ?? null);
             return (
               <div key={a.id} className="card" style={{ padding: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <b style={{ fontSize: 15 }}>{site}</b>
                   <span className={`tag ${cls === "ok" ? "ok" : cls === "ng" ? "ng" : ""}`}>{text}</span>
                   <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--faint)" }}>
-                    {new Date(a.created_at).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })}
+                    {new Date(a.created_at).toLocaleString("ja-JP", {
+                      timeZone: "Asia/Tokyo", year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+                    })}
                   </span>
                 </div>
 
@@ -79,27 +83,31 @@ export function AnalysisList({ rows }: { rows: Analysis[] }) {
                     </div>
                     <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 10 }}>{s.excerpt}</p>
 
-                    <div style={{ marginTop: 12 }}>
-                      {([["CVR", s.scores.cvr], ["SEO", s.scores.seo], ["ターゲ", s.scores.targeting], ["LP", s.scores.lp]] as const).map(
-                        ([label, lv]) => (
-                          <div className="sc" key={label}>
-                            <span>{label}</span>
-                            <span className={`t${lv === "弱" ? " weak" : ""}`}><span style={{ width: `${WIDTH[lv]}%` }} /></span>
-                            <span className="v">{lv}</span>
-                          </div>
-                        )
-                      )}
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                      <span className="tag score">最強 {s.best}</span>
-                      <span className="tag warn">最弱 {s.worst}</span>
-                    </div>
-
-                    {s.firstSteps?.[0] && (
-                      <div style={{ marginTop: 14, paddingLeft: 12, borderLeft: "2px solid var(--gold)" }}>
-                        <div className="label">次の一手</div>
-                        <p style={{ fontSize: 13, marginTop: 4 }}>{s.firstSteps[0].action}</p>
+                    {evs && evs.length > 0 ? (
+                      // 2026-10-06: レポートのサマリータブと同じ「カテゴリ別評価」を出す（以前のCVR/SEO/ターゲ/LPの4項目と「次の一手」は廃止）
+                      <div className="catmini">
+                        {evs.map((ev) => {
+                          const tone = ev.score === null ? "na" : ev.score === "強" ? "ok" : ev.score === "標準" ? "warn" : "ng";
+                          return (
+                            <div className={`cm ${tone}`} key={ev.category}>
+                              <span>{ev.category}</span>
+                              <b>{ev.score ?? "分析不可"}</b>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      // カテゴリ別評価の導入前に作られた分析は、以前の4項目を出す
+                      <div style={{ marginTop: 12 }}>
+                        {([["CVR", s.scores.cvr], ["SEO", s.scores.seo], ["ターゲ", s.scores.targeting], ["LP", s.scores.lp]] as const).map(
+                          ([label, lv]) => (
+                            <div className="sc" key={label}>
+                              <span>{label}</span>
+                              <span className={`t${lv === "弱" ? " weak" : ""}`}><span style={{ width: `${WIDTH[lv]}%` }} /></span>
+                              <span className="v">{lv}</span>
+                            </div>
+                          )
+                        )}
                       </div>
                     )}
                   </>

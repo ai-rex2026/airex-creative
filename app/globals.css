@@ -862,6 +862,13 @@ table.kw td.act{color:var(--muted);line-height:1.7;min-width:260px}
 .cat-card.ng .sc{background:#FBF0EE;color:var(--ng)}
 .cat-card.na .sc{background:var(--sunk);color:var(--faint)}
 .cat-card small{font-size:11.5px;color:var(--faint);line-height:1.5}
+.catmini{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px 14px;margin-top:12px}
+.catmini .cm{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);
+  padding:5px 0;border-bottom:1px dashed var(--line)}
+.catmini .cm b{font-size:11px;font-weight:500;padding:1px 9px;border-radius:999px;background:var(--sunk);color:var(--faint);flex:0 0 auto}
+.catmini .cm.ok b{background:#EAF3EE;color:var(--ok)}
+.catmini .cm.warn b{background:#FCF8EF;color:var(--warn)}
+.catmini .cm.ng b{background:#FBF0EE;color:var(--ng)}
 
 .mlist{display:grid;gap:10px;margin-top:16px}
 .mlist .m{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
