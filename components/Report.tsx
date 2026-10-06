@@ -49,6 +49,8 @@ import type { Measure } from "@/lib/measures";
 import { withSiteHealth, type CategoryEvaluation } from "@/lib/summary-tab";
 import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
 import { AdReviewSection } from "./AdReviewSection";
+import { PublicAdsSection } from "./PublicAdsSection";
+import type { PublicAds } from "@/lib/public-ads";
 import type { AdReview } from "@/lib/ad-review";
 
 type Tab = "inputs" | "summary" | "overview";
@@ -180,6 +182,7 @@ export function Report({
   ga4,
   snsPlan = null,
   adReview = null,
+  publicAds = null,
 }: {
   d: Diagnosis;
   copies: BannerCopy[];
@@ -220,6 +223,8 @@ export function Report({
   snsPlan?: SnsPlan | null;
   /** 連携した広告アカウントの実績分析（lib/ad-review.ts）。2026-10-06以前の分析には無い */
   adReview?: AdReview | null;
+  /** 公開情報から見た出稿中の広告（lib/public-ads.ts）。2026-10-06以前の分析と、未登録ユーザーの分析には無い */
+  publicAds?: PublicAds | null;
 }) {
   const [picked, setPicked] = useState<number[]>(copies.map((_, i) => i).slice(0, 3));
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "google-lb"]);
@@ -1045,6 +1050,8 @@ export function Report({
       )}
       {/* 連携した広告アカウントの実績分析（2026-10-06〜の分析のみ） */}
       <AdReviewSection review={adReview} />
+      {/* 公開情報から見た出稿中の広告（2026-10-06〜の分析のみ） */}
+      <PublicAdsSection data={publicAds} />
       {plan && plan.length > 0 && (
         <>
           <div className="sec-head">

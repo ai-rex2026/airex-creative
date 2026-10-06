@@ -369,7 +369,7 @@ async function claimApifyBudget(analysisId: string): Promise<boolean> {
  * run-sync-get-dataset-items は、Actorの実行が終わるまでこのリクエスト自体が
  * 待つ仕様（別途ポーリングが要らない）。待っても数十秒程度で終わるActorだけに使う。
  */
-async function runApifyActor(
+export async function runApifyActor(
   analysisId: string,
   actorId: string,
   input: object,

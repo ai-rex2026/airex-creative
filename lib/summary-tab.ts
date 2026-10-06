@@ -13,6 +13,7 @@ import type { SuggestScan } from "./outreach";
 import type { GscData } from "./google";
 import type { AdOps } from "./ad-ops";
 import type { AdReview } from "./ad-review";
+import type { PublicAds } from "./public-ads";
 import { facts, fixNodes, flag, RULES, type Measure, type MeasurePlan } from "./measures";
 import { MEASURED_ANCHORS, topicSection, type SourceItem } from "./measure-sources";
 
@@ -332,7 +333,9 @@ export function withAdAccounts(
   connectedNames: string[],
   isGuest = false,
   /** その分析で読んだ広告の実績（2026-10-06〜の分析）。あればこちらを優先する */
-  review?: AdReview | null
+  review?: AdReview | null,
+  /** 公開情報から見た出稿中の広告（2026-10-06〜の分析）。連携の実績が無いときに根拠として使う */
+  publicAds?: PublicAds | null
 ): CategoryEvaluation[] | null {
   if (!evs) return evs;
   const fromReview: CategoryEvaluation | null =
@@ -345,7 +348,25 @@ export function withAdAccounts(
         : review?.status === "error"
           ? { category: "広告", score: null, measured: false, basis: "広告の実績を取得できませんでした", sectionAnchor: "/settings" }
           : null;
+  // 実績を読めていないが、公開情報で配信中の広告が見えている場合（成果の数字は無いので評価は付けない）
+  const pubM = publicAds?.stage === "done" ? publicAds.meta.ads.length : 0;
+  const pubG = publicAds?.stage === "done" ? publicAds.google.ads.length : 0;
+  const fromPublic: CategoryEvaluation | null =
+    pubM + pubG > 0
+      ? {
+          category: "広告",
+          score: null,
+          measured: false,
+          basis: `${connectedNames.length > 0 ? "" : "広告アカウント が連携されていません。"}公開情報で配信中の広告を確認：${[
+            pubM ? `Meta ${pubM}件` : "",
+            pubG ? `Google ${pubG}件` : "",
+          ].filter(Boolean).join("・")}（成果の数字は連携で確認できます）`,
+          sectionAnchor: "sec-pubads",
+        }
+      : null;
   const ad: CategoryEvaluation =
+    (review?.status === "ok" ? fromReview : null) ??
+    fromPublic ??
     fromReview ??
     (connectedNames.length > 0
       ? {
