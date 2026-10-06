@@ -1,4 +1,5 @@
 import type { PublicAds } from "@/lib/public-ads";
+import { RealBadge } from "./RealBadge";
 
 /**
  * レポートの分析データタブ「出稿中の広告（公開情報）」（2026-10-06 新設）。
@@ -125,7 +126,7 @@ export function PublicAdsSection({ data }: { data: PublicAds | null }) {
       <div className="sec-head">
         <div>
           <h2 id="sec-pubads">
-            出稿中の広告（公開情報）<span className="tag score" style={{ marginLeft: 8, verticalAlign: "middle" }}>実データ</span>
+            出稿中の広告（公開情報）<RealBadge label="公開情報の実データで分析" />
           </h2>
           <div className="sub">
             Meta 広告ライブラリ・Google 広告透明性センターで公開されている広告です（

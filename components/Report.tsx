@@ -50,19 +50,12 @@ import { withSiteHealth, type CategoryEvaluation } from "@/lib/summary-tab";
 import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
 import { AdReviewSection } from "./AdReviewSection";
 import { PublicAdsSection } from "./PublicAdsSection";
+import { RealBadge } from "./RealBadge";
 import type { PublicAds } from "@/lib/public-ads";
 import type { AdReview } from "@/lib/ad-review";
 
 type Tab = "inputs" | "summary" | "overview";
 
-/** 「実データを使って分析している」ことを示すバッジ（セクション見出し用） */
-function RealBadge({ label = "実データで分析" }: { label?: string }) {
-  return (
-    <span className="tag ok" style={{ marginLeft: 10, fontSize: 11, fontWeight: 500, verticalAlign: "middle" }}>
-      🟢{label}
-    </span>
-  );
-}
 
 /**
  * 「切り抜く」表示のとき、横・縦どちらの位置スライダーが実際に効くかを判定する。

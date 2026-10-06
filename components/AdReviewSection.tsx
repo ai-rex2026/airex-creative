@@ -1,5 +1,6 @@
 import type { AdReview } from "@/lib/ad-review";
 import type { AdCampaignRow } from "@/lib/ads/performance";
+import { RealBadge } from "./RealBadge";
 
 /**
  * レポートの分析データタブ「広告の実績分析」（2026-10-06 新設）。
@@ -37,7 +38,7 @@ export function AdReviewSection({ review }: { review: AdReview | null }) {
       <div className="sec-head">
         <div>
           <h2 id="sec-adreview">
-            広告の実績分析<span className="tag score" style={{ marginLeft: 8, verticalAlign: "middle" }}>実データ</span>
+            広告の実績分析<RealBadge label="広告アカウントの実データで分析" />
           </h2>
           <div className="sub">
             連携した広告アカウントの実績（{review.period.from}〜{review.period.to}）をもとにしています
