@@ -108,7 +108,7 @@ export function NewAnalysisForm({ initialUrl, googleConnected = false }: { initi
       <div className="modes">
         <button className={mode === "report" ? "on" : ""} onClick={() => setMode("report")}>
           <b>サイトレポート</b>
-          <small>目安20〜40分。サイトにより前後します</small>
+          <small>（目安20〜40分。サイトにより前後します）</small>
         </button>
         {/* 2026-10-06: MEOはAPIキーが未発行で機能が未完成のため、「MEOだけ見る」は一旦非表示。
             再開するときは SHOW_MEO_MODE を true にする */}
