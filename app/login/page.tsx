@@ -25,9 +25,6 @@ export default async function LoginPage({
             わかる
           </h1>
           <p>広告、SEO、MEO、LP、SNS、サジェストなど集客に必要な次の一手が作業レベルでわかります。</p>
-          <div className="pt"><i>◆</i>訴求軸ごとにコピーを自動生成</div>
-          <div className="pt"><i>◆</i>生成と同時に景表法・薬機法をチェック</div>
-          <div className="pt"><i>◆</i>Meta・Google・Yahoo のサイズを一括書き出し</div>
         </div>
       </div>
       <div className="main">
