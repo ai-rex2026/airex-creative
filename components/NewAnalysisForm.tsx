@@ -108,7 +108,7 @@ export function NewAnalysisForm({ initialUrl, googleConnected = false }: { initi
       <div className="modes">
         <button className={mode === "report" ? "on" : ""} onClick={() => setMode("report")}>
           <b>サイトレポート</b>
-          <small>戦略・原稿・バナーまで一式</small>
+          <small>目安20〜40分。サイトにより前後します</small>
         </button>
         {/* 2026-10-06: MEOはAPIキーが未発行で機能が未完成のため、「MEOだけ見る」は一旦非表示。
             再開するときは SHOW_MEO_MODE を true にする */}
@@ -231,13 +231,12 @@ export function NewAnalysisForm({ initialUrl, googleConnected = false }: { initi
         </>
       )}
 
-      <p style={{ marginTop: 16, fontSize: 12.5, color: "var(--faint)" }}>
-        {pending
-          ? "分析を積んでいます…"
-          : mode === "meo"
-            ? "Googleマップの掲載状況・評価・レビュー数を近隣の同業と比べます（約20秒）"
-            : "サイトを分析し、訴求軸・コピー・バナー・LPまで作ります（目安20〜40分。サイトにより前後します）"}
-      </p>
+      {/* 2026-10-06: サイトレポートの説明文は削除（所要時間はモードのボタン内に表示） */}
+      {(pending || mode === "meo") && (
+        <p style={{ marginTop: 16, fontSize: 12.5, color: "var(--faint)" }}>
+          {pending ? "分析を積んでいます…" : "Googleマップの掲載状況・評価・レビュー数を近隣の同業と比べます（約20秒）"}
+        </p>
+      )}
     </div>
   );
 }
