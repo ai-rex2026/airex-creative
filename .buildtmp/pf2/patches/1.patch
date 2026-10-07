@@ -1,0 +1,13 @@
+diff --git a/lib/meo-ops/writer.ts b/lib/meo-ops/writer.ts
+index f566e7c..b553b5c 100644
+--- a/lib/meo-ops/writer.ts
++++ b/lib/meo-ops/writer.ts
+@@ -86,6 +86,8 @@ export async function draftPost(store: Pick<MeoStoreSnapshot, "name" | "category
+ const DESCRIPTION_SYSTEM = `あなたは日本の店舗のGoogleビジネスプロフィール「ビジネスの説明」を書く担当者です。
+ 
+ - 与えられた事実だけで書く。無い実績・数字・受賞歴・価格は書かない
++- 書く対象は「店舗名」の1店舗だけ。ほかの会社名・サービス名・製品名は書かない（事実に書かれていても、その店舗自身のことでなければ使わない）
++- 店舗名は本文に必ず入れる
+ - 「No.1」「必ず」「絶対」「最高」など根拠の要る表現は使わない
+ - 店舗の特徴・来店のメリット・アクセスを、読みやすっ400〜600文字で書く
+ - URL・電話番号・記号の多用・キーワードの羅列はしない（Googleのガイドライン違反になる）
