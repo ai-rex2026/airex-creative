@@ -27,6 +27,20 @@ export default async function SettingsPage({
   const adConns = await adConnections();
   const snsConns = await snsConnections();
 
+  // MEO運用ページ（テスト中）への入口。いちばん新しい完了済みの分析へ送る
+  let meoHref: string | null = null;
+  if (!user.is_anonymous) {
+    const { data: latest } = await sb
+      .from("analyses")
+      .select("id")
+      .eq("owner_id", user.id)
+      .eq("status", "done")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latest?.id) meoHref = `/analysis/${latest.id}/meo`;
+  }
+
   const sp = await searchParams;
   const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
@@ -108,6 +122,14 @@ export default async function SettingsPage({
               ゲストのままログアウトすると、<b style={{ fontWeight: 600 }}>いまの分析は二度と開けなくなります</b>。
               先に無料登録してください。
             </span>
+          </p>
+        )}
+
+        {meoHref && (
+          <p style={{ marginTop: 40, textAlign: "center" }}>
+            <a href={meoHref} style={{ fontSize: 12, color: "var(--faint)", textDecoration: "underline" }}>
+              MEO運用ページ（テスト中）
+            </a>
           </p>
         )}
       </div>
