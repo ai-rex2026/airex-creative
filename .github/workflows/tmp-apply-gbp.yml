@@ -14,14 +14,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply staged files and verify hashes
+      - name: Apply staged files and verify hashes (v2)
         run: |
           set -e
           git config user.name "airex-bot"
           git config user.email "bot@ad-rex.com"
           cp -r .buildtmp/gbp/files/. .
           for p in .buildtmp/gbp/patches/*.patch; do git apply --whitespace=nowarn "$p"; done
-          # 1文字でも違えばここで止まり、コミットされない
           sha256sum -c .buildtmp/gbp/SHA256SUMS
           rm -rf .buildtmp/gbp
           rm -f .github/workflows/tmp-apply-gbp.yml .github/workflows/tmp-apply-inputs-connect.yml
