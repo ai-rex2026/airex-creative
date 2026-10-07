@@ -127,15 +127,20 @@ export async function saveProfileDraftAction(id: string, d: MeoProfileDraft) {
 /** 「ビジネスの説明」をAIで下書きする（保存はしない。画面で直してから保存する） */
 export async function draftDescriptionAction(
   id: string,
-  input: { storeName: string; paymentMethods: string[]; attributes: string[] }
-): Promise<{ description: string; hits: GuardHit[] }> {
+  input: { storeName: string; paymentMethods: string[]; attributes: string[]; notes?: string }
+): Promise<{ description: string; hits: GuardHit[]; warning: string | null }> {
   const { row, industry } = await owned(id);
   const r = await draftDescription(
     row.meo_store,
-    { storeName: input.storeName, paymentMethods: input.paymentMethods, attributes: input.attributes, siteSummary: row.site?.description ?? null },
+    { storeName: input.storeName, paymentMethods: input.paymentMethods, attributes: input.attributes, notes: (input.notes ?? "").slice(0, 600) },
     industry
   );
-  return { description: r.description, hits: r.guard.hits };
+  // 分析レポートの対象サイトの説明は材料に使わない（店舗と別の会社・製品の内容が混ざるため）
+  return {
+    description: r.description,
+    hits: r.guard.hits,
+    warning: r.nameMissing ? "説明文に店舗名が入っていません。別の会社の内容になっていないか確認してください。" : null,
+  };
 }
 
 // ── 投稿 ─────────────────────────────────────

@@ -39,6 +39,8 @@ export default function MeoProfilePage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [hits, setHits] = useState<GuardHit[]>([]);
+  const [notes, setNotes] = useState("");
+  const [warning, setWarning] = useState<string | null>(null);
 
   const update = (patch: Partial<MeoProfileDraft>) => setDraft((prev) => ({ ...prev, ...patch }));
 
@@ -61,9 +63,11 @@ export default function MeoProfilePage() {
         storeName: draft.storeName,
         paymentMethods: draft.paymentMethods,
         attributes: ATTRIBUTES.filter((a) => draft.attributes[a.key]).map((a) => a.label),
+        notes,
       });
       update({ description: r.description });
       setHits(r.hits);
+      setWarning(r.warning);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "説明文を作れませんでした");
     } finally {
@@ -136,6 +140,19 @@ export default function MeoProfilePage() {
             {generating ? "作成中..." : "AIで作る"}
           </Btn>
         </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="desc-notes">AIに伝えたい特徴・強み（任意）</Label>
+          <Textarea
+            id="desc-notes"
+            rows={2}
+            value={notes}
+            maxLength={600}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="例: 港区愛宕の本社。広告運用とSaaS導入支援を行っています。（書いた内容だけを使います）"
+            className="resize-y"
+          />
+          <p className="text-xs text-[#A5A198]">AIは、店舗名・業種・住所と、ここに書いた内容だけで作ります。分析したサイトの内容は使いません。</p>
+        </div>
         <Textarea
           rows={6}
           value={draft.description}
@@ -144,6 +161,7 @@ export default function MeoProfilePage() {
           placeholder="例: 当店は◯◯駅から徒歩3分。丁寧なカウンセリングと明朗な料金で、初めての方にも安心してご利用いただけます。"
           className="resize-y"
         />
+        {warning && <ErrorNote>{warning}</ErrorNote>}
         <GuardNotes hits={hits} />
         <p className="text-xs text-[#A5A198]">{draft.description.length} / 750文字</p>
       </section>

@@ -27,18 +27,24 @@ export default async function SettingsPage({
   const adConns = await adConnections();
   const snsConns = await snsConnections();
 
-  // MEO運用ページ（テスト中）への入口。いちばん新しい完了済みの分析へ送る
+  // MEO運用ページ（テスト中）への入口。MEO分析のうち、Googleの店舗を紐付け済みのものを優先し、
+  // なければ最新のMEO分析へ送る（通常のレポートには送らない）。どの店舗かを文言に出して取り違えを防ぐ
   let meoHref: string | null = null;
+  let meoStore: string | null = null;
   if (!user.is_anonymous) {
-    const { data: latest } = await sb
+    const { data: rows } = await sb
       .from("analyses")
-      .select("id")
+      .select("id, meo_gbp_location, meo_store")
       .eq("owner_id", user.id)
       .eq("status", "done")
+      .eq("mode", "meo")
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (latest?.id) meoHref = `/analysis/${latest.id}/meo`;
+      .limit(20);
+    const pick = (rows ?? []).find((r) => r.meo_gbp_location) ?? (rows ?? [])[0];
+    if (pick?.id) {
+      meoHref = `/analysis/${pick.id}/meo`;
+      meoStore = ((pick.meo_store as { name?: string } | null)?.name ?? "").split(/[|｜]/)[0].trim() || null;
+    }
   }
 
   const sp = await searchParams;
@@ -128,7 +134,7 @@ export default async function SettingsPage({
         {meoHref && (
           <p style={{ marginTop: 40, textAlign: "center" }}>
             <a href={meoHref} style={{ fontSize: 12, color: "var(--faint)", textDecoration: "underline" }}>
-              MEO運用ページ（テスト中）
+              MEO運用ページ（テスト中）{meoStore ? `：${meoStore}` : ""}
             </a>
           </p>
         )}
