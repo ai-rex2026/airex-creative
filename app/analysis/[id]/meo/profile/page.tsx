@@ -5,6 +5,7 @@ import { useState } from "react";
 import { draftDescriptionAction, saveProfileDraftAction } from "@/app/meo-actions";
 import { MeoPageHeader, useMeo } from "@/components/meo/Workspace";
 import { Btn, Checkbox, ErrorNote, GuardNotes, Icon, Input, Label, Switch, Textarea, useSaveFeedback } from "@/components/meo/ui";
+import { GbpApply } from "./GbpApply";
 import { calcCompleteness, pendingItems } from "@/lib/meo-ops/logic";
 import type { MeoProfileDraft } from "@/lib/meo-ops/types";
 import type { GuardHit } from "@/lib/types";
@@ -201,8 +202,10 @@ export default function MeoProfilePage() {
             <Input id="nap-website" value={draft.websiteUrl} onChange={(e) => update({ websiteUrl: e.target.value })} />
           </div>
         </div>
-        <p className="text-xs text-[#A5A198]">ここで保存した内容はアプリ内の下書きです。Googleへの反映はGoogleビジネスプロフィールの管理画面で行ってください。</p>
+        <p className="text-xs text-[#A5A198]">ここで保存した内容はアプリ内の下書きです。Googleへ反映するには、下の「Googleに反映（承認してから）」で内容を確認して承認してください（説明文・Webサイト・営業時間のみ。店舗名・住所・電話番号はGoogleの管理画面で変更します）。</p>
       </section>
+
+      <GbpApply analysisId={analysisId} linked={!!data.gbpLocationName && data.gbpConnected} description={draft.description} websiteUrl={draft.websiteUrl} />
     </div>
   );
 }

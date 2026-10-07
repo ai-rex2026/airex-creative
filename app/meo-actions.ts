@@ -12,7 +12,9 @@ import { draftDescription, draftPost, draftReply } from "@/lib/meo-ops/writer";
 import { MEO_ANALYSIS_COLUMNS, rowToReview, type MeoAnalysisRow } from "@/lib/meo-ops/workspace";
 import { buildAiSearchPrompt, DEFAULT_AI_REPLY_SETTINGS } from "@/lib/meo-ops/logic";
 import { deleteGbpConnection, gbpAccessToken, gbpConnectionEmail } from "@/lib/gbp/oauth";
-import { fetchMetrics, getLocation, listAllLocations, listReviews, type GbpLocation, type GbpMetrics } from "@/lib/gbp/api";
+import { fetchMetrics, getLocation, getProfile, listAllLocations, listReviews, patchLocation, type GbpLocation, type GbpMetrics } from "@/lib/gbp/api";
+import { checkGuard } from "@/lib/guardrail";
+import { planChanges, PROFILE_KEYS, PROFILE_LABEL, snapshotOf, type GbpProfile, type ProfileChange, type ProfileInput, type ProfileKey } from "@/lib/gbp/profile";
 import { saveReviews } from "@/lib/gbp/sync";
 import type {
   MeoAiReplySettings,
@@ -249,7 +251,7 @@ export async function refreshStoreAction(id: string) {
   refresh(id);
 }
 
-// ── Googleビジネスプロフィール（読み取りのみ。更新・投稿・返信の送信はこのリリースでは行わない）──
+// ── Googleビジネスプロフィール（読み取り＋プロフィール更新。更新は人の承認後のみ。投稿・返信の送信は行わない）──
 async function gbpLinked(sb: Awaited<ReturnType<typeof createClient>>, id: string) {
   const { data } = await sb.from("analyses").select("meo_gbp_account, meo_gbp_location").eq("id", id).maybeSingle();
   return { account: (data?.meo_gbp_account as string | null) ?? null, location: (data?.meo_gbp_location as string | null) ?? null };
@@ -348,4 +350,103 @@ export async function gbpDisconnectAction(id: string) {
   const { user } = await owned(id);
   await deleteGbpConnection(user.id);
   refresh(id);
+}
+
+// ── プロフィールの更新（人が内容を確認して承認したときだけ Google に書き込む）──────
+async function gbpLinkedStore(id: string) {
+  const { sb, user, industry } = await owned(id);
+  const linked = await gbpLinked(sb, id);
+  if (!linked.account || !linked.location) throw new Error("店舗が紐付いていません。「設定」タブで店舗を紐付けてください");
+  return { user, industry, location: linked.location, token: await gbpToken(user.id) };
+}
+
+/** Google 上の現在の説明文・営業時間・Webサイト（読み取りのみ） */
+export async function gbpProfileCurrentAction(id: string): Promise<GbpProfile> {
+  const { token, location } = await gbpLinkedStore(id);
+  return getProfile(token, location);
+}
+
+export type GbpProfilePreview = {
+  changes: ProfileChange[];
+  /** 承認の時点で Google にあった値。反映時に照合して、間に誰かが変えていたら止める */
+  baseline: Partial<Record<ProfileKey, string>>;
+  guardLevel: "red" | "yellow" | "green" | null;
+  hits: GuardHit[];
+  /** true のあいだは反映できない（法令チェックが赤） */
+  blocked: boolean;
+};
+
+async function guardDescription(industry: Industry, changes: ProfileChange[]) {
+  const d = changes.find((c) => c.key === "description" && c.changed);
+  if (!d) return { level: null as GbpProfilePreview["guardLevel"], hits: [] as GuardHit[] };
+  const v = await checkGuard([d.next], industry);
+  return { level: v.level, hits: v.hits };
+}
+
+/** 反映する前の確認用。Google に書き込まない。現在値との差分と、説明文の法令チェックを返す */
+export async function gbpProfilePreviewAction(id: string, input: ProfileInput): Promise<GbpProfilePreview> {
+  const { token, location, industry } = await gbpLinkedStore(id);
+  const current = await getProfile(token, location);
+  const changes = planChanges(current, input);
+  const g = await guardDescription(industry, changes);
+  return {
+    changes,
+    baseline: Object.fromEntries(changes.map((c) => [c.key, snapshotOf(current, c.key)])),
+    guardLevel: g.level,
+    hits: g.hits,
+    blocked: g.level === "red",
+  };
+}
+
+export type GbpApplyResult = { key: ProfileKey; label: string; ok: boolean; error: string | null };
+
+/**
+ * 承認された項目だけを Google に書き込む。自動では呼ばれない（画面の承認ボタンからのみ）。
+ * - 反映の直前に Google の現在値を取り直し、承認画面で見た値から変わっていたらその項目は反映しない
+ * - 説明文の法令チェックをここでも通す（画面側の判定は信用しない）。赤なら反映しない
+ * - 項目ごとに「検証 → 反映」を行い、1項目の失敗でほかの項目を止めない
+ */
+export async function gbpProfileApplyAction(
+  id: string,
+  input: ProfileInput,
+  approved: { keys: ProfileKey[]; baseline: Partial<Record<ProfileKey, string>> }
+): Promise<GbpApplyResult[]> {
+  const keys = PROFILE_KEYS.filter((k) => approved.keys.includes(k));
+  if (!keys.length) throw new Error("反映する項目が選ばれていません");
+  const { token, location, industry } = await gbpLinkedStore(id);
+  const current = await getProfile(token, location);
+  const changes = planChanges(current, input);
+  const g = await guardDescription(industry, changes);
+
+  const results: GbpApplyResult[] = [];
+  for (const key of keys) {
+    const label = PROFILE_LABEL[key];
+    const fail = (error: string) => results.push({ key, label, ok: false, error });
+    const c = changes.find((x) => x.key === key);
+    if (!c) {
+      fail("この項目の内容が送られていません");
+      continue;
+    }
+    if (!c.changed) {
+      fail("Googleの現在の内容と同じなので、反映していません");
+      continue;
+    }
+    if (approved.baseline[key] === undefined || approved.baseline[key] !== snapshotOf(current, key)) {
+      fail("確認したあとにGoogle側の内容が変わっています。もう一度「反映内容を確認する」から進めてください");
+      continue;
+    }
+    if (key === "description" && g.level === "red") {
+      fail("法令チェックで修正が必要な表現があるため、反映していません");
+      continue;
+    }
+    try {
+      await patchLocation(token, location, key, input, true);
+      await patchLocation(token, location, key, input, false);
+      results.push({ key, label, ok: true, error: null });
+    } catch (e) {
+      fail(e instanceof Error ? e.message : "反映に失敗しました");
+    }
+  }
+  refresh(id);
+  return results;
 }
