@@ -1,0 +1,66 @@
+diff --git a/lib/gbp/api.ts b/lib/gbp/api.ts
+index 865706c..8e6a4f5 100644
+--- a/lib/gbp/api.ts
++++ b/lib/gbp/api.ts
+@@ -1,5 +1,5 @@
+ /**
+- * Googleビジネスプロフィール API の読み取り（更新はここに置かない）。
++ * Googleビジネスプロフィール API の呼び出し。読み取りが中心で、書き込みは patchLocation（説明文・営業時間・Webサイト）だけ。
+  *
+  * 使う API（どれもプロジェクトで有効化が要る）：
+  * - My Business Account Management API  … アカウント一覧
+@@ -8,6 +8,8 @@
+  * - Business Profile Performance API     … 表示回数・通話・ルート検索などの日次指標
+  */
+ 
++import { buildPatch, parseProfile, PROFILE_LABEL, type GbpProfile, type ProfileInput, type ProfileKey, type RawProfile } from "./profile";
++
+ export type GbpLocation = {
+   /** "accounts/123" */
+   account: string;
+@@ -62,13 +64,15 @@ function explain(status: number, body: unknown, label: string): string {
+   return `${label}：${msg || `HTTP ${status}`}`;
+ }
+ 
+-async function gget<T>(url: string, token: string, label: string): Promise<T> {
++async function gget<T>(url: string, token: string, label: string, write?: { method: "PATCH"; body: unknown }): Promise<T> {
+   let last: Error = new Error(`${label}：呼び出せませんでした`);
+   for (let i = 0; i <= RETRY_DELAYS_MS.length; i++) {
+     let retryable = false;
+     try {
+       const res = await fetch(url, {
+-        headers: { authorization: `Bearer ${token}` },
++        method: write?.method ?? "GET",
++        headers: { authorization: `Bearer ${token}`, ...(write ? { "content-type": "application/json" } : {}) },
++        ...(write ? { body: JSON.stringify(write.body) } : {}),
+         signal: AbortSignal.timeout(20000),
+       });
+       const body = await res.json().catch(() => ({}));
+@@ -164,6 +168,27 @@ export async function getLocation(token: string, account: string, location: stri
+   return mapLocation(account, r);
+ }
+ 
++/** 更新の対象にできる項目（説明文・営業時間・Webサイト）の、Google 上の現在の値 */
++export async function getProfile(token: string, location: string): Promise<GbpProfile> {
++  const r = await gget<RawProfile>(`https://mybusinessbusinessinformation.googleapis.com/v1/${location}?readMask=profile,websiteUri,regularHours`, token, "店舗情報");
++  return parseProfile(r);
++}
++
++/**
++ * 1項目だけ Google に書き込む（updateMask で対象を1項目に絞る）。
++ * validateOnly=true なら検証だけで、実際の変更は行われない。呼び出し側が承認を確認したあとにだけ呼ぶこと。
++ */
++export async function patchLocation(token: string, location: string, key: ProfileKey, input: ProfileInput, validateOnly: boolean): Promise<void> {
++  const { updateMask, body } = buildPatch(key, input);
++  const q = `updateMask=${encodeURIComponent(updateMask)}${validateOnly ? "&validateOnly=true" : ""}`;
++  await gget<unknown>(
++    `https://mybusinessbusinessinformation.googleapis.com/v1/${location}?${q}`,
++    token,
++    `${PROFILE_LABEL[key]}の${validateOnly ? "検証" : "反映"}`,
++    { method: "PATCH", body }
++  );
++}
++
+ /** アカウントごとの店舗をまとめて返す。アカウント単位の失敗は errors に残し、取れた分は返す */
+ export async function listAllLocations(token: string): Promise<{ locations: GbpLocation[]; errors: string[] }> {
+   const accounts = await listAccounts(token);
