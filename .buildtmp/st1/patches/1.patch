@@ -1,0 +1,22 @@
+diff --git a/app/settings/page.tsx b/app/settings/page.tsx
+index 584c0f0..2e2df91 100644
+--- a/app/settings/page.tsx
++++ b/app/settings/page.tsx
+@@ -28,7 +28,7 @@ export default async function SettingsPage({
+   const snsConns = await snsConnections();
+ 
+   // MEO運用ページ（テスト中）への入口。MEO分析のうち、Googleの店舗を紐付け済みのものを優先し、
+-  // なければ最新のMEO分析へ送る（通常のレポートには送らない）。どの店舗かを文言に出して取り違えを防ぐ
++  // なければ最新のMEO分析へ送る（店舗を紐付けていない通常のレポートには送らない）。どの店舗かを文言に出して取り違えを防ぐ
+   let meoHref: string | null = null;
+   let meoStore: string | null = null;
+   if (!user.is_anonymous) {
+@@ -37,7 +37,7 @@ export default async function SettingsPage({
+       .select("id, meo_gbp_location, meo_store")
+       .eq("owner_id", user.id)
+       .eq("status", "done")
+-      .eq("mode", "meo")
++      .or("mode.eq.meo,meo_gbp_location.not.is.null")
+       .order("created_at", { ascending: false })
+       .limit(20);
+     const pick = (rows ?? []).find((r) => r.meo_gbp_location) ?? (rows ?? [])[0];
