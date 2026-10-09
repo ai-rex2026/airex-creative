@@ -11,3 +11,4 @@ index cc9a55f..c148da8 100644
        // 切り替わった理由を結果に残す（原因を後から確認できるように）
 -      note = `Geminiが使えなかったためClaudeで測定しました: ${e.message.slice(0, 400)}`;
 +      note = `Geminiが使えなかったためClaudeで測定しました: ${e.message.slice(0, 2000)}`;
+     }
