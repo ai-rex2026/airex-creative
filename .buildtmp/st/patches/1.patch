@@ -1,0 +1,18 @@
+diff --git a/app/meo-actions.ts b/app/meo-actions.ts
+index b053758..7cdbe7c 100644
+--- a/app/meo-actions.ts
++++ b/app/meo-actions.ts
+@@ -10,3 +10,3 @@ import { writeDaily } from "@/lib/meo-ops/daily";
+ import { createCheck, defaultQuery, quota, runCheck } from "@/lib/meo-ops/ai-search";
+-import { draftDescription, draftPost, draftReply } from "@/lib/meo-ops/writer";
++import { draftDescription, draftPost, draftReply, suggestSearchTerm } from "@/lib/meo-ops/writer";
+ import { MEO_STORE_COLUMNS, rowToReview, type MeoStoreRow } from "@/lib/meo-ops/workspace";
+@@ -281,2 +281,8 @@ export async function draftReplyAction(id: string, reviewId: string) {
+ // ── AI検索 ───────────────────────────────────
++/** 事業内容（サービス内容の説明・Webサイト）から、AIに聞く「業種」を考える。実行はしない（候補を返すだけ） */
++export async function suggestAiSearchTermAction(id: string, notes: string) {
++  const { row } = await owned(id);
++  return suggestSearchTerm(row.meo_store, (notes ?? "").slice(0, 600));
++}
++
+ export async function getAiSearchStatusAction(id: string) {
