@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { replyToReviewAction } from "@/app/meo-actions";
+import { deleteReplyAction, replyToReviewAction } from "@/app/meo-actions";
 import { MeoPageHeader, useMeo } from "@/components/meo/Workspace";
 import { FilterPills, ReviewCard } from "@/components/meo/parts";
 import { ErrorNote } from "@/components/meo/ui";
@@ -48,6 +48,17 @@ function Reviews() {
     }
   };
 
+  const handleDelete = async (reviewId: string) => {
+    setSaveError(null);
+    try {
+      await deleteReplyAction(storeId, reviewId);
+      router.refresh();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "返信の取り消しに失敗しました。時間をおいて再度お試しください。");
+      throw e;
+    }
+  };
+
   const reviews = data.reviews;
   const visible = reviews.filter((r) => matches(r, filter)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const counts: Record<Filter, number> = {
@@ -75,7 +86,7 @@ function Reviews() {
       ) : (
         <div className="space-y-3">
           {visible.map((r) => (
-            <ReviewCard key={r.id} review={r} storeId={storeId} onReply={handleReply} canSend={!!data.gbpLocationName} />
+            <ReviewCard key={r.id} review={r} storeId={storeId} onReply={handleReply} onDeleteReply={handleDelete} canSend={!!data.gbpLocationName} />
           ))}
         </div>
       )}

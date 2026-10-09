@@ -12,7 +12,7 @@ import { draftDescription, draftPost, draftReply } from "@/lib/meo-ops/writer";
 import { MEO_STORE_COLUMNS, rowToReview, type MeoStoreRow } from "@/lib/meo-ops/workspace";
 import { buildAiSearchPrompt, DEFAULT_AI_REPLY_SETTINGS } from "@/lib/meo-ops/logic";
 import { deleteGbpConnection, gbpAccessToken, gbpConnectionEmail } from "@/lib/gbp/oauth";
-import { fetchMetrics, getLocation, getProfile, listAllLocations, listReviews, patchLocation, type GbpLocation, type GbpMetrics } from "@/lib/gbp/api";
+import { fetchMetrics, getLocation, getProfile, listAllLocations, listReviews, patchLocation, putReply, deleteReply, type GbpLocation, type GbpMetrics } from "@/lib/gbp/api";
 import { checkGuard } from "@/lib/guardrail";
 import { planChanges, PROFILE_KEYS, PROFILE_LABEL, snapshotOf, type GbpProfile, type ProfileChange, type ProfileInput, type ProfileKey } from "@/lib/gbp/profile";
 import { saveReviews } from "@/lib/gbp/sync";
@@ -216,20 +216,49 @@ export async function draftPostAction(id: string, theme: string, storeName: stri
 
 // ── クチコミ ──────────────────────────────────
 /**
- * 返信を送信待ちとして保存する。Google への送信はサーバー（cron）が行い、成功したときだけ replied になる。
- * GBP の店舗が紐付いていないと送れないので、その場合は保存せずに伝える。
+ * 返信をGoogleに公開する。人が画面で「公開する」を押したときだけ呼ばれる（自動送信はしない）。
+ * 公開前にサーバー側で法令チェックを通し、赤（違反の可能性が高い）は送らない。
+ * 成功したときだけ replied にする。失敗したときは文面を残したまま failed にして、理由を画面に出す。
  */
 export async function replyToReviewAction(id: string, reviewId: string, reply: string) {
-  const { sb, row } = await owned(id);
+  const { sb, user, row, industry } = await owned(id);
   if (!row.meo_gbp_location) throw new Error("Googleビジネスプロフィールの店舗が未連携のため送信できません。「設定」タブで連携してください");
   const text = reply.trim().slice(0, 4000);
   if (!text) throw new Error("返信文を入力してください");
-  const { error } = await sb
+  const { data: rev } = await sb.from("meo_reviews").select("id, gbp_name").eq("store_id", id).eq("id", reviewId).maybeSingle();
+  const reviewName = (rev?.gbp_name as string | null) ?? null;
+  if (!rev || !reviewName) throw new Error("このクチコミはGoogleから取り込まれたものではないため、返信を送れません");
+
+  const verdict = await checkGuard([text], industry);
+  if (verdict.level === "red") throw new Error("法令上問題のある表現が含まれる可能性が高いため、送信できません。指摘に沿って直してください");
+
+  const token = await gbpToken(user.id);
+  const now = new Date().toISOString();
+  try {
+    await putReply(token, reviewName, text);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Googleへの送信に失敗しました";
+    await sb.from("meo_reviews").update({ reply: text, reply_status: "failed", error_message: message, updated_at: now }).eq("store_id", id).eq("id", reviewId);
+    refresh(id);
+    throw new Error(message);
+  }
+  await sb.from("meo_reviews").update({ reply: text, reply_status: "replied", replied_at: now, error_message: null, updated_at: now }).eq("store_id", id).eq("id", reviewId);
+  refresh(id);
+}
+
+/** 公開済みの返信をGoogleから削除する（取り消し）。人が「取り消す」を押したときだけ呼ばれる */
+export async function deleteReplyAction(id: string, reviewId: string) {
+  const { sb, user, row } = await owned(id);
+  if (!row.meo_gbp_location) throw new Error("Googleビジネスプロフィールの店舗が未連携のため操作できません");
+  const { data: rev } = await sb.from("meo_reviews").select("id, gbp_name").eq("store_id", id).eq("id", reviewId).maybeSingle();
+  const reviewName = (rev?.gbp_name as string | null) ?? null;
+  if (!rev || !reviewName) throw new Error("このクチコミはGoogleから取り込まれたものではありません");
+  await deleteReply(await gbpToken(user.id), reviewName);
+  await sb
     .from("meo_reviews")
-    .update({ reply: text, reply_status: "pending", error_message: null, updated_at: new Date().toISOString() })
+    .update({ reply: null, reply_status: "unreplied", replied_at: null, error_message: null, updated_at: new Date().toISOString() })
     .eq("store_id", id)
     .eq("id", reviewId);
-  if (error) throw new Error("返信の送信に失敗しました");
   refresh(id);
 }
 
@@ -299,7 +328,7 @@ export async function refreshStoreAction(id: string) {
   refresh(id);
 }
 
-// ── Googleビジネスプロフィール（読み取り＋プロフィール更新。更新は人の承認後のみ。投稿・返信の送信は行わない）──
+// ── Googleビジネスプロフィール（読み取り＋プロフィール更新・返信の公開/取り消し。書き込みは人の承認後のみ。投稿の公開は行わない）──
 async function gbpLinked(sb: Awaited<ReturnType<typeof createClient>>, id: string) {
   const { data } = await sb.from("stores").select("meo_gbp_account, meo_gbp_location").eq("id", id).maybeSingle();
   return { account: (data?.meo_gbp_account as string | null) ?? null, location: (data?.meo_gbp_location as string | null) ?? null };

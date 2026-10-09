@@ -103,12 +103,14 @@ export function ReviewCard({
   review,
   storeId,
   onReply,
+  onDeleteReply,
   compact = false,
   canSend = true,
 }: {
   review: MeoReview;
   storeId: string;
   onReply?: (reviewId: string, reply: string) => Promise<void>;
+  onDeleteReply?: (reviewId: string) => Promise<void>;
   compact?: boolean;
   canSend?: boolean;
 }) {
@@ -116,6 +118,9 @@ export function ReviewCard({
   const [draft, setDraft] = useState(review.reply ?? "");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [hits, setHits] = useState<GuardHit[]>([]);
   const [genError, setGenError] = useState<string | null>(null);
 
@@ -141,6 +146,7 @@ export function ReviewCard({
   const cancel = () => {
     setDraft(review.reply ?? "");
     setHits([]);
+    setConfirming(false);
     setIsComposing(false);
   };
 
@@ -150,11 +156,26 @@ export function ReviewCard({
     setIsSending(true);
     try {
       await onReply(review.id, draft.trim());
+      setConfirming(false);
       setIsComposing(false);
+    } catch {
+      // エラー表示は呼び出し側が行う（確認画面は閉じて、文面は残す）
+      setConfirming(false);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!onDeleteReply) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteReply(review.id);
     } catch {
       // エラー表示は呼び出し側が行う
     } finally {
-      setIsSending(false);
+      setIsDeleting(false);
+      setConfirmDelete(false);
     }
   };
 
@@ -206,9 +227,9 @@ export function ReviewCard({
               <Icon name={isGenerating ? "loader" : "sparkles"} />
               {isGenerating ? "生成中..." : draft ? "AIで書き直す" : "AIで返信文を作る"}
             </Btn>
-            <Btn size="sm" onClick={send} disabled={!draft.trim() || isSending || !canSend} title={canSend ? undefined : "GBPの店舗と連携すると送信できます"}>
+            <Btn size="sm" onClick={() => setConfirming(true)} disabled={!draft.trim() || isSending || !canSend || confirming} title={canSend ? undefined : "GBPの店舗と連携すると送信できます"}>
               <Icon name="send" />
-              返信を送信
+              内容を確認して公開
             </Btn>
             <Btn size="sm" variant="ghost" onClick={cancel}>
               <Icon name="x" />
@@ -218,6 +239,23 @@ export function ReviewCard({
               {draft.length} / {REPLY_MAX_LENGTH}文字
             </span>
           </div>
+          {confirming && (
+            <div className="rounded-xl border border-[#ECD9CE] bg-[#F8F1ED] p-4">
+              <p className="text-sm font-semibold text-[#8A5340]">この返信をGoogleマップに公開します</p>
+              <p className="mt-1 text-xs leading-relaxed text-[#6B6862]">
+                公開すると店舗ページに表示され、クチコミ投稿者に通知される場合があります。公開後は「返信を取り消す」で削除できますが、通知を受け取った方が読んでいる可能性は残ります。
+              </p>
+              <div className="mt-3 flex gap-2">
+                <Btn size="sm" onClick={send} disabled={isSending}>
+                  <Icon name={isSending ? "loader" : "send"} />
+                  {isSending ? "公開中..." : "Googleに公開する"}
+                </Btn>
+                <Btn size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={isSending}>
+                  戻って直す
+                </Btn>
+              </div>
+            </div>
+          )}
           <p className="text-xs text-[#A5A198]">
             {canSend
               ? "AI返信のトーンや使いたい言葉は「設定」タブで調整できます。"
@@ -225,11 +263,33 @@ export function ReviewCard({
           </p>
         </div>
       ) : (
-        <div className="mt-4">
-          <Btn size="sm" variant={review.status === "replied" ? "outline" : "primary"} onClick={() => setIsComposing(true)}>
-            <Icon name="reply" />
-            {review.status === "replied" ? "返信を編集" : "返信する"}
-          </Btn>
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Btn size="sm" variant={review.status === "replied" ? "outline" : "primary"} onClick={() => setIsComposing(true)}>
+              <Icon name="reply" />
+              {review.status === "replied" ? "返信を編集" : "返信する"}
+            </Btn>
+            {review.status === "replied" && onDeleteReply && canSend && !confirmDelete && (
+              <Btn size="sm" variant="ghost" onClick={() => setConfirmDelete(true)}>
+                <Icon name="x" />
+                返信を取り消す
+              </Btn>
+            )}
+          </div>
+          {confirmDelete && (
+            <div className="rounded-xl border border-[#ECD9CE] bg-[#F8F1ED] p-4">
+              <p className="text-sm font-semibold text-[#8A5340]">公開済みの返信をGoogleから削除します</p>
+              <p className="mt-1 text-xs leading-relaxed text-[#6B6862]">削除するとGoogleマップ上から返信が消え、このクチコミは未返信に戻ります。すでに通知を受け取った方が読んでいる可能性は残ります。</p>
+              <div className="mt-3 flex gap-2">
+                <Btn size="sm" onClick={remove} disabled={isDeleting}>
+                  {isDeleting ? "削除中..." : "Googleから削除する"}
+                </Btn>
+                <Btn size="sm" variant="ghost" onClick={() => setConfirmDelete(false)} disabled={isDeleting}>
+                  やめる
+                </Btn>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </article>
