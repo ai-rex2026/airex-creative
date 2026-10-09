@@ -1,0 +1,9 @@
+diff --git a/app/stores/[id]/settings/GbpLink.tsx b/app/stores/[id]/settings/GbpLink.tsx
+index df5c2ed..fb413b3 100644
+--- a/app/stores/[id]/settings/GbpLink.tsx
++++ b/app/stores/[id]/settings/GbpLink.tsx
+@@ -71,3 +71,3 @@ export function GbpLink({ storeId, connected, linkedLocationName }: { storeId: s
+ 
+-  const startUrl = `/api/gbp/start?analysis=${encodeURIComponent(storeId)}`;
++  const startUrl = `/api/gbp/start?store=${encodeURIComponent(storeId)}`;
+ 

@@ -1,0 +1,14 @@
+diff --git a/components/MobileNav.tsx b/components/MobileNav.tsx
+index a1f7b6d..8c0e61f 100644
+--- a/components/MobileNav.tsx
++++ b/components/MobileNav.tsx
+@@ -52,3 +52,3 @@ export function MobileNav({
+ }: {
+-  active: "new" | "summary" | "analysis" | "settings";
++  active: "new" | "summary" | "analysis" | "stores" | "settings";
+   hist: MobileNavHist[];
+@@ -103,2 +103,5 @@ export function MobileNav({
+             </Link>
++            <Link href="/stores" className={`mnav-link${active === "stores" ? " on" : ""}`} onClick={close}>
++              ⌖ 店舗（MEO運用）
++            </Link>

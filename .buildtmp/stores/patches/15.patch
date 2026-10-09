@@ -1,0 +1,20 @@
+diff --git a/components/meo/Workspace.tsx b/components/meo/Workspace.tsx
+index c22b741..2b3206f 100644
+--- a/components/meo/Workspace.tsx
++++ b/components/meo/Workspace.tsx
+@@ -80,5 +80,5 @@ function MeoStoreHeader({ data, storeId, unrepliedCount }: { data: MeoWorkspaceD
+     <div className="space-y-4">
+-      <Link href={`/analysis/${storeId}/report`} className="inline-flex items-center gap-1.5 text-sm text-[#57544E] transition-colors hover:text-[#2E2D29]">
++      <Link href="/stores" className="inline-flex items-center gap-1.5 text-sm text-[#57544E] transition-colors hover:text-[#2E2D29]">
+         <Icon name="arrowLeft" />
+-        レポートに戻る
++        店舗一覧に戻る
+       </Link>
+@@ -216,5 +216,5 @@ function MeoStoreRequired({ storeId, storeName, candidates }: { storeId: string;
+     <div className="mx-auto max-w-6xl space-y-5">
+-      <Link href={`/analysis/${storeId}/report`} className="inline-flex items-center gap-1.5 text-sm text-[#57544E] transition-colors hover:text-[#2E2D29]">
++      <Link href="/stores" className="inline-flex items-center gap-1.5 text-sm text-[#57544E] transition-colors hover:text-[#2E2D29]">
+         <Icon name="arrowLeft" />
+-        レポートに戻る
++        店舗一覧に戻る
+       </Link>

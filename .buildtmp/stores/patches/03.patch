@@ -1,0 +1,16 @@
+diff --git a/app/api/gbp/callback/route.ts b/app/api/gbp/callback/route.ts
+index 5b55590..d0a4de4 100644
+--- a/app/api/gbp/callback/route.ts
++++ b/app/api/gbp/callback/route.ts
+@@ -11,3 +11,3 @@ export async function GET(req: Request) {
+   const jar = await cookies();
+-  let saved: { state?: string; analysis?: string } | null = null;
++  let saved: { state?: string; store?: string } | null = null;
+   try {
+@@ -17,4 +17,4 @@ export async function GET(req: Request) {
+   }
+-  const safeId = saved?.analysis && /^[A-Za-z0-9_-]{1,64}$/.test(saved.analysis) ? saved.analysis : "";
+-  const dest = safeId ? `/analysis/${safeId}/meo/settings` : "/settings";
++  const safeId = saved?.store && /^[A-Za-z0-9_-]{1,64}$/.test(saved.store) ? saved.store : "";
++  const dest = safeId ? `/stores/${safeId}/settings` : "/settings";
+ 

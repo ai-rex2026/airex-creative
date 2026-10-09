@@ -1,0 +1,9 @@
+diff --git a/lib/meo-ops/logic.ts b/lib/meo-ops/logic.ts
+index a2f98a8..67f9ac9 100644
+--- a/lib/meo-ops/logic.ts
++++ b/lib/meo-ops/logic.ts
+@@ -60,3 +60,3 @@ export const MEO_TABS: { key: MeoTabKey; path: string; label: string }[] = [
+ export function meoPath(storeId: string, subPath = ""): string {
+-  return `/analysis/${storeId}/meo${subPath}`;
++  return `/stores/${storeId}${subPath}`;
+ }
