@@ -1,0 +1,30 @@
+name: tmp-apply-nm
+on:
+  push:
+    paths:
+      - '.github/workflows/tmp-apply-nm.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply patches
+        run: |
+          set -e
+          git apply --verbose .buildtmp/nm/patches/1.patch
+      - name: Verify hashes
+        run: sha256sum -c .buildtmp/nm/SHA256SUMS
+      - name: Cleanup and push
+        run: |
+          set -e
+          git rm -rq .buildtmp/nm
+          git rm -q .github/workflows/tmp-apply-nm.yml
+          git config user.name "claude-bot"
+          git config user.email "noreply@anthropic.com"
+          git add -A
+          git commit -m "fix: AI search own-store matching ignores company form and branch suffix" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+          git push origin HEAD:main
