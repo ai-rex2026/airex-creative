@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { askJson, MODEL_FAST } from "../anthropic";
+import { GEMINI_MODEL, geminiGenerate, hasGemini, GeminiUnavailableError } from "../gemini";
 import { checkGuardDict } from "../guardrail";
 import type { Industry } from "../types";
 import { jstDateKey, jstPeriodKey } from "./daily";
@@ -167,8 +168,8 @@ export async function createCheck(sb: SupabaseClient, storeId: string, area: str
     .insert({
       store_id: storeId,
       status: "pending",
-      engine: "claude",
-      model: ANSWER_MODEL,
+      engine: preferredEngine(),
+      model: preferredEngine() === "gemini" ? GEMINI_MODEL : ANSWER_MODEL,
       query_area: area,
       query_category: category,
       prompt: buildAiSearchPrompt(area, category),
@@ -187,8 +188,8 @@ function client() {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 }
 
-/** 定型の質問を web 検索つきで投げ、回答全文・引用元・検索語を返す */
-async function ask(question: string, deadline: number) {
+/** Claude（Anthropic の web 検索）に定型の質問を投げ、回答全文・引用元・検索語を返す */
+async function askClaude(question: string, deadline: number) {
   const messages: { role: "user" | "assistant"; content: unknown }[] = [
     { role: "user", content: [{ type: "text", text: question, cache_control: { type: "ephemeral" } }] },
   ];
@@ -265,7 +266,69 @@ async function ask(question: string, deadline: number) {
     const q = (b.input as { query?: string } | null)?.query;
     if (q && !queries.includes(q)) queries.push(q);
   }
-  return { text, cited, queries, inputTokens, outputTokens, searches };
+  return { text, cited, queries, inputTokens, outputTokens, searches, engine: "claude" as const, model: ANSWER_MODEL };
+}
+
+/** 引用元ページの表示ドメイン。Gemini の根拠URLは Google の中継URLなので、title に入っている元サイトのドメインを使う */
+function groundedDomain(uri: string, title: string): string {
+  const t = title.trim().toLowerCase();
+  if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/.test(t)) return t.replace(/^www\./, "");
+  return domainOf(uri);
+}
+
+/** Gemini（Google 検索つき）に定型の質問を投げる。費用は Claude の約10分の1 */
+async function askGemini(question: string, deadline: number) {
+  const left = deadline - Date.now();
+  if (left < 10_000) throw new Error("AI検索が時間内に終わりませんでした");
+  const r = await geminiGenerate({
+    system: "あなたは日本のローカル検索に答えるアシスタントです。Google検索の結果に基づいて、実在する事業者だけを挙げ、情報源のURLを添えて答えてください。",
+    parts: [{ text: question }],
+    maxTokens: 6000,
+    search: true,
+    timeoutMs: Math.min(left, 150_000),
+  });
+  const text = r.text.trim();
+  if (!text) throw new Error("AI応答に本文が含まれていません");
+  const g = r.grounding ?? { queries: [], sources: [] };
+  if (!g.sources.length && !g.queries.length) throw new Error("Google検索を使った回答になりませんでした（検索結果の根拠がありません）");
+  const cited: { url: string; title: string; domain: string }[] = [];
+  const seen = new Set<string>();
+  for (const s of g.sources) {
+    const domain = groundedDomain(s.uri, s.title);
+    const key = domain || s.uri;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cited.push({ url: s.uri.slice(0, 2000), title: s.title.slice(0, 300), domain });
+  }
+  return {
+    text,
+    cited,
+    queries: [...new Set(g.queries)],
+    inputTokens: r.usage?.input ?? 0,
+    outputTokens: (r.usage?.output ?? 0) + (r.usage?.thinking ?? 0),
+    searches: g.queries.length,
+    engine: "gemini" as const,
+    model: r.model ?? "gemini",
+  };
+}
+
+/** 使うエンジン。既定は Gemini（費用が低い）。AI_SEARCH_ENGINE=claude で Claude に固定できる */
+export function preferredEngine(): "gemini" | "claude" {
+  if (process.env.AI_SEARCH_ENGINE === "claude") return "claude";
+  return hasGemini() ? "gemini" : "claude";
+}
+
+async function ask(question: string, deadline: number) {
+  if (preferredEngine() === "gemini") {
+    try {
+      return await askGemini(question, deadline);
+    } catch (e) {
+      // 残高切れ・上限など Gemini 側の事情のときだけ Claude に切り替える（どちらで測ったかは結果に残る）
+      if (!(e instanceof GeminiUnavailableError)) throw e;
+      console.error("[ai-search] gemini unavailable, fallback to claude:", e.message);
+    }
+  }
+  return askClaude(question, deadline);
 }
 
 /** 回答テキストから、挙がった店舗と根拠URLを機械的に取り出す（自店舗名は渡さない） */
@@ -321,8 +384,8 @@ export async function runCheck(sb: SupabaseClient, checkId: string, ctx: RunCont
       .from("ai_search_checks")
       .update({
         status: "completed",
-        engine: "claude",
-        model: ANSWER_MODEL,
+        engine: answer.engine,
+        model: answer.model,
         mentioned: rank != null,
         rank,
         listed_stores: listed,

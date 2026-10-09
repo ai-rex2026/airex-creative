@@ -103,7 +103,7 @@ export default function MeoAiSearchPage() {
 
   return (
     <div className="space-y-6">
-      <MeoPageHeader icon="bot" title="AI検索" description="ChatGPTなどのAIに聞かれたとき、お店が候補に挙がるかを実際に確認します" />
+      <MeoPageHeader icon="bot" title="AI検索" description="AIに聞かれたとき、お店が候補に挙がるかを実際に確認します（どのAIで測ったかは結果に表示します）" />
 
       <AiSearchRunPanel
         area={area}

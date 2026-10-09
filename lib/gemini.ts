@@ -18,7 +18,20 @@ export class GeminiUnavailableError extends Error {}
 
 type Part = { text?: string; thought?: boolean; inline_data?: { mime_type: string; data: string } };
 
-export type GeminiResult = { text: string; truncated: boolean };
+export type GeminiGrounding = {
+  /** Gemini が実際に投げた検索語（課金はこの数） */
+  queries: string[];
+  /** 回答の根拠にした Web ページ。uri は Google の中継URLで、title に元サイトのドメインが入る */
+  sources: { uri: string; title: string }[];
+};
+
+export type GeminiResult = {
+  text: string;
+  truncated: boolean;
+  model?: string;
+  usage?: { input: number; output: number; thinking: number };
+  grounding?: GeminiGrounding;
+};
 
 // モデル名の揺れ（安定版とプレビュー版）と、思考レベル指定の可否を、実際に呼んで確かめてから固定する
 let resolvedModel: string | null = null;
@@ -89,23 +102,42 @@ export async function geminiGenerate(opts: {
 
       resolvedModel = model;
       const j = (await res.json()) as {
-        candidates?: { content?: { parts?: Part[] }; finishReason?: string }[];
+        candidates?: {
+          content?: { parts?: Part[] };
+          finishReason?: string;
+          groundingMetadata?: { webSearchQueries?: string[]; groundingChunks?: { web?: { uri?: string; title?: string } }[] };
+        }[];
         usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; toolUsePromptTokenCount?: number };
       };
       const u = j.usageMetadata ?? {};
       const c = j.candidates?.[0];
+      const gm = c?.groundingMetadata;
+      const queries = (gm?.webSearchQueries ?? []).filter((q): q is string => typeof q === "string" && !!q);
+      const inputTokens = (u.promptTokenCount ?? 0) + (u.toolUsePromptTokenCount ?? 0);
       recordAiCall({
         model,
-        input_tokens: (u.promptTokenCount ?? 0) + (u.toolUsePromptTokenCount ?? 0),
+        input_tokens: inputTokens,
         output_tokens: u.candidatesTokenCount ?? 0,
         thinking_tokens: u.thoughtsTokenCount ?? 0,
-        searches: opts.search ? 1 : 0,
+        // 検索は投げた検索語の数だけ課金される。取れなければ1回として数える
+        searches: opts.search ? Math.max(1, queries.length) : 0,
       });
       const text = (c?.content?.parts ?? [])
         .filter((p) => !p.thought)
         .map((p) => p.text ?? "")
         .join("");
-      return { text, truncated: c?.finishReason === "MAX_TOKENS" };
+      return {
+        text,
+        truncated: c?.finishReason === "MAX_TOKENS",
+        model,
+        usage: { input: inputTokens, output: u.candidatesTokenCount ?? 0, thinking: u.thoughtsTokenCount ?? 0 },
+        grounding: {
+          queries,
+          sources: (gm?.groundingChunks ?? [])
+            .map((g) => ({ uri: String(g.web?.uri ?? ""), title: String(g.web?.title ?? "") }))
+            .filter((g) => g.uri),
+        },
+      };
     }
   }
   throw new GeminiUnavailableError(`Gemini: 利用できるモデルが見つかりません（${lastErr}）`);
