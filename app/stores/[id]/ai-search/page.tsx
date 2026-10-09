@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { getAiSearchStatusAction, runAiSearchAction } from "@/app/meo-actions";
+import { getAiSearchStatusAction, runAiSearchAction, suggestAiSearchTermAction } from "@/app/meo-actions";
 import { MeoPageHeader, SectionTitle, useMeo } from "@/components/meo/Workspace";
 import {
   AiContentSuggestionCard,
@@ -27,7 +27,10 @@ export default function MeoAiSearchPage() {
   const storeName = storeShortName(data.store.name);
 
   const [area, setArea] = useState(() => guessAreaFromAddress(data.store.address));
-  const [category, setCategory] = useState(data.store.category ?? "");
+  const [category, setCategory] = useState("");
+  const [notes, setNotes] = useState("");
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestNote, setSuggestNote] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // 残り回数はサーバーが持つ（JSTの月で数え、上限の判定もサーバー側）。取得できるまでは実行させない
@@ -44,12 +47,17 @@ export default function MeoAiSearchPage() {
     const s = await getAiSearchStatusAction(storeId);
     setRemaining(s.remaining);
     setArea((cur) => cur || s.area);
-    setCategory((cur) => cur || s.category);
   }, [storeId]);
 
   useEffect(() => {
     loadStatus().catch((e: unknown) => setRequestError(e instanceof Error ? e.message : "AI検索の状態を取得できませんでした"));
   }, [loadStatus]);
+
+  // 業種はGoogleのカテゴリをそのまま使わない（実態と違うことがある）。開いたときに事業内容から一度だけ考える
+  useEffect(() => {
+    suggest().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 確認中は5秒おきに読み直す（結果はサーバーが書き戻す）
   const isRunning = submitting || awaiting || running !== null;
@@ -58,6 +66,25 @@ export default function MeoAiSearchPage() {
     const t = setInterval(() => router.refresh(), 5000);
     return () => clearInterval(t);
   }, [running, awaiting, router]);
+
+  const suggest = async () => {
+    setSuggesting(true);
+    setRequestError(null);
+    setSuggestNote(null);
+    try {
+      const r = await suggestAiSearchTermAction(storeId, notes);
+      if (r.term) {
+        setCategory(r.term);
+        setSuggestNote(r.reason ? `AIの考え: ${r.reason}（変更できます）` : "AIが考えた候補です（変更できます）");
+      } else {
+        setSuggestNote(r.reason || "事業内容が読み取れませんでした。サービス内容を入力してもう一度お試しください");
+      }
+    } catch (e) {
+      setRequestError(e instanceof Error ? e.message : "業種を考えられませんでした");
+    } finally {
+      setSuggesting(false);
+    }
+  };
 
   const run = async () => {
     setSubmitting(true);
@@ -86,6 +113,11 @@ export default function MeoAiSearchPage() {
         onRun={run}
         isRunning={isRunning}
         remainingRuns={remaining}
+        notes={notes}
+        onNotesChange={setNotes}
+        onSuggest={suggest}
+        isSuggesting={suggesting}
+        suggestNote={suggestNote}
       />
 
       {requestError && <p className="rounded-xl bg-[#F8F1ED] px-4 py-3 text-sm text-[#A8705A]">{requestError}</p>}

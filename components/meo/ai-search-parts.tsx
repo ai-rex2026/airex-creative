@@ -18,6 +18,11 @@ export function AiSearchRunPanel({
   onRun,
   isRunning,
   remainingRuns,
+  notes,
+  onNotesChange,
+  onSuggest,
+  isSuggesting,
+  suggestNote,
 }: {
   area: string;
   category: string;
@@ -26,6 +31,11 @@ export function AiSearchRunPanel({
   onRun: () => void;
   isRunning: boolean;
   remainingRuns: number | null;
+  notes: string;
+  onNotesChange: (v: string) => void;
+  onSuggest: () => void;
+  isSuggesting: boolean;
+  suggestNote: string | null;
 }) {
   const canRun = area.trim() !== "" && category.trim() !== "" && !isRunning && (remainingRuns ?? 0) > 0;
   return (
@@ -44,6 +54,25 @@ export function AiSearchRunPanel({
             業種
           </label>
           <Input id="ai-search-category" value={category} onChange={(e) => onCategoryChange(e.target.value)} placeholder="美容室" className="mt-1.5" />
+        </div>
+      </div>
+      <div className="mt-3">
+        <label htmlFor="ai-search-notes" className="text-xs font-semibold text-[#6B6862]">
+          サービス内容（任意）
+        </label>
+        <Input
+          id="ai-search-notes"
+          value={notes}
+          onChange={(e) => onNotesChange(e.target.value)}
+          placeholder="例: リスティング広告やSNS広告の運用代行（Web広告代理店）"
+          className="mt-1.5"
+        />
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <Btn size="sm" variant="outline" onClick={onSuggest} disabled={isSuggesting || isRunning}>
+            <Icon name={isSuggesting ? "loader" : "sparkles"} />
+            {isSuggesting ? "考えています..." : "事業内容から業種を考える"}
+          </Btn>
+          {suggestNote && <p className="text-xs text-[#8B877F]">{suggestNote}</p>}
         </div>
       </div>
       {/* 何を測っているかを隠さないため、実際に投げる質問文をそのまま出す */}

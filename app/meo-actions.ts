@@ -8,7 +8,7 @@ import type { GuardHit, Industry } from "@/lib/types";
 import { buildStoreSnapshot, hasPlacesKey, searchStoreCandidates } from "@/lib/meo-ops/places";
 import { writeDaily } from "@/lib/meo-ops/daily";
 import { createCheck, defaultQuery, quota, runCheck } from "@/lib/meo-ops/ai-search";
-import { draftDescription, draftPost, draftReply } from "@/lib/meo-ops/writer";
+import { draftDescription, draftPost, draftReply, suggestSearchTerm } from "@/lib/meo-ops/writer";
 import { MEO_STORE_COLUMNS, rowToReview, type MeoStoreRow } from "@/lib/meo-ops/workspace";
 import { buildAiSearchPrompt, DEFAULT_AI_REPLY_SETTINGS } from "@/lib/meo-ops/logic";
 import { deleteGbpConnection, gbpAccessToken, gbpConnectionEmail } from "@/lib/gbp/oauth";
@@ -279,6 +279,12 @@ export async function draftReplyAction(id: string, reviewId: string) {
 }
 
 // ── AI検索 ───────────────────────────────────
+/** 事業内容（サービス内容の説明・Webサイト）から、AIに聞く「業種」を考える。実行はしない（候補を返すだけ） */
+export async function suggestAiSearchTermAction(id: string, notes: string) {
+  const { row } = await owned(id);
+  return suggestSearchTerm(row.meo_store, (notes ?? "").slice(0, 600));
+}
+
 export async function getAiSearchStatusAction(id: string) {
   const { sb, row } = await owned(id);
   const q = defaultQuery(row.meo_store, row.meo_store?.address ?? null);
