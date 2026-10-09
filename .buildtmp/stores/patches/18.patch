@@ -70,7 +70,7 @@ index 5c65678..7665b71 100644
 -  return { ...a, meo_store_candidates: list };
 -}
 -
- // ── 読み込み ─────────────────────────────
+ // ── 読み込み ─────────────────────────────────
  /**
 - * ワークスペース一式を読む。sb は本人のセッション（RLS で本人の分析だけが見える）。
 + * ワークスペース一式を読む。sb は本人のセッション（RLS で本人の店舗だけが見える）。
@@ -83,7 +83,7 @@ index 5c65678..7665b71 100644
 @@ -300,4 +257,3 @@ export async function loadWorkspace(
    const store = a.meo_store;
 -  const siteTitle = a.site?.title ?? null;
--  const name = store?.name ? (siteTitle ? `${store.name} | ${siteTitle}` : store.name) : (a.meo?.self?.name ?? (a.url ?? "").replace(/^https?:\/\/, "").replace(/\/$/, ""));
+-  const name = store?.name ? (siteTitle ? `${store.name} | ${siteTitle}` : store.name) : (a.meo?.self?.name ?? (a.url ?? "").replace(/^https?:\/\/\//, "").replace(/\/$/, ""));
 +  const name = store?.name || a.name || "（店舗名未設定）";
  
 @@ -307,6 +263,6 @@ export async function loadWorkspace(
