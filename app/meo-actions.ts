@@ -313,7 +313,9 @@ export async function runAiSearchAction(id: string, input: { area: string; categ
   const category = input.category.trim().slice(0, 100);
   if (!area || !category) throw new Error("エリアと業種を入力してください");
 
-  const created = await createCheck(sb, id, area, category);
+  // ai_search_checks への書き込みはサーバー（service role）だけに許している（本人の権限には書き込みの方針が無い）。
+  // 持ち主の確認は上の owned() で済んでいる
+  const created = await createCheck(createAdminClient(), id, area, category);
   // 自店の名前だけで照合する。分析したサイトのタイトルは使わない（別の会社・製品が「自店が言及された」と数えられるため）
   const ownNames = [row.meo_store?.name ?? "", row.name ?? ""].filter((n) => n.trim());
   after(async () => {
