@@ -230,8 +230,8 @@ export async function runAiSearchAction(id: string, input: { area: string; categ
   if (!area || !category) throw new Error("エリアと業種を入力してください");
 
   const created = await createCheck(sb, id, area, category);
-  const siteTitle = row.site?.title ?? "";
-  const ownNames = [row.meo_store?.name ?? "", row.meo?.self?.name ?? "", siteTitle.split(/[|｜]/)[0] ?? ""].filter((n) => n.trim());
+  // 自店の名前だけで照合する。分析したサイトのタイトルは使わない（別の会社・製品が「自店が言及された」と数えられるため）
+  const ownNames = [row.meo_store?.name ?? "", row.meo?.self?.name ?? ""].filter((n) => n.trim());
   after(async () => {
     await runCheck(createAdminClient(), created.checkId, { store: row.meo_store, ownNames, industry }).catch(() => undefined);
   });
