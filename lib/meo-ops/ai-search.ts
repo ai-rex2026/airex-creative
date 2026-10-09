@@ -84,8 +84,13 @@ const NOISE = /[\s\-‐‑–—ー・\/／|｜()（）[\]「」『』"'’、�
 /** 部分一致で自店舗とみなす最小の長さ。短い一般語は別店舗にも含まれるため */
 const MIN_PARTIAL = 5;
 
+/** 会社形態（株式会社・㈱など）と、末尾の「本社」「支店」などは表記ゆれなので、照合では外す */
+const LEGAL_FORM = /株式会社|\(株\)|有限会社|\(有\)|合同会社|\(合\)|\(同\)/g;
+const BRANCH_SUFFIX = /(本社|本店|支店|営業所|事務所)$/;
+
 function normalizeName(name: string): string {
-  return name.normalize("NFKC").replace(NOISE, "").toLowerCase();
+  const n = name.normalize("NFKC").replace(LEGAL_FORM, "").replace(NOISE, "").toLowerCase();
+  return n.replace(BRANCH_SUFFIX, "") || n;
 }
 
 /** 自店舗が何番目に挙がったか（1始まり）。挙がっていなければ null。AI には判定させない */
