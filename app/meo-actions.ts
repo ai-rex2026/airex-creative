@@ -282,7 +282,13 @@ export async function draftReplyAction(id: string, reviewId: string) {
 /** 事業内容（サービス内容の説明・Webサイト）から、AIに聞く「業種」を考える。実行はしない（候補を返すだけ） */
 export async function suggestAiSearchTermAction(id: string, notes: string) {
   const { row } = await owned(id);
-  return suggestSearchTerm(row.meo_store, (notes ?? "").slice(0, 600));
+  try {
+    return await suggestSearchTerm(row.meo_store, (notes ?? "").slice(0, 600));
+  } catch (e) {
+    // 本番では throw すると原因が隠れるため、画面に出せる形で返す（候補は付けず、手で入力できる）
+    console.error("[ai-search] suggest failed", e);
+    return { term: "", reason: `自動で考えられませんでした（${e instanceof Error ? e.message.slice(0, 80) : "原因不明"}）。業種を直接入力してください` };
+  }
 }
 
 export async function getAiSearchStatusAction(id: string) {
