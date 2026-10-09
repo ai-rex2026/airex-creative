@@ -1,0 +1,15 @@
+diff --git a/lib/meo-ops/ai-search.ts b/lib/meo-ops/ai-search.ts
+index c148da8..86fa318 100644
+--- a/lib/meo-ops/ai-search.ts
++++ b/lib/meo-ops/ai-search.ts
+@@ -86,4 +86,9 @@ const MIN_PARTIAL = 5;
+ 
++/** 会社形態（株式会社・㈱など）と、末尾の「本社」「支店」などは表記ゆれなので、照合では外す */
++const LEGAL_FORM = /株式会社|\(株\)|有限会社|\(有\)|合同会社|\(合\)|\(同\)/g;
++const BRANCH_SUFFIX = /(本社|本店|支店|営業所|事務所)$/;
++
+ function normalizeName(name: string): string {
+-  return name.normalize("NFKC").replace(NOISE, "").toLowerCase();
++  const n = name.normalize("NFKC").replace(LEGAL_FORM, "").replace(NOISE, "").toLowerCase();
++  return n.replace(BRANCH_SUFFIX, "") || n;
+ }
