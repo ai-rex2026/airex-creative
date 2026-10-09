@@ -318,17 +318,20 @@ export function preferredEngine(): "gemini" | "claude" {
   return hasGemini() ? "gemini" : "claude";
 }
 
-async function ask(question: string, deadline: number) {
+async function ask(question: string, deadline: number): Promise<(Awaited<ReturnType<typeof askClaude>> | Awaited<ReturnType<typeof askGemini>>) & { note: string | null }> {
+  let note: string | null = null;
   if (preferredEngine() === "gemini") {
     try {
-      return await askGemini(question, deadline);
+      return { ...(await askGemini(question, deadline)), note: null };
     } catch (e) {
       // 残高切れ・上限など Gemini 側の事情のときだけ Claude に切り替える（どちらで測ったかは結果に残る）
       if (!(e instanceof GeminiUnavailableError)) throw e;
       console.error("[ai-search] gemini unavailable, fallback to claude:", e.message);
+      // 切り替わった理由を結果に残す（原因を後から確認できるように）
+      note = `Geminiが使えなかったためClaudeで測定しました: ${e.message.slice(0, 400)}`;
     }
   }
-  return askClaude(question, deadline);
+  return { ...(await askClaude(question, deadline)), note };
 }
 
 /** 回答テキストから、挙がった店舗と根拠URLを機械的に取り出す（自店舗名は渡さない） */
@@ -394,7 +397,7 @@ export async function runCheck(sb: SupabaseClient, checkId: string, ctx: RunCont
         raw_answer: answer.text.slice(0, 20000),
         search_queries: answer.queries.slice(0, 10),
         search_suggestions_html: "",
-        error_message: null,
+        error_message: answer.note,
         completed_at: new Date().toISOString(),
         input_tokens: answer.inputTokens,
         output_tokens: answer.outputTokens,
