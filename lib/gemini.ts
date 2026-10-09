@@ -95,7 +95,7 @@ export async function geminiGenerate(opts: {
         throw new Error(`Gemini 400: ${t.slice(0, 300)}`);
       }
       if (!res.ok) {
-        const t = (await res.text()).slice(0, 300);
+        const t = (await res.text()).slice(0, 2000);
         if ([401, 402, 403, 429, 500, 503].includes(res.status)) throw new GeminiUnavailableError(`Gemini ${res.status}: ${t}`);
         throw new Error(`Gemini ${res.status}: ${t}`);
       }

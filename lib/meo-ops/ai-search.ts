@@ -17,7 +17,7 @@ import type { MeoStoreSnapshot } from "./types";
  */
 
 /** 1か月（JST）に実行できる回数。1回ごとに web 検索つきの AI 呼び出しが走って実費が出る */
-export const AI_SEARCH_MONTHLY_LIMIT = 5;
+export const AI_SEARCH_MONTHLY_LIMIT = 10;
 /** 集計に使う直近の件数 */
 const MAX_HISTORY = 24;
 const MAX_CITED_SOURCES = 30;
@@ -328,7 +328,7 @@ async function ask(question: string, deadline: number): Promise<(Awaited<ReturnT
       if (!(e instanceof GeminiUnavailableError)) throw e;
       console.error("[ai-search] gemini unavailable, fallback to claude:", e.message);
       // 切り替わった理由を結果に残す（原因を後から確認できるように）
-      note = `Geminiが使えなかったためClaudeで測定しました: ${e.message.slice(0, 400)}`;
+      note = `Geminiが使えなかったためClaudeで測定しました: ${e.message.slice(0, 2000)}`;
     }
   }
   return { ...(await askClaude(question, deadline)), note };
