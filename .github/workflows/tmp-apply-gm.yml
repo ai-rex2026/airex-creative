@@ -1,0 +1,30 @@
+name: tmp-apply-gm
+on:
+  push:
+    paths:
+      - '.github/workflows/tmp-apply-gm.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply patches
+        run: |
+          set -e
+          for p in 1 2 3; do git apply --verbose .buildtmp/gm/patches/$p.patch; done
+      - name: Verify hashes
+        run: sha256sum -c .buildtmp/gm/SHA256SUMS
+      - name: Cleanup and push
+        run: |
+          set -e
+          git rm -rq .buildtmp/gm
+          git rm -q .github/workflows/tmp-apply-gm.yml
+          git config user.name "claude-bot"
+          git config user.email "noreply@anthropic.com"
+          git add -A
+          git commit -m "feat: AI search uses Gemini with Google Search by default (Claude as fallback)" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+          git push origin HEAD:main
