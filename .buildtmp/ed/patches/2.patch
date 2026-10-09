@@ -1,0 +1,13 @@
+diff --git a/lib/meo-ops/ai-search.ts b/lib/meo-ops/ai-search.ts
+index cc9a55f..c148da8 100644
+--- a/lib/meo-ops/ai-search.ts
++++ b/lib/meo-ops/ai-search.ts
+@@ -19,3 +19,3 @@ import type { MeoStoreSnapshot } from "./types";
+ /** 1か月（JST）に実行できる回数。1回ごとに web 検索つきの AI 呼び出しが走って実費が出る */
+-export const AI_SEARCH_MONTHLY_LIMIT = 5;
++export const AI_SEARCH_MONTHLY_LIMIT = 10;
+ /** 集計に使う直近の件数 */
+@@ -330,3 +330,3 @@ async function ask(question: string, deadline: number): Promise<(Awaited<ReturnT
+       // 切り替わった理由を結果に残す（原因を後から確認できるように）
+-      note = `Geminiが使えなかったためClaudeで測定しました: ${e.message.slice(0, 400)}`;
++      note = `Geminiが使えなかったためClaudeで測定しました: ${e.message.slice(0, 2000)}`;
