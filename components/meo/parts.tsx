@@ -101,13 +101,13 @@ const REPLY_MAX_LENGTH = 4000;
  */
 export function ReviewCard({
   review,
-  analysisId,
+  storeId,
   onReply,
   compact = false,
   canSend = true,
 }: {
   review: MeoReview;
-  analysisId: string;
+  storeId: string;
   onReply?: (reviewId: string, reply: string) => Promise<void>;
   compact?: boolean;
   canSend?: boolean;
@@ -128,7 +128,7 @@ export function ReviewCard({
     setIsGenerating(true);
     setGenError(null);
     try {
-      const r = await draftReplyAction(analysisId, review.id);
+      const r = await draftReplyAction(storeId, review.id);
       setDraft(r.reply);
       setHits(r.guardHits);
     } catch (e) {
@@ -302,13 +302,13 @@ const ACTION_BUTTONS = [
 
 /** GBP最新情報の投稿作成。AI生成 → 編集 → 予約 の順で1画面に収める */
 export function PostComposer({
-  analysisId,
+  storeId,
   storeName,
   websiteUrl,
   onCreate,
   onClose,
 }: {
-  analysisId: string;
+  storeId: string;
   storeName: string;
   websiteUrl: string | null;
   onCreate: (post: MeoPostInput) => Promise<void>;
@@ -329,7 +329,7 @@ export function PostComposer({
     setIsGenerating(true);
     setGenError(null);
     try {
-      const r = await draftPostAction(analysisId, theme, storeName);
+      const r = await draftPostAction(storeId, theme, storeName);
       setTitle(r.title);
       setBody(r.body);
       setHits(r.hits);
@@ -442,7 +442,7 @@ const PRIORITY_CARD: Record<MeoSuggestion["priority"], { label: string; classNam
   low: { label: "優先度 低", className: "bg-[#F4F3F0] text-[#57544E]" },
 };
 
-export function SuggestionCard({ suggestion, analysisId }: { suggestion: MeoSuggestion; analysisId: string }) {
+export function SuggestionCard({ suggestion, storeId }: { suggestion: MeoSuggestion; storeId: string }) {
   const p = PRIORITY_CARD[suggestion.priority];
   return (
     <div className="rounded-2xl border border-[#E8E5E0] bg-white p-5">
@@ -457,7 +457,7 @@ export function SuggestionCard({ suggestion, analysisId }: { suggestion: MeoSugg
           </div>
           <p className="mt-1.5 text-sm leading-relaxed text-[#6B6862]">{suggestion.body}</p>
           {suggestion.actionPath && suggestion.actionLabel && (
-            <Link href={meoPath(analysisId, suggestion.actionPath)} className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#2E2D29] hover:text-[#8A5340]">
+            <Link href={meoPath(storeId, suggestion.actionPath)} className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#2E2D29] hover:text-[#8A5340]">
               {suggestion.actionLabel}
               <Icon name="arrowRight" />
             </Link>
@@ -492,7 +492,7 @@ function Bubble({ children }: { children: ReactNode }) {
 }
 
 /** AIからの改善提案を、話しかけてくる吹き出しとして見せる（毎日開く画面で素通りされないように） */
-export function AiAdviceBubble({ suggestions, analysisId }: { suggestions: MeoSuggestion[]; analysisId: string }) {
+export function AiAdviceBubble({ suggestions, storeId }: { suggestions: MeoSuggestion[]; storeId: string }) {
   if (suggestions.length === 0) {
     return (
       <div className="flex items-start gap-3">
@@ -519,7 +519,7 @@ export function AiAdviceBubble({ suggestions, analysisId }: { suggestions: MeoSu
               </div>
               <p className="mt-1.5 text-sm leading-relaxed text-[#6B6862]">{s.body}</p>
               {s.actionPath && s.actionLabel && (
-                <Link href={meoPath(analysisId, s.actionPath)} className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#2E2D29] hover:text-[#8A5340]">
+                <Link href={meoPath(storeId, s.actionPath)} className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#2E2D29] hover:text-[#8A5340]">
                   {s.actionLabel}
                   <Icon name="arrowRight" />
                 </Link>
@@ -657,7 +657,7 @@ export function DailyTrendCard({ points }: { points: MeoDailyPoint[] }) {
 const TODO_ICON: Record<string, string> = { unreplied: "message", needsUpdate: "message", drafts: "megaphone", profile: "store" };
 
 /** 起動時ダイアログと消し込みリスト。同じ消し込み状態を見るので、状態はここ1か所で持つ */
-export function TodayTodos({ todos, analysisId }: { todos: MeoTodo[]; analysisId: string }) {
+export function TodayTodos({ todos, storeId }: { todos: MeoTodo[]; storeId: string }) {
   const [doneIds, setDoneIds] = useState<string[]>([]);
   const [promptOpen, setPromptOpenState] = useState(false);
   const hasTodos = todos.length > 0;
@@ -665,21 +665,21 @@ export function TodayTodos({ todos, analysisId }: { todos: MeoTodo[]; analysisId
   // localStorage はSSRに無いので、マウント後に復元する（初回描画をサーバーと揃える）
   useEffect(() => {
     const today = localDateKey();
-    setDoneIds(readDoneTodoIds(analysisId, today));
-    if (!hasTodos || isPromptDismissedToday(analysisId, today)) return;
+    setDoneIds(readDoneTodoIds(storeId, today));
+    if (!hasTodos || isPromptDismissedToday(storeId, today)) return;
     setPromptOpenState(true);
-  }, [analysisId, hasTodos]);
+  }, [storeId, hasTodos]);
 
   const setPromptOpen = (open: boolean) => {
     setPromptOpenState(open);
     // 閉じ方によらず今日は出し切ったものとして扱う
-    if (!open) dismissPromptForToday(analysisId, localDateKey());
+    if (!open) dismissPromptForToday(storeId, localDateKey());
   };
 
   const toggle = (id: string) =>
     setDoneIds((cur) => {
       const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-      writeDoneTodoIds(analysisId, localDateKey(), next);
+      writeDoneTodoIds(storeId, localDateKey(), next);
       return next;
     });
 
@@ -687,7 +687,7 @@ export function TodayTodos({ todos, analysisId }: { todos: MeoTodo[]; analysisId
 
   return (
     <>
-      <TodoList todos={todos} analysisId={analysisId} doneIds={doneIds} onToggle={toggle} />
+      <TodoList todos={todos} storeId={storeId} doneIds={doneIds} onToggle={toggle} />
       {open.length > 0 && (
         <Dialog
           open={promptOpen}
@@ -706,7 +706,7 @@ export function TodayTodos({ todos, analysisId }: { todos: MeoTodo[]; analysisId
             {open.map((t, i) => (
               <li key={t.id}>
                 <Link
-                  href={meoPath(analysisId, t.path)}
+                  href={meoPath(storeId, t.path)}
                   onClick={() => setPromptOpen(false)}
                   className="group flex items-center gap-3 rounded-xl border border-[#E8E5E0] bg-white px-3.5 py-3 transition-colors hover:border-[#C9A84C] hover:bg-[#FDFBF4]"
                 >
@@ -725,7 +725,7 @@ export function TodayTodos({ todos, analysisId }: { todos: MeoTodo[]; analysisId
           </ol>
           <div className="mt-5 space-y-2">
             <Link
-              href={meoPath(analysisId, open[0].path)}
+              href={meoPath(storeId, open[0].path)}
               onClick={() => setPromptOpen(false)}
               className="flex h-11 w-full items-center justify-center gap-1.5 rounded-lg bg-[#C9A84C] text-sm font-semibold text-[#2E2D29] hover:bg-[#B8973F]"
             >
@@ -742,7 +742,7 @@ export function TodayTodos({ todos, analysisId }: { todos: MeoTodo[]; analysisId
   );
 }
 
-function TodoList({ todos, analysisId, doneIds, onToggle }: { todos: MeoTodo[]; analysisId: string; doneIds: string[]; onToggle: (id: string) => void }) {
+function TodoList({ todos, storeId, doneIds, onToggle }: { todos: MeoTodo[]; storeId: string; doneIds: string[]; onToggle: (id: string) => void }) {
   if (todos.length === 0) {
     return (
       <div className="flex items-center gap-3 rounded-2xl border border-[#E0DBD1] bg-[#F4F3F0] p-5">
@@ -790,7 +790,7 @@ function TodoList({ todos, analysisId, doneIds, onToggle }: { todos: MeoTodo[]; 
                     <Icon name="check" className="h-3 w-3" strokeWidth={3} />
                   </span>
                 </button>
-                <Link href={meoPath(analysisId, t.path)} className="flex min-w-0 flex-1 items-center gap-3 py-3">
+                <Link href={meoPath(storeId, t.path)} className="flex min-w-0 flex-1 items-center gap-3 py-3">
                   <Icon name={TODO_ICON[t.id] ?? "message"} className={cn("h-4 w-4 shrink-0", done ? "text-[#C6C2BA]" : urgent ? "text-[#A8705A]" : "text-[#A5A198]")} />
                   <span className={cn("min-w-0 truncate text-sm font-semibold", done ? "text-[#A5A198] line-through" : "text-[#2E2D29]")}>{t.label}</span>
                   <span
@@ -816,7 +816,7 @@ function TodoList({ todos, analysisId, doneIds, onToggle }: { todos: MeoTodo[]; 
 }
 
 // ── プロフィール完成度 ───────────────────────────
-export function ProfileCompletenessCard({ checklist, analysisId }: { checklist: ProfileChecklistItem[]; analysisId: string }) {
+export function ProfileCompletenessCard({ checklist, storeId }: { checklist: ProfileChecklistItem[]; storeId: string }) {
   const score = calcCompleteness(checklist);
   const pending = pendingItems(checklist);
   return (
@@ -844,7 +844,7 @@ export function ProfileCompletenessCard({ checklist, analysisId }: { checklist: 
           残り{pending.length}項目。「{pending[0].label}」を埋めると完成度が{pending[0].weight}ポイント上がります。
         </p>
       )}
-      <Link href={meoPath(analysisId, "/profile")} className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#2E2D29] hover:text-[#8A5340]">
+      <Link href={meoPath(storeId, "/profile")} className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#2E2D29] hover:text-[#8A5340]">
         プロフィールを編集する
         <Icon name="arrowRight" />
       </Link>

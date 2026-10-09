@@ -1,7 +1,7 @@
 /**
  * MEO運用ワークスペースのドメイン型（AI-REX 本体 features/meo/types.ts の移植）。
  *
- * 1レポート = 1店舗を前提に、分析（analyses.id）にぶら下がる運用データとして扱う。
+ * 店舗（stores.id）にぶら下がる運用データとして扱う。レポートとは独立している。
  * サーバー（layout）で組み立ててクライアントへ渡すため、日時はすべて ISO 文字列で持つ。
  */
 
@@ -22,7 +22,7 @@ export type MeoCompetitor = {
   photoCount: number | null;
 };
 
-/** 確定した店舗の Places 実測。analyses.meo_store に保存する */
+/** 確定した店舗の Places 実測。stores.meo_store に保存する */
 export type MeoStoreSnapshot = {
   placeId: string;
   name: string;

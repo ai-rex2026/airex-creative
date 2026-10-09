@@ -19,9 +19,9 @@ export type StoredReview = {
  * - 返信済みのあとにクチコミ本文が書き換えられた → needs_update
  * - AI の評価点（aio_score）など Google に無い列は触らない（この関数は返さない）
  */
-export function mergeReview(analysisId: string, incoming: GbpReview, existing: StoredReview | undefined) {
+export function mergeReview(storeId: string, incoming: GbpReview, existing: StoredReview | undefined) {
   const base = {
-    analysis_id: analysisId,
+    store_id: storeId,
     id: incoming.reviewId,
     gbp_name: incoming.name || null,
     author_name: incoming.authorName,
@@ -64,21 +64,21 @@ type Db = {
  * ここでは呼ばない）。保存済みの行は id で突き合わせ、行ごとの列は mergeReview が決める。
  * 失敗した行があっても、ほかの行は保存する（1行の失敗で全件を捨てない）。
  */
-export async function saveReviews(db: Db, analysisId: string, reviews: GbpReview[]): Promise<{ saved: number; failed: number }> {
+export async function saveReviews(db: Db, storeId: string, reviews: GbpReview[]): Promise<{ saved: number; failed: number }> {
   if (!reviews.length) return { saved: 0, failed: 0 };
   const ids = reviews.map((r) => r.reviewId);
   const { data } = await db
     .from("meo_reviews")
     .select("id, reply, reply_status, replied_at, error_message")
-    .eq("analysis_id", analysisId)
+    .eq("store_id", storeId)
     .in("id", ids);
   const byId = new Map<string, StoredReview>(((data ?? []) as StoredReview[]).map((r) => [r.id, r]));
 
   let saved = 0;
   let failed = 0;
   for (const r of reviews) {
-    const row = mergeReview(analysisId, r, byId.get(r.reviewId));
-    const { error } = await db.from("meo_reviews").upsert(row, { onConflict: "analysis_id,id" });
+    const row = mergeReview(storeId, r, byId.get(r.reviewId));
+    const { error } = await db.from("meo_reviews").upsert(row, { onConflict: "store_id,id" });
     if (error) failed++;
     else saved++;
   }

@@ -22,7 +22,7 @@ export async function Shell({
   active,
   children,
 }: {
-  active: "new" | "summary" | "analysis" | "settings";
+  active: "new" | "summary" | "analysis" | "stores" | "settings";
   children: React.ReactNode;
 }) {
   const sb = await createClient();
@@ -59,6 +59,7 @@ export async function Shell({
 
         <Link href="/analysis/new" className={`item${active === "new" ? " on" : ""}`}>✎ 新規分析</Link>
         <Link href="/analysis" className={`item${active === "summary" ? " on" : ""}`}>▤ 分析サマリー</Link>
+        <Link href="/stores" className={`item${active === "stores" ? " on" : ""}`}>⌖ 店舗（MEO運用）</Link>
 
         <div className="sec">
           最近の分析

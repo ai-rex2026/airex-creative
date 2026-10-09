@@ -6,14 +6,14 @@ import { gbpAuthUrl, gbpRedirectUri, hasGbpApp } from "@/lib/gbp/oauth";
 /**
  * Googleビジネスプロフィールの連携を始める（MEO運用の「設定」タブ、または設定画面から）。
  * ログイン（Supabase）とは別の OAuth。戻り先は /api/gbp/callback。state は httpOnly クッキーに持つ。
- * ?analysis=<id> があれば、終わったあとにその分析の MEO 設定へ戻す。
+ * ?store=<id> があれば、終わったあとにその店舗の設定へ戻す。
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const analysis = url.searchParams.get("analysis") ?? "";
+  const store = url.searchParams.get("store") ?? "";
   // 戻り先に使うので、パスに使える文字だけ通す（オープンリダイレクト・パス操作の防止）
-  const safeId = /^[A-Za-z0-9_-]{1,64}$/.test(analysis) ? analysis : "";
-  const dest = safeId ? `/analysis/${safeId}/meo/settings` : "/settings";
+  const safeId = /^[A-Za-z0-9_-]{1,64}$/.test(store) ? store : "";
+  const dest = safeId ? `/stores/${safeId}/settings` : "/settings";
   const back = (msg: string) => NextResponse.redirect(new URL(`${dest}?gbp_error=${encodeURIComponent(msg)}`, url.origin));
 
   if (!hasGbpApp()) return back("Google連携が未設定です（GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET）");
@@ -27,7 +27,7 @@ export async function GET(req: Request) {
 
   const state = randomBytes(16).toString("hex");
   const res = NextResponse.redirect(gbpAuthUrl(gbpRedirectUri(req.url), state));
-  res.cookies.set("gbp_oauth", JSON.stringify({ state, analysis: safeId }), {
+  res.cookies.set("gbp_oauth", JSON.stringify({ state, store: safeId }), {
     httpOnly: true,
     secure: true,
     sameSite: "lax",

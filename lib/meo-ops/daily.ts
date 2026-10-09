@@ -34,14 +34,14 @@ function previousDateKey(key: string): string {
 /** その日の1件を書く。同日2回目は書かない（再実行しても壊れない） */
 export async function writeDaily(
   sb: SupabaseClient,
-  analysisId: string,
+  storeId: string,
   store: Pick<MeoStoreSnapshot, "meoScore" | "reviewCount" | "rating">,
   day = jstDateKey()
 ): Promise<"written" | "exists"> {
   const { data: existing } = await sb
     .from("meo_daily")
     .select("date")
-    .eq("analysis_id", analysisId)
+    .eq("store_id", storeId)
     .eq("date", day)
     .maybeSingle();
   if (existing) return "exists";
@@ -49,7 +49,7 @@ export async function writeDaily(
   const { data: prev } = await sb
     .from("meo_daily")
     .select("review_count")
-    .eq("analysis_id", analysisId)
+    .eq("store_id", storeId)
     .eq("date", previousDateKey(day))
     .maybeSingle();
 
@@ -59,7 +59,7 @@ export async function writeDaily(
   const before = prev ? (prev.review_count as number) : null;
 
   await sb.from("meo_daily").upsert({
-    analysis_id: analysisId,
+    store_id: storeId,
     date: day,
     meo_score: store.meoScore,
     review_count: reviewCount,
@@ -82,7 +82,7 @@ export async function snapshotDaily(sb: SupabaseClient): Promise<DailyResult> {
 
   const cutoff = new Date(Date.now() - INACTIVE_DAYS * 864e5).toISOString();
   const { data } = await sb
-    .from("analyses")
+    .from("stores")
     .select("id, meo_place_id, meo_store")
     .not("meo_place_id", "is", null)
     .gte("meo_last_opened_at", cutoff)
@@ -95,7 +95,7 @@ export async function snapshotDaily(sb: SupabaseClient): Promise<DailyResult> {
       const { data: done } = await sb
         .from("meo_daily")
         .select("date")
-        .eq("analysis_id", row.id)
+        .eq("store_id", row.id)
         .eq("date", day)
         .maybeSingle();
       if (done) {
@@ -113,7 +113,7 @@ export async function snapshotDaily(sb: SupabaseClient): Promise<DailyResult> {
       const next: MeoStoreSnapshot = { ...detail, competitors, ...scored, fetchedAt: new Date().toISOString() };
       await writeDaily(sb, row.id as string, next, day);
       // 画面の見出し（星・件数・スコア）も最新にしておく
-      await sb.from("analyses").update({ meo_store: next }).eq("id", row.id);
+      await sb.from("stores").update({ meo_store: next }).eq("id", row.id);
       result.written++;
     } catch {
       // 1店舗の想定外エラーで他店舗を止めない

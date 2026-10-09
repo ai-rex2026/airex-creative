@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { pendingCheckIds, runCheck } from "@/lib/meo-ops/ai-search";
 import type { MeoStoreSnapshot } from "@/lib/meo-ops/types";
-import type { Diagnosis } from "@/lib/types";
+import type { Industry } from "@/lib/types";
 
 export const maxDuration = 300;
 
@@ -19,11 +19,11 @@ export async function GET(req: Request) {
   const picked = await pendingCheckIds(sb, 1);
   const done: string[] = [];
   for (const c of picked) {
-    const { data: a } = await sb.from("analyses").select("meo_store, meo, site, diagnosis").eq("id", c.analysis_id).maybeSingle();
+    const { data: a } = await sb.from("stores").select("name, industry, meo_store").eq("id", c.store_id).maybeSingle();
     const store = (a?.meo_store as MeoStoreSnapshot | null) ?? null;
-    const title = ((a?.site as { title?: string } | null)?.title ?? "").split(/[|｜]/)[0] ?? "";
-    const ownNames = [store?.name ?? "", (a?.meo as { self?: { name?: string } } | null)?.self?.name ?? "", title].filter((n) => n.trim());
-    const industry = (a?.diagnosis as Diagnosis | null)?.industry ?? "general";
+    // 自店の名前だけで照合する（分析したサイトのタイトルは使わない）
+    const ownNames = [store?.name ?? "", (a?.name as string | null) ?? ""].filter((n) => n.trim());
+    const industry = (a?.industry as Industry | null) ?? "general";
     if (await runCheck(sb, c.id, { store, ownNames, industry }).catch(() => false)) done.push(c.id);
   }
   return NextResponse.json({ picked: picked.map((c) => c.id), done });

@@ -57,8 +57,8 @@ export const MEO_TABS: { key: MeoTabKey; path: string; label: string }[] = [
   { key: "settings", path: "/settings", label: "設定" },
 ];
 
-export function meoPath(analysisId: string, subPath = ""): string {
-  return `/analysis/${analysisId}/meo${subPath}`;
+export function meoPath(storeId: string, subPath = ""): string {
+  return `/stores/${storeId}${subPath}`;
 }
 
 // ── 写真 ──────────────────────────────────
@@ -331,16 +331,16 @@ function writeItem(key: string, value: string): void {
   }
 }
 
-export function isPromptDismissedToday(analysisId: string, today: string): boolean {
-  return readItem(`meo:today-todos-dismissed:${analysisId}`) === today;
+export function isPromptDismissedToday(storeId: string, today: string): boolean {
+  return readItem(`meo:today-todos-dismissed:${storeId}`) === today;
 }
 
-export function dismissPromptForToday(analysisId: string, today: string): void {
-  writeItem(`meo:today-todos-dismissed:${analysisId}`, today);
+export function dismissPromptForToday(storeId: string, today: string): void {
+  writeItem(`meo:today-todos-dismissed:${storeId}`, today);
 }
 
-export function readDoneTodoIds(analysisId: string, today: string): string[] {
-  const raw = readItem(`meo:today-todos-done:${analysisId}`);
+export function readDoneTodoIds(storeId: string, today: string): string[] {
+  const raw = readItem(`meo:today-todos-done:${storeId}`);
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -353,8 +353,8 @@ export function readDoneTodoIds(analysisId: string, today: string): string[] {
   }
 }
 
-export function writeDoneTodoIds(analysisId: string, today: string, ids: string[]): void {
-  writeItem(`meo:today-todos-done:${analysisId}`, JSON.stringify({ date: today, ids }));
+export function writeDoneTodoIds(storeId: string, today: string, ids: string[]): void {
+  writeItem(`meo:today-todos-done:${storeId}`, JSON.stringify({ date: today, ids }));
 }
 
 // ── AI検索 ───────────────────────────────────

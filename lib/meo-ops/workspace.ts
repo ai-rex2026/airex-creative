@@ -1,9 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { MeoScan } from "../meo";
-import type { GuardHit } from "../types";
-import type { SiteScan } from "../site-scan";
-import { buildStoreSnapshot, hostOf, searchCandidatesWithSite } from "./places";
-import { writeDaily } from "./daily";
+import type { GuardHit, Industry } from "../types";
 import {
   DEFAULT_AI_REPLY_SETTINGS,
   DEFAULT_NOTIFICATION_SETTINGS,
@@ -31,13 +27,12 @@ import type {
   StoreCandidate,
 } from "./types";
 
-/** ワークスペースが読む分析の列 */
-export type MeoAnalysisRow = {
+/** ワークスペースが読む店舗の列（stores テーブル） */
+export type MeoStoreRow = {
   id: string;
   owner_id: string;
-  url: string | null;
-  site: SiteScan | null;
-  meo: MeoScan | null;
+  name: string | null;
+  industry: Industry | null;
   meo_place_id: string | null;
   meo_place_source: "auto" | "manual" | null;
   meo_store: MeoStoreSnapshot | null;
@@ -45,8 +40,7 @@ export type MeoAnalysisRow = {
   meo_gbp_location: string | null;
 };
 
-export const MEO_ANALYSIS_COLUMNS =
-  "id, owner_id, url, site, meo, meo_place_id, meo_place_source, meo_store, meo_store_candidates, meo_gbp_location";
+export const MEO_STORE_COLUMNS = "id, owner_id, name, industry, meo_place_id, meo_place_source, meo_store, meo_store_candidates, meo_gbp_location";
 
 /** 日次グラフの表示日数 */
 export const DAILY_TREND_DAYS = 30;
@@ -238,77 +232,39 @@ function toProfile(v: unknown): MeoProfileDraft {
   };
 }
 
-// ── 店舗の自動特定 ──────────────────────────────
-/**
- * 初めて開いたときに一度だけ、どの店舗の運用画面かを決める。
- *
- * 分析時の MEO 実測（サイトのドメインと一致したプロフィール）が1件だけならそれを使う。
- * チェーン店は本社ドメインひとつに支店がぶら下がり URL からは判別できないので、
- * 機械が決め打ちせず候補を保存して人に選ばせる（別商圏のデータを毎日記録し続けないため）。
- */
-export async function autoIdentifyStore(admin: SupabaseClient, a: MeoAnalysisRow): Promise<MeoAnalysisRow> {
-  if (a.meo_place_id || a.meo_store_candidates) return a;
-
-  const ourHost = hostOf(a.url) || hostOf(a.site?.finalUrl);
-  const self = a.meo?.self ?? null;
-  const siteName = a.site?.bizName || (a.site?.title ?? "").split(/[|｜\-–—:：]/).map((s) => s.trim()).filter(Boolean).pop() || "";
-  const query = self ? `${self.name} ${self.address}`.trim() : [siteName, a.site?.bizAddress ?? ""].join(" ").trim();
-
-  let candidates: (StoreCandidate & { website: string | null })[] = [];
-  if (query) candidates = await searchCandidatesWithSite(query).catch(() => []);
-  const matched = ourHost ? candidates.filter((c) => hostOf(c.website) === ourHost) : [];
-  const single = (a.meo?.stores.length ?? 0) <= 1 && matched.length === 1 ? matched[0] : null;
-
-  if (single) {
-    const snapshot = await buildStoreSnapshot(single.place_id);
-    if (snapshot) {
-      const patch = { meo_place_id: single.place_id, meo_place_source: "auto" as const, meo_store: snapshot, meo_store_candidates: [] };
-      await admin.from("analyses").update(patch).eq("id", a.id);
-      await writeDaily(admin, a.id, snapshot).catch(() => undefined);
-      return { ...a, ...patch };
-    }
-  }
-
-  // ドメインが一致した店舗を優先して並べる（一致が無ければ検索結果そのまま）
-  const list = (matched.length ? matched : candidates).map(({ place_id, name, address }) => ({ place_id, name, address }));
-  await admin.from("analyses").update({ meo_store_candidates: list }).eq("id", a.id);
-  return { ...a, meo_store_candidates: list };
-}
-
 // ── 読み込み ─────────────────────────────────
 /**
- * ワークスペース一式を読む。sb は本人のセッション（RLS で本人の分析だけが見える）。
+ * ワークスペース一式を読む。sb は本人のセッション（RLS で本人の店舗だけが見える）。
  */
 export async function loadWorkspace(
   sb: SupabaseClient,
-  a: MeoAnalysisRow,
+  a: MeoStoreRow,
   gbpConnected: boolean
 ): Promise<MeoWorkspaceData> {
   const [reviews, posts, metrics, daily, settings, checks, summary] = await Promise.all([
-    sb.from("meo_reviews").select("*").eq("analysis_id", a.id).order("reviewed_at", { ascending: false }).limit(500),
-    sb.from("meo_posts").select("*").eq("analysis_id", a.id).order("created_at", { ascending: false }).limit(200),
-    sb.from("meo_metrics").select("*").eq("analysis_id", a.id).order("period", { ascending: false }).limit(1).maybeSingle(),
-    sb.from("meo_daily").select("*").eq("analysis_id", a.id).order("date", { ascending: false }).limit(DAILY_TREND_DAYS),
-    sb.from("meo_settings").select("*").eq("analysis_id", a.id).maybeSingle(),
-    sb.from("ai_search_checks").select("*").eq("analysis_id", a.id).order("created_at", { ascending: false }).limit(AI_CHECK_HISTORY_LIMIT),
-    sb.from("ai_search_summary").select("*").eq("analysis_id", a.id).maybeSingle(),
+    sb.from("meo_reviews").select("*").eq("store_id", a.id).order("reviewed_at", { ascending: false }).limit(500),
+    sb.from("meo_posts").select("*").eq("store_id", a.id).order("created_at", { ascending: false }).limit(200),
+    sb.from("meo_metrics").select("*").eq("store_id", a.id).order("period", { ascending: false }).limit(1).maybeSingle(),
+    sb.from("meo_daily").select("*").eq("store_id", a.id).order("date", { ascending: false }).limit(DAILY_TREND_DAYS),
+    sb.from("meo_settings").select("*").eq("store_id", a.id).maybeSingle(),
+    sb.from("ai_search_checks").select("*").eq("store_id", a.id).order("created_at", { ascending: false }).limit(AI_CHECK_HISTORY_LIMIT),
+    sb.from("ai_search_summary").select("*").eq("store_id", a.id).maybeSingle(),
   ]);
 
   const reviewList = (reviews.data ?? []).map((r) => rowToReview(r));
   const ins = rowToMetrics(metrics.data ?? null);
   const profileDraft = toProfile(settings.data?.profile);
   const store = a.meo_store;
-  const siteTitle = a.site?.title ?? null;
-  const name = store?.name ? (siteTitle ? `${store.name} | ${siteTitle}` : store.name) : (a.meo?.self?.name ?? (a.url ?? "").replace(/^https?:\/\//, "").replace(/\/$/, ""));
+  const name = store?.name || a.name || "（店舗名未設定）";
 
   return {
     store: {
       id: a.id,
       name,
-      address: store?.address ?? a.meo?.self?.address ?? null,
+      address: store?.address ?? null,
       category: store?.category ?? null,
       phoneNumber: store?.phoneNumber ?? null,
-      websiteUrl: store?.websiteUrl ?? a.url,
+      websiteUrl: store?.websiteUrl ?? null,
       gbpStatus: a.meo_gbp_location && gbpConnected ? "connected" : store ? "disconnected" : "unclaimed",
       meoScore: store?.meoScore ?? null,
       rating: store?.rating ?? null,

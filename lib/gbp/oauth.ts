@@ -116,7 +116,7 @@ export async function deleteGbpConnection(userId: string) {
       signal: AbortSignal.timeout(10000),
     }).catch(() => undefined);
   }
-  await admin.from("analyses").update({ meo_gbp_account: null, meo_gbp_location: null }).eq("owner_id", userId);
+  await admin.from("stores").update({ meo_gbp_account: null, meo_gbp_location: null }).eq("owner_id", userId);
   const { error } = await admin.from("gbp_connections").delete().eq("user_id", userId);
   if (error) throw new Error(`連携を解除できませんでした：${error.message}`);
 }

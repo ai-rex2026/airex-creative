@@ -1,13 +1,13 @@
 import Link from "next/link";
 
 /**
- * レポートからMEO運用ワークスペースへの入口（本体 MeoEntryCard の移植）。
+ * レポートからMEO運用（店舗の登録）への入口。
  * レポート（読む成果物）と運用画面は性質が違うため、章の中ではなく独立したカードとして置く。
  */
 export function MeoEntryCard({ analysisId, address }: { analysisId: string; address?: string | null }) {
   return (
     <Link
-      href={`/analysis/${analysisId}/meo`}
+      href={`/stores/new?from=${encodeURIComponent(analysisId)}`}
       className="group my-6 flex items-center gap-4 rounded-2xl border border-[#E0DBD1] bg-[#FAF9F7] p-5 no-underline transition-colors hover:border-[#D8D4CC] print:hidden"
       style={{ textDecoration: "none" }}
     >

@@ -14,7 +14,7 @@ import { Btn, cn, Dialog, Icon, Input } from "./ui";
  * データはサーバー（layout）で読み、ここから配下のページへ配る。
  */
 
-type Ctx = { data: MeoWorkspaceData; analysisId: string };
+type Ctx = { data: MeoWorkspaceData; storeId: string };
 const MeoContext = createContext<Ctx | null>(null);
 
 export function useMeo(): Ctx {
@@ -34,21 +34,21 @@ const TAB_ICON: Record<string, string> = {
   settings: "settings",
 };
 
-export function MeoWorkspace({ data, analysisId, children }: { data: MeoWorkspaceData; analysisId: string; children: ReactNode }) {
+export function MeoWorkspace({ data, storeId, children }: { data: MeoWorkspaceData; storeId: string; children: ReactNode }) {
   // 店舗が確定していないとダッシュボードは意味を持たない。空の数字を実績と誤解させるか、
   // 別の支店のデータを自店のものとして見せることになるため、選択が済むまで他のUIは出さない
   if (!data.ownPlaceId) {
-    return <MeoStoreRequired analysisId={analysisId} storeName={data.store.name} candidates={data.storeCandidates} />;
+    return <MeoStoreRequired storeId={storeId} storeName={data.store.name} candidates={data.storeCandidates} />;
   }
 
   // 送信中（pending）は返信済みと同じく対応が済んでいるため、要対応の件数から外す
   const unrepliedCount = data.reviews.filter((r) => r.status !== "replied" && r.status !== "pending").length;
 
   return (
-    <MeoContext.Provider value={{ data, analysisId }}>
+    <MeoContext.Provider value={{ data, storeId }}>
       <div className="mx-auto max-w-6xl space-y-5">
-        <MeoStoreHeader data={data} analysisId={analysisId} unrepliedCount={unrepliedCount} />
-        <MeoTabNav analysisId={analysisId} badges={{ reviews: unrepliedCount }} />
+        <MeoStoreHeader data={data} storeId={storeId} unrepliedCount={unrepliedCount} />
+        <MeoTabNav storeId={storeId} badges={{ reviews: unrepliedCount }} />
         <div className="pb-10">{children}</div>
       </div>
     </MeoContext.Provider>
@@ -72,15 +72,15 @@ export function GbpStatusBadge({ status }: { status: GbpConnectionStatus }) {
   );
 }
 
-function MeoStoreHeader({ data, analysisId, unrepliedCount }: { data: MeoWorkspaceData; analysisId: string; unrepliedCount: number }) {
+function MeoStoreHeader({ data, storeId, unrepliedCount }: { data: MeoWorkspaceData; storeId: string; unrepliedCount: number }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const store: MeoStore = data.store;
 
   return (
     <div className="space-y-4">
-      <Link href={`/analysis/${analysisId}/report`} className="inline-flex items-center gap-1.5 text-sm text-[#57544E] transition-colors hover:text-[#2E2D29]">
+      <Link href="/stores" className="inline-flex items-center gap-1.5 text-sm text-[#57544E] transition-colors hover:text-[#2E2D29]">
         <Icon name="arrowLeft" />
-        レポートに戻る
+        店舗一覧に戻る
       </Link>
 
       <div className="rounded-2xl border border-[#E8E5E0] bg-white p-5 shadow-sm">
@@ -165,7 +165,7 @@ function MeoStoreHeader({ data, analysisId, unrepliedCount }: { data: MeoWorkspa
         description="クチコミや順位はここで選んだ店舗のものを記録します。同じ系列の別の店舗を選ぶと、集計の対象も切り替わります。"
       >
         <StoreSelectPanel
-          analysisId={analysisId}
+          storeId={storeId}
           initialCandidates={data.storeCandidates}
           currentPlaceId={data.ownPlaceId}
           onSelected={() => setDialogOpen(false)}
@@ -175,9 +175,9 @@ function MeoStoreHeader({ data, analysisId, unrepliedCount }: { data: MeoWorkspa
   );
 }
 
-function MeoTabNav({ analysisId, badges }: { analysisId: string; badges: Partial<Record<string, number>> }) {
+function MeoTabNav({ storeId, badges }: { storeId: string; badges: Partial<Record<string, number>> }) {
   const pathname = usePathname() ?? "";
-  const base = meoPath(analysisId);
+  const base = meoPath(storeId);
   return (
     <nav aria-label="MEO運用メニュー" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0 print:hidden">
       {/* 下線はテーマカラー（ゴールド）。現在地はその濃い方で、線だけを見て場所が分かるようにする */}
@@ -211,12 +211,12 @@ function MeoTabNav({ analysisId, badges }: { analysisId: string; badges: Partial
 }
 
 // ── 店舗の選択 ────────────────────────────────
-function MeoStoreRequired({ analysisId, storeName, candidates }: { analysisId: string; storeName: string; candidates: StoreCandidate[] }) {
+function MeoStoreRequired({ storeId, storeName, candidates }: { storeId: string; storeName: string; candidates: StoreCandidate[] }) {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
-      <Link href={`/analysis/${analysisId}/report`} className="inline-flex items-center gap-1.5 text-sm text-[#57544E] transition-colors hover:text-[#2E2D29]">
+      <Link href="/stores" className="inline-flex items-center gap-1.5 text-sm text-[#57544E] transition-colors hover:text-[#2E2D29]">
         <Icon name="arrowLeft" />
-        レポートに戻る
+        店舗一覧に戻る
       </Link>
       <div className="mx-auto w-full max-w-xl rounded-2xl border border-[#E8E5E0] bg-white p-6 shadow-sm">
         <div className="flex items-start gap-3">
@@ -234,7 +234,7 @@ function MeoStoreRequired({ analysisId, storeName, candidates }: { analysisId: s
           </div>
         </div>
         <div className="mt-5">
-          <StoreSelectPanel analysisId={analysisId} initialCandidates={candidates} />
+          <StoreSelectPanel storeId={storeId} initialCandidates={candidates} />
         </div>
         <p className="mt-4 text-xs leading-relaxed text-[#A5A198]">
           選んだ後に変更することもできます。系列の別店舗に切り替えると、集計の対象も切り替わります。
@@ -249,12 +249,12 @@ function MeoStoreRequired({ analysisId, storeName, candidates }: { analysisId: s
  * 機械が決め打ちすると別の商圏のデータを毎日記録し続けることになるため、人が確定させる。
  */
 function StoreSelectPanel({
-  analysisId,
+  storeId,
   initialCandidates,
   currentPlaceId,
   onSelected,
 }: {
-  analysisId: string;
+  storeId: string;
   initialCandidates: StoreCandidate[];
   currentPlaceId?: string | null;
   onSelected?: () => void;
@@ -271,7 +271,7 @@ function StoreSelectPanel({
   const run = (keyword?: string) => {
     setIsSearching(true);
     setError(null);
-    searchStoreCandidatesAction(analysisId, keyword)
+    searchStoreCandidatesAction(storeId, keyword)
       .then(setCandidates)
       .catch((e: Error) => setError(e.message))
       .finally(() => setIsSearching(false));
@@ -287,7 +287,7 @@ function StoreSelectPanel({
   const select = (placeId: string) => {
     setSavingPlaceId(placeId);
     setError(null);
-    selectStoreAction(analysisId, placeId)
+    selectStoreAction(storeId, placeId)
       .then(() => {
         onSelected?.();
         router.refresh();

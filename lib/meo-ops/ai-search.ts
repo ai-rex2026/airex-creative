@@ -141,12 +141,12 @@ AIに引用されやすい文面を作ります。次のJSONのみを出力し�
 - 「No.1」「必ず」「最高」など、根拠の要る最上級・断定の表現は使わない`;
 
 // ── 月次上限と既定値 ──────────────────────────────
-export async function quota(sb: SupabaseClient, analysisId: string) {
+export async function quota(sb: SupabaseClient, storeId: string) {
   const period = jstPeriodKey();
   const { count } = await sb
     .from("ai_search_checks")
     .select("id", { count: "exact", head: true })
-    .eq("analysis_id", analysisId)
+    .eq("store_id", storeId)
     .eq("period", period);
   const used = count ?? 0;
   return { period, limit: AI_SEARCH_MONTHLY_LIMIT, used, remaining: Math.max(0, AI_SEARCH_MONTHLY_LIMIT - used) };
@@ -159,13 +159,13 @@ export function defaultQuery(store: MeoStoreSnapshot | null, fallbackAddress: st
   };
 }
 
-export async function createCheck(sb: SupabaseClient, analysisId: string, area: string, category: string) {
-  const q = await quota(sb, analysisId);
+export async function createCheck(sb: SupabaseClient, storeId: string, area: string, category: string) {
+  const q = await quota(sb, storeId);
   if (q.remaining <= 0) throw new Error(`AI検索は 1 か月に ${q.limit} 回までです。翌月まではお待ちください。`);
   const { data, error } = await sb
     .from("ai_search_checks")
     .insert({
-      analysis_id: analysisId,
+      store_id: storeId,
       status: "pending",
       engine: "claude",
       model: ANSWER_MODEL,
@@ -345,16 +345,16 @@ export async function runCheck(sb: SupabaseClient, checkId: string, ctx: RunCont
   }
 
   // 集計の失敗で実測結果を失わせない
-  await rebuildSummary(sb, check.analysis_id as string, ctx, deadline).catch(() => undefined);
+  await rebuildSummary(sb, check.store_id as string, ctx, deadline).catch(() => undefined);
   return true;
 }
 
 /** 出現率・参照元カバレッジ・改善提案を作り直す */
-async function rebuildSummary(sb: SupabaseClient, analysisId: string, ctx: RunContext, deadline: number) {
+async function rebuildSummary(sb: SupabaseClient, storeId: string, ctx: RunContext, deadline: number) {
   const { data } = await sb
     .from("ai_search_checks")
     .select("*")
-    .eq("analysis_id", analysisId)
+    .eq("store_id", storeId)
     .eq("status", "completed")
     .order("created_at", { ascending: false })
     .limit(MAX_HISTORY);
@@ -368,7 +368,7 @@ async function rebuildSummary(sb: SupabaseClient, analysisId: string, ctx: RunCo
   const cited = checks.flatMap((c) => ((c.cited_sources as { domain?: string }[]) ?? []).map((s) => s.domain ?? ""));
   const own = checks.flatMap((c) => (c.own_source_domains as string[]) ?? []);
 
-  const { data: prev } = await sb.from("ai_search_summary").select("suggestions").eq("analysis_id", analysisId).maybeSingle();
+  const { data: prev } = await sb.from("ai_search_summary").select("suggestions").eq("store_id", storeId).maybeSingle();
   let suggestions = (prev?.suggestions as unknown[]) ?? [];
 
   // 提案は時間が残っているときだけ作り直す（作れなければ前回の提案を残す。空にしない）
@@ -377,7 +377,7 @@ async function rebuildSummary(sb: SupabaseClient, analysisId: string, ctx: RunCo
       const { data: reviews } = await sb
         .from("meo_reviews")
         .select("rating, text, reviewed_at")
-        .eq("analysis_id", analysisId)
+        .eq("store_id", storeId)
         .neq("text", "")
         .order("reviewed_at", { ascending: false })
         .limit(5);
@@ -413,7 +413,7 @@ async function rebuildSummary(sb: SupabaseClient, analysisId: string, ctx: RunCo
 
   const latest = checks[0];
   await sb.from("ai_search_summary").upsert({
-    analysis_id: analysisId,
+    store_id: storeId,
     total_checks: checks.length,
     mentioned_checks: checks.filter((c) => c.mentioned).length,
     history,
@@ -451,14 +451,14 @@ function factLines(
 }
 
 /** 止まったままの pending を拾い直す（cron の安全網）。作成から2分以上経ったものだけ */
-export async function pendingCheckIds(sb: SupabaseClient, limit = 2): Promise<{ id: string; analysis_id: string }[]> {
+export async function pendingCheckIds(sb: SupabaseClient, limit = 2): Promise<{ id: string; store_id: string }[]> {
   const before = new Date(Date.now() - 120_000).toISOString();
   const { data } = await sb
     .from("ai_search_checks")
-    .select("id, analysis_id")
+    .select("id, store_id")
     .eq("status", "pending")
     .lt("created_at", before)
     .order("created_at", { ascending: true })
     .limit(limit);
-  return (data ?? []) as { id: string; analysis_id: string }[];
+  return (data ?? []) as { id: string; store_id: string }[];
 }

@@ -4,12 +4,12 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Diagnosis, GuardHit, Industry } from "@/lib/types";
+import type { GuardHit, Industry } from "@/lib/types";
 import { buildStoreSnapshot, hasPlacesKey, searchStoreCandidates } from "@/lib/meo-ops/places";
 import { writeDaily } from "@/lib/meo-ops/daily";
 import { createCheck, defaultQuery, quota, runCheck } from "@/lib/meo-ops/ai-search";
 import { draftDescription, draftPost, draftReply } from "@/lib/meo-ops/writer";
-import { MEO_ANALYSIS_COLUMNS, rowToReview, type MeoAnalysisRow } from "@/lib/meo-ops/workspace";
+import { MEO_STORE_COLUMNS, rowToReview, type MeoStoreRow } from "@/lib/meo-ops/workspace";
 import { buildAiSearchPrompt, DEFAULT_AI_REPLY_SETTINGS } from "@/lib/meo-ops/logic";
 import { deleteGbpConnection, gbpAccessToken, gbpConnectionEmail } from "@/lib/gbp/oauth";
 import { fetchMetrics, getLocation, getProfile, listAllLocations, listReviews, patchLocation, type GbpLocation, type GbpMetrics } from "@/lib/gbp/api";
@@ -37,26 +37,69 @@ async function owned(id: string) {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
-  const { data } = await sb.from("analyses").select(`${MEO_ANALYSIS_COLUMNS}, diagnosis`).eq("id", id).eq("owner_id", user.id).maybeSingle();
-  if (!data) throw new Error("この分析を操作する権限がありません");
-  const row = data as unknown as MeoAnalysisRow & { diagnosis: Diagnosis | null };
-  const industry: Industry = row.diagnosis?.industry ?? "general";
+  const { data } = await sb.from("stores").select(MEO_STORE_COLUMNS).eq("id", id).eq("owner_id", user.id).maybeSingle();
+  if (!data) throw new Error("この店舗を操作する権限がありません");
+  const row = data as unknown as MeoStoreRow;
+  const industry: Industry = row.industry ?? "general";
   return { sb, user, row, industry };
 }
 
 function refresh(id: string) {
-  revalidatePath(`/analysis/${id}/meo`, "layout");
+  revalidatePath(`/stores/${id}`, "layout");
+  revalidatePath("/stores");
+}
+
+// ── 店舗の新規登録 ────────────────────────────────────────
+const INDUSTRIES: Industry[] = ["beauty", "medical", "supplement", "finance", "general"];
+
+/** 店舗を新しく登録するときの検索（まだ店舗IDが無い）。ログイン済みの本人だけが使える */
+export async function searchStoresForNewAction(query: string): Promise<StoreCandidate[]> {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+  const q = (query ?? "").trim().slice(0, 200);
+  if (!q) throw new Error("検索する店舗名または住所を入力してください");
+  if (!hasPlacesKey()) throw new Error("店舗検索を利用できません。設定を確認してください");
+  return searchStoreCandidates(q, 10);
+}
+
+/** 店舗を登録する。Places の実測（自店＋近隣競合）を取り、今日の記録を1件書く。レポートとは独立した実体になる */
+export async function createStoreAction(placeId: string, industry: Industry): Promise<string> {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) throw new Error("ログインが必要です");
+  if (!placeId || placeId.length > 500) throw new Error("店舗の指定が不正です");
+  if (!INDUSTRIES.includes(industry)) throw new Error("業種の指定が不正です");
+  const snapshot = await buildStoreSnapshot(placeId);
+  if (!snapshot) throw new Error("店舗の情報を取得できませんでした。時間をおいて再度お試しください");
+
+  // 同じ店舗を二重に登録しない（既にあればそちらを開く）
+  const { data: dup } = await sb.from("stores").select("id").eq("owner_id", user.id).eq("meo_place_id", placeId).maybeSingle();
+  if (dup) return (dup as { id: string }).id;
+
+  const { data, error } = await sb
+    .from("stores")
+    .insert({ owner_id: user.id, name: snapshot.name, industry, meo_place_id: placeId, meo_place_source: "manual", meo_store: snapshot })
+    .select("id")
+    .single();
+  if (error || !data) throw new Error("店舗の登録に失敗しました");
+  const id = (data as { id: string }).id;
+  await writeDaily(createAdminClient(), id, snapshot).catch(() => undefined);
+  revalidatePath("/stores");
+  return id;
 }
 
 // ── 店舗の検索・確定 ──────────────────────────────
-/** 店舗の候補を検索する。query を省略すると分析済みの店舗名と住所から組み立てる */
+/** 店舗の候補を検索する。query を省略すると登録済みの店舗名と住所から組み立てる */
 export async function searchStoreCandidatesAction(id: string, query?: string): Promise<StoreCandidate[]> {
   const { row } = await owned(id);
   let q = (query ?? "").trim().slice(0, 200);
   if (!q) {
-    const name = row.meo?.self?.name || row.site?.bizName || row.site?.title || "";
-    const addr = row.meo?.self?.address || row.site?.bizAddress || "";
-    q = `${name} ${addr}`.trim();
+    q = `${row.name ?? ""} ${row.meo_store?.address ?? ""}`.trim();
   }
   if (!q) throw new Error("検索する店舗名または住所を入力してください");
   // 設定漏れは利用者の操作では直せないので、入力ミスと区別できる文言にする
@@ -73,14 +116,14 @@ export async function selectStoreAction(id: string, placeId: string) {
 
   const changed = row.meo_place_id !== placeId;
   const { error } = await sb
-    .from("analyses")
-    .update({ meo_place_id: placeId, meo_place_source: "manual", meo_store: snapshot })
+    .from("stores")
+    .update({ meo_place_id: placeId, meo_place_source: "manual", meo_store: snapshot, name: snapshot.name })
     .eq("id", id);
   if (error) throw new Error("店舗の保存に失敗しました");
 
   const admin = createAdminClient();
   // 別の店舗に切り替えたら、前の店舗の推移は混ぜない（別商圏の数字が1本の線に繋がってしまう）
-  if (changed && row.meo_place_id) await admin.from("meo_daily").delete().eq("analysis_id", id);
+  if (changed && row.meo_place_id) await admin.from("meo_daily").delete().eq("store_id", id);
   await writeDaily(admin, id, snapshot).catch(() => undefined);
   refresh(id);
 }
@@ -90,7 +133,7 @@ export async function saveMeoConfigAction(id: string, ai: MeoAiReplySettings, n:
   const { sb } = await owned(id);
   const clip = (a: string[]) => a.map((s) => s.slice(0, 100)).slice(0, 50);
   const { error } = await sb.from("meo_settings").upsert({
-    analysis_id: id,
+    store_id: id,
     ai_reply: {
       keywords: clip(ai.keywords),
       tone: ["polite", "friendly", "formal"].includes(ai.tone) ? ai.tone : "polite",
@@ -108,7 +151,7 @@ export async function saveMeoConfigAction(id: string, ai: MeoAiReplySettings, n:
 export async function saveProfileDraftAction(id: string, d: MeoProfileDraft) {
   const { sb } = await owned(id);
   const { error } = await sb.from("meo_settings").upsert({
-    analysis_id: id,
+    store_id: id,
     profile: {
       description: d.description.slice(0, 750),
       payment_methods: d.paymentMethods.slice(0, 20),
@@ -152,7 +195,7 @@ export async function createPostAction(id: string, p: MeoPostInput) {
   const status = p.status === "scheduled" ? "scheduled" : "draft";
   if (status === "scheduled" && !p.scheduledAt) throw new Error("配信日時を指定してください");
   const { error } = await sb.from("meo_posts").insert({
-    analysis_id: id,
+    store_id: id,
     title,
     body,
     status,
@@ -184,7 +227,7 @@ export async function replyToReviewAction(id: string, reviewId: string, reply: s
   const { error } = await sb
     .from("meo_reviews")
     .update({ reply: text, reply_status: "pending", error_message: null, updated_at: new Date().toISOString() })
-    .eq("analysis_id", id)
+    .eq("store_id", id)
     .eq("id", reviewId);
   if (error) throw new Error("返信の送信に失敗しました");
   refresh(id);
@@ -192,9 +235,9 @@ export async function replyToReviewAction(id: string, reviewId: string, reply: s
 
 export async function draftReplyAction(id: string, reviewId: string) {
   const { sb } = await owned(id);
-  const { data: review } = await sb.from("meo_reviews").select("*").eq("analysis_id", id).eq("id", reviewId).maybeSingle();
+  const { data: review } = await sb.from("meo_reviews").select("*").eq("store_id", id).eq("id", reviewId).maybeSingle();
   if (!review) throw new Error("クチコミが見つかりません");
-  const { data: settings } = await sb.from("meo_settings").select("ai_reply").eq("analysis_id", id).maybeSingle();
+  const { data: settings } = await sb.from("meo_settings").select("ai_reply").eq("store_id", id).maybeSingle();
   const raw = (settings?.ai_reply ?? {}) as Record<string, unknown>;
   const s: MeoAiReplySettings = {
     keywords: Array.isArray(raw.keywords) ? (raw.keywords as string[]) : [],
@@ -209,7 +252,7 @@ export async function draftReplyAction(id: string, reviewId: string) {
 // ── AI検索 ───────────────────────────────────
 export async function getAiSearchStatusAction(id: string) {
   const { sb, row } = await owned(id);
-  const q = defaultQuery(row.meo_store, row.meo?.self?.address ?? row.site?.bizAddress ?? null);
+  const q = defaultQuery(row.meo_store, row.meo_store?.address ?? null);
   const quo = await quota(sb, id);
   return {
     area: q.area,
@@ -231,7 +274,7 @@ export async function runAiSearchAction(id: string, input: { area: string; categ
 
   const created = await createCheck(sb, id, area, category);
   // 自店の名前だけで照合する。分析したサイトのタイトルは使わない（別の会社・製品が「自店が言及された」と数えられるため）
-  const ownNames = [row.meo_store?.name ?? "", row.meo?.self?.name ?? ""].filter((n) => n.trim());
+  const ownNames = [row.meo_store?.name ?? "", row.name ?? ""].filter((n) => n.trim());
   after(async () => {
     await runCheck(createAdminClient(), created.checkId, { store: row.meo_store, ownNames, industry }).catch(() => undefined);
   });
@@ -242,7 +285,7 @@ export async function runAiSearchAction(id: string, input: { area: string; categ
 /** 実行中のチェックの状態だけを読む（画面のポーリング用。全体を読み直すより軽い） */
 export async function aiSearchCheckStatusAction(id: string, checkId: string) {
   const { sb } = await owned(id);
-  const { data } = await sb.from("ai_search_checks").select("status").eq("analysis_id", id).eq("id", checkId).maybeSingle();
+  const { data } = await sb.from("ai_search_checks").select("status").eq("store_id", id).eq("id", checkId).maybeSingle();
   return (data?.status as string | undefined) ?? null;
 }
 
@@ -252,13 +295,13 @@ export async function refreshStoreAction(id: string) {
   if (!row.meo_place_id) throw new Error("店舗が未選択です");
   const snapshot = await buildStoreSnapshot(row.meo_place_id);
   if (!snapshot) throw new Error("店舗の情報を取得できませんでした");
-  await sb.from("analyses").update({ meo_store: snapshot }).eq("id", id);
+  await sb.from("stores").update({ meo_store: snapshot }).eq("id", id);
   refresh(id);
 }
 
 // ── Googleビジネスプロフィール（読み取り＋プロフィール更新。更新は人の承認後のみ。投稿・返信の送信は行わない）──
 async function gbpLinked(sb: Awaited<ReturnType<typeof createClient>>, id: string) {
-  const { data } = await sb.from("analyses").select("meo_gbp_account, meo_gbp_location").eq("id", id).maybeSingle();
+  const { data } = await sb.from("stores").select("meo_gbp_account, meo_gbp_location").eq("id", id).maybeSingle();
   return { account: (data?.meo_gbp_account as string | null) ?? null, location: (data?.meo_gbp_location as string | null) ?? null };
 }
 
@@ -283,7 +326,7 @@ export async function gbpOverviewAction(id: string): Promise<GbpOverview> {
   const conn = await gbpConnectionEmail(user.id);
   if (!conn) return { connected: false, email: null, location: null, reviewCount: 0, error: null };
   const linked = await gbpLinked(sb, id);
-  const { count } = await sb.from("meo_reviews").select("id", { count: "exact", head: true }).eq("analysis_id", id).not("gbp_name", "is", null);
+  const { count } = await sb.from("meo_reviews").select("id", { count: "exact", head: true }).eq("store_id", id).not("gbp_name", "is", null);
   const base = { connected: true, email: conn.email, location: null, reviewCount: count ?? 0 };
   if (!linked.account || !linked.location) return { ...base, error: null };
   try {
@@ -308,14 +351,14 @@ async function syncReviews(id: string, userId: string, account: string, location
   return { fetched: reviews.length, ...r };
 }
 
-/** この分析の店舗として、Google 側の店舗を紐付ける。紐付けたあとクチコミを取り込む */
+/** この店舗として、Google 側の店舗を紐付ける。紐付けたあとクチコミを取り込む */
 export async function gbpLinkLocationAction(id: string, account: string, location: string) {
   const { sb, user } = await owned(id);
   if (!/^accounts\/[0-9]+$/.test(account) || !/^locations\/[0-9]+$/.test(location)) throw new Error("店舗の指定が不正です");
   // 連携したアカウントが実際に管理している店舗だけ紐付けられる（手で書き換えた値は通さない）
   const { locations } = await listAllLocations(await gbpToken(user.id));
   if (!locations.some((l) => l.account === account && l.name === location)) throw new Error("このアカウントで管理している店舗に見つかりません");
-  const { error } = await sb.from("analyses").update({ meo_gbp_account: account, meo_gbp_location: location }).eq("id", id);
+  const { error } = await sb.from("stores").update({ meo_gbp_account: account, meo_gbp_location: location }).eq("id", id);
   if (error) throw new Error("店舗の紐付けに失敗しました");
   refresh(id);
   // 取り込みは紐付けの成否と切り離す（クチコミ API が未有効でも紐付け自体は残す）
@@ -345,12 +388,12 @@ export async function gbpMetricsAction(id: string): Promise<GbpMetrics> {
 
 export async function gbpUnlinkLocationAction(id: string) {
   const { sb } = await owned(id);
-  const { error } = await sb.from("analyses").update({ meo_gbp_account: null, meo_gbp_location: null }).eq("id", id);
+  const { error } = await sb.from("stores").update({ meo_gbp_account: null, meo_gbp_location: null }).eq("id", id);
   if (error) throw new Error("紐付けを解除できませんでした");
   refresh(id);
 }
 
-/** Google との連携そのものを解除する（この人のすべての分析で紐付けも外れる） */
+/** Google との連携そのものを解除する（この人のすべての店舗で紐付けも外れる） */
 export async function gbpDisconnectAction(id: string) {
   const { user } = await owned(id);
   await deleteGbpConnection(user.id);

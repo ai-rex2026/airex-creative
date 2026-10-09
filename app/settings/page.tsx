@@ -27,23 +27,22 @@ export default async function SettingsPage({
   const adConns = await adConnections();
   const snsConns = await snsConnections();
 
-  // MEO運用ページ（テスト中）への入口。MEO分析のうち、Googleの店舗を紐付け済みのものを優先し、
-  // なければ最新のMEO分析へ送る（店舗を紐付けていない通常のレポートには送らない）。どの店舗かを文言に出して取り違えを防ぐ
+  // MEO運用ページ（テスト中）への入口。店舗は分析レポートとは独立している。
+  // Googleの店舗を紐付け済みの店舗が1つだけなら、その店舗へ直接。それ以外は店舗一覧へ。どの店舗かを文言に出して取り違えを防ぐ
   let meoHref: string | null = null;
   let meoStore: string | null = null;
   if (!user.is_anonymous) {
+    meoHref = "/stores";
     const { data: rows } = await sb
-      .from("analyses")
-      .select("id, meo_gbp_location, meo_store")
+      .from("stores")
+      .select("id, name, meo_gbp_location")
       .eq("owner_id", user.id)
-      .eq("status", "done")
-      .or("mode.eq.meo,meo_gbp_location.not.is.null")
       .order("created_at", { ascending: false })
       .limit(20);
-    const pick = (rows ?? []).find((r) => r.meo_gbp_location) ?? (rows ?? [])[0];
-    if (pick?.id) {
-      meoHref = `/analysis/${pick.id}/meo`;
-      meoStore = ((pick.meo_store as { name?: string } | null)?.name ?? "").split(/[|｜]/)[0].trim() || null;
+    const list = rows ?? [];
+    if (list.length === 1) {
+      meoHref = `/stores/${list[0].id}`;
+      meoStore = ((list[0].name as string | null) ?? "").split(/[|｜]/)[0].trim() || null;
     }
   }
 

@@ -9,14 +9,14 @@ import { exchangeGbpCode, gbpRedirectUri, saveGbpConnection } from "@/lib/gbp/oa
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const jar = await cookies();
-  let saved: { state?: string; analysis?: string } | null = null;
+  let saved: { state?: string; store?: string } | null = null;
   try {
     saved = JSON.parse(jar.get("gbp_oauth")?.value ?? "null");
   } catch {
     saved = null;
   }
-  const safeId = saved?.analysis && /^[A-Za-z0-9_-]{1,64}$/.test(saved.analysis) ? saved.analysis : "";
-  const dest = safeId ? `/analysis/${safeId}/meo/settings` : "/settings";
+  const safeId = saved?.store && /^[A-Za-z0-9_-]{1,64}$/.test(saved.store) ? saved.store : "";
+  const dest = safeId ? `/stores/${safeId}/settings` : "/settings";
 
   // 使い終えた state は必ず消す（開始時と同じ path でないと消えない）
   const back = (q: string) => {
