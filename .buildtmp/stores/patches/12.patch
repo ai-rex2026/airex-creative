@@ -12,3 +12,4 @@ index a1f7b6d..8c0e61f 100644
 +            <Link href="/stores" className={`mnav-link${active === "stores" ? " on" : ""}`} onClick={close}>
 +              ⌖ 店舗（MEO運用）
 +            </Link>
+ 

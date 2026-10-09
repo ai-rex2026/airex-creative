@@ -1,0 +1,54 @@
+diff --git a/app/stores/new/page.tsx b/app/stores/new/page.tsx
+new file mode 100644
+index 0000000..8108729
+--- /dev/null
++++ b/app/stores/new/page.tsx
+@@ -0,0 +1,48 @@
++import { redirect } from "next/navigation";
++import { createClient } from "@/lib/supabase/server";
++import { Shell } from "@/components/Shell";
++import type { Industry } from "@/lib/types";
++import { NewStoreForm } from "./NewStoreForm";
++
++export const metadata = { title: "店舗の登録｜AI-REX Studio" };
++
++/**
++ * 店舗の登録。?from=<分析ID> があれば、その分析の店舗名・業種を入力欄の初期値にする（コピーするだけで、以後は独立）。
++ */
++export default async function NewStorePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
++  const sb = await createClient();
++  const {
++    data: { user },
++  } = await sb.auth.getUser();
++  if (!user) redirect("/login?callbackUrl=%2Fstores%2Fnew");
++  if (user.is_anonymous) redirect("/login?mode=signup&callbackUrl=%2Fstores%2Fnew");
++
++  const sp = await searchParams;
++  const fromRaw = Array.isArray(sp.from) ? sp.from[0] : sp.from;
++  const from = fromRaw && /^[A-Za-z0-9_-]{1,64}$/.test(fromRaw) ? fromRaw : "";
++
++  let initialQuery = "";
++  let initialIndustry: Industry = "general";
++  if (from) {
++    // RLS で本人の分析だけが読める
++    const { data } = await sb.from("analyses").select("meo, site, diagnosis").eq("id", from).maybeSingle();
++    if (data) {
++      const meo = data.meo as { self?: { name?: string; address?: string } } | null;
++      const site = data.site as { bizName?: string; bizAddress?: string } | null;
++      initialQuery = `${meo?.self?.name || site?.bizName || ""} ${meo?.self?.address || site?.bizAddress || ""}`.trim();
++      initialIndustry = (data.diagnosis as { industry?: Industry } | null)?.industry ?? "general";
++    }
++  }
++
++  return (
++    <Shell active="stores">
++      <div style={{ maxWidth: 640, margin: "0 auto" }}>
++        <h2 style={{ fontSize: 20 }}>店舗の登録</h2>
++        <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 6 }}>
++          Googleマップ上の店舗を検索して選びます。登録後は、分析レポートとは別の店舗として運用できます。
++        </p>
++        <NewStoreForm initialQuery={initialQuery} initialIndustry={initialIndustry} />
++      </div>
++    </Shell>
++  );
++}
