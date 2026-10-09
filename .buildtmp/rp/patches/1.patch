@@ -1,0 +1,34 @@
+diff --git a/lib/gbp/api.ts b/lib/gbp/api.ts
+index 8e6a4f5..c9656c7 100644
+--- a/lib/gbp/api.ts
++++ b/lib/gbp/api.ts
+@@ -66,3 +66,3 @@ function explain(status: number, body: unknown, label: string): string {
+ 
+-async function gget<T>(url: string, token: string, label: string, write?: { method: "PATCH"; body: unknown }): Promise<T> {
++async function gget<T>(url: string, token: string, label: string, write?: { method: "PATCH" | "PUT" | "DELETE"; body?: unknown }): Promise<T> {
+   let last: Error = new Error(`${label}：呼び出せませんでした`);
+@@ -73,4 +73,4 @@ async function gget<T>(url: string, token: string, label: string, write?: { meth
+         method: write?.method ?? "GET",
+-        headers: { authorization: `Bearer ${token}`, ...(write ? { "content-type": "application/json" } : {}) },
+-        ...(write ? { body: JSON.stringify(write.body) } : {}),
++        headers: { authorization: `Bearer ${token}`, ...(write?.body !== undefined ? { "content-type": "application/json" } : {}) },
++        ...(write?.body !== undefined ? { body: JSON.stringify(write.body) } : {}),
+         signal: AbortSignal.timeout(20000),
+@@ -256,2 +256,17 @@ export async function listReviews(token: string, account: string, location: stri
+ 
++/** クチコミへの返信を投稿する（すでに返信があれば上書き）。review は accounts/{a}/locations/{l}/reviews/{r} */
++export async function putReply(token: string, reviewName: string, comment: string): Promise<void> {
++  if (!/^accounts\/[^/]+\/locations\/[^/]+\/reviews\/[^/]+$/.test(reviewName)) throw new Error("クチコミの指定が不正です");
++  const text = comment.trim();
++  if (!text) throw new Error("返信文が空です");
++  if ([...text].length > 4096) throw new Error("返信文は4096文字までです");
++  await gget<unknown>(`https://mybusiness.googleapis.com/v4/${reviewName}/reply`, token, "返信の投稿", { method: "PUT", body: { comment: text } });
++}
++
++/** 投稿済みの返信を削除する（取り消し）。返信が無いときは Google 側で何も起きない */
++export async function deleteReply(token: string, reviewName: string): Promise<void> {
++  if (!/^accounts\/[^/]+\/locations\/[^/]+\/reviews\/[^/]+$/.test(reviewName)) throw new Error("クチコミの指定が不正です");
++  await gget<unknown>(`https://mybusiness.googleapis.com/v4/${reviewName}/reply`, token, "返信の削除", { method: "DELETE" });
++}
++
+ // ── 日次の指標（Performance API）──────────────

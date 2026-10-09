@@ -1,0 +1,28 @@
+diff --git a/app/stores/[id]/reviews/page.tsx b/app/stores/[id]/reviews/page.tsx
+index cbfedd1..2378798 100644
+--- a/app/stores/[id]/reviews/page.tsx
++++ b/app/stores/[id]/reviews/page.tsx
+@@ -4,3 +4,3 @@ import { useRouter, useSearchParams } from "next/navigation";
+ import { Suspense, useState } from "react";
+-import { replyToReviewAction } from "@/app/meo-actions";
++import { deleteReplyAction, replyToReviewAction } from "@/app/meo-actions";
+ import { MeoPageHeader, useMeo } from "@/components/meo/Workspace";
+@@ -50,2 +50,13 @@ function Reviews() {
+ 
++  const handleDelete = async (reviewId: string) => {
++    setSaveError(null);
++    try {
++      await deleteReplyAction(storeId, reviewId);
++      router.refresh();
++    } catch (e) {
++      setSaveError(e instanceof Error ? e.message : "返信の取り消しに失敗しました。時間をおいて再度お試しください。");
++      throw e;
++    }
++  };
++
+   const reviews = data.reviews;
+@@ -77,3 +88,3 @@ function Reviews() {
+           {visible.map((r) => (
+-            <ReviewCard key={r.id} review={r} storeId={storeId} onReply={handleReply} canSend={!!data.gbpLocationName} />
++            <ReviewCard key={r.id} review={r} storeId={storeId} onReply={handleReply} onDeleteReply={handleDelete} canSend={!!data.gbpLocationName} />
+           ))}
