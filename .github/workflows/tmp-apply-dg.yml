@@ -1,0 +1,30 @@
+name: tmp-apply-dg
+on:
+  push:
+    paths:
+      - '.github/workflows/tmp-apply-dg.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply patches
+        run: |
+          set -e
+          git apply --verbose .buildtmp/dg/patches/1.patch
+      - name: Verify hashes
+        run: sha256sum -c .buildtmp/dg/SHA256SUMS
+      - name: Cleanup and push
+        run: |
+          set -e
+          git rm -rq .buildtmp/dg
+          git rm -q .github/workflows/tmp-apply-dg.yml
+          git config user.name "claude-bot"
+          git config user.email "noreply@anthropic.com"
+          git add -A
+          git commit -m "chore: add temporary Gemini connection diagnostic route (owner only)" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+          git push origin HEAD:main
