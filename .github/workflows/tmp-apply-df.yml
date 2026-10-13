@@ -1,0 +1,30 @@
+name: tmp-apply-df
+on:
+  push:
+    paths:
+      - '.github/workflows/tmp-apply-df.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply patches
+        run: |
+          set -e
+          git apply --verbose .buildtmp/df/patches/1.patch
+      - name: Verify hashes
+        run: sha256sum -c .buildtmp/df/SHA256SUMS
+      - name: Cleanup and push
+        run: |
+          set -e
+          git rm -rq .buildtmp/df
+          git rm -q .github/workflows/tmp-apply-df.yml
+          git config user.name "claude-bot"
+          git config user.email "noreply@anthropic.com"
+          git add -A
+          git commit -m "fix(meo): detect unverified facts in AI-written business descriptions too" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01QtZhyn7JGprXAKzbAXZHW3"
+          git push origin HEAD:main
