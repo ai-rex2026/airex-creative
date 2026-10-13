@@ -2,21 +2,18 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { deleteStoreAction, renameStoreAction } from "@/app/meo-actions";
+import { renameStoreAction } from "@/app/meo-actions";
 import { Btn, ErrorNote } from "@/components/meo/ui";
 
 const inputClass = "h-10 w-full rounded-lg border border-[#E0DBD1] bg-white px-3 text-sm text-[#2E2D29]";
 const msg = (e: unknown, fallback: string) => (e instanceof Error && e.message ? e.message : fallback);
 
-/** 店舗の表示名の変更と、店舗の削除 */
-export function StoreManage({ storeId, storeName, reviewCount, postCount, publishedCount }: { storeId: string; storeName: string; reviewCount: number; postCount: number; publishedCount: number }) {
+/** 店舗の表示名の変更 */
+export function StoreManage({ storeId, storeName }: { storeId: string; storeName: string }) {
   const router = useRouter();
   const [name, setName] = useState(storeName);
   const [renaming, setRenaming] = useState(false);
   const [renamed, setRenamed] = useState(false);
-  const [confirmText, setConfirmText] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const rename = async () => {
@@ -34,21 +31,9 @@ export function StoreManage({ storeId, storeName, reviewCount, postCount, publis
     }
   };
 
-  const remove = async () => {
-    setDeleting(true);
-    setError(null);
-    try {
-      await deleteStoreAction(storeId, confirmText);
-      router.push("/stores");
-    } catch (e) {
-      setError(msg(e, "店舗を削除できませんでした"));
-      setDeleting(false);
-    }
-  };
-
   return (
     <section className="space-y-5 rounded-2xl border border-[#E8E5E0] bg-white p-5">
-      <p className="text-sm font-semibold text-[#2E2D29]">店舗の管理</p>
+      <p className="text-sm font-semibold text-[#2E2D29]">店舗名</p>
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <div className="space-y-2">
@@ -61,29 +46,6 @@ export function StoreManage({ storeId, storeName, reviewCount, postCount, publis
           </Btn>
           {renamed && <span className="text-xs text-[#8B877F]">変更しました</span>}
         </div>
-      </div>
-
-      <div className="space-y-2 border-t border-[#F0EEEA] pt-4">
-        <p className="text-xs font-semibold text-[#A8705A]">店舗の削除</p>
-        <p className="text-xs leading-relaxed text-[#8B877F]">
-          この店舗の記録（クチコミ{reviewCount}件・投稿{postCount}件・実測データ・AI検索の結果・反映履歴）をすべて削除します。元に戻せません。
-          {publishedCount > 0 && `Googleに公開済みの投稿${publishedCount}件と、Google上の返信・プロフィールは削除されず、Googleに残ります。`}
-          Google側の連携（アカウント）は解除されません。
-        </p>
-        {!open ? (
-          <Btn variant="outline" onClick={() => setOpen(true)}>この店舗を削除する…</Btn>
-        ) : (
-          <div className="space-y-2 rounded-xl border border-[#ECD9CE] bg-[#F8F1ED] p-3">
-            <label htmlFor="store-delete-confirm" className="text-xs text-[#2E2D29]">確認のため、店舗名「{storeName}」を入力してください</label>
-            <input id="store-delete-confirm" className={inputClass} value={confirmText} onChange={(e) => setConfirmText(e.target.value)} autoComplete="off" />
-            <div className="flex gap-2">
-              <Btn onClick={remove} disabled={deleting || confirmText.trim() !== storeName.trim()}>
-                {deleting ? "削除中…" : "完全に削除する"}
-              </Btn>
-              <Btn variant="ghost" onClick={() => { setOpen(false); setConfirmText(""); }} disabled={deleting}>やめる</Btn>
-            </div>
-          </div>
-        )}
       </div>
     </section>
   );

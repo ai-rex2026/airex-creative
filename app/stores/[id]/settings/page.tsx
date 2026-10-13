@@ -122,13 +122,7 @@ export default function MeoSettingsPage() {
         </ul>
       </section>
 
-      <StoreManage
-        storeId={storeId}
-        storeName={data.store.name}
-        reviewCount={data.reviews.length}
-        postCount={data.posts.length}
-        publishedCount={data.posts.filter((p) => p.status === "published").length}
-      />
+      <StoreManage storeId={storeId} storeName={data.store.name} />
     </div>
   );
 }

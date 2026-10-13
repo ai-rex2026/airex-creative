@@ -655,7 +655,7 @@ export async function gbpApplyLogAction(id: string): Promise<GbpApplyLogRow[]> {
   }));
 }
 
-// ── 店舗の名前変更・削除 ───────────────────────────────
+// ── 店舗の名前変更 ───────────────────────────────
 /** アプリ内の表示名を変える（Google上の店舗名は変わらない） */
 export async function renameStoreAction(id: string, name: string): Promise<void> {
   const { sb } = await owned(id);
@@ -665,13 +665,4 @@ export async function renameStoreAction(id: string, name: string): Promise<void>
   const { error } = await sb.from("stores").update({ name: n }).eq("id", id);
   if (error) throw new Error("店舗名を変更できませんでした");
   refresh(id);
-}
-
-/** 店舗とその記録（口コミ・投稿・実測・AI検索・反映履歴）を削除する。Google上の公開済み投稿・返信は残る */
-export async function deleteStoreAction(id: string, confirmName: string): Promise<void> {
-  const { sb, row } = await owned(id);
-  if ((confirmName ?? "").trim() !== (row.name ?? "").trim()) throw new Error("入力した店舗名が一致しません");
-  const { error } = await sb.from("stores").delete().eq("id", id);
-  if (error) throw new Error("店舗を削除できませんでした");
-  revalidatePath("/stores");
 }
