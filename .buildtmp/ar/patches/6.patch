@@ -1,0 +1,9 @@
+diff --git a/lib/meo-ops/workspace.ts b/lib/meo-ops/workspace.ts
+index 7665b71..2bfc6bc 100644
+--- a/lib/meo-ops/workspace.ts
++++ b/lib/meo-ops/workspace.ts
+@@ -257,3 +257,3 @@
+   const store = a.meo_store;
+-  const name = store?.name || a.name || "（店舗名未設定）";
++  const name = a.name || store?.name || "（店舗名未設定）";
+ 

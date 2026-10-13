@@ -1,0 +1,6 @@
+5338351c18d7db6f025b76a7e0e3bc87c883d4da8bea8f7b08c4f8fdad9d7fe2  Docs/sql/2026-10-13-apply-log.sql
+8b3d8c9b59d8afe1d59b3a8114bb2aac40be46626867e63a31712db1d288c167  app/stores/[id]/settings/StoreManage.tsx
+1504b45ed9be2dc3b3cf4b9c68d8af05d91c85ac0512fea4dfe4a98f2e58e9a5  app/meo-actions.ts
+d15fdd58424c4c5c0518f4f82aa6d6b100601d259c6934bc6cf243c636a79546  app/stores/[id]/profile/GbpApply.tsx
+3d2b61844f2066181a5c353cc110f45298e1fad3070662526ee7250df6ab32f9  app/stores/[id]/settings/page.tsx
+f2e1a0da3a450f36d0aa26342d329e9f922ed9dbdae135ad382c04c3cc55a9ce  lib/meo-ops/workspace.ts
