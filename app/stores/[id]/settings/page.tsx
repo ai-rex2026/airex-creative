@@ -8,6 +8,7 @@ import { TagInput } from "@/components/meo/parts";
 import { Btn, ErrorNote, Icon, Label, Select, Switch, Textarea, useSaveFeedback } from "@/components/meo/ui";
 import type { MeoAiReplySettings, MeoNotificationSettings } from "@/lib/meo-ops/types";
 import { GbpLink } from "./GbpLink";
+import { StoreManage } from "./StoreManage";
 
 const TONES = [
   { value: "polite", label: "丁寧（標準）" },
@@ -120,6 +121,14 @@ export default function MeoSettingsPage() {
           ))}
         </ul>
       </section>
+
+      <StoreManage
+        storeId={storeId}
+        storeName={data.store.name}
+        reviewCount={data.reviews.length}
+        postCount={data.posts.length}
+        publishedCount={data.posts.filter((p) => p.status === "published").length}
+      />
     </div>
   );
 }

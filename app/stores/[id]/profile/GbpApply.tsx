@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { gbpProfileApplyAction, gbpProfileCurrentAction, gbpProfilePreviewAction, type GbpApplyResult, type GbpProfilePreview } from "@/app/meo-actions";
+import { gbpApplyLogAction, gbpProfileApplyAction, gbpProfileCurrentAction, gbpProfilePreviewAction, type GbpApplyLogRow, type GbpApplyResult, type GbpProfilePreview } from "@/app/meo-actions";
 import { Btn, Checkbox, ErrorNote, GuardNotes } from "@/components/meo/ui";
 import { DAYS, DAY_LABEL, emptyHours, type GbpProfile, type ProfileInput, type ProfileKey, type WeeklyHours } from "@/lib/gbp/profile";
 
@@ -22,6 +22,15 @@ export function GbpApply({ storeId, linked, description, websiteUrl }: { storeId
   const [results, setResults] = useState<GbpApplyResult[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [log, setLog] = useState<GbpApplyLogRow[]>([]);
+
+  const loadLog = useCallback(async () => {
+    try {
+      setLog(await gbpApplyLogAction(storeId));
+    } catch {
+      // 履歴の読み込み失敗は反映操作を妨げない
+    }
+  }, [storeId]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -36,7 +45,8 @@ export function GbpApply({ storeId, linked, description, websiteUrl }: { storeId
 
   useEffect(() => {
     if (linked) void load();
-  }, [linked, load]);
+    void loadLog();
+  }, [linked, load, loadLog]);
 
   const resetPreview = () => {
     setPreview(null);
@@ -79,6 +89,7 @@ export function GbpApply({ storeId, linked, description, websiteUrl }: { storeId
       setPreview(null);
       setApproved(false);
       await load();
+      await loadLog();
     } catch (e) {
       setError(msg(e, "反映に失敗しました。時間をおいて再度お試しください"));
     } finally {
@@ -214,6 +225,36 @@ export function GbpApply({ storeId, linked, description, websiteUrl }: { storeId
             </ul>
           )}
         </>
+      )}
+
+      {log.length > 0 && (
+        <div className="space-y-2 border-t border-[#F0EEEA] pt-4">
+          <p className="text-xs font-semibold text-[#2E2D29]">反映履歴（直近{log.length}件）</p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-left text-xs">
+              <thead className="text-[#8B877F]">
+                <tr>
+                  <th className="py-1.5 pr-3 font-normal">日時</th>
+                  <th className="py-1.5 pr-3 font-normal">項目</th>
+                  <th className="py-1.5 pr-3 font-normal">結果</th>
+                  <th className="py-1.5 pr-3 font-normal">変更前</th>
+                  <th className="py-1.5 font-normal">変更後</th>
+                </tr>
+              </thead>
+              <tbody className="align-top text-[#2E2D29]">
+                {log.map((r) => (
+                  <tr key={r.id} className="border-t border-[#F0EEEA]">
+                    <td className="whitespace-nowrap py-2 pr-3">{new Date(r.at).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                    <td className="whitespace-nowrap py-2 pr-3">{r.label}</td>
+                    <td className={`py-2 pr-3 ${r.ok ? "" : "text-[#A8705A]"}`}>{r.ok ? "反映済み" : `失敗：${r.error ?? ""}`}</td>
+                    <td className="max-w-[180px] whitespace-pre-wrap break-words py-2 pr-3 text-[#6B6862]">{r.before || "（未登録）"}</td>
+                    <td className="max-w-[180px] whitespace-pre-wrap break-words py-2">{r.after}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </section>
   );

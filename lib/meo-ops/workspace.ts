@@ -255,7 +255,7 @@ export async function loadWorkspace(
   const ins = rowToMetrics(metrics.data ?? null);
   const profileDraft = toProfile(settings.data?.profile);
   const store = a.meo_store;
-  const name = store?.name || a.name || "（店舗名未設定）";
+  const name = a.name || store?.name || "（店舗名未設定）";
 
   return {
     store: {
