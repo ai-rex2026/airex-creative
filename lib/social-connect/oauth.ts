@@ -5,7 +5,9 @@ import type { SnsPlatform } from "./platforms";
 /**
  * 公式SNSアカウント連携の OAuth 2.0。認可URLの組み立て・コード交換・トークン更新。
  *
- * - X … OAuth 2.0 + PKCE（confidential client）。スコープ tweet.read users.read offline.access
+ * - X … OAuth 2.0 + PKCE（confidential client）。スコープ tweet.read tweet.write users.read offline.access
+ *   （tweet.write は SNS運用画面から人が確認した投稿を送るため。2026-10-13 追加。以前に連携した
+ *   アカウントは scope に tweet.write が無いので、投稿するには再連携が要る）
  * - TikTok … Login Kit の OAuth 2.0。スコープ user.info.basic,user.info.stats,video.list
  * - Meta（Instagram/Facebook） … Facebook Login for Business の OAuth 2.0（config_id 方式）。
  *   旧来の scope 指定のみの認可URLだと、ページがビジネスポートフォリオ所有の場合に
@@ -61,7 +63,7 @@ export function buildAuthUrl(platform: SnsPlatform, redirectUri: string, state: 
     u.searchParams.set("client_id", env("X_CLIENT_ID"));
     u.searchParams.set("redirect_uri", redirectUri);
     u.searchParams.set("response_type", "code");
-    u.searchParams.set("scope", "tweet.read users.read offline.access");
+    u.searchParams.set("scope", "tweet.read tweet.write users.read offline.access");
     u.searchParams.set("state", state);
     u.searchParams.set("code_challenge", pkceChallenge ?? "");
     u.searchParams.set("code_challenge_method", "S256");

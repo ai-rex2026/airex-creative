@@ -3,8 +3,9 @@
  *
  * lib/ads/platforms.ts の "広告アカウント連携"（運用実績の分析。TIKTOK_APP_ID/X_API_KEY 等）
  * とは別物。こちらは自社／クライアント自身のSNSアカウントを連携して、投稿・動画ごとの
- * エンゲージメント指標（いいね・再生・コメント数など）を公式APIで読むための連携で、
- * 読み取り専用スコープのみを使う（投稿・設定変更はしない）。
+ * エンゲージメント指標（いいね・再生・コメント数など）を公式APIで読むための連携。
+ * X だけは SNS運用画面（/sns）から人が確認した投稿を送るため tweet.write も求める（2026-10-13）。
+ * TikTok・Instagram は読み取りのみ（投稿はコピーして各アプリから行う運用）。
  *
  * ここの id は DB（sns_connections.platform）と URL（/api/social/{id}/start）にそのまま使う。
  */
@@ -24,7 +25,7 @@ export const SNS_PLATFORMS: SnsPlatformDef[] = [
   {
     id: "x",
     name: "X（Twitter）",
-    media: "プロフィール（フォロワー数）と、投稿ごとのいいね・リポスト・返信数",
+    media: "プロフィール（フォロワー数）と、投稿ごとのいいね・リポスト・返信数。SNS運用画面で確認した投稿をここから送れます（投稿の権限は連携時に付きます。以前に連携した場合は再連携が必要）",
     env: ["X_CLIENT_ID", "X_CLIENT_SECRET"],
   },
   {

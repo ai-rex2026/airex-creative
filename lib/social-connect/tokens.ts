@@ -83,8 +83,8 @@ export async function disconnectSns(userId: string, platform: SnsPlatform) {
 }
 
 /** 設定画面表示用。ユーザーの連携済みSNS一覧（トークンは含めない） */
-export async function snsConnectionsFor(userId: string): Promise<{ platform: string; connected_at: string; profile: unknown }[]> {
+export async function snsConnectionsFor(userId: string): Promise<{ platform: string; connected_at: string; profile: unknown; scope: string | null }[]> {
   const admin = createAdminClient();
-  const { data } = await admin.from("sns_connections").select("platform, connected_at, profile").eq("user_id", userId);
+  const { data } = await admin.from("sns_connections").select("platform, connected_at, profile, scope").eq("user_id", userId);
   return data ?? [];
 }

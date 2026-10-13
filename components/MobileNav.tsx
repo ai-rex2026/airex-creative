@@ -50,7 +50,7 @@ export function MobileNav({
   hist,
   account,
 }: {
-  active: "new" | "summary" | "analysis" | "stores" | "settings";
+  active: "new" | "summary" | "analysis" | "stores" | "aio" | "sns" | "settings";
   hist: MobileNavHist[];
   /** メールアドレス。ゲストなら「ゲスト」 */
   account: string;
@@ -103,6 +103,12 @@ export function MobileNav({
             </Link>
             <Link href="/stores" className={`mnav-link${active === "stores" ? " on" : ""}`} onClick={close}>
               ⌖ 店舗（MEO運用）
+            </Link>
+            <Link href="/aio" className={`mnav-link${active === "aio" ? " on" : ""}`} onClick={close}>
+              ◎ AIO（AI検索対策）
+            </Link>
+            <Link href="/sns" className={`mnav-link${active === "sns" ? " on" : ""}`} onClick={close}>
+              ✦ SNS運用
             </Link>
 
             {hist.length > 0 && <div className="mnav-sec">最近の分析</div>}

@@ -317,13 +317,16 @@ async function askGemini(question: string, deadline: number) {
   };
 }
 
-/** 使うエンジン。既定は Gemini（費用が低い）。AI_SEARCH_ENGINE=claude で Claude に固定できる */
+/**
+ * 使うエンジン。既定は Gemini（費用が低い）。AI_SEARCH_ENGINE=claude で Claude に固定できる。
+ * ask() は AIO（lib/aio/run.ts。店舗以外の会社・サービスの実測）からも同じ条件で使う
+ */
 export function preferredEngine(): "gemini" | "claude" {
   if (process.env.AI_SEARCH_ENGINE === "claude") return "claude";
   return hasGemini() ? "gemini" : "claude";
 }
 
-async function ask(question: string, deadline: number): Promise<(Awaited<ReturnType<typeof askClaude>> | Awaited<ReturnType<typeof askGemini>>) & { note: string | null }> {
+export async function ask(question: string, deadline: number): Promise<(Awaited<ReturnType<typeof askClaude>> | Awaited<ReturnType<typeof askGemini>>) & { note: string | null }> {
   let note: string | null = null;
   if (preferredEngine() === "gemini") {
     try {

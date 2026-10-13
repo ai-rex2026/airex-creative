@@ -1,9 +1,32 @@
 {
   "crons": [
-    { "path": "/api/cron/worker", "schedule": "* * * * *" },
-    { "path": "/api/cron/ad-tokens", "schedule": "0 18 * * 1" },
-    { "path": "/api/cron/meo-daily", "schedule": "5 19 * * *" },
-    { "path": "/api/cron/meo-ai-search", "schedule": "*/10 * * * *" },
-    { "path": "/api/cron/meo-ai-search-monthly", "schedule": "10 0 * * *" }
+    {
+      "path": "/api/cron/worker",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/ad-tokens",
+      "schedule": "0 18 * * 1"
+    },
+    {
+      "path": "/api/cron/meo-daily",
+      "schedule": "5 19 * * *"
+    },
+    {
+      "path": "/api/cron/meo-ai-search",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/meo-ai-search-monthly",
+      "schedule": "10 0 * * *"
+    },
+    {
+      "path": "/api/cron/sns-weekly",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/aio-pending",
+      "schedule": "*/10 * * * *"
+    }
   ]
 }

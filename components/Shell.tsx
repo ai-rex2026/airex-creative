@@ -22,7 +22,7 @@ export async function Shell({
   active,
   children,
 }: {
-  active: "new" | "summary" | "analysis" | "stores" | "settings";
+  active: "new" | "summary" | "analysis" | "stores" | "aio" | "sns" | "settings";
   children: React.ReactNode;
 }) {
   const sb = await createClient();
@@ -60,6 +60,8 @@ export async function Shell({
         <Link href="/analysis/new" className={`item${active === "new" ? " on" : ""}`}>✎ 新規分析</Link>
         <Link href="/analysis" className={`item${active === "summary" ? " on" : ""}`}>▤ 分析サマリー</Link>
         <Link href="/stores" className={`item${active === "stores" ? " on" : ""}`}>⌖ 店舗（MEO運用）</Link>
+        <Link href="/aio" className={`item${active === "aio" ? " on" : ""}`}>◎ AIO（AI検索対策）</Link>
+        <Link href="/sns" className={`item${active === "sns" ? " on" : ""}`}>✦ SNS運用</Link>
 
         <div className="sec">
           最近の分析
