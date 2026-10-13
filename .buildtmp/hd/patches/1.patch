@@ -1,0 +1,9 @@
+diff --git a/lib/meo-ops/types.ts b/lib/meo-ops/types.ts
+index a23c45b..a9f401e 100644
+--- a/lib/meo-ops/types.ts
++++ b/lib/meo-ops/types.ts
+@@ -40,2 +40,4 @@
+   hasOpeningHours: boolean;
++  /** 曜日ごとの営業時間（Places の weekdayDescriptions）。古い保存データには無い */
++  openingHours?: string[] | null;
+   location: { latitude: number; longitude: number } | null;
