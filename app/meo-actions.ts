@@ -12,7 +12,22 @@ import { draftDescription, draftPost, draftReply, suggestSearchTerm } from "@/li
 import { MEO_STORE_COLUMNS, rowToReview, type MeoStoreRow } from "@/lib/meo-ops/workspace";
 import { buildAiSearchPrompt, DEFAULT_AI_REPLY_SETTINGS } from "@/lib/meo-ops/logic";
 import { deleteGbpConnection, gbpAccessToken, gbpConnectionEmail } from "@/lib/gbp/oauth";
-import { fetchMetrics, getLocation, getProfile, listAllLocations, listReviews, patchLocation, putReply, deleteReply, type GbpLocation, type GbpMetrics } from "@/lib/gbp/api";
+import {
+  buildPostSummary,
+  createLocalPost,
+  deleteLocalPost,
+  fetchMetrics,
+  getLocation,
+  getProfile,
+  listAllLocations,
+  listReviews,
+  patchLocation,
+  putReply,
+  deleteReply,
+  type GbpLocation,
+  type GbpMetrics,
+  type GbpPostAction,
+} from "@/lib/gbp/api";
 import { checkGuard } from "@/lib/guardrail";
 import { planChanges, PROFILE_KEYS, PROFILE_LABEL, snapshotOf, type GbpProfile, type ProfileChange, type ProfileInput, type ProfileKey } from "@/lib/gbp/profile";
 import { saveReviews } from "@/lib/gbp/sync";
@@ -208,6 +223,62 @@ export async function createPostAction(id: string, p: MeoPostInput) {
   refresh(id);
 }
 
+const POST_ACTION_TYPE: Record<string, GbpPostAction> = { 予約する: "BOOK", 詳細を見る: "LEARN_MORE", 電話する: "CALL" };
+
+/**
+ * 投稿をGoogleに公開する。人が画面で「Googleに公開する」を押したときだけ呼ばれる（予約日時での自動公開はしない）。
+ * 公開前にサーバー側で法令チェックを通し、赤は送らない。Googleへの新規作成は再試行しない（二重投稿を避ける）。
+ * 成功したときだけ published にして、Google側の投稿名を保存する。失敗したときは理由を残して状態は変えない。
+ */
+export async function publishPostAction(id: string, postId: string) {
+  const { sb, user, industry } = await owned(id);
+  const linked = await gbpLinked(sb, id);
+  if (!linked.account || !linked.location) throw new Error("Googleビジネスプロフィールの店舗が未連携のため公開できません。「設定」タブで連携してください");
+  const { data: post } = await sb.from("meo_posts").select("*").eq("store_id", id).eq("id", postId).maybeSingle();
+  if (!post) throw new Error("投稿が見つかりません");
+  if (post.status === "published" || post.gbp_name) throw new Error("この投稿はすでに公開されています");
+
+  const summary = buildPostSummary(String(post.title ?? ""), String(post.body ?? ""));
+  const verdict = await checkGuard([summary], industry);
+  if (verdict.level === "red") throw new Error("法令上問題のある表現が含まれる可能性が高いため、公開できません。指摘に沿って直してください");
+
+  const btn = post.action_button as { label?: string; url?: string } | null;
+  const type = btn ? POST_ACTION_TYPE[btn.label ?? ""] : undefined;
+  const token = await gbpToken(user.id);
+  const now = new Date().toISOString();
+  let name: string;
+  try {
+    name = await createLocalPost(token, linked.account, linked.location, {
+      summary,
+      action: type ? { type, url: btn?.url } : null,
+      imageUrl: (post.image_url as string | null) ?? null,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Googleへの公開に失敗しました";
+    await sb.from("meo_posts").update({ error_message: message, updated_at: now }).eq("store_id", id).eq("id", postId);
+    refresh(id);
+    throw new Error(message);
+  }
+  await sb.from("meo_posts").update({ status: "published", published_at: now, gbp_name: name, error_message: null, updated_at: now }).eq("store_id", id).eq("id", postId);
+  refresh(id);
+}
+
+/** 公開済みの投稿をGoogleから削除する（取り消し）。人が「取り消す」を押したときだけ呼ばれる。投稿は下書きに戻す */
+export async function unpublishPostAction(id: string, postId: string) {
+  const { sb, user, row } = await owned(id);
+  if (!row.meo_gbp_location) throw new Error("Googleビジネスプロフィールの店舗が未連携のため操作できません");
+  const { data: post } = await sb.from("meo_posts").select("id, gbp_name").eq("store_id", id).eq("id", postId).maybeSingle();
+  const name = (post?.gbp_name as string | null) ?? null;
+  if (!post || !name) throw new Error("この投稿はGoogleに公開されたものではありません");
+  await deleteLocalPost(await gbpToken(user.id), name);
+  await sb
+    .from("meo_posts")
+    .update({ status: "draft", published_at: null, gbp_name: null, scheduled_at: null, error_message: null, updated_at: new Date().toISOString() })
+    .eq("store_id", id)
+    .eq("id", postId);
+  refresh(id);
+}
+
 export async function draftPostAction(id: string, theme: string, storeName: string) {
   const { row, industry } = await owned(id);
   const r = await draftPost(row.meo_store, storeName, theme, industry);
@@ -342,7 +413,7 @@ export async function refreshStoreAction(id: string) {
   refresh(id);
 }
 
-// ── Googleビジネスプロフィール（読み取り＋プロフィール更新・返信の公開/取り消し。書き込みは人の承認後のみ。投稿の公開は行わない）──
+// ── Googleビジネスプロフィール（読み取り＋プロフィール更新・返信と投稿の公開/取り消し。書き込みは人の承認後のみ。予約の自動公開は行わない）──
 async function gbpLinked(sb: Awaited<ReturnType<typeof createClient>>, id: string) {
   const { data } = await sb.from("stores").select("meo_gbp_account, meo_gbp_location").eq("id", id).maybeSingle();
   return { account: (data?.meo_gbp_account as string | null) ?? null, location: (data?.meo_gbp_location as string | null) ?? null };

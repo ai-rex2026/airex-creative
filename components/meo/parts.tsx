@@ -303,11 +303,35 @@ const POST_STATUS: Record<MeoPostStatus, { label: string; className: string }> =
   published: { label: "投稿済み", className: "bg-[#F4F3F0] text-[#26251F]" },
 };
 
-export function PostCard({ post }: { post: MeoPost }) {
+export function PostCard({
+  post,
+  onPublish,
+  onUnpublish,
+  canSend = true,
+}: {
+  post: MeoPost;
+  onPublish?: (postId: string) => Promise<void>;
+  onUnpublish?: (postId: string) => Promise<void>;
+  canSend?: boolean;
+}) {
   const status = POST_STATUS[post.status];
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const run = async (fn?: (id: string) => Promise<void>) => {
+    if (!fn) return;
+    setBusy(true);
+    try {
+      await fn(post.id);
+    } catch {
+      // エラー表示は呼び出し側が行う
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
+  };
   const dateLabel =
     post.status === "scheduled" && post.scheduledAt
-      ? `${formatDate(post.scheduledAt)} に配信予定`
+      ? `${formatDate(post.scheduledAt)} を公開予定日として登録（自動では公開されません）`
       : post.status === "published" && post.publishedAt
         ? `${formatDate(post.publishedAt)} に投稿`
         : "日時未設定";
@@ -341,6 +365,55 @@ export function PostCard({ post }: { post: MeoPost }) {
           </span>
         )}
       </div>
+      {post.status !== "published" && onPublish && (
+        <div className="mt-4">
+          {!confirming ? (
+            <Btn size="sm" onClick={() => setConfirming(true)} disabled={!canSend || busy} title={canSend ? undefined : "GBPの店舗と連携すると公開できます"}>
+              <Icon name="send" />
+              内容を確認して公開
+            </Btn>
+          ) : (
+            <div className="rounded-xl border border-[#ECD9CE] bg-[#F8F1ED] p-4">
+              <p className="text-sm font-semibold text-[#8A5340]">この投稿をGoogleマップに公開します</p>
+              <p className="mt-1 text-xs leading-relaxed text-[#6B6862]">
+                公開するとすぐに店舗ページの最新情報として表示されます。公開後は「投稿を取り消す」で削除できます。
+              </p>
+              <div className="mt-3 flex gap-2">
+                <Btn size="sm" onClick={() => run(onPublish)} disabled={busy}>
+                  <Icon name={busy ? "loader" : "send"} />
+                  {busy ? "公開中..." : "Googleに公開する"}
+                </Btn>
+                <Btn size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>
+                  やめる
+                </Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {post.status === "published" && onUnpublish && canSend && (
+        <div className="mt-4">
+          {!confirming ? (
+            <Btn size="sm" variant="ghost" onClick={() => setConfirming(true)} disabled={busy}>
+              <Icon name="x" />
+              投稿を取り消す
+            </Btn>
+          ) : (
+            <div className="rounded-xl border border-[#ECD9CE] bg-[#F8F1ED] p-4">
+              <p className="text-sm font-semibold text-[#8A5340]">公開済みの投稿をGoogleから削除します</p>
+              <p className="mt-1 text-xs leading-relaxed text-[#6B6862]">削除するとGoogleマップ上から投稿が消え、この投稿は下書きに戻ります。</p>
+              <div className="mt-3 flex gap-2">
+                <Btn size="sm" onClick={() => run(onUnpublish)} disabled={busy}>
+                  {busy ? "削除中..." : "Googleから削除する"}
+                </Btn>
+                <Btn size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>
+                  やめる
+                </Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </article>
   );
 }
@@ -488,7 +561,7 @@ export function PostComposer({
           <Btn variant="outline" onClick={() => submit("draft")} disabled={!canSubmit || isSaving}>
             下書き保存
           </Btn>
-          <p className="ml-auto text-xs text-[#A5A198]">GBP連携が完了すると、予約した日時に自動で投稿されます。</p>
+          <p className="ml-auto text-xs text-[#A5A198]">予約日時は目安として記録するだけで、自動では公開されません。公開は投稿カードの「内容を確認して公開」から行います。</p>
         </div>
       </div>
     </div>

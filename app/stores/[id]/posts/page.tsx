@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { createPostAction } from "@/app/meo-actions";
+import { createPostAction, publishPostAction, unpublishPostAction } from "@/app/meo-actions";
 import { MeoPageHeader, useMeo } from "@/components/meo/Workspace";
 import { FilterPills, PostCard, PostComposer } from "@/components/meo/parts";
 import { Btn, ErrorNote, Icon } from "@/components/meo/ui";
@@ -40,6 +40,29 @@ export default function MeoPostsPage() {
   };
 
   // 予約日時（無ければ投稿日時）の新しい順。どちらも無い下書きは末尾に置く
+  const handlePublish = async (postId: string) => {
+    setSaveError(null);
+    try {
+      await publishPostAction(storeId, postId);
+      router.refresh();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "投稿の公開に失敗しました。時間をおいて再度お試しください。");
+      router.refresh();
+      throw e;
+    }
+  };
+
+  const handleUnpublish = async (postId: string) => {
+    setSaveError(null);
+    try {
+      await unpublishPostAction(storeId, postId);
+      router.refresh();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "投稿の取り消しに失敗しました。時間をおいて再度お試しください。");
+      throw e;
+    }
+  };
+
   const time = (p: MeoPost) => p.scheduledAt ?? p.publishedAt ?? "";
   const visible = posts.filter((p) => filter === "all" || p.status === filter).sort((a, b) => time(b).localeCompare(time(a)));
   const counts: Record<Filter, number> = {
@@ -54,7 +77,7 @@ export default function MeoPostsPage() {
       <MeoPageHeader
         icon="megaphone"
         title="投稿管理"
-        description="Googleビジネスプロフィールの最新情報をAIで作成し、予約配信します"
+        description="Googleビジネスプロフィールの最新情報をAIで作成し、内容を確認してから公開します"
         action={
           <Btn onClick={() => setComposing(true)}>
             <Icon name="plus" />
@@ -81,7 +104,7 @@ export default function MeoPostsPage() {
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
           {visible.map((p) => (
-            <PostCard key={p.id} post={p} />
+            <PostCard key={p.id} post={p} onPublish={handlePublish} onUnpublish={handleUnpublish} canSend={!!data.gbpLocationName} />
           ))}
         </div>
       )}
