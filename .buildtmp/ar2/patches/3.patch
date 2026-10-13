@@ -1,0 +1,15 @@
+diff --git a/app/stores/[id]/settings/page.tsx b/app/stores/[id]/settings/page.tsx
+index e39cc75..f1e0ad6 100644
+--- a/app/stores/[id]/settings/page.tsx
++++ b/app/stores/[id]/settings/page.tsx
+@@ -124,9 +124,3 @@
+ 
+-      <StoreManage
+-        storeId={storeId}
+-        storeName={data.store.name}
+-        reviewCount={data.reviews.length}
+-        postCount={data.posts.length}
+-        publishedCount={data.posts.filter((p) => p.status === "published").length}
+-      />
++      <StoreManage storeId={storeId} storeName={data.store.name} />
+     </div>
