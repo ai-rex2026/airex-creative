@@ -127,6 +127,7 @@ export async function draftPost(store: Pick<MeoStoreSnapshot, "name" | "category
 const DESCRIPTION_SYSTEM = `あなたは日本の店舗のGoogleビジネスプロフィール「ビジネスの説明」を書く担当者です。
 
 - 与えられた事実だけで書く。無い実績・数字・受賞歴・価格は書かない
+- 営業時間・定休日・曜日・電話番号・予約方法・無料や割引の有無も、与えられていなければ書かない
 ${JA_ONLY_RULE}
 - 書く対象は「店舗名」の1店舗だけ。ほかの会社名・サービス名・製品名は書かない（事実に書かれていても、その店舗自身のことでなければ使わない）
 - 店舗名は本文に必ず入れる
@@ -153,6 +154,10 @@ export async function draftDescription(
   const description = normalizeJapanese(String(res.description ?? "").trim()).slice(0, 750);
   if (!description) throw new Error("説明文を作れませんでした");
   const verdict = await checkGuard([description], industry);
+  // 店舗情報にない時刻・曜日・金額・割引などが混ざっていないか（AIの作り話の検出）
+  const unverified = findUnverifiedFacts([description], facts.join("\n"));
+  const level = unverified.length > 0 && verdict.level === "green" ? "yellow" : verdict.level;
+  const guard = { level, hits: [...unverified, ...verdict.hits] };
   // 店名が本文に入っていなければ、別の会社の説明になっている疑いがある（画面で警告する）
   const name = store?.name || extra.storeName;
   const tokens = name
@@ -160,7 +165,7 @@ export async function draftDescription(
     .map((t) => t.replace(/^(㈱|（株）|\(株\)|株式会社)/, "").replace(/(株式会社)$/, ""))
     .filter((t) => [...t].length >= 2);
   const nameMissing = tokens.length > 0 && !tokens.some((t) => description.includes([...t].slice(0, 4).join("")));
-  return { description, guard: verdict, nameMissing };
+  return { description, guard, nameMissing };
 }
 
 // ── AI検索で聞く「業種」を、事業内容から考える ─────────────────────
