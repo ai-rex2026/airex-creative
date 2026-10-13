@@ -67,11 +67,45 @@ const POST_SYSTEM = `あなたは日本の店舗のGoogleビジネスプロフ�
 ${JA_ONLY_RULE}
 - 事実を創作しない。与えられていない価格・割引率・期間・実績・受賞歴は書かない
   （具体値が要る箇所は「〇〇円」「〇月〇日まで」のように空欄の記号で残す）
+- 営業時間・定休日・曜日・電話番号・予約方法・無料や割引の有無も、与えられていなければ書かない。
+  営業時間のお知らせでも、時刻や曜日は「〇:〇〇〜〇:〇〇」「〇曜日」のように空欄の記号で残す
 - 「No.1」「必ず」「絶対」「最高」「最安」など根拠の要る表現は使わない
 - タイトルは30文字以内、本文は300文字以内。絵文字は使わない
 - 来店・予約につながる一文で締める
 
 出力: {"title":"タイトル","body":"本文"}`;
+
+// 店舗の事実として与えていないのに本文に出てきた、時刻・曜日・金額・割引・無料などを拾う。
+// 法令チェックは表現の違法性を見るだけで事実の正しさは見ないため、AIが指示を破って作り話を書いたときの検出用。
+const UNVERIFIED_PATTERNS: RegExp[] = [
+  /\d{1,2}\s*[:：]\s*\d{2}/g,
+  /\d{1,2}\s*時(?:\s*\d{1,2}\s*分)?/g,
+  /定休日|年中無休|無休|平日|土日祝日?|土曜日?|日曜日?|祝日/g,
+  /\d[\d,]*\s*円/g,
+  /\d+\s*[%％]|\d+\s*割|半額|無料/g,
+];
+
+export function findUnverifiedFacts(texts: string[], facts: string): GuardHit[] {
+  const out: GuardHit[] = [];
+  const seen = new Set<string>();
+  for (const t of texts) {
+    for (const re of UNVERIFIED_PATTERNS) {
+      for (const m of t.matchAll(re)) {
+        const hit = m[0].trim();
+        if (!hit || seen.has(hit) || facts.includes(hit)) continue;
+        seen.add(hit);
+        out.push({
+          text: hit,
+          reason: "店舗情報にない具体的な内容です。AIが推測で書いた可能性があります",
+          law: "事実確認",
+          suggestion: "事実と違う場合は直すか、「〇:〇〇」のような空欄の記号に置き換えてから公開してください",
+          severity: "medium",
+        });
+      }
+    }
+  }
+  return out.slice(0, 6);
+}
 
 export async function draftPost(store: Pick<MeoStoreSnapshot, "name" | "category" | "address"> | null, storeName: string, theme: string, industry: Industry) {
   const facts = [
@@ -85,7 +119,9 @@ export async function draftPost(store: Pick<MeoStoreSnapshot, "name" | "category
   const body = normalizeJapanese(String(res.body ?? "").trim()).slice(0, 1500);
   if (!title || !body) throw new Error("投稿文を作れませんでした");
   const verdict = await checkGuard([title, body], industry);
-  return { title, body, guard: verdict };
+  const unverified = findUnverifiedFacts([title, body], facts.join("\n"));
+  const level = unverified.length > 0 && verdict.level === "green" ? "yellow" : verdict.level;
+  return { title, body, guard: { level, hits: [...unverified, ...verdict.hits] } };
 }
 
 const DESCRIPTION_SYSTEM = `あなたは日本の店舗のGoogleビジネスプロフィール「ビジネスの説明」を書く担当者です。
