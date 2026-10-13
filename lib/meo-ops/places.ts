@@ -33,7 +33,7 @@ type RawPlace = {
   userRatingCount?: number;
   photos?: unknown[];
   priceLevel?: string;
-  regularOpeningHours?: unknown;
+  regularOpeningHours?: { weekdayDescriptions?: unknown } | null;
   primaryType?: string;
   primaryTypeDisplayName?: { text?: string };
   location?: { latitude: number; longitude: number };
@@ -135,6 +135,16 @@ const DETAIL_FIELDS = [
   "location",
 ].join(",");
 
+/** Places の営業時間（曜日ごとの文字列）。1行60文字・7行までに絞って保存する */
+function weekdayTexts(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const t = v
+    .filter((x): x is string => typeof x === "string" && x.trim() !== "")
+    .map((x) => x.trim().slice(0, 60))
+    .slice(0, 7);
+  return t.length > 0 ? t : null;
+}
+
 export type PlaceDetail = Omit<MeoStoreSnapshot, "competitors" | "meoScore" | "ratingRank" | "reviewRank" | "fetchedAt">;
 
 export async function getPlaceDetails(placeId: string): Promise<PlaceDetail | null> {
@@ -155,6 +165,7 @@ export async function getPlaceDetails(placeId: string): Promise<PlaceDetail | nu
     photoCount: Array.isArray(p.photos) ? p.photos.length : null,
     priceLevel: p.priceLevel ? (PRICE_LEVEL[p.priceLevel] ?? null) : null,
     hasOpeningHours: !!p.regularOpeningHours,
+    openingHours: weekdayTexts(p.regularOpeningHours?.weekdayDescriptions),
     location: p.location ?? null,
   };
 }

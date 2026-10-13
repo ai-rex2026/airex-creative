@@ -38,6 +38,8 @@ export type MeoStoreSnapshot = {
   photoCount: number | null;
   priceLevel: number | null;
   hasOpeningHours: boolean;
+  /** 曜日ごとの営業時間（Places の weekdayDescriptions）。古い保存データには無い */
+  openingHours?: string[] | null;
   location: { latitude: number; longitude: number } | null;
   competitors: MeoCompetitor[];
   meoScore: number | null;

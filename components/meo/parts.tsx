@@ -307,15 +307,18 @@ export function PostCard({
   post,
   onPublish,
   onUnpublish,
+  onDelete,
   canSend = true,
 }: {
   post: MeoPost;
   onPublish?: (postId: string) => Promise<void>;
   onUnpublish?: (postId: string) => Promise<void>;
+  onDelete?: (postId: string) => Promise<void>;
   canSend?: boolean;
 }) {
   const status = POST_STATUS[post.status];
   const [confirming, setConfirming] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
   const [busy, setBusy] = useState(false);
   const run = async (fn?: (id: string) => Promise<void>) => {
     if (!fn) return;
@@ -327,6 +330,7 @@ export function PostCard({
     } finally {
       setBusy(false);
       setConfirming(false);
+      setConfirmDel(false);
     }
   };
   const dateLabel =
@@ -384,6 +388,29 @@ export function PostCard({
                   {busy ? "公開中..." : "Googleに公開する"}
                 </Btn>
                 <Btn size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>
+                  やめる
+                </Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {post.status !== "published" && onDelete && (
+        <div className="mt-2">
+          {!confirmDel ? (
+            <Btn size="sm" variant="ghost" onClick={() => setConfirmDel(true)} disabled={busy}>
+              <Icon name="x" />
+              投稿を削除
+            </Btn>
+          ) : (
+            <div className="rounded-xl border border-[#ECD9CE] bg-[#F8F1ED] p-4">
+              <p className="text-sm font-semibold text-[#8A5340]">この投稿を削除します</p>
+              <p className="mt-1 text-xs leading-relaxed text-[#6B6862]">削除すると元に戻せません。Googleには公開されていないので、マップへの影響はありません。</p>
+              <div className="mt-3 flex gap-2">
+                <Btn size="sm" onClick={() => run(onDelete)} disabled={busy}>
+                  {busy ? "削除中..." : "削除する"}
+                </Btn>
+                <Btn size="sm" variant="ghost" onClick={() => setConfirmDel(false)} disabled={busy}>
                   やめる
                 </Btn>
               </div>

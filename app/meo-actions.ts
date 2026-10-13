@@ -263,6 +263,17 @@ export async function publishPostAction(id: string, postId: string) {
   refresh(id);
 }
 
+/** 公開していない投稿（下書き・予約中）を削除する。公開済みは先に「投稿を取り消す」で下書きに戻してから。人が「削除する」を押したときだけ呼ばれる */
+export async function deletePostAction(id: string, postId: string) {
+  const { sb } = await owned(id);
+  const { data: post } = await sb.from("meo_posts").select("id, status, gbp_name").eq("store_id", id).eq("id", postId).maybeSingle();
+  if (!post) throw new Error("投稿が見つかりません");
+  if (post.status === "published" || post.gbp_name) throw new Error("公開中の投稿は削除できません。先に「投稿を取り消す」でGoogleから削除してください");
+  const { error } = await sb.from("meo_posts").delete().eq("store_id", id).eq("id", postId).is("gbp_name", null);
+  if (error) throw new Error("投稿の削除に失敗しました");
+  refresh(id);
+}
+
 /** 公開済みの投稿をGoogleから削除する（取り消し）。人が「取り消す」を押したときだけ呼ばれる。投稿は下書きに戻す */
 export async function unpublishPostAction(id: string, postId: string) {
   const { sb, user, row } = await owned(id);

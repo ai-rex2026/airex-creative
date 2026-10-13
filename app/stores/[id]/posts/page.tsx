@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { createPostAction, publishPostAction, unpublishPostAction } from "@/app/meo-actions";
+import { createPostAction, deletePostAction, publishPostAction, unpublishPostAction } from "@/app/meo-actions";
 import { MeoPageHeader, useMeo } from "@/components/meo/Workspace";
 import { FilterPills, PostCard, PostComposer } from "@/components/meo/parts";
 import { Btn, ErrorNote, Icon } from "@/components/meo/ui";
@@ -65,6 +65,17 @@ export default function MeoPostsPage() {
     }
   };
 
+  const handleDelete = async (postId: string) => {
+    setSaveError(null);
+    try {
+      await deletePostAction(storeId, postId);
+      reload();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "投稿の削除に失敗しました。時間をおいて再度お試しください。");
+      throw e;
+    }
+  };
+
   // 予約日時（無ければ投稿日時）の新しい順。どちらも無い下書きは末尾に置く
   const time = (p: MeoPost) => p.scheduledAt ?? p.publishedAt ?? "";
   const visible = posts.filter((p) => filter === "all" || p.status === filter).sort((a, b) => time(b).localeCompare(time(a)));
@@ -108,7 +119,7 @@ export default function MeoPostsPage() {
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
           {visible.map((p) => (
-            <PostCard key={p.id} post={p} onPublish={handlePublish} onUnpublish={handleUnpublish} canSend={!!data.gbpLocationName} />
+            <PostCard key={p.id} post={p} onPublish={handlePublish} onUnpublish={handleUnpublish} onDelete={handleDelete} canSend={!!data.gbpLocationName} />
           ))}
         </div>
       )}

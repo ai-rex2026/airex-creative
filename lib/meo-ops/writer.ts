@@ -68,7 +68,8 @@ ${JA_ONLY_RULE}
 - 事実を創作しない。与えられていない価格・割引率・期間・実績・受賞歴は書かない
   （具体値が要る箇所は「〇〇円」「〇月〇日まで」のように空欄の記号で残す）
 - 営業時間・定休日・曜日・電話番号・予約方法・無料や割引の有無も、与えられていなければ書かない。
-  営業時間のお知らせでも、時刻や曜日は「〇:〇〇〜〇:〇〇」「〇曜日」のように空欄の記号で残す
+  営業時間が与えられているときは、その内容のとおりに書く（曜日や時刻を言い換えて変えない）。
+  営業時間のお知らせでも、与えられていなければ、時刻や曜日は「〇:〇〇〜〇:〇〇」「〇曜日」のように空欄の記号で残す
 - 「No.1」「必ず」「絶対」「最高」「最安」など根拠の要る表現は使わない
 - タイトルは30文字以内、本文は300文字以内。絵文字は使わない
 - 来店・予約につながる一文で締める
@@ -107,11 +108,12 @@ export function findUnverifiedFacts(texts: string[], facts: string): GuardHit[] 
   return out.slice(0, 6);
 }
 
-export async function draftPost(store: Pick<MeoStoreSnapshot, "name" | "category" | "address"> | null, storeName: string, theme: string, industry: Industry) {
+export async function draftPost(store: Pick<MeoStoreSnapshot, "name" | "category" | "address" | "openingHours"> | null, storeName: string, theme: string, industry: Industry) {
   const facts = [
     `店舗名: ${store?.name || storeName}`,
     store?.category ? `業種: ${store.category}` : "",
     store?.address ? `所在地: ${store.address}` : "",
+    store?.openingHours?.length ? `営業時間: ${store.openingHours.join(" / ")}` : "",
     `投稿テーマ: ${POST_THEMES[theme] ?? theme}`,
   ].filter(Boolean);
   const res = await askJson<{ title?: string; body?: string }>(POST_SYSTEM, facts.join("\n"), { model: MODEL_FAST, maxTokens: 1200, timeoutMs: 60_000 });
@@ -138,7 +140,7 @@ ${JA_ONLY_RULE}
 出力: {"description":"本文"}`;
 
 export async function draftDescription(
-  store: Pick<MeoStoreSnapshot, "name" | "category" | "address" | "rating" | "reviewCount"> | null,
+  store: Pick<MeoStoreSnapshot, "name" | "category" | "address" | "rating" | "reviewCount" | "openingHours"> | null,
   extra: { storeName: string; paymentMethods: string[]; attributes: string[]; notes: string },
   industry: Industry
 ) {
@@ -146,6 +148,7 @@ export async function draftDescription(
     `店舗名: ${store?.name || extra.storeName}`,
     store?.category ? `業種: ${store.category}` : "",
     store?.address ? `所在地: ${store.address}` : "",
+    store?.openingHours?.length ? `営業時間: ${store.openingHours.join(" / ")}` : "",
     extra.paymentMethods.length ? `決済方法: ${extra.paymentMethods.join("、")}` : "",
     extra.attributes.length ? `設備・属性: ${extra.attributes.join("、")}` : "",
     extra.notes.trim() ? `店舗側が入力した特徴・強み: ${extra.notes.trim().slice(0, 600)}` : "",
