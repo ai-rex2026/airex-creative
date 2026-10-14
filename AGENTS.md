@@ -94,3 +94,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 1 工程 = 1 回の Server Action（`runKitStepAction`）で、工程ごとに `meo_kit_steps` に保存する
 - 自動で回す（`/api/cron/meo-auto`、毎日 10:00 JST）は既定オフ。星の基準と言葉のチェックを満たす返信・投稿だけ送り、それ以外は `meo_auto_log` の確認待ち。外部 API は `AutoDeps` で差し替えて検証できる
 - 業種の書き分け：industry=beauty → 理美容、Google の業種が飲食 → 飲食、それ以外 → 一般（`kindOf`）
+
+## AIO の「運用」（記事づくり・公開・効果と改善）（2026-10-15 追記）
+
+- 画面は `/aio/[id]?tab=site|note|results|ai`。既定は「自社サイト記事」（運用をメインにする方針）。旧来の実測・プロンプト・計画は `tab=ai`
+- 流れ：既存記事のトンマナ分析（`lib/aio/style.ts`。WordPress REST → RSS → 一覧のリンク／note は RSS）→ 記事（`lib/aio/article.ts`）→ 表現チェック＋画像（`lib/aio/images.ts`）→ WordPress は「承認して公開」だけ（`lib/aio/publish.ts`・`wordpress.ts`）／note は貼る形でコピーして人が投稿 → 数字（GSC・GA4＝`fetchPageMetrics`、note＝手入力・CSV）→ 改善案（`lib/aio/review.ts`）
+- 記事づくりは 2 つの Action（`createAioArticleAction` で本文を保存 → `finishAioArticleAction` で表現チェックと未生成の画像だけ）。画像は 1 枚ごとに保存、WordPress へは画像 1 枚ごと・投稿 ID を都度保存して二重投稿しない
+- 画像は Gemini（`GEMINI_IMAGE_MODEL`、既定 gemini-2.5-flash-image）。文字を描かせず、できた画像を AI に見せて文字があれば作り直し、2 回とも文字入りなら使わない。置き場は非公開バケット `aio-images`（画面は署名 URL）
+- WordPress のアプリケーションパスワードは `aio_wp_connections`（本人のセッションからは読めない表）に `sealToken` で暗号化して保存。`AD_TOKEN_ENC_KEY` が無いと連携できない
+- note の非公式 API は使わない（投稿は人。数字は手入力・貼り付け）

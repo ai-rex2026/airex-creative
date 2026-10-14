@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { deleteAioDraftAction, deleteAioProjectAction, generateAioDraftAction, markAioDraftDoneAction, runAioCheckAction } from "@/app/aio-actions";
 import { AioProjectForm } from "@/components/aio/AioProjectForm";
 import { PromptMonitor } from "@/components/aio/PromptMonitor";
@@ -16,7 +16,35 @@ import { AIO_DRAFT_KINDS, type AioCheck, type AioContentPlan, type AioDraft, typ
  * 上: 「今どうか」= AI に実際に聞いた結果（因果は主張しない。結果をそのまま見せる）
  * 下: 「何をすべきか」= 下書き（人が確認してコピーして使う。自動では公開しない）
  */
-export function AioWorkspace({ project, checks, drafts, prompts, gap, plans, quota }: { project: AioProject; checks: AioCheck[]; drafts: AioDraft[]; prompts: AioPrompt[]; gap: AioGapReport | null; plans: AioContentPlan[]; quota: { remaining: number; limit: number } }) {
+export type AioTab = "site" | "note" | "results" | "ai";
+export const AIO_TABS: { key: AioTab; label: string; hint: string }[] = [
+  { key: "site", label: "自社サイト記事", hint: "コラムの記事を作って WordPress で公開" },
+  { key: "note", label: "note", hint: "note の記事を作って貼って投稿" },
+  { key: "results", label: "効果と改善", hint: "記事ごとの数字と改善案" },
+  { key: "ai", label: "AIでの見え方", hint: "AIに聞いたとき挙がるか" },
+];
+
+export function AioWorkspace({
+  project,
+  checks,
+  drafts,
+  prompts,
+  gap,
+  plans,
+  quota,
+  tab = "ai",
+  children,
+}: {
+  project: AioProject;
+  checks: AioCheck[];
+  drafts: AioDraft[];
+  prompts: AioPrompt[];
+  gap: AioGapReport | null;
+  plans: AioContentPlan[];
+  quota: { remaining: number; limit: number };
+  tab?: AioTab;
+  children?: ReactNode;
+}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -83,7 +111,7 @@ export function AioWorkspace({ project, checks, drafts, prompts, gap, plans, quo
       <MeoPageHeader
         icon="bot"
         title={project.name || "（名称未設定）"}
-        description={`AIに「${project.area ? `${project.area}で` : ""}${project.category}を探しています」と聞いたとき、候補に挙がるか`}
+        description={`「${project.area ? `${project.area}で` : ""}${project.category}」を探す人に届く記事をつくり、公開し、数字を見て直す（検索・AI検索の対策）`}
         action={
           <div className="flex gap-2">
             <Btn variant="outline" size="sm" onClick={() => setEditing(true)}>
@@ -125,6 +153,24 @@ export function AioWorkspace({ project, checks, drafts, prompts, gap, plans, quo
         </div>
       </Dialog>
 
+      <nav className="flex gap-1 overflow-x-auto border-b border-[#E8E5E0]">
+        {AIO_TABS.map((t) => (
+          <Link
+            key={t.key}
+            href={`/aio/${project.id}?tab=${t.key}`}
+            scroll={false}
+            className={cn("shrink-0 border-b-2 px-3 pb-2 pt-1 text-sm", tab === t.key ? "border-[#2E2D29] font-semibold text-[#2E2D29]" : "border-transparent text-[#8B877F] hover:text-[#2E2D29]")}
+          >
+            {t.label}
+            <span className="ml-1.5 hidden text-[10px] font-normal text-[#A5A198] lg:inline">{t.hint}</span>
+          </Link>
+        ))}
+      </nav>
+
+      {tab !== "ai" ? (
+        children
+      ) : (
+      <>
       <PromptMonitor project={project} prompts={prompts} checks={checks} remaining={remaining} limit={limit} onRemaining={setRemaining} />
 
       {/* ── 今どうか（探し方での簡易実測） ── */}
@@ -221,9 +267,10 @@ export function AioWorkspace({ project, checks, drafts, prompts, gap, plans, quo
       {/* ── 何をすべきか ── */}
       <Card>
         <SectionTitle>⑤ 下書きを作る（AIに拾われるための文章）</SectionTitle>
+        <p className="mt-1 text-xs text-[#6B6862]">自社サイトの記事と note の記事は、上のタブ「自社サイト記事」「note」で、画像つき・公開まで作れます。</p>
         <p className="mt-1 text-xs text-[#8B877F]">他社の AIO サービスが施策として売っているものを、ここで AI が下書きします。内容を確認して、コピーして各媒体に載せてください（自動では公開しません）。作成と同時に表現チェックを通します</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {AIO_DRAFT_KINDS.filter((k) => !k.recruit || prompts.some((p) => p.active && p.category === "recruit") || drafts.some((d) => d.kind === k.kind)).map((k) => {
+          {AIO_DRAFT_KINDS.filter((k) => k.kind !== "site_article" && k.kind !== "note_article").filter((k) => !k.recruit || prompts.some((p) => p.active && p.category === "recruit") || drafts.some((d) => d.kind === k.kind)).map((k) => {
             const count = drafts.filter((d) => d.kind === k.kind).length;
             const busy = generatingKind === k.kind;
             return (
@@ -256,6 +303,8 @@ export function AioWorkspace({ project, checks, drafts, prompts, gap, plans, quo
             />
           ))}
         </section>
+      )}
+      </>
       )}
     </div>
   );

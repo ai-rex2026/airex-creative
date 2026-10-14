@@ -318,3 +318,139 @@ export async function fetchYoutubeAnalytics(refreshToken: string): Promise<Youtu
     topTrafficSource,
   };
 }
+
+// ── 記事ごとの数字（AIO の運用：コラム記事の効果分析） ─────────────────────
+
+export type PageMetric = {
+  url: string;
+  title: string;
+  clicks: number | null;
+  impressions: number | null;
+  position: number | null;
+  views: number | null;
+  engagementSec: number | null;
+  queries: { query: string; clicks: number; impressions: number; position: number }[];
+};
+
+export type PageMetricsResult = {
+  from: string;
+  to: string;
+  gscSite: string | null;
+  ga4Property: string | null;
+  pages: PageMetric[];
+  notes: string[];
+};
+
+/**
+ * Search Console（ページ別のクリック・表示・順位と、ページ別の上位の検索語）と
+ * GA4（ページ別の閲覧数・エンゲージメント時間）を、記事の置き場（pathPrefix）に絞って取る。
+ * どちらか片方が取れなくても、取れた方は返す
+ */
+export async function fetchPageMetrics(
+  refreshToken: string,
+  siteUrl: string,
+  pathPrefix: string,
+  chosen: { gscSite?: string | null; ga4Property?: string | null } = {}
+): Promise<PageMetricsResult> {
+  const token = await accessToken(refreshToken);
+  const h = { authorization: `Bearer ${token}` };
+  const host = new URL(siteUrl).host.replace(/^www\./, "");
+  const to = new Date(Date.now() - 2 * 864e5); // Search Console は直近2日ぶんが未確定
+  const from = new Date(to.getTime() - 28 * 864e5);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const prefix = pathPrefix && pathPrefix !== "/" ? pathPrefix : "";
+  const notes: string[] = [];
+  const byUrl = new Map<string, PageMetric>();
+  const norm = (u: string) => u.replace(/^https?:\/\/(www\.)?/, "").replace(/[?#].*$/, "").replace(/\/+$/, "");
+  const get = (u: string) => {
+    const k = norm(u);
+    let m = byUrl.get(k);
+    if (!m) {
+      m = { url: u, title: "", clicks: null, impressions: null, position: null, views: null, engagementSec: null, queries: [] };
+      byUrl.set(k, m);
+    }
+    return m;
+  };
+
+  // Search Console
+  let gscSite: string | null = chosen.gscSite ?? null;
+  try {
+    if (!gscSite) {
+      const listed = await fetch("https://searchconsole.googleapis.com/webmasters/v3/sites", { headers: h, signal: AbortSignal.timeout(15000) }).then((r) => r.json());
+      gscSite = ((listed.siteEntry ?? []) as { siteUrl: string }[]).find((s) => s.siteUrl.includes(host))?.siteUrl ?? null;
+    }
+    if (!gscSite) notes.push("Search Console に、このサイトが見つかりませんでした（連携した Google アカウントでサイトの所有者になっているか確認してください）");
+    else {
+      const q = (dimensions: string[], rowLimit: number) =>
+        fetch(`https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(gscSite!)}/searchAnalytics/query`, {
+          method: "POST",
+          headers: { ...h, "content-type": "application/json" },
+          body: JSON.stringify({
+            startDate: fmt(from),
+            endDate: fmt(to),
+            dimensions,
+            rowLimit,
+            ...(prefix ? { dimensionFilterGroups: [{ filters: [{ dimension: "page", operator: "contains", expression: prefix }] }] } : {}),
+          }),
+          signal: AbortSignal.timeout(25000),
+        }).then(async (r) => {
+          const j = await r.json();
+          if (!r.ok) throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+          return (j.rows ?? []) as { keys: string[]; clicks: number; impressions: number; position: number }[];
+        });
+      const [pages, pairs] = await Promise.all([q(["page"], 100), q(["page", "query"], 1000)]);
+      for (const r of pages) {
+        const m = get(r.keys[0]);
+        m.clicks = r.clicks;
+        m.impressions = r.impressions;
+        m.position = +r.position.toFixed(1);
+      }
+      for (const r of pairs) {
+        const m = get(r.keys[0]);
+        m.queries.push({ query: r.keys[1], clicks: r.clicks, impressions: r.impressions, position: +r.position.toFixed(1) });
+      }
+      for (const m of byUrl.values()) m.queries = m.queries.sort((a, b) => b.impressions - a.impressions).slice(0, 10);
+    }
+  } catch (e) {
+    notes.push(`Search Console を読めませんでした：${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // GA4
+  let ga4Property: string | null = chosen.ga4Property ?? null;
+  try {
+    if (!ga4Property) ga4Property = await findGa4Property(h, host);
+    if (!ga4Property) notes.push("GA4 に、このサイトのプロパティが見つかりませんでした");
+    else {
+      const rep = await fetch(`https://analyticsdata.googleapis.com/v1beta/${ga4Property}:runReport`, {
+        method: "POST",
+        headers: { ...h, "content-type": "application/json" },
+        body: JSON.stringify({
+          dateRanges: [{ startDate: fmt(from), endDate: fmt(to) }],
+          dimensions: [{ name: "pagePath" }, { name: "pageTitle" }],
+          metrics: [{ name: "screenPageViews" }, { name: "userEngagementDuration" }, { name: "activeUsers" }],
+          ...(prefix ? { dimensionFilter: { filter: { fieldName: "pagePath", stringFilter: { matchType: "BEGINS_WITH", value: prefix } } } } : {}),
+          orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
+          limit: 100,
+        }),
+        signal: AbortSignal.timeout(25000),
+      }).then(async (r) => {
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error?.message ?? `HTTP ${r.status}`);
+        return j;
+      });
+      const origin = new URL(siteUrl).origin;
+      for (const r of (rep.rows ?? []) as { dimensionValues: { value: string }[]; metricValues: { value: string }[] }[]) {
+        const m = get(`${origin}${r.dimensionValues[0].value}`);
+        const views = Number(r.metricValues[0]?.value ?? 0);
+        const users = Number(r.metricValues[2]?.value ?? 0);
+        m.views = (m.views ?? 0) + views;
+        m.engagementSec = users ? Math.round(Number(r.metricValues[1]?.value ?? 0) / users) : 0;
+        if (!m.title) m.title = r.dimensionValues[1]?.value ?? "";
+      }
+    }
+  } catch (e) {
+    notes.push(`GA4 を読めませんでした：${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  return { from: fmt(from), to: fmt(to), gscSite, ga4Property, pages: [...byUrl.values()], notes };
+}

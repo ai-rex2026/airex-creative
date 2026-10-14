@@ -1,1 +1,0 @@
-lock emoji test: 🔒 end

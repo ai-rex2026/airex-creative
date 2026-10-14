@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { analyzeAioGapAction, generateAioDraftAction, planAioMonthAction, removeAioPlanItemAction, updateAioPlanItemAction } from "@/app/aio-actions";
+import { createAioArticleAction, finishAioArticleAction } from "@/app/aio-content-actions";
 import { SectionTitle } from "@/components/meo/Workspace";
 import { Btn, Card, ErrorNote, Icon, cn } from "@/components/meo/ui";
 import { AIO_DRAFT_KINDS, type AioContentPlan, type AioGapReport, type AioProject } from "@/lib/aio/types";
@@ -50,6 +51,15 @@ export function GapPlan({ project, gap, plans, hasResults }: { project: AioProje
     setDrafting(itemId);
     setError(null);
     try {
+      if (kind === "site_article" || kind === "note_article") {
+        // 自社サイト記事・note は、運用のタブで画像つき・公開まで扱う
+        const it = plan.items.find((i) => i.id === itemId);
+        const channel = kind === "site_article" ? "site" : "note";
+        const articleId = await createAioArticleAction(project.id, channel, it ? { title: it.title, target: it.target, outline: it.outline } : null, { planId: plan.id, itemId });
+        await finishAioArticleAction(articleId).catch(() => undefined);
+        router.push(`/aio/${project.id}?tab=${channel}`);
+        return;
+      }
       await generateAioDraftAction(project.id, kind, { planId: plan.id, itemId });
       router.refresh();
     } catch (e) {
