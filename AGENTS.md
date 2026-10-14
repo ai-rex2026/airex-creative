@@ -85,3 +85,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - `.github/workflows/ci.yml` が push / PR ごとに `tsc --noEmit` と `next build` を通す（落ちたら赤）。lint は既存の過去分エラーがあるため報告のみ
 - デプロイは従来どおり Vercel の GitHub 連携（main への push で本番反映）
+
+## MEO の「やること」キット（2026-10-14 追記・オルコネレックスから移植）
+
+- 元は `ai-osi-uri/orcone-rex-beauty`（理美容）・`orcone-rex-food`（飲食）。MEO の見せ方と中身をオルコネに寄せる方針
+- `lib/meo-ops/kit/` … 工程（steps.ts）・「やること」（plan.ts）・保存と「今の数字」（store.ts）・自動で回す（auto.ts）
+- 画面：店舗ホーム（`/stores/[id]`）の上部が `components/meo/kit/KitHome.tsx`。タブ「自動で回す」（`/stores/[id]/auto`）、店頭QRの口コミ画面（`/review`、ログイン不要）
+- 1 工程 = 1 回の Server Action（`runKitStepAction`）で、工程ごとに `meo_kit_steps` に保存する
+- 自動で回す（`/api/cron/meo-auto`、毎日 10:00 JST）は既定オフ。星の基準と言葉のチェックを満たす返信・投稿だけ送り、それ以外は `meo_auto_log` の確認待ち。外部 API は `AutoDeps` で差し替えて検証できる
+- 業種の書き分け：industry=beauty → 理美容、Google の業種が飲食 → 飲食、それ以外 → 一般（`kindOf`）

@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/aio-monthly",
       "schedule": "0 16 2 * *"
+    },
+    {
+      "path": "/api/cron/meo-auto",
+      "schedule": "0 1 * * *"
     }
   ]
 }
