@@ -1,10 +1,14 @@
 name: db-migrate
 
-# Docs/sql/*.sql を Supabase（本番）に順に適用する。
-# - main への push で Docs/sql 配下が変わったとき、または手動（workflow_dispatch）
+# Docs/sql/*.sql を本番の Supabase（airex-creative / ref quetqiaqobcdtjhbpqek）に順に適用する。
+# - main への push で Docs/sql 配下が変わったとき、または手動（Actions → db-migrate → Run workflow）
 # - 適用済みのファイルは public.schema_migrations_docs に記録し、二度流さない
-# - 各 SQL は冪等に書く決まり（何度流しても壊れない）なので、初回は既存ファイルも全部流れるが安全
-# - 必要な Secret: SUPABASE_DB_URL（Supabase → Project Settings → Database → Connection string（URI、Session pooler 推奨））
+# - SQL は冪等に書く決まり（何度流しても壊れない）
+#
+# 認証は次のどちらか（両方あれば SUPABASE_DB_URL を優先）:
+#   SUPABASE_DB_URL       … Supabase → Connect → Session pooler の URI（パスワード入り）。このDBだけに効くので推奨
+#   SUPABASE_ACCESS_TOKEN … Supabase のアカウント → Access Tokens で発行したトークン（Management API で実行）
+# どちらも無ければ何もせずに失敗する（本番には触らない）。
 
 on:
   push:
@@ -18,6 +22,9 @@ concurrency:
   group: db-migrate
   cancel-in-progress: false
 
+env:
+  PROJECT_REF: quetqiaqobcdtjhbpqek
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
@@ -25,46 +32,70 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check secret
+      - name: Choose connection
+        id: mode
         env:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          if [ -z "$DB_URL" ]; then
-            echo "::error::Secret SUPABASE_DB_URL が未設定です（Settings → Secrets and variables → Actions）"
+          if [ -n "$DB_URL" ]; then echo "mode=psql" >> "$GITHUB_OUTPUT"
+          elif [ -n "$TOKEN" ]; then echo "mode=api" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Secret SUPABASE_DB_URL か SUPABASE_ACCESS_TOKEN を設定してください（Settings → Secrets and variables → Actions）"
             exit 1
           fi
 
       - name: Install psql
+        if: steps.mode.outputs.mode == 'psql'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
 
       - name: Apply pending migrations
         env:
+          MODE: ${{ steps.mode.outputs.mode }}
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           PGCONNECT_TIMEOUT: "15"
         run: |
           set -euo pipefail
-          psql "$DB_URL" -v ON_ERROR_STOP=1 -q -c "
-            create table if not exists public.schema_migrations_docs (
-              filename text primary key,
-              applied_at timestamptz not null default now()
-            );"
-          # CI 導入前に手で流してあったファイルは「適用済み」として記録しておく（Docs/sql/APPLIED_BASELINE.txt）
+
+          # SQL を1回実行して、結果（JSON 文字列 or psql の出力）を標準出力に返す
+          run_sql() {
+            if [ "$MODE" = "psql" ]; then
+              psql "$DB_URL" -v ON_ERROR_STOP=1 -tA -c "$1"
+            else
+              body=$(jq -n --arg q "$1" '{query: $q}')
+              res=$(curl -sS -w '\n%{http_code}' -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+                -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data "$body")
+              code=$(echo "$res" | tail -n1); out=$(echo "$res" | sed '$d')
+              if [ "$code" -ge 300 ]; then echo "::error::Supabase API HTTP $code: $out" >&2; return 1; fi
+              echo "$out"
+            fi
+          }
+          run_file() {
+            if [ "$MODE" = "psql" ]; then psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$1"; else run_sql "$(cat "$1")" > /dev/null; fi
+          }
+          is_applied() {
+            out=$(run_sql "select count(*) from public.schema_migrations_docs where filename = '$1'")
+            echo "$out" | grep -Eq '(^|[^0-9])1([^0-9]|$)'
+          }
+
+          run_sql "create table if not exists public.schema_migrations_docs (filename text primary key, applied_at timestamptz not null default now()); alter table public.schema_migrations_docs enable row level security;" > /dev/null
+
+          # CI 導入前に手で流してあったファイルは「適用済み」として記録しておく
           if [ -f Docs/sql/APPLIED_BASELINE.txt ]; then
-            grep -v '^#' Docs/sql/APPLIED_BASELINE.txt | sed '/^\s*$/d' | while read -r name; do
-              psql "$DB_URL" -v ON_ERROR_STOP=1 -q -c "insert into public.schema_migrations_docs (filename) values ('$name') on conflict do nothing"
+            for name in $(grep -v '^#' Docs/sql/APPLIED_BASELINE.txt | sed '/^\s*$/d'); do
+              run_sql "insert into public.schema_migrations_docs (filename) values ('$name') on conflict do nothing" > /dev/null
             done
           fi
+
           applied=0
           for f in $(ls Docs/sql/*.sql | sort); do
             name=$(basename "$f")
-            done=$(psql "$DB_URL" -tA -c "select 1 from public.schema_migrations_docs where filename = '$name'")
-            if [ "$done" = "1" ]; then
-              echo "skip  $name"
-              continue
-            fi
+            if is_applied "$name"; then echo "skip  $name"; continue; fi
             echo "apply $name"
-            psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$f"
-            psql "$DB_URL" -v ON_ERROR_STOP=1 -q -c "insert into public.schema_migrations_docs (filename) values ('$name') on conflict do nothing"
+            run_file "$f"
+            run_sql "insert into public.schema_migrations_docs (filename) values ('$name') on conflict do nothing" > /dev/null
             applied=$((applied+1))
           done
-          echo "applied: $applied"
+          echo "applied: $applied（$MODE）"
+          echo "### db-migrate: $applied 本を適用（$MODE）" >> "$GITHUB_STEP_SUMMARY"

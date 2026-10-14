@@ -1,0 +1,44 @@
+name: ci
+
+# push / PR ごとに「型チェック」と「本番ビルド」を通す（どちらかが落ちたら赤）。
+# lint は既存コードに過去分のエラーが残っているため、今は報告のみ（失敗にしない）。
+# デプロイ自体は Vercel の GitHub 連携が main への push で行う。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint（報告のみ）
+        continue-on-error: true
+        run: npx eslint .
+
+      - name: Build
+        env:
+          # ビルド時に読まれる公開変数のダミー（実際の接続はしない）
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-dummy
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npx next build

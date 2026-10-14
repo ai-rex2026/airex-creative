@@ -73,5 +73,15 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## DB マイグレーションの CI（2026-10-14 追記）
 
 - `Docs/sql/*.sql` は main への push で `.github/workflows/db-migrate.yml` が Supabase に自動適用する（適用済みは `public.schema_migrations_docs` に記録して二度流さない）。手で SQL Editor に貼る必要はない
-- 必要な Secret: `SUPABASE_DB_URL`（リポジトリの Settings → Secrets → Actions）。未設定だとワークフローはエラーで止まる（本番には何もしない）
+- 必要な Secret（リポジトリの Settings → Secrets and variables → Actions）はどちらか一方:
+  - `SUPABASE_DB_URL` … Supabase → Connect → Session pooler の URI（パスワード入り）。優先して使われる
+  - `SUPABASE_ACCESS_TOKEN` … Supabase のアカウント → Access Tokens（Management API で実行）
+  - どちらも未設定だとワークフローはエラーで止まる（本番には何もしない）
+- 適用中に失敗した SQL は記録されないので、直して push すれば次回そのファイルから再実行される
 - SQL は従来どおり冪等に書く。CI 導入前に手で流したファイルは `Docs/sql/APPLIED_BASELINE.txt` に列挙してあり、初回に適用済み扱いになる
+- 本番 Supabase は ai-rex2 の Org（`vcvdmpyzqybovdgefmmj`）の project ref `quetqiaqobcdtjhbpqek`。Deploy MCP の Supabase PAT からは見えない
+
+## アプリの CI（2026-10-14 追記）
+
+- `.github/workflows/ci.yml` が push / PR ごとに `tsc --noEmit` と `next build` を通す（落ちたら赤）。lint は既存の過去分エラーがあるため報告のみ
+- デプロイは従来どおり Vercel の GitHub 連携（main への push で本番反映）
