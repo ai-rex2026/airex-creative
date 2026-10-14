@@ -4,6 +4,7 @@ import type { Industry } from "../../types";
 import { ask } from "../ai-search";
 import { normalizeJapanese } from "../japanese";
 import type { MeoStoreSnapshot } from "../types";
+import { findPlaceNear, getPlaceDetails } from "../places";
 import { hpbSalonUrl, keywordHits, KIND_LABEL, lawOf, LIMITS, rankOf, readPage, RULES, withCount, writeReviewUrl } from "./text";
 import type {
   AioPack,
@@ -21,6 +22,7 @@ import type {
   ScorePack,
   SeriesPack,
   SeriesPost,
+  Winner,
   WinnersPack,
 } from "./types";
 
@@ -360,8 +362,8 @@ ${c.currentDescription.trim() || "（登録されていない）"}
 export async function stepKit(c: KitCtx): Promise<KitPack> {
   const r = await askJson<{ pop: string[]; talk: string[]; line: string }>(
     `あなたは${KIND_LABEL[c.kind]}の口コミ依頼の文面を書く人です。
-- pop は${c.kind === "beauty" ? "鏡の横やレジに置くカード" : c.kind === "food" ? "卓上POP" : "受付やレジに置くカード"}の文面3案（各60文字以内）。QRコードの横に置く前提
-- talk は${c.kind === "beauty" ? "仕上げ後や会計時" : "会計時やお見送りのとき"}の依頼トーク2案（各80文字以内）。スタッフがそのまま言える口語
+- pop は${c.kind === "beauty" ? "鏡の横やレジに置くカード" : c.kind === "food" ? "卓上POP" : "受付やレジに置くカード"}の文面3案（呄60文字以内）。QRコードの横に置く前提
+- talk は${c.kind === "beauty" ? "仕上げ後や会計時" : "会計時やお見送りのとき"}の依頼トーク2案（呄80文字以内）。スタッフがそのまま言える口語
 - line は LINE／メールで送る依頼文（150文字以内）
 - すべて「率直なご感想をお願いします」型。良い評価・高評価・星5・投稿内容を条件にした特典は絶対に書かない
 ${RULES}
@@ -491,41 +493,113 @@ export async function stepGuard(c: KitCtx): Promise<GuardPack> {
 }
 
 // ── AIが挙げる店の分析 ──────────────────────────────
-export async function stepWinners(c: KitCtx, names: string[], from: WinnersPack["from"]): Promise<WinnersPack> {
-  if (!names.length) throw new Error("比べる店がまだありません。先に「AI検索」タブで測るか、店舗情報を更新して近くの同業を取り込んでください");
+/**
+ * 比べる店ごとに、①Google の登録情報で店を特定（評価・口コミ数・写真・サイトは実測）、②その店のページを直接読む、
+ * ③読めなければその店だけを web 検索で調べる、を別々に行う（1店の失敗で他の店が消えないよう allSettled）。
+ * 以前は3店をまとめて1回の web 検索（検索3回まで）で調べていたため、多くの店が「ページを確認できませんでした」になっていた。
+ */
+export type Rival = { name: string; placeId?: string };
+
+type RivalFacts = { name: string; url: string | null; read: NonNullable<Winner["read"]>; rating: number | null; reviewCount: number | null; text: string };
+
+export type WinnerDeps = {
+  details: typeof getPlaceDetails;
+  find: typeof findPlaceNear;
+  read: typeof readPage;
+  ask: typeof ask;
+  json: typeof askJson;
+};
+const WINNER_DEPS: WinnerDeps = { details: getPlaceDetails, find: findPlaceNear, read: readPage, ask, json: askJson };
+
+const SNS = /instagram\.com|facebook\.com|x\.com|twitter\.com|tiktok\.com|lin\.ee|line\.me/i;
+
+async function researchRival(c: KitCtx, r: Rival, deps: WinnerDeps): Promise<RivalFacts> {
+  const place = r.placeId ? await deps.details(r.placeId) : await deps.find(r.name, c.store?.location ?? null);
+  const name = place?.name || r.name;
+  const facts: string[] = [];
+  if (place) {
+    facts.push(`Googleの登録情報（実測）: 住所 ${place.address ?? "不明"} / 業種 ${place.category ?? "不明"} / 評価 ${place.rating ?? "不明"} / 口コミ ${place.reviewCount ?? "不明"}件 / 写真 ${place.photoCount == null ? "不明" : place.photoCount >= 10 ? "10枚以上" : `${place.photoCount}枚`} / 営業時間の登録 ${place.hasOpeningHours ? "あり" : "なし"} / サイト ${place.websiteUrl ?? "登録なし"}`);
+  }
+  // 相手のページを直接読む（SNS は読めないので除く）
+  const site = place?.websiteUrl && !SNS.test(place.websiteUrl) ? place.websiteUrl : null;
+  if (site) {
+    try {
+      const p = await deps.read(site, { browserUa: true });
+      return { name, url: p.finalUrl, read: "page", rating: place?.rating ?? null, reviewCount: place?.reviewCount ?? null, text: `${facts.join("\n")}\n読んだページ: ${p.finalUrl}（${p.title}）\n${N(p.text).slice(0, 3500)}` };
+    } catch {
+      // 読み込みを弾くサイトもある。下の web 検索に回す
+    }
+  }
+  // その店だけを web 検索で調べる（店名と住所の両方で絞る）
+  const where = place?.address || c.store?.address || "";
+  const sites = c.kind === "beauty" ? "ホットペッパービューティーのサロンページ・公式サイト・Instagram" : c.kind === "food" ? "食べログ・ホットペッパーグルメ・公式サイト・Instagram" : "公式サイト・ポータルサイト・Instagram";
+  try {
+    const a = await deps.ask(
+      `「${name}」（${where}）について、${sites}を探して読み、ページで確認できる事実だけを書いてください：キャッチコピーや紹介文で打ち出していること、主力メニュー・サービスと価格の見せ方、写真や投稿の様子、口コミで多く言われていること。店名と場所の両方が一致するページだけを使い、読んだページの URL を書いてください。見つからなければ「見つからず」とだけ書いてください。`,
+      deadline(110_000)
+    );
+    const t = N(a.text).trim();
+    if (t.length >= 80 && !/^見つからず/.test(t)) {
+      const url = a.cited.find((x) => !/vertexaisearch|google\.com\/(search|url)/.test(x.url))?.url ?? site ?? null;
+      return { name, url, read: "search", rating: place?.rating ?? null, reviewCount: place?.reviewCount ?? null, text: `${facts.join("\n")}\nweb 検索で集めた内容:\n${t.slice(0, 3000)}\n${a.cited.slice(0, 6).map((x) => `- ${x.title} ${x.url}`).join("\n")}` };
+    }
+  } catch {
+    // 検索が取れなくても、Google の登録情報だけで比べられる
+  }
+  if (place) return { name, url: place.mapsUri ?? site, read: "places", rating: place.rating, reviewCount: place.reviewCount, text: facts.join("\n") };
+  return { name, url: null, read: "none", rating: null, reviewCount: null, text: "" };
+}
+
+const READ_LABEL: Record<NonNullable<Winner["read"]>, string> = {
+  page: "相手のページを直接読みました",
+  search: "相手のページを web 検索で確認しました",
+  places: "ページは読めず、Google の登録情報（評価・口コミ数・写真）だけで比べています",
+  none: "この店は Google でも web でも確認できませんでした",
+};
+
+export async function stepWinners(c: KitCtx, rivals: Rival[], from: WinnersPack["from"], deps: WinnerDeps = WINNER_DEPS): Promise<WinnersPack> {
+  if (!rivals.length) throw new Error("比べる店がまだありません。先に「AI検索」タブで測るか、店舗情報を更新して近くの同業を取り込んでください");
+  const settled = await Promise.allSettled(rivals.slice(0, 3).map((r) => researchRival(c, r, deps)));
+  const got: RivalFacts[] = settled.map((s, i) => (s.status === "fulfilled" ? s.value : { name: rivals[i].name, url: null, read: "none" as const, rating: null, reviewCount: null, text: "" }));
+  if (got.every((g) => g.read === "none")) throw new Error("比べる店をGoogleでもwebでも確認できませんでした。時間をおいてもう一度試してください");
+
   const own = (c.kind === "beauty" && c.results.hpbpage?.text) || c.results.scan?.text || "";
-  const where = c.kind === "beauty" ? "ホットペッパービューティーのサロンページ・Googleマップ・公式サイト" : "Googleマップ・口コミサイト・公式サイト";
-  const research = await ask(
-    `${c.store?.address ? `${c.store.address} の近くにある` : ""}次の店について、それぞれの${where}を読み、お客さんや AI に選ばれる理由になっていそうなこと（キャッチ・紹介文の言葉、メニューと価格の見せ方、口コミの数と返信、写真、投稿の続き具合など）を、ページで確認できた事実だけで店ごとに書いてください。店名と地域が合うページだけを使い、確認できなかった店は「確認できず」と書いてください。読んだページの URL も書いてください。
-${names.map((n, i) => `${i + 1}. ${n}`).join("\n")}`,
-    deadline(150_000)
-  );
-  const r = await askJson<{ items: { name: string; url: string; works: string[]; evidence: string }[]; gaps: { point: string; ours: string; theirs: string }[]; actions: { title: string; where: string; detail: string }[] }>(
-    `あなたは${KIND_LABEL[c.kind]}の集客の実務者です。${from === "ai" ? "AIに店名を出さずにおすすめを聞くと、下の店が自店より先に挙がります。" : "下の店は自店の近くの同業です。"}調べた内容をもとに、何が効いているかを特定し、打ち手を出します。
-- items: 店ごとに name、url（調べた内容にある URL。無ければ空）、works（効いていそうなこと2〜4個。調べた内容で確認できた事実だけ）、evidence（どのページで確認したか1文）。確認できなかった店は works を空にし、evidence に「ページを確認できませんでした」
-- gaps: 自店との差を3〜5個。point は何の差か、ours は自店の今（自店のページに無ければ「ページに見当たらない」）、theirs は相手
+  const ownPlace = c.store ? `Googleの登録情報（実測）: 評価 ${c.store.rating ?? "不明"} / 口コミ ${c.store.reviewCount ?? "不明"}件 / 写真 ${c.store.photoCount == null ? "不明" : c.store.photoCount >= 10 ? "10枚以上" : `${c.store.photoCount}枚`} / 営業時間の登録 ${c.store.hasOpeningHours ? "あり" : "なし"}` : "";
+  const r = await deps.json<{ items: { name: string; works: string[] }[]; gaps: { point: string; ours: string; theirs: string }[]; actions: { title: string; where: string; detail: string }[] }>(
+    `あなたは${KIND_LABEL[c.kind]}の集客の実務者です。${from === "ai" ? "AIに店名を出さずにおすすめを聞くと、下の店が自店より先に挙がります。" : "下の店は自店の近くの同業です。"}店ごとに調べた内容をもとに、何が効いているかを特定し、打ち手を出します。
+- items: 下に並べた店と同じ順で、店ごとに name と works（効いていそうなこと2〜4個。その店の調べた内容で確認できた事実だけ。Google の登録情報だけの店は、評価・口コミ数・写真など登録情報から言えることだけ）。何も無い店は works を空に
+- gaps: 自店との差を3〜5個。point は何の差か、ours は自店の今（自店の内容に無ければ「ページに見当たらない」）、theirs は相手（どの店か分かるように）
 - actions: 自店が今月やることを3〜5個。title は動詞で終わる一文、where はどこで（例：Googleビジネスプロフィール → 投稿、${c.kind === "beauty" ? "SALON BOARD → 掲載管理" : "お店のHP"}）、detail は具体的に何をするか。相手の文章をそのまま写させず、自店の事実から書く
-- 相手を悪く書かない。数字は確認できたものだけ
+- 相手を悪く書かない。数字は調べた内容にあるものだけ
 ${RULES}
 ${lawOf(c.kind, c.industry)}`,
     `${facts(c)}
+${ownPlace}
 
-【比べる店を調べた内容】
-${research.text.slice(0, 9000)}
-${research.cited.slice(0, 12).map((x) => `- ${x.title} ${x.url}`).join("\n")}
+【比べる店ごとに調べた内容】
+${got.map((g, i) => `■${i + 1}. ${g.name}\n${g.text || "（確認できず）"}`).join("\n\n").slice(0, 12000)}
 
 【自店の今のページ】
 ${own.slice(0, 4000)}
 
-出力: {"items":[{"name":"","url":"","works":[""],"evidence":""}],"gaps":[{"point":"","ours":"","theirs":""}],"actions":[{"title":"","where":"","detail":""}]}`,
+出力: {"items":[{"name":"","works":[""]}],"gaps":[{"point":"","ours":"","theirs":""}],"actions":[{"title":"","where":"","detail":""}]}`,
     { maxTokens: 5000, timeoutMs: 100_000 }
   );
   return {
     from,
-    items: (r.items ?? []).slice(0, 5).map((x) => ({ name: N(x.name), url: x.url || undefined, works: (x.works ?? []).map(N).filter(Boolean), evidence: N(x.evidence) })),
+    // 店の並び・URL・読めたかどうか・実測の数字はこちらで持っているものを使い、AI には書かせない
+    items: got.map((g, i) => ({
+      name: N(g.name),
+      url: g.url || undefined,
+      works: g.read === "none" ? [] : (r.items?.[i]?.works ?? []).map(N).filter(Boolean),
+      evidence: READ_LABEL[g.read],
+      rating: g.rating,
+      reviewCount: g.reviewCount,
+      read: g.read,
+    })),
     gaps: (r.gaps ?? []).slice(0, 5).map((g) => ({ point: N(g.point), ours: N(g.ours), theirs: N(g.theirs) })),
     actions: (r.actions ?? []).slice(0, 5).map((a) => ({ title: N(a.title), where: N(a.where), detail: N(a.detail) })),
-    note: "web で確認できた範囲の参考です。AIや検索で先に挙がる理由は、ページから読み取れることからの推定です。",
+    note: "評価・口コミ数は Google の登録情報の実測です。「効いていそうなこと」はページから読み取れることからの推定です。",
     at: new Date().toISOString(),
   };
 }
