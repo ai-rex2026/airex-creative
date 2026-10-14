@@ -1,0 +1,70 @@
+name: db-migrate
+
+# Docs/sql/*.sql を Supabase（本番）に順に適用する。
+# - main への push で Docs/sql 配下が変わったとき、または手動（workflow_dispatch）
+# - 適用済みのファイルは public.schema_migrations_docs に記録し、二度流さない
+# - 各 SQL は冪等に書く決まり（何度流しても壊れない）なので、初回は既存ファイルも全部流れるが安全
+# - 必要な Secret: SUPABASE_DB_URL（Supabase → Project Settings → Database → Connection string（URI、Session pooler 推奨））
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Docs/sql/**"
+      - ".github/workflows/db-migrate.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: db-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secret
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "::error::Secret SUPABASE_DB_URL が未設定です（Settings → Secrets and variables → Actions）"
+            exit 1
+          fi
+
+      - name: Install psql
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Apply pending migrations
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGCONNECT_TIMEOUT: "15"
+        run: |
+          set -euo pipefail
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q -c "
+            create table if not exists public.schema_migrations_docs (
+              filename text primary key,
+              applied_at timestamptz not null default now()
+            );"
+          # CI 導入前に手で流してあったファイルは「適用済み」として記録しておく（Docs/sql/APPLIED_BASELINE.txt）
+          if [ -f Docs/sql/APPLIED_BASELINE.txt ]; then
+            grep -v '^#' Docs/sql/APPLIED_BASELINE.txt | sed '/^\s*$/d' | while read -r name; do
+              psql "$DB_URL" -v ON_ERROR_STOP=1 -q -c "insert into public.schema_migrations_docs (filename) values ('$name') on conflict do nothing"
+            done
+          fi
+          applied=0
+          for f in $(ls Docs/sql/*.sql | sort); do
+            name=$(basename "$f")
+            done=$(psql "$DB_URL" -tA -c "select 1 from public.schema_migrations_docs where filename = '$name'")
+            if [ "$done" = "1" ]; then
+              echo "skip  $name"
+              continue
+            fi
+            echo "apply $name"
+            psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+            psql "$DB_URL" -v ON_ERROR_STOP=1 -q -c "insert into public.schema_migrations_docs (filename) values ('$name') on conflict do nothing"
+            applied=$((applied+1))
+          done
+          echo "applied: $applied"

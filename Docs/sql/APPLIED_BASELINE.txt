@@ -1,0 +1,6 @@
+# CI（.github/workflows/db-migrate.yml）を入れる前に、手で適用済みだったファイル。
+# 初回実行時に「適用済み」として記録し、CI からは流さない（すべて冪等なので流れても壊れないが、念のため）。
+2026-10-05-social-scan-lock.sql
+2026-10-06-ad-review.sql
+2026-10-06-public-ads.sql
+2026-10-09-stores.sql

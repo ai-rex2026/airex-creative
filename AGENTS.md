@@ -69,3 +69,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 手順: `github_clone`（dest は連結フォルダ内、例 Drive の `99.個人用作業フォルダ/_airex-creative-work`）→ サンドボックスで `git diff --binary <base> HEAD > patch` → `device_commit_files` で転送 → `device_bash` で `git apply`（`unable to unlink` の warning は無視してよい。削除権限が無いだけで内容は書き換わる）→ 転送した patch は `mv -n` で `.git/` 配下へ退避 → `github_push`
 - 反映前に、`git diff | sha256sum` と `git ls-files --others --exclude-standard | sort | xargs sha256sum | sha256sum` を両側で突き合わせて完全一致を確認する（転記ミスが起きない方法なので、`github_put_files` より安全）
 - 反映後は `git fetch origin main && git diff HEAD origin/main` が空であることを確認する
+
+## DB マイグレーションの CI（2026-10-14 追記）
+
+- `Docs/sql/*.sql` は main への push で `.github/workflows/db-migrate.yml` が Supabase に自動適用する（適用済みは `public.schema_migrations_docs` に記録して二度流さない）。手で SQL Editor に貼る必要はない
+- 必要な Secret: `SUPABASE_DB_URL`（リポジトリの Settings → Secrets → Actions）。未設定だとワークフローはエラーで止まる（本番には何もしない）
+- SQL は従来どおり冪等に書く。CI 導入前に手で流したファイルは `Docs/sql/APPLIED_BASELINE.txt` に列挙してあり、初回に適用済み扱いになる
