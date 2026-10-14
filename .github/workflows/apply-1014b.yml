@@ -1,0 +1,31 @@
+name: apply-1014b
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/apply-1014b.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: apply
+        run: |
+          set -euo pipefail
+          cat .buildtmp/1014b/chunks/chunk-*.b64 | base64 -d | gunzip > /tmp/p.patch
+          echo '0ed7424572b7b3b0c0690358d6a81037d455683a4e7609d37c4dad85e2848345  /tmp/p.patch' | sha256sum -c -
+          git apply /tmp/p.patch
+          git rm -rq .buildtmp .github/workflows/apply-1014b.yml
+          git add -A
+          git config user.name suzuki
+          git config user.email suzuki.yuichiro.libertad@gmail.com
+          git commit -q -F - <<'MSG'
+          fix: データ削除ページの英文でメールアドレス直後の空白が消えるのを修正
+
+          chore: remove temporary push-apply workflow and staging files
+
+          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy
+          MSG
+          git push origin HEAD:main
