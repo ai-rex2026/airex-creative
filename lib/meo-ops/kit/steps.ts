@@ -362,8 +362,8 @@ ${c.currentDescription.trim() || "（登録されていない）"}
 export async function stepKit(c: KitCtx): Promise<KitPack> {
   const r = await askJson<{ pop: string[]; talk: string[]; line: string }>(
     `あなたは${KIND_LABEL[c.kind]}の口コミ依頼の文面を書く人です。
-- pop は${c.kind === "beauty" ? "鏡の横やレジに置くカード" : c.kind === "food" ? "卓上POP" : "受付やレジに置くカード"}の文面3案（呄60文字以内）。QRコードの横に置く前提
-- talk は${c.kind === "beauty" ? "仕上げ後や会計時" : "会計時やお見送りのとき"}の依頼トーク2案（呄80文字以内）。スタッフがそのまま言える口語
+- pop は${c.kind === "beauty" ? "鏡の横やレジに置くカード" : c.kind === "food" ? "卓上POP" : "受付やレジに置くカード"}の文面3案（各60文字以内）。QRコードの横に置く前提
+- talk は${c.kind === "beauty" ? "仕上げ後や会計時" : "会計時やお見送りのとき"}の依頼トーク2案（各80文字以内）。スタッフがそのまま言える口語
 - line は LINE／メールで送る依頼文（150文字以内）
 - すべて「率直なご感想をお願いします」型。良い評価・高評価・星5・投稿内容を条件にした特典は絶対に書かない
 ${RULES}
