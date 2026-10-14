@@ -170,6 +170,51 @@ export async function getPlaceDetails(placeId: string): Promise<PlaceDetail | nu
   };
 }
 
+function toDetail(p: RawPlace): PlaceDetail | null {
+  if (!p.id) return null;
+  return {
+    placeId: p.id,
+    name: p.displayName?.text ?? "",
+    address: p.formattedAddress ?? null,
+    category: p.primaryTypeDisplayName?.text ?? null,
+    primaryType: p.primaryType ?? null,
+    phoneNumber: p.nationalPhoneNumber ?? null,
+    websiteUrl: p.websiteUri ?? null,
+    mapsUri: p.googleMapsUri ?? null,
+    rating: typeof p.rating === "number" ? p.rating : null,
+    reviewCount: typeof p.userRatingCount === "number" ? p.userRatingCount : null,
+    photoCount: Array.isArray(p.photos) ? p.photos.length : null,
+    priceLevel: p.priceLevel ? (PRICE_LEVEL[p.priceLevel] ?? null) : null,
+    hasOpeningHours: !!p.regularOpeningHours,
+    openingHours: weekdayTexts(p.regularOpeningHours?.weekdayDescriptions),
+    location: p.location ?? null,
+  };
+}
+
+/**
+ * 店名から、自店の近く（半径5km に寄せる）の店舗を1つ特定する。AI検索で挙がった店名は表記が揺れるので、
+ * 名前が近いものを優先し、無ければ1件目を使う。取れなければ null。
+ */
+export async function findPlaceNear(name: string, near: { latitude: number; longitude: number } | null): Promise<PlaceDetail | null> {
+  const data = await request<{ places?: RawPlace[] }>(
+    "POST",
+    `${ENDPOINT}/places:searchText`,
+    DETAIL_FIELDS.split(",").map((f) => `places.${f}`).join(","),
+    {
+      textQuery: name,
+      languageCode: "ja",
+      regionCode: "JP",
+      maxResultCount: 5,
+      ...(near ? { locationBias: { circle: { center: near, radius: 5000 } } } : {}),
+    }
+  );
+  const list = (data?.places ?? []).map(toDetail).filter((x): x is PlaceDetail => !!x);
+  if (!list.length) return null;
+  const k = (v: string) => v.normalize("NFKC").replace(/[\s・\-ー()（）]/g, "").toLowerCase();
+  const want = k(name);
+  return list.find((x) => k(x.name).includes(want) || want.includes(k(x.name))) ?? list[0];
+}
+
 /** 半径2km以内の同業（人気順）。自店は除く */
 export async function nearbyCompetitors(detail: PlaceDetail, max = 10): Promise<MeoCompetitor[]> {
   if (!detail.location || !detail.primaryType) return [];
