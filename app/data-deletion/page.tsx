@@ -48,7 +48,7 @@ export default function DataDeletionPage() {
           <p>
             1) In AI-REX, open Settings and click &quot;連携を解除&quot; (Disconnect) for the service. The stored access tokens are deleted immediately.
             2) On Facebook, go to Settings &amp; privacy → Settings → Business integrations (or Apps and websites), select &quot;airex-creative-ads&quot; and remove it.
-            3) To delete all data, including analysis results, email <a href="mailto:info@airex-ad.ai?subject=Data%20deletion%20request">info@airex-ad.ai</a> from
+            3) To delete all data, including analysis results, email <a href="mailto:info@airex-ad.ai?subject=Data%20deletion%20request">info@airex-ad.ai</a>{" "}from
             your registered address with the subject &quot;Data deletion request&quot;. We will verify your identity, delete the data, and confirm by email.
           </p>
         </section>
