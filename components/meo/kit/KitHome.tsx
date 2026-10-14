@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   addPostDraftAction,
@@ -26,21 +26,21 @@ import { Qr } from "./Qr";
 /**
  * MEO のホーム上部（オルコネレックスの作り）。
  * URL を入れるだけで、上に「今の数字」、その下に「やること」が並び、各項目を開くと「今 → こう変える → なぜ」と貼る文章が出る。
- * 見せ方はオルコネの管理画面に合わせて「直すところ／集客スコア／AI・マップでの見え方／毎朝やること／ほかにできること」に分ける。
+ * 画面は「お店が何をするか」で3つに分け、同じものを2か所に出さない（重なり無し・漏れ無し）。
+ * - 今の状態 … 見るだけ（採点の内訳・AIとマップでの見え方・先に挙がる店との差）。直し方はここに書かない
+ * - 直すところ … 1回やれば済むこと（文章の差し替え・プロフィール・QR・よくある質問 など）
+ * - 続けること … 毎日〜毎月くり返すこと（口コミ返信・週1投稿 など）。自動で回せるものはここで設定状況を出す
+ * 一番上の「今の数字」は3つ共通の見出しで、各欄は数字の中身（理由）だけを出す。
  */
 
-type Sec = "fix" | "score" | "seen" | "auto" | "more";
-const SECTIONS: [Sec, string][] = [
-  ["fix", "直すところ"],
-  ["score", "集客スコア"],
-  ["seen", "AI・マップでの見え方"],
-  ["auto", "毎朝やること"],
-  ["more", "ほかにできること"],
+type Sec = "now" | "fix" | "keep";
+const SECTIONS: [Sec, string, string][] = [
+  ["now", "今の状態", "見るだけ"],
+  ["fix", "直すところ", "1回やれば済む"],
+  ["keep", "続けること", "毎日〜毎月"],
 ];
-/** すぐ直すもの（「直すところ」に出す） */
-const MAIN = new Set(["hpb-catch", "hpb-intro", "hpb-coupon", "gbp-desc", "greviews", "gbp-profile", "gbp-menu", "series", "gbp-posts", "kit"]);
-/** 一覧に出さないもの（別の欄で出す） */
-const HIDE = new Set(["winners", "measure"]);
+/** 「今の状態」で見せるもの（やることの一覧には出さない） */
+const LOOK = new Set(["aio-ask", "winners", "measure", "guard"]);
 
 type Patch = <K extends "hpb" | "meo" | "kit" | "coupon" | "aio" | "series">(step: K, value: NonNullable<KitResults[K]>) => void;
 
@@ -56,7 +56,10 @@ export function KitHome({ storeId, data }: { storeId: string; data: KitData }) {
   }
   const [running, setRunning] = useState<{ steps: { id: KitStepId; label: string; progress: string }[]; at: number } | null>(null);
   const [runErrors, setRunErrors] = useState<Record<string, string>>({});
-  const [sec, setSec] = useState<Sec>("fix");
+  const sp = useSearchParams();
+  const qsSec = sp?.get("sec");
+  const [sec, setSec] = useState<Sec>(qsSec === "now" || qsSec === "keep" ? qsSec : "fix");
+  const openId = sp?.get("open") ?? null;
   const [plan, setPlan] = useState<PlanState>(data.plan);
 
   const failed = Object.entries(data.steps).filter(([k, v]) => v?.status === "failed" && k !== "winners" && k !== "series");
@@ -102,9 +105,11 @@ export function KitHome({ storeId, data }: { storeId: string; data: KitData }) {
   if (!hasKit) return <Entry storeId={storeId} data={data} errors={runErrors} onRun={(input) => runAll(input)} />;
 
   const pending = ws.checklist.filter((c) => !c.done).length;
-  const items = buildPlan(results, data.kind, { unreplied: data.unrepliedReviews, profilePending: pending }).filter((i) => !HIDE.has(i.id));
-  const main = items.filter((i) => MAIN.has(i.id));
-  const more = items.filter((i) => !MAIN.has(i.id));
+  const items = buildPlan(results, data.kind, { unreplied: data.unrepliedReviews, profilePending: pending }).filter((i) => !LOOK.has(i.id));
+  const once = items.filter((i) => !i.repeat);
+  const keep = items.filter((i) => !!i.repeat);
+  const left = (list: PlanItem[]) => list.filter((i) => (plan[i.id] ?? "todo") === "todo").length;
+  const count: Record<Sec, number> = { now: 0, fix: left(once), keep: left(keep) + data.pendingCount };
   const ctx = { storeId, data, results, patch, refresh: () => router.refresh() };
 
   return (
@@ -131,7 +136,7 @@ export function KitHome({ storeId, data }: { storeId: string; data: KitData }) {
       )}
 
       <div className="flex flex-wrap gap-2">
-        {SECTIONS.map(([id, label]) => (
+        {SECTIONS.map(([id, label, sub]) => (
           <button
             key={id}
             type="button"
@@ -139,33 +144,39 @@ export function KitHome({ storeId, data }: { storeId: string; data: KitData }) {
             className={cn("rounded-full px-3.5 py-1.5 text-xs font-semibold", sec === id ? "bg-[#2E2D29] text-white" : "bg-[#F4F3F0] text-[#6B6862] hover:bg-[#ECEAE5]")}
           >
             {label}
-            {id === "auto" && data.pendingCount > 0 && <span className="ml-1 rounded-full bg-[#C9A84C] px-1.5 text-[10px] text-[#2E2D29]">{data.pendingCount}</span>}
+            <span className={cn("ml-1 font-normal", sec === id ? "text-[#D9D4CA]" : "text-[#A5A198]")}>{sub}</span>
+            {count[id] > 0 && <span className="ml-1.5 rounded-full bg-[#C9A84C] px-1.5 text-[10px] text-[#2E2D29]">{count[id]}</span>}
           </button>
         ))}
       </div>
 
-      {sec === "fix" && (
-        <div className="space-y-2">
-          <p className="text-xs text-[#8B877F]">上から順に直してください。項目を押すと、今の文章と直した文章が開きます。直して載せたら、集客スコアの「採点し直す」で点数が変わります。</p>
-          {main.map((i, n) => (
-            <PlanCard key={i.id} item={i} n={n} state={plan[i.id] ?? "todo"} onState={(v) => setItem(i.id, v)} ctx={ctx} />
-          ))}
-        </div>
-      )}
-      {sec === "score" && <ScoreView ctx={ctx} />}
-      {sec === "seen" && <SeenView ctx={ctx} />}
-      {sec === "auto" && <AutoSummary storeId={storeId} data={data} />}
-      {sec === "more" && (
-        <div className="space-y-2">
-          {more.map((i, n) => (
-            <PlanCard key={i.id} item={i} n={n} state={plan[i.id] ?? "todo"} onState={(v) => setItem(i.id, v)} ctx={ctx} />
-          ))}
+      {sec === "now" && (
+        <div className="space-y-4">
+          <ScoreView ctx={ctx} />
+          <SeenView ctx={ctx} />
           <Fold title="お店の情報" sub="ツールが読み取った内容（文章はここから作っています）">
             <DiagnoseView results={results} />
           </Fold>
           <Fold title="読み取るページを変える" sub="URL・補足・ホットペッパーの URL を直して作り直す">
             <InputForm data={data} onRun={(input) => runAll(input)} submitLabel="この内容で作り直す" />
           </Fold>
+        </div>
+      )}
+      {sec === "fix" && (
+        <div className="space-y-2">
+          <p className="text-xs text-[#8B877F]">1回やれば済むことです。上から順に直してください。項目を押すと、今の文章と直した文章が開きます。直して載せたら「今の状態」で採点し直すと点数が変わります。</p>
+          <GuardBanner ctx={ctx} />
+          {once.map((i, n) => (
+            <PlanCard key={i.id} item={i} n={n} state={plan[i.id] ?? "todo"} onState={(v) => setItem(i.id, v)} ctx={ctx} initialOpen={openId === i.id} />
+          ))}
+        </div>
+      )}
+      {sec === "keep" && (
+        <div className="space-y-2">
+          <AutoSummary storeId={storeId} data={data} />
+          {keep.map((i, n) => (
+            <PlanCard key={i.id} item={i} n={n} state={plan[i.id] ?? "todo"} onState={(v) => setItem(i.id, v)} ctx={ctx} initialOpen={openId === i.id} auto={autoTag(i.id, data)} />
+          ))}
         </div>
       )}
     </div>
@@ -287,8 +298,15 @@ function Numbers({ data }: { data: KitData }) {
 }
 
 // ── やることのカード ──────────────────────────────
-function PlanCard({ item, n, state, onState, ctx }: { item: PlanItem; n: number; state: "todo" | "done" | "skip"; onState: (v: "todo" | "done" | "skip") => void; ctx: Ctx }) {
-  const [open, setOpen] = useState(false);
+function autoTag(id: string, data: KitData): string | null {
+  if (id === "greviews") return data.auto.replies ? "自動：返信文を毎日作る" : "自動にできます";
+  if ((id === "gbp-posts" || id === "series") && data.kind !== "beauty") return data.auto.posts ? "自動：週1本作る" : "自動にできます";
+  if (id === "gbp-posts" && data.kind === "beauty") return data.auto.posts ? "自動：週1本作る" : "自動にできます";
+  return null;
+}
+
+function PlanCard({ item, n, state, onState, ctx, initialOpen = false, auto = null }: { item: PlanItem; n: number; state: "todo" | "done" | "skip"; onState: (v: "todo" | "done" | "skip") => void; ctx: Ctx; initialOpen?: boolean; auto?: string | null }) {
+  const [open, setOpen] = useState(initialOpen);
   return (
     <div className={cn("rounded-2xl border bg-white", open ? "border-[#D9CFC1]" : "border-[#E8E5E0]", state === "done" && "opacity-70")}>
       <div className="flex cursor-pointer items-start gap-3 p-4" onClick={() => setOpen((o) => !o)}>
@@ -299,6 +317,7 @@ function PlanCard({ item, n, state, onState, ctx }: { item: PlanItem; n: number;
           <p className={cn("text-sm font-semibold text-[#2E2D29]", state === "done" && "line-through")}>
             {item.title}
             {item.repeat && <span className="ml-2 rounded-full bg-[#F4F3F0] px-2 py-0.5 text-[10px] font-normal text-[#6B6862]">{item.repeat}</span>}
+            {auto && <span className={cn("ml-1.5 rounded-full px-2 py-0.5 text-[10px] font-normal", auto.startsWith("自動：") ? "bg-[#E8F2EC] text-[#2F6B4A]" : "bg-[#FBF5E6] text-[#8A6A1E]")}>{auto}</span>}
           </p>
           <p className="mt-0.5 text-xs text-[#8B877F]">
             {item.where}　約{item.minutes}分
@@ -473,8 +492,31 @@ function ItemBody({ item, ctx }: { item: PlanItem; ctx: Ctx }) {
           <p className="text-[11px] text-[#A5A198]">サイトの &lt;head&gt; か本文の最後に貼ります。制作会社にこのままお渡しください。</p>
         </div>
       ) : null;
-    case "guard":
-      return <GuardView ctx={ctx} />;
+    case "score-fix":
+      return r.score ? (
+        <ul className="space-y-2">
+          {[...r.score.items].filter((x) => x.score < 80 && x.fix).sort((a, b) => a.score - b.score).map((x) => (
+            <li key={x.label} className="rounded-xl border border-[#E8E5E0] p-3">
+              <p className="text-sm font-semibold text-[#2E2D29]">
+                {x.label}<span className="ml-2 text-xs font-normal text-[#8B877F]">{x.score}点</span>
+              </p>
+              <p className="mt-1 text-sm text-[#8A5340]">→ {x.fix}</p>
+            </li>
+          ))}
+        </ul>
+      ) : null;
+    case "winners-actions":
+      return r.winners ? (
+        <ol className="space-y-2">
+          {r.winners.actions.map((a, i) => (
+            <li key={i} className="rounded-lg bg-[#FAF9F7] p-2.5 text-sm">
+              <p className="font-semibold text-[#2E2D29]">{i + 1}. {a.title}</p>
+              <p className="text-xs text-[#8B877F]">{a.where}</p>
+              <p className="mt-0.5 text-xs text-[#6B6862]">{a.detail}</p>
+            </li>
+          ))}
+        </ol>
+      ) : null;
     default:
       return null;
   }
@@ -735,14 +777,17 @@ function KitView({ ctx }: { ctx: Ctx }) {
           })}
         </div>
       )}
-      <p className="text-[11px] leading-relaxed text-[#A5A198]">
-        QRを読むと、お客様のスマホで口コミ画面が開きます。どの評価の方にも Google への道筋を出し、星3以下の方には「お店に直接伝える」を先に出します（評価によって Google への案内を隠すことはしません）。
+      <div className="rounded-xl bg-[#FAF9F7] p-3 text-xs leading-relaxed text-[#6B6862]">
+        <p>
+          QRを読むと、お客様のスマホで口コミ画面（ログイン不要）が開きます。星を選んでもらい、どの評価の方にも Google への案内を出します。星3以下の方には「お店に直接伝える」を先に出し、その下に Google への案内も残します（評価によって Google への案内を隠すことはしません）。「お店に直接伝える」は上のメールを入れたときだけ出ます。
+        </p>
         {origin && (
-          <a href={`${origin}/review?${pageUrl.toString()}`} target="_blank" rel="noreferrer" className="ml-1 underline">
-            口コミ画面を開いてみる
+          <a href={`${origin}/review?${pageUrl.toString()}`} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 font-semibold text-[#2E2D29] underline">
+            お客様に見える口コミ画面を開いてみる
+            <Icon name="arrowUpRight" className="h-3.5 w-3.5" />
           </a>
         )}
-      </p>
+      </div>
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-2">
           <SectionTitle>POP の文面</SectionTitle>
@@ -805,12 +850,13 @@ function AioAsk({ ctx }: { ctx: Ctx }) {
   );
 }
 
-function GuardView({ ctx }: { ctx: Ctx }) {
+/** 言葉のチェック。項目にはせず、注意があるときだけ「直すところ」の先頭に出す */
+function GuardBanner({ ctx }: { ctx: Ctx }) {
   const g = ctx.results.guard;
   if (!g) return null;
-  if (!g.hits.length) return <p className="text-sm text-[#2F6B4A]">{g.checked}か所の文章を確かめました。注意が要る言葉は見つかりませんでした。</p>;
+  if (!g.hits.length) return <p className="text-xs text-[#2F6B4A]">下の文章は {g.checked}か所とも言葉のチェック済みです（注意が要る言葉はありませんでした）。</p>;
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 rounded-2xl border border-[#ECD9CE] bg-white p-4">
       <p className="text-xs text-[#8B877F]">{g.checked}か所の文章を確かめ、{g.hits.length}件の注意が見つかりました。載せる前に言い換えてください。</p>
       {g.hits.map((h, i) => (
         <div key={i} className="rounded-xl border border-[#ECD9CE] bg-[#F8F1ED] p-3 text-xs leading-relaxed text-[#6B6862]">
@@ -849,8 +895,8 @@ function ScoreView({ ctx }: { ctx: Ctx }) {
     <Card>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <SectionTitle>集客スコア</SectionTitle>
-          <p className="mt-1 text-xs text-[#8B877F]">今のページを評価の基準ごとに 100点満点で採点し、点の低いところから直すところを出しています{s && `（${s.source}・${new Date(s.at).toLocaleDateString("ja-JP")}）`}</p>
+          <SectionTitle>集客スコアの内訳</SectionTitle>
+          <p className="mt-1 text-xs text-[#8B877F]">基準ごとの点数と理由です{s && `（${s.source}・${new Date(s.at).toLocaleDateString("ja-JP")}）`}。80点に届かない基準の直し方は「直すところ」に入れています</p>
         </div>
         <Btn size="sm" variant="outline" onClick={rerun} disabled={busy}>
           {busy ? <Icon name="loader" /> : <Icon name="refresh" className="h-3.5 w-3.5" />}
@@ -860,12 +906,7 @@ function ScoreView({ ctx }: { ctx: Ctx }) {
       {error && <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>}
       {s ? (
         <>
-          <div className="mt-4 flex items-end gap-4">
-            <p className="disp text-5xl font-bold text-[#2E2D29]">{s.total}</p>
-            <p className="pb-1 text-sm text-[#8B877F]">/ 100点</p>
-            <span className="mb-1 rounded-lg bg-[#2E2D29] px-3 py-1 text-lg font-bold text-white">{s.rank}</span>
-          </div>
-          <p className="mt-2 text-sm text-[#6B6862]">{s.advice}</p>
+          <p className="mt-3 text-sm text-[#6B6862]">{s.advice}</p>
           <div className="mt-4 space-y-3">
             {[...s.items].sort((a, b) => a.score - b.score).map((it) => (
               <div key={it.label}>
@@ -879,7 +920,6 @@ function ScoreView({ ctx }: { ctx: Ctx }) {
                   <div className={cn("h-full rounded-full", it.score >= 80 ? "bg-[#2F6B4A]" : it.score >= 50 ? "bg-[#C9A84C]" : "bg-[#B5523B]")} style={{ width: `${Math.max(3, it.score)}%` }} />
                 </div>
                 <p className="mt-1 text-xs text-[#6B6862]">{it.reason}</p>
-                {it.score < 80 && it.fix && <p className="text-xs text-[#8A5340]">→ {it.fix}</p>}
               </div>
             ))}
           </div>
@@ -926,17 +966,19 @@ function SeenView({ ctx }: { ctx: Ctx }) {
   return (
     <div className="space-y-4">
       <Card>
-        <SectionTitle>AIに聞いたとき</SectionTitle>
+        <SectionTitle>AIとマップでの見え方</SectionTitle>
         {last ? (
           <div className="mt-2 space-y-1 text-sm">
-            <p className="text-[#8B877F]">「{last.prompt}」（{new Date(last.executedAt).toLocaleDateString("ja-JP")}）</p>
-            <p className={last.mentioned ? "text-[#2F6B4A]" : "text-[#B5523B]"}>
-              {last.mentioned ? `このお店は${last.rank ?? "?"}番目に挙がりました。` : "このお店は挙がりませんでした。"}
-              {last.listedStores.length > 0 && <span className="ml-1 text-xs text-[#8B877F]">{last.mentioned ? "先に挙がった店" : "代わりに挙がった店"}：{last.listedStores.slice(0, 3).join("、")}</span>}
-            </p>
+            <p className="text-[#8B877F]">店名を出さずに「{last.prompt}」と聞いたとき（{new Date(last.executedAt).toLocaleDateString("ja-JP")}）</p>
+            {last.listedStores.length > 0 && <p className="text-[#2E2D29]">挙がった店：{last.listedStores.slice(0, 5).join("、")}</p>}
           </div>
         ) : (
-          <p className="mt-2 text-sm text-[#A5A198]">まだ測っていません。</p>
+          <p className="mt-2 text-sm text-[#A5A198]">AI検索はまだ測っていません。</p>
+        )}
+        {ctx.results.aio && (
+          <div className="mt-4 border-t border-[#F0EDE8] pt-4">
+            <AioAsk ctx={ctx} />
+          </div>
         )}
         <div className="mt-3 flex flex-wrap gap-2">
           <Link href={meoPath(ctx.storeId, "/ai-search")}>
@@ -973,12 +1015,14 @@ function SeenView({ ctx }: { ctx: Ctx }) {
               {w.items.map((x, i) => (
                 <div key={i} className="rounded-xl border border-[#E8E5E0] p-3">
                   <p className="text-sm font-semibold text-[#2E2D29]">{x.url ? <a href={x.url} target="_blank" rel="noreferrer" className="underline">{x.name}</a> : x.name}</p>
+                  {x.rating != null && <p className="text-[11px] text-[#8B877F]">★{x.rating.toFixed(1)}・口コミ{x.reviewCount ?? "?"}件（Google）</p>}
+                  {x.works.length === 0 && <p className="mt-1.5 text-xs text-[#A5A198]">効いていそうなことは確認できませんでした</p>}
                   <ul className="mt-1.5 space-y-1">
                     {x.works.map((t, j) => (
                       <li key={j} className="text-xs text-[#6B6862]">・{t}</li>
                     ))}
                   </ul>
-                  <p className="mt-1.5 text-[11px] text-[#A5A198]">{x.evidence}</p>
+                  <p className={cn("mt-1.5 text-[11px]", x.read === "page" || x.read === "search" ? "text-[#2F6B4A]" : "text-[#A5A198]")}>{x.evidence}</p>
                 </div>
               ))}
             </div>
@@ -1002,22 +1046,7 @@ function SeenView({ ctx }: { ctx: Ctx }) {
                 </tbody>
               </table>
             )}
-            {w.actions.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-[#2E2D29]">今月やること</p>
-                <ol className="mt-1.5 space-y-2">
-                  {w.actions.map((a, i) => (
-                    <li key={i} className="rounded-lg bg-[#FAF9F7] p-2.5 text-sm">
-                      <p className="font-semibold text-[#2E2D29]">
-                        {i + 1}. {a.title}
-                      </p>
-                      <p className="text-xs text-[#8B877F]">{a.where}</p>
-                      <p className="mt-0.5 text-xs text-[#6B6862]">{a.detail}</p>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
+            {w.actions.length > 0 && <p className="text-xs text-[#8A5340]">この差から出した今月やること（{w.actions.length}件）は「直すところ」に入れています。</p>}
             <p className="text-[11px] text-[#A5A198]">{w.note}</p>
           </div>
         )}
@@ -1032,9 +1061,9 @@ function AutoSummary({ storeId, data }: { storeId: string; data: KitData }) {
   const on = a.replies || a.posts;
   return (
     <Card>
-      <SectionTitle>毎朝やること</SectionTitle>
+      <SectionTitle>自動で回せること</SectionTitle>
       <p className="mt-1 text-xs leading-relaxed text-[#8B877F]">
-        Googleマップをつなぐと、口コミへの返信文（基準を満たすものはそのまま送り、それ以外はお店の確認待ち）と週1回の投稿を、毎朝10時にまとめて作ります。マップ順位とAI検索は毎月自動で測ります。
+        下の「続けること」のうち、口コミの返信文と週1回の投稿は、毎朝10時に自動で作れます（基準を満たすものだけ送り、それ以外はお店の確認待ち。Googleマップの連携が必要です）。マップ順位とAI検索は毎月自動で測り、結果は一番上の数字に入ります。
       </p>
       <ul className="mt-3 space-y-1.5 text-sm">
         <li className="flex items-center gap-2">
@@ -1086,4 +1115,3 @@ function DiagnoseView({ results }: { results: KitResults }) {
     </div>
   );
 }
-
