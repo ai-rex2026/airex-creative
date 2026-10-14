@@ -671,9 +671,15 @@ export async function renameStoreAction(id: string, name: string): Promise<void>
 
 // ── キーワード順位の定点観測（lib/meo-ops/keywords.ts） ─────────────────────
 
+/** 起点の列だけ別に読む（列の追加が未適用なら null＝店舗の位置を使う） */
+async function rankOriginOf(sb: Awaited<ReturnType<typeof createClient>>, id: string): Promise<unknown> {
+  const { data, error } = await sb.from("stores").select("meo_rank_origin").eq("id", id).maybeSingle();
+  return error ? null : (data?.meo_rank_origin ?? null);
+}
+
 export async function keywordDataAction(id: string) {
   const { sb, row } = await owned(id);
-  return loadKeywordData(sb, id, row.meo_store, row.meo_rank_origin);
+  return loadKeywordData(sb, id, row.meo_store, await rankOriginOf(sb, id));
 }
 
 export async function addKeywordAction(id: string, keyword: string) {
@@ -713,7 +719,7 @@ export async function saveRankOriginAction(id: string, origin: RankOrigin | null
 export async function measureKeywordsNowAction(id: string) {
   const { sb, row } = await owned(id);
   if (!row.meo_place_id) throw new Error("店舗が未選択です");
-  const origin = normalizeOrigin(row.meo_rank_origin) ?? originFromStore(row.meo_store);
+  const origin = normalizeOrigin(await rankOriginOf(sb, id)) ?? originFromStore(row.meo_store);
   if (!origin) throw new Error("測る起点がありません。起点を設定してください");
   const { data: kws } = await sb.from("meo_keywords").select("id, keyword, created_at").eq("store_id", id);
   const keywords = ((kws ?? []) as { id: string; keyword: string; created_at: string }[]).map((r) => ({ id: r.id, keyword: r.keyword, createdAt: r.created_at }));
