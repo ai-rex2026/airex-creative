@@ -53,13 +53,13 @@ export function hasMetaApp() {
 }
 
 /** 数時間で切れる短期トークンを、60日間の長期トークンに交換する */
-export async function exchangeLongLivedToken(shortLivedToken: string): Promise<{ accessToken: string; expiresAt: string }> {
+export async function exchangeLongLivedToken(shortLivedToken: string, app?: { appId: string; appSecret: string }): Promise<{ accessToken: string; expiresAt: string }> {
   const res = await fetch(
     `${GRAPH}/oauth/access_token?` +
       new URLSearchParams({
         grant_type: "fb_exchange_token",
-        client_id: process.env.META_APP_ID!,
-        client_secret: process.env.META_APP_SECRET!,
+        client_id: app?.appId ?? process.env.META_APP_ID!,
+        client_secret: app?.appSecret ?? process.env.META_APP_SECRET!,
         fb_exchange_token: shortLivedToken,
       }),
     { signal: AbortSignal.timeout(15000) }

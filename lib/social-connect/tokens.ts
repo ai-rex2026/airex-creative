@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { openToken, sealToken } from "@/lib/ads/crypto";
 import { refreshTokens, type SnsTokenSet } from "./oauth";
 import type { SnsPlatform } from "./platforms";
+import { credsForClient } from "./app-creds";
 
 /**
  * sns_connections の読み書き。トークンを含むので service role でしか触らない
@@ -9,7 +10,7 @@ import type { SnsPlatform } from "./platforms";
  * 暗号化は lib/ads/crypto.ts の sealToken/openToken をそのまま使い回す（鍵は AD_TOKEN_ENC_KEY で共通）。
  */
 
-export async function saveSnsConnection(userId: string, platform: SnsPlatform, t: SnsTokenSet, profile: Record<string, unknown>) {
+export async function saveSnsConnection(userId: string, platform: SnsPlatform, t: SnsTokenSet, profile: Record<string, unknown>, appClientId: string | null = null) {
   const admin = createAdminClient();
   const now = new Date().toISOString();
   const { error } = await admin.from("sns_connections").upsert({
@@ -20,6 +21,7 @@ export async function saveSnsConnection(userId: string, platform: SnsPlatform, t
     token_expires_at: t.expiresAt ?? null,
     profile,
     scope: t.scope ?? null,
+    app_client_id: appClientId,
     connected_at: now,
     updated_at: now,
   });
@@ -30,6 +32,7 @@ export type SnsCredentials = {
   platform: SnsPlatform;
   accessToken: string;
   profile: Record<string, unknown>;
+  scope: string | null;
 };
 
 /**
@@ -41,7 +44,7 @@ export async function getSnsCredentials(userId: string, platform: SnsPlatform): 
   const admin = createAdminClient();
   const { data } = await admin
     .from("sns_connections")
-    .select("access_token, refresh_token, token_expires_at, profile")
+    .select("access_token, refresh_token, token_expires_at, profile, scope, app_client_id")
     .eq("user_id", userId)
     .eq("platform", platform)
     .maybeSingle();
@@ -54,7 +57,8 @@ export async function getSnsCredentials(userId: string, platform: SnsPlatform): 
   const expires = data.token_expires_at ? new Date(data.token_expires_at as string).getTime() : null;
   if (expires !== null && expires - Date.now() < 5 * 60_000) {
     try {
-      const fresh = await refreshTokens(platform, { accessToken, refreshToken });
+      const creds = await credsForClient(userId, platform, (data.app_client_id as string | null) ?? null);
+      const fresh = creds ? await refreshTokens(platform, creds, { accessToken, refreshToken }) : null;
       if (fresh) {
         accessToken = fresh.accessToken;
         await admin
@@ -73,7 +77,7 @@ export async function getSnsCredentials(userId: string, platform: SnsPlatform): 
     }
   }
 
-  return { platform, accessToken, profile: (data.profile as Record<string, unknown>) ?? {} };
+  return { platform, accessToken, profile: (data.profile as Record<string, unknown>) ?? {}, scope: (data.scope as string | null) ?? null };
 }
 
 /** 連携を解除する（保存したトークンを削除）。媒体側のアクセス許可は各媒体の設定から取り消せる */

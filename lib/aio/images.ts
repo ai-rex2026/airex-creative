@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { askJsonWithImages, MODEL_FAST } from "../anthropic";
 import { recordAiCall } from "../ai-context";
-import type { AioArticleImage } from "./content-types";
 
 /**
  * 記事の画像（アイキャッチ・本文中）を作る。
@@ -61,12 +60,12 @@ async function detectText(img: GeneratedImage): Promise<boolean> {
   return r.hasText === true;
 }
 
-export function defaultImageDeps(admin: SupabaseClient): ImageDeps {
+export function defaultImageDeps(admin: SupabaseClient, bucket: string = IMAGE_BUCKET): ImageDeps {
   return {
     generate: geminiImage,
     hasText: detectText,
     upload: async (path, img) => {
-      const { error } = await admin.storage.from(IMAGE_BUCKET).upload(path, img.bytes, { contentType: img.mime, upsert: true });
+      const { error } = await admin.storage.from(bucket).upload(path, img.bytes, { contentType: img.mime, upsert: true });
       if (error) throw new Error(`画像を保存できませんでした：${error.message}`);
     },
   };
@@ -74,9 +73,12 @@ export function defaultImageDeps(admin: SupabaseClient): ImageDeps {
 
 const extOf = (mime: string) => (mime.includes("jpeg") ? "jpg" : mime.includes("webp") ? "webp" : "png");
 
+/** 画像の共通の形（記事の画像・SNS の画像） */
+export type ImgLike = { key: string; prompt: string; path: string | null; role?: string; aspect?: string; hasText?: boolean; error?: string | null };
+
 /** 1枚作る（文字が入っていたら1回だけ作り直す）。保存したパスを返す */
-export async function makeOne(deps: ImageDeps, basePath: string, img: AioArticleImage): Promise<{ path: string } | { hasText: true }> {
-  const aspect = img.role === "eyecatch" ? "16:9" : "4:3";
+export async function makeOne(deps: ImageDeps, basePath: string, img: ImgLike): Promise<{ path: string } | { hasText: true }> {
+  const aspect = img.aspect ?? (img.role === "eyecatch" ? "16:9" : "4:3");
   for (let attempt = 0; attempt < 2; attempt++) {
     const prompt = attempt === 0 ? img.prompt : `${img.prompt}\nThe previous attempt contained text. Do not draw any text, letters, signs or logos at all.`;
     const g = await deps.generate(prompt, aspect);
@@ -100,15 +102,15 @@ export async function makeOne(deps: ImageDeps, basePath: string, img: AioArticle
  * 未生成の画像だけを並行で作り、1枚できるごとに onSaved で保存する。
  * onSaved は直列に呼ぶ（同じ images 列を並行に書き換えて壊さないため）
  */
-export async function fillImages(
+export async function fillImages<T extends ImgLike>(
   deps: ImageDeps,
   basePath: string,
-  images: AioArticleImage[],
-  onSaved: (next: AioArticleImage[]) => Promise<void>
+  images: T[],
+  onSaved: (next: T[]) => Promise<void>
 ): Promise<{ made: number; failed: number }> {
   const cur = images.map((i) => ({ ...i }));
   let chain: Promise<void> = Promise.resolve();
-  const save = (idx: number, patch: Partial<AioArticleImage>) => {
+  const save = (idx: number, patch: Partial<ImgLike>) => {
     cur[idx] = { ...cur[idx], ...patch };
     const snapshot = cur.map((i) => ({ ...i }));
     chain = chain.then(() => onSaved(snapshot)).catch(() => undefined);
@@ -134,16 +136,16 @@ export async function fillImages(
   return { made: settled.filter((s) => s.status === "fulfilled").length, failed: settled.filter((s) => s.status === "rejected").length };
 }
 
-export async function signImages(admin: SupabaseClient, images: AioArticleImage[]): Promise<AioArticleImage[]> {
+export async function signImages<T extends { path: string | null; signedUrl?: string | null }>(admin: SupabaseClient, images: T[], bucket: string = IMAGE_BUCKET): Promise<T[]> {
   const paths = images.map((i) => i.path).filter((p): p is string => !!p);
   if (!paths.length) return images;
-  const { data } = await admin.storage.from(IMAGE_BUCKET).createSignedUrls(paths, 60 * 60 * 6);
+  const { data } = await admin.storage.from(bucket).createSignedUrls(paths, 60 * 60 * 6);
   const map = new Map((data ?? []).map((d) => [d.path, d.signedUrl]));
   return images.map((i) => ({ ...i, signedUrl: i.path ? (map.get(i.path) ?? null) : null }));
 }
 
-export async function downloadImage(admin: SupabaseClient, path: string): Promise<GeneratedImage> {
-  const { data, error } = await admin.storage.from(IMAGE_BUCKET).download(path);
+export async function downloadImage(admin: SupabaseClient, path: string, bucket: string = IMAGE_BUCKET): Promise<GeneratedImage> {
+  const { data, error } = await admin.storage.from(bucket).download(path);
   if (error || !data) throw new Error(`画像を読めませんでした：${error?.message ?? ""}`);
   return { bytes: Buffer.from(await data.arrayBuffer()), mime: data.type || "image/png" };
 }

@@ -63,6 +63,7 @@ export const PLATFORM_STYLE: Record<SnsPlatform, { name: string; maxChars: numbe
   x: { name: "X（Twitter）", maxChars: 140, hint: "全角140字以内。1投稿1メッセージ。冒頭で要点、ハッシュタグは1〜2個" },
   meta: { name: "Instagram", maxChars: 2200, hint: "写真に添えるキャプション。冒頭1行で引きを作り、改行を使って読みやすく。末尾にハッシュタグ5〜10個" },
   tiktok: { name: "TikTok", maxChars: 2200, hint: "動画の説明文。短く話し言葉で、ハッシュタグ3〜5個" },
+  youtube: { name: "YouTube", maxChars: 5000, hint: "動画の説明文。冒頭2行で内容が分かるように。目次（タイムスタンプ）とハッシュタグ3個まで" },
 };
 
 /** 本文とハッシュタグを1つの投稿文にする（画面のプレビューと API 送信で同じ形にする） */

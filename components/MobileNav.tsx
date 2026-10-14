@@ -110,6 +110,16 @@ export function MobileNav({
             <Link href="/sns" className={`mnav-link${active === "sns" ? " on" : ""}`} onClick={close}>
               ✦ SNS運用
             </Link>
+            {[
+              ["/sns/x", "X運用"],
+              ["/sns/instagram", "Instagram運用"],
+              ["/sns/tiktok", "TikTok運用"],
+              ["/sns/youtube", "YouTube運用"],
+            ].map(([href, label]) => (
+              <Link key={href} href={href} className="mnav-link" style={{ paddingLeft: 32 }} onClick={close}>
+                {label}
+              </Link>
+            ))}
 
             {hist.length > 0 && <div className="mnav-sec">最近の分析</div>}
             {hist.map((h) => (

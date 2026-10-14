@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { SnsWorkspace } from "@/components/sns/SnsWorkspace";
 import { snsAccountsAction, snsPostsAction, snsSettingsAction } from "@/app/sns-actions";
@@ -27,6 +28,20 @@ export default async function SnsPage() {
   return (
     <Shell active="sns">
       <div style={{ maxWidth: 960, margin: "0 auto" }}>
+        {/* 媒体ごとにアルゴリズムが違うので、運用は媒体ごとの画面で行う */}
+        <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { href: "/sns/x", title: "X運用", text: "伸びている型の分析・画像とスレッドつきの案・リプライ／リポスト・DM" },
+            { href: "/sns/instagram", title: "Instagram運用", text: "画像・リールの案と投稿、コメント・DM の返信" },
+            { href: "/sns/tiktok", title: "TikTok運用", text: "20〜30秒の動画の案と投稿" },
+            { href: "/sns/youtube", title: "YouTube運用", text: "10〜20分の動画の案とアップロード、コメントの返信" },
+          ].map((c) => (
+            <Link key={c.href} href={c.href} className="rounded-2xl border border-[#E8E5E0] bg-white p-4 hover:border-[#C9A84C]">
+              <p className="text-sm font-semibold text-[#2E2D29]">{c.title} →</p>
+              <p className="mt-1 text-xs leading-relaxed text-[#8B877F]">{c.text}</p>
+            </Link>
+          ))}
+        </section>
         <SnsWorkspace accounts={accounts} posts={posts} settings={settings} />
       </div>
     </Shell>

@@ -44,7 +44,8 @@ export function rowToPost(r: SnsPostRow): SnsPost {
 }
 
 export async function listPosts(sb: SupabaseClient, userId: string, limit = 60): Promise<SnsPost[]> {
-  const { data } = await sb.from("sns_posts").select(SNS_POST_COLUMNS).eq("user_id", userId).order("created_at", { ascending: false }).limit(limit);
+  // 媒体ごとの運用（source が ops / ops_auto）の案は、それぞれの運用画面で扱う
+  const { data } = await sb.from("sns_posts").select(SNS_POST_COLUMNS).eq("user_id", userId).in("source", ["manual", "auto"]).order("created_at", { ascending: false }).limit(limit);
   return ((data ?? []) as SnsPostRow[]).map(rowToPost);
 }
 

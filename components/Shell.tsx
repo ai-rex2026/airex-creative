@@ -18,11 +18,22 @@ const PILL: Record<string, [string, string]> = {
  * ゲスト利用中は本登録を促す帯を出す。
  * 860px 以下ではサイドバーが上部バーに変わるので、ハンバーガーメニュー（MobileNav）で全項目を開く。
  */
+/** SNS運用の下に並べる媒体ごとの運用（媒体ごとにアルゴリズムが違うので、運用もこの単位で分ける） */
+const SNS_SUB: { key: string; href: string; label: string }[] = [
+  { key: "x", href: "/sns/x", label: "X運用" },
+  { key: "instagram", href: "/sns/instagram", label: "Instagram運用" },
+  { key: "tiktok", href: "/sns/tiktok", label: "TikTok運用" },
+  { key: "youtube", href: "/sns/youtube", label: "YouTube運用" },
+];
+
 export async function Shell({
   active,
+  sub,
   children,
 }: {
   active: "new" | "summary" | "analysis" | "stores" | "aio" | "sns" | "settings";
+  /** SNS運用の中で開いている媒体 */
+  sub?: string;
   children: React.ReactNode;
 }) {
   const sb = await createClient();
@@ -61,7 +72,12 @@ export async function Shell({
         <Link href="/analysis" className={`item${active === "summary" ? " on" : ""}`}>▤ 分析サマリー</Link>
         <Link href="/stores" className={`item${active === "stores" ? " on" : ""}`}>⌖ 店舗（MEO運用）</Link>
         <Link href="/aio" className={`item${active === "aio" ? " on" : ""}`}>◎ AIO（AI検索対策）</Link>
-        <Link href="/sns" className={`item${active === "sns" ? " on" : ""}`}>✦ SNS運用</Link>
+        <Link href="/sns" className={`item${active === "sns" && !sub ? " on" : ""}`}>✦ SNS運用</Link>
+        {SNS_SUB.map((s) => (
+          <Link key={s.key} href={s.href} className={`item${active === "sns" && sub === s.key ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>
+            {s.label}
+          </Link>
+        ))}
 
         <div className="sec">
           最近の分析

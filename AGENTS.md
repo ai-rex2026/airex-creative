@@ -103,3 +103,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 画像は Gemini（`GEMINI_IMAGE_MODEL`、既定 gemini-2.5-flash-image）。文字を描かせず、できた画像を AI に見せて文字があれば作り直し、2 回とも文字入りなら使わない。置き場は非公開バケット `aio-images`（画面は署名 URL）
 - WordPress のアプリケーションパスワードは `aio_wp_connections`（本人のセッションからは読めない表）に `sealToken` で暗号化して保存。`AD_TOKEN_ENC_KEY` が無いと連携できない
 - note の非公式 API は使わない（投稿は人。数字は手入力・貼り付け）
+
+## SNS運用（媒体ごとの運用）（2026-10-16 追記）
+
+- 左メニュー「SNS運用」の下に X運用／Instagram運用／TikTok運用／YouTube運用（`/sns/[platform]`）。1回目は X 運用と、各社のアプリの鍵の登録。Instagram・TikTok・YouTube の運用画面と動画づくりは2回目
+- 各社のアプリの鍵：`sns_app_credentials`（本人のセッションから読めない表・`sealToken` で暗号化）。連携・トークン更新は自社の鍵 → 無ければ共通の鍵（環境変数）。`sns_connections.app_client_id` で、どの鍵で発行したかを覚える（`lib/social-connect/app-creds.ts`）
+- X 運用の工程（`lib/sns-ops/x-run.ts`）：集める（Apify。`claim_sns_apify_call` で1ユーザー1日6回まで）→ 自分の投稿の数字（X API）→ 型の分析 → 投稿案（画像・スレッド）→ 画像 → 反応の候補 → DM の返信案。毎日の自動は `/api/cron/sns-ops`（30分おき）で、`sns_daily_runs` に工程ごとの済み印。2回失敗した工程はその日はやめる
+- 送るのは承認した案だけ（`approveOpsPostsAction`）。スレッドは投稿1つごとに `external_ids` を保存し、続きから送る（`lib/sns-ops/x-publish.ts`）
+- X の規約（2026-02-23〜）：他人の投稿への API のリプライ・引用は、相手がこちらをメンション／こちらの投稿への返信のときだけ。それ以外は X の投稿画面（`xIntentUrl`）を開いて人が送る
+- 運用の案は `sns_posts` の `source` が `ops`／`ops_auto`。旧来の「媒体ごとの文面をまとめて作る」（`/sns`）は `manual`／`auto` だけを表示する

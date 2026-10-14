@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { isSnsPlatform } from "@/lib/social-connect/platforms";
 import { exchangeCode, redirectUriFor, type SnsTokenSet } from "@/lib/social-connect/oauth";
 import { saveSnsConnection } from "@/lib/social-connect/tokens";
+import { credsForClient } from "@/lib/social-connect/app-creds";
+import { fetchYoutubeChannel } from "@/lib/social-connect/youtube";
 import { fetchXProfile } from "@/lib/social-connect/x";
 import { fetchTikTokProfile } from "@/lib/social-connect/tiktok";
 import { fetchMetaProfileAndToken } from "@/lib/social-connect/meta";
@@ -21,8 +23,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ platform: strin
   const url = new URL(req.url);
   const cookieName = `sns_oauth_${platform}`;
   // 使い終えた state は必ず消す（開始時と同じ path でないと消えない）
+  let backTo = "/settings";
   const back = (q: string) => {
-    const res = NextResponse.redirect(new URL(`/settings?${q}`, url.origin));
+    const res = NextResponse.redirect(new URL(`${backTo}?${q}`, url.origin));
     res.cookies.set(cookieName, "", { httpOnly: true, secure: true, sameSite: "lax", path: "/api/social", maxAge: 0 });
     return res;
   };
@@ -31,12 +34,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ platform: strin
   if (!isSnsPlatform(platform)) return fail("未対応のSNSです");
 
   const jar = await cookies();
-  let saved: { state: string; verifier?: string } | null = null;
+  let saved: { state: string; verifier?: string; clientId?: string; back?: string } | null = null;
   try {
     saved = JSON.parse(jar.get(cookieName)?.value ?? "null");
   } catch {
     saved = null;
   }
+  if (saved?.back && /^\/sns(\/[a-z]+)?$/.test(saved.back)) backTo = saved.back;
 
   const denied = url.searchParams.get("error_description") ?? url.searchParams.get("error");
   if (denied) return fail(`連携がキャンセルされました（${denied}）`);
@@ -53,7 +57,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ platform: strin
   if (!user || user.is_anonymous) return fail("ログインが切れました。ログインし直してから連携してください");
 
   try {
-    const tokens = await exchangeCode(platform, code, redirectUriFor(platform, req.url), saved.verifier);
+    const creds = await credsForClient(user.id, platform, saved.clientId ?? null);
+    if (!creds) throw new Error("連携に使うアプリの鍵が見つかりません");
+    const tokens = await exchangeCode(platform, creds, code, redirectUriFor(platform, req.url), saved.verifier);
 
     let finalTokens: SnsTokenSet = tokens;
     let profile: Record<string, unknown>;
@@ -61,13 +67,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ platform: strin
       profile = (await fetchXProfile(tokens.accessToken)) as unknown as Record<string, unknown>;
     } else if (platform === "tiktok") {
       profile = (await fetchTikTokProfile(tokens.accessToken)) as unknown as Record<string, unknown>;
+    } else if (platform === "youtube") {
+      profile = (await fetchYoutubeChannel(tokens.accessToken)) as unknown as Record<string, unknown>;
     } else {
       const r = await fetchMetaProfileAndToken(tokens.accessToken);
       finalTokens = r.tokens;
       profile = r.profile;
     }
 
-    await saveSnsConnection(user.id, platform, finalTokens, profile);
+    await saveSnsConnection(user.id, platform, finalTokens, profile, creds.clientId);
   } catch (e) {
     return fail(e instanceof Error ? e.message : String(e));
   }

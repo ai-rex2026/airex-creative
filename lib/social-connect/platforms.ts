@@ -10,7 +10,7 @@
  * ここの id は DB（sns_connections.platform）と URL（/api/social/{id}/start）にそのまま使う。
  */
 
-export type SnsPlatform = "x" | "tiktok" | "meta";
+export type SnsPlatform = "x" | "tiktok" | "meta" | "youtube";
 
 export type SnsPlatformDef = {
   id: SnsPlatform;
@@ -42,6 +42,12 @@ export const SNS_PLATFORMS: SnsPlatformDef[] = [
     // （ファン数・投稿・到達数など）も合わせて読む
     media: "Instagramプロフィール（フォロワー数・投稿数・投稿ごとのいいね・コメント数）と、紐づくFacebookページ（ファン数・投稿・直近28日の到達数）",
     env: ["META_APP_ID", "META_APP_SECRET"],
+  },
+  {
+    id: "youtube",
+    name: "YouTube",
+    media: "チャンネル（登録者数・動画数）と、動画ごとの再生・高評価・コメント数。SNS運用画面で承認した動画のアップロードとコメントへの返信ができます",
+    env: ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET"],
   },
 ];
 

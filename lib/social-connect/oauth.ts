@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from "crypto";
 import { META_SCOPES, exchangeLongLivedToken } from "@/lib/meta";
 import type { SnsPlatform } from "./platforms";
+import type { AppCreds } from "./app-creds";
 
 /**
  * 公式SNSアカウント連携の OAuth 2.0。認可URLの組み立て・コード交換・トークン更新。
@@ -41,7 +42,14 @@ export function redirectUriFor(platform: SnsPlatform, reqUrl: string): string {
   return `${appOrigin(reqUrl)}/api/social/${platform}/callback`;
 }
 
-const env = (k: string) => process.env[k] ?? "";
+/** X に求める権限。投稿・スレッド（tweet.write）、画像（media.write）、リポスト、DM（dm.read/dm.write）。2026-10-16 拡張 */
+export const X_SCOPES = "tweet.read tweet.write users.read offline.access media.write like.write dm.read dm.write";
+/** YouTube に求める権限。動画のアップロード・コメントの返信・自分のチャンネルの読み取り */
+export const YOUTUBE_SCOPES = [
+  "https://www.googleapis.com/auth/youtube.upload",
+  "https://www.googleapis.com/auth/youtube.force-ssl",
+  "https://www.googleapis.com/auth/youtube.readonly",
+].join(" ");
 const inSeconds = (s: number | string | undefined) =>
   new Date(Date.now() + Number(s ?? 3600) * 1000).toISOString();
 
@@ -57,13 +65,13 @@ export function pkcePair(): { verifier: string; challenge: string } {
 }
 
 /** 認可URLを組み立てる。X は pkceChallenge が必須 */
-export function buildAuthUrl(platform: SnsPlatform, redirectUri: string, state: string, pkceChallenge?: string): string {
+export function buildAuthUrl(platform: SnsPlatform, creds: AppCreds, redirectUri: string, state: string, pkceChallenge?: string): string {
   if (platform === "x") {
     const u = new URL("https://x.com/i/oauth2/authorize");
-    u.searchParams.set("client_id", env("X_CLIENT_ID"));
+    u.searchParams.set("client_id", creds.clientId);
     u.searchParams.set("redirect_uri", redirectUri);
     u.searchParams.set("response_type", "code");
-    u.searchParams.set("scope", "tweet.read tweet.write users.read offline.access");
+    u.searchParams.set("scope", X_SCOPES);
     u.searchParams.set("state", state);
     u.searchParams.set("code_challenge", pkceChallenge ?? "");
     u.searchParams.set("code_challenge_method", "S256");
@@ -71,10 +79,10 @@ export function buildAuthUrl(platform: SnsPlatform, redirectUri: string, state: 
   }
   if (platform === "meta") {
     const u = new URL("https://www.facebook.com/v21.0/dialog/oauth");
-    u.searchParams.set("client_id", env("META_APP_ID"));
+    u.searchParams.set("client_id", creds.clientId);
     u.searchParams.set("redirect_uri", redirectUri);
     u.searchParams.set("response_type", "code");
-    const configId = env("META_LOGIN_CONFIG_ID");
+    const configId = creds.configId;
     if (configId) {
       // Facebook Login for Business: config_id がページ選択ダイアログを有効にする
       u.searchParams.set("config_id", configId);
@@ -85,12 +93,23 @@ export function buildAuthUrl(platform: SnsPlatform, redirectUri: string, state: 
     u.searchParams.set("state", state);
     return u.toString();
   }
+  if (platform === "youtube") {
+    const u = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    u.searchParams.set("client_id", creds.clientId);
+    u.searchParams.set("redirect_uri", redirectUri);
+    u.searchParams.set("response_type", "code");
+    u.searchParams.set("scope", YOUTUBE_SCOPES);
+    u.searchParams.set("access_type", "offline");
+    u.searchParams.set("prompt", "consent");
+    u.searchParams.set("state", state);
+    return u.toString();
+  }
   // tiktok
   const u = new URL("https://www.tiktok.com/v2/auth/authorize/");
-  u.searchParams.set("client_key", env("TIKTOK_LOGIN_CLIENT_KEY"));
+  u.searchParams.set("client_key", creds.clientId);
   u.searchParams.set("redirect_uri", redirectUri);
   u.searchParams.set("response_type", "code");
-  u.searchParams.set("scope", "user.info.basic,user.info.stats,video.list");
+  u.searchParams.set("scope", "user.info.basic,user.info.stats,video.list,video.upload,video.publish");
   u.searchParams.set("state", state);
   return u.toString();
 }
@@ -98,12 +117,13 @@ export function buildAuthUrl(platform: SnsPlatform, redirectUri: string, state: 
 /** 認可コード → トークン */
 export async function exchangeCode(
   platform: SnsPlatform,
+  creds: AppCreds,
   code: string,
   redirectUri: string,
   pkceVerifier?: string
 ): Promise<SnsTokenSet> {
   if (platform === "x") {
-    const basic = Buffer.from(`${env("X_CLIENT_ID")}:${env("X_CLIENT_SECRET")}`).toString("base64");
+    const basic = Buffer.from(`${creds.clientId}:${creds.clientSecret}`).toString("base64");
     const res = await fetch("https://api.twitter.com/2/oauth2/token", {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", authorization: `Basic ${basic}` },
@@ -112,7 +132,7 @@ export async function exchangeCode(
         code,
         redirect_uri: redirectUri,
         code_verifier: pkceVerifier ?? "",
-        client_id: env("X_CLIENT_ID"),
+        client_id: creds.clientId,
       }),
       signal: AbortSignal.timeout(20000),
     });
@@ -127,8 +147,8 @@ export async function exchangeCode(
     const res = await fetch(
       `https://graph.facebook.com/v21.0/oauth/access_token?` +
         new URLSearchParams({
-          client_id: env("META_APP_ID"),
-          client_secret: env("META_APP_SECRET"),
+          client_id: creds.clientId,
+          client_secret: creds.clientSecret,
           redirect_uri: redirectUri,
           code,
         }),
@@ -140,8 +160,20 @@ export async function exchangeCode(
     }
     // 数時間で切れる短期トークンを、60日の長期トークン（ユーザートークン）に換える。
     // 実際にInstagramデータの取得に使うPageトークンへの変換は callback 側（lib/social-connect/meta.ts）で行う
-    const long = await exchangeLongLivedToken(j.access_token as string);
+    const long = await exchangeLongLivedToken(j.access_token as string, creds.own ? { appId: creds.clientId, appSecret: creds.clientSecret } : undefined);
     return { accessToken: long.accessToken, expiresAt: long.expiresAt, scope: META_SCOPES };
+  }
+
+  if (platform === "youtube") {
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ code, client_id: creds.clientId, client_secret: creds.clientSecret, redirect_uri: redirectUri, grant_type: "authorization_code" }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.access_token) throw new Error(`YouTube（Google）のトークン取得に失敗しました：${j.error_description ?? j.error ?? `HTTP ${res.status}`}`);
+    return { accessToken: j.access_token, refreshToken: j.refresh_token ?? null, expiresAt: inSeconds(j.expires_in), scope: j.scope ?? null };
   }
 
   // tiktok
@@ -149,8 +181,8 @@ export async function exchangeCode(
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", "cache-control": "no-cache" },
     body: new URLSearchParams({
-      client_key: env("TIKTOK_LOGIN_CLIENT_KEY"),
-      client_secret: env("TIKTOK_LOGIN_CLIENT_SECRET"),
+      client_key: creds.clientId,
+      client_secret: creds.clientSecret,
       code,
       grant_type: "authorization_code",
       redirect_uri: redirectUri,
@@ -177,16 +209,17 @@ export async function exchangeCode(
  */
 export async function refreshTokens(
   platform: SnsPlatform,
+  creds: AppCreds,
   current: { accessToken: string; refreshToken: string | null }
 ): Promise<SnsTokenSet | null> {
   if (!current.refreshToken) return null;
 
   if (platform === "x") {
-    const basic = Buffer.from(`${env("X_CLIENT_ID")}:${env("X_CLIENT_SECRET")}`).toString("base64");
+    const basic = Buffer.from(`${creds.clientId}:${creds.clientSecret}`).toString("base64");
     const res = await fetch("https://api.twitter.com/2/oauth2/token", {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", authorization: `Basic ${basic}` },
-      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: current.refreshToken, client_id: env("X_CLIENT_ID") }),
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: current.refreshToken, client_id: creds.clientId }),
       signal: AbortSignal.timeout(20000),
     });
     const j = await res.json().catch(() => ({}));
@@ -196,13 +229,25 @@ export async function refreshTokens(
     return { accessToken: j.access_token, refreshToken: j.refresh_token ?? current.refreshToken, expiresAt: inSeconds(j.expires_in), scope: j.scope ?? null };
   }
 
+  if (platform === "youtube") {
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: creds.clientId, client_secret: creds.clientSecret, refresh_token: current.refreshToken, grant_type: "refresh_token" }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.access_token) throw new Error(`YouTube（Google）のトークン更新に失敗しました：${j.error_description ?? j.error ?? `HTTP ${res.status}`}`);
+    return { accessToken: j.access_token, refreshToken: current.refreshToken, expiresAt: inSeconds(j.expires_in), scope: j.scope ?? null };
+  }
+
   // tiktok
   const res = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_key: env("TIKTOK_LOGIN_CLIENT_KEY"),
-      client_secret: env("TIKTOK_LOGIN_CLIENT_SECRET"),
+      client_key: creds.clientId,
+      client_secret: creds.clientSecret,
       grant_type: "refresh_token",
       refresh_token: current.refreshToken,
     }),
