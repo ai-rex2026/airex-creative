@@ -43,7 +43,7 @@ export const EMPTY_PROFILE_DRAFT: MeoProfileDraft = {
 };
 
 // ── タブとパス ────────────────────────────────
-export type MeoTabKey = "home" | "reviews" | "posts" | "profile" | "photos" | "insights" | "ai-search" | "settings";
+export type MeoTabKey = "home" | "reviews" | "posts" | "profile" | "photos" | "keywords" | "citations" | "insights" | "ai-search" | "settings";
 
 /** MEOワークスペースのタブ。並び順は運用頻度が高いものを左に置く */
 export const MEO_TABS: { key: MeoTabKey; path: string; label: string }[] = [
@@ -52,6 +52,8 @@ export const MEO_TABS: { key: MeoTabKey; path: string; label: string }[] = [
   { key: "posts", path: "/posts", label: "投稿" },
   { key: "profile", path: "/profile", label: "プロフィール" },
   { key: "photos", path: "/photos", label: "写真" },
+  { key: "keywords", path: "/keywords", label: "キーワード順位" },
+  { key: "citations", path: "/citations", label: "情報の一貫性" },
   { key: "insights", path: "/insights", label: "分析" },
   { key: "ai-search", path: "/ai-search", label: "AI検索" },
   { key: "settings", path: "/settings", label: "設定" },

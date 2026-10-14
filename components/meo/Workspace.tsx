@@ -29,6 +29,8 @@ const TAB_ICON: Record<string, string> = {
   posts: "megaphone",
   profile: "store",
   photos: "images",
+  keywords: "search",
+  citations: "checkCircle",
   insights: "chart",
   "ai-search": "bot",
   settings: "settings",

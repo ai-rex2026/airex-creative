@@ -28,7 +28,7 @@ export default async function AioProjectPage({ params }: { params: Promise<{ id:
   return (
     <Shell active="aio">
       <div style={{ maxWidth: 960, margin: "0 auto" }}>
-        <AioWorkspace project={data.project} checks={data.checks} drafts={data.drafts} quota={{ remaining: q.remaining, limit: q.limit }} />
+        <AioWorkspace project={data.project} checks={data.checks} drafts={data.drafts} prompts={data.prompts} gap={data.gap} plans={data.plans} quota={{ remaining: q.remaining, limit: q.limit }} />
       </div>
     </Shell>
   );

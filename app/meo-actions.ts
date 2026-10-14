@@ -6,7 +6,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { GuardHit, Industry } from "@/lib/types";
 import { buildStoreSnapshot, hasPlacesKey, searchStoreCandidates } from "@/lib/meo-ops/places";
-import { writeDaily } from "@/lib/meo-ops/daily";
+import { jstDateKey, writeDaily } from "@/lib/meo-ops/daily";
+import { citationQuota, rowToCitation, runCitationCheck } from "@/lib/meo-ops/citations";
+import { loadKeywordData, measureStoreKeywords, normalizeOrigin, originFromStore, suggestKeywords, MAX_KEYWORDS, type RankOrigin } from "@/lib/meo-ops/keywords";
 import { createCheck, defaultQuery, quota, runCheck } from "@/lib/meo-ops/ai-search";
 import { draftDescription, draftPost, draftReply, suggestSearchTerm } from "@/lib/meo-ops/writer";
 import { MEO_STORE_COLUMNS, rowToReview, type MeoStoreRow } from "@/lib/meo-ops/workspace";
@@ -664,5 +666,91 @@ export async function renameStoreAction(id: string, name: string): Promise<void>
   if (n.length > 100) throw new Error("店舗名は100文字以内で入力してください");
   const { error } = await sb.from("stores").update({ name: n }).eq("id", id);
   if (error) throw new Error("店舗名を変更できませんでした");
+  refresh(id);
+}
+
+// ── キーワード順位の定点観測（lib/meo-ops/keywords.ts） ─────────────────────
+
+export async function keywordDataAction(id: string) {
+  const { sb, row } = await owned(id);
+  return loadKeywordData(sb, id, row.meo_store, row.meo_rank_origin);
+}
+
+export async function addKeywordAction(id: string, keyword: string) {
+  const { sb } = await owned(id);
+  const k = keyword.trim().replace(/\s+/g, " ").slice(0, 40);
+  if (!k) throw new Error("キーワードを入力してください");
+  const { count } = await sb.from("meo_keywords").select("id", { count: "exact", head: true }).eq("store_id", id);
+  if ((count ?? 0) >= MAX_KEYWORDS) throw new Error(`キーワードは ${MAX_KEYWORDS} 個までです`);
+  const { error } = await sb.from("meo_keywords").insert({ store_id: id, keyword: k });
+  if (error && !/duplicate|unique/i.test(error.message)) throw new Error(`追加できませんでした：${error.message}`);
+  refresh(id);
+}
+
+export async function removeKeywordAction(id: string, keywordId: string) {
+  const { sb } = await owned(id);
+  await sb.from("meo_keywords").delete().eq("id", keywordId).eq("store_id", id);
+  refresh(id);
+}
+
+export async function suggestKeywordsAction(id: string): Promise<string[]> {
+  const { sb, row } = await owned(id);
+  const { data } = await sb.from("meo_keywords").select("keyword").eq("store_id", id);
+  return suggestKeywords(row.meo_store, row.meo_store?.name || row.name || "", (data ?? []).map((r) => String(r.keyword)));
+}
+
+/** 測る起点を保存する。null で「店舗の位置」に戻す */
+export async function saveRankOriginAction(id: string, origin: RankOrigin | null) {
+  const { sb } = await owned(id);
+  const o = origin ? normalizeOrigin(origin) : null;
+  if (origin && !o) throw new Error("緯度・経度の値が正しくありません");
+  const { error } = await sb.from("stores").update({ meo_rank_origin: o }).eq("id", id);
+  if (error) throw new Error(`保存できませんでした：${error.message}`);
+  refresh(id);
+}
+
+/** 全キーワードを今すぐ測る（1日1回。1キーワード＝Text Search 1回の実費） */
+export async function measureKeywordsNowAction(id: string) {
+  const { sb, row } = await owned(id);
+  if (!row.meo_place_id) throw new Error("店舗が未選択です");
+  const origin = normalizeOrigin(row.meo_rank_origin) ?? originFromStore(row.meo_store);
+  if (!origin) throw new Error("測る起点がありません。起点を設定してください");
+  const { data: kws } = await sb.from("meo_keywords").select("id, keyword, created_at").eq("store_id", id);
+  const keywords = ((kws ?? []) as { id: string; keyword: string; created_at: string }[]).map((r) => ({ id: r.id, keyword: r.keyword, createdAt: r.created_at }));
+  if (!keywords.length) throw new Error("キーワードを先に登録してください");
+  const admin = createAdminClient();
+  const today = jstDateKey();
+  const { count } = await admin.from("meo_keyword_ranks").select("id", { count: "exact", head: true }).eq("store_id", id).eq("measured_on", today);
+  if ((count ?? 0) >= keywords.length) throw new Error("今日の分は測定済みです（1日1回）。明日またお試しください");
+  const r = await measureStoreKeywords(admin, id, row.meo_place_id, origin, keywords, "manual", today);
+  refresh(id);
+  return r;
+}
+
+// ── 情報の一貫性チェック（lib/meo-ops/citations.ts） ─────────────────────
+export async function citationDataAction(id: string) {
+  const { sb } = await owned(id);
+  const { data } = await sb.from("meo_citation_checks").select("id, status, engine, result, error_message, created_at").eq("store_id", id).order("created_at", { ascending: false }).limit(6);
+  const q = await citationQuota(createAdminClient(), id);
+  return { checks: ((data ?? []) as Record<string, unknown>[]).map(rowToCitation), remaining: q.remaining, limit: q.limit };
+}
+
+/** 各媒体の掲載を web 検索つきの AI で集めて、基準（Google）とのずれを記録する（月3回まで。同期的に実行、2〜3分） */
+export async function runCitationCheckAction(id: string) {
+  const { row } = await owned(id);
+  if (!row.meo_store) throw new Error("店舗が未選択です");
+  const admin = createAdminClient();
+  const q = await citationQuota(admin, id);
+  if (q.remaining <= 0) throw new Error(`一貫性チェックは 1 か月に ${q.limit} 回までです`);
+  const storeName = row.meo_store.name || row.name || "";
+  try {
+    const r = await runCitationCheck(row.meo_store, storeName);
+    await admin.from("meo_citation_checks").insert({ store_id: id, period: q.period, status: "completed", engine: r.engine, result: { reference: r.reference, sources: r.sources, summary: r.summary } });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await admin.from("meo_citation_checks").insert({ store_id: id, period: q.period, status: "failed", error_message: msg.slice(0, 500), result: {} });
+    refresh(id);
+    throw new Error(`確認できませんでした：${msg}`);
+  }
   refresh(id);
 }

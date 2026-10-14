@@ -60,6 +60,19 @@ const KIND_INSTRUCTION: Record<AioDraftKind, string> = {
 - 回答は各120字以内で、最初の一文で結論
 - 本文の構成: まず FAQ を「Q. / A.」で5問 → 空行 → \`\`\`json のコードブロックで FAQPage の JSON-LD（mainEntity に5問）
 - 価格・数字は「事業の前提」にあるものだけ。無ければ「要相談」「お問い合わせ」とする`,
+  survey_article: `アンケート記事の設計と型。ファクト（調査結果）を先に作り、それを根拠に記事を書く手法。
+- 本文の構成: 「1. 調査の設計」（目的・対象・人数の目安・設問8〜10問。選択肢つき）→「2. プレスリリース／記事の型」（タイトル案3つ。本文は結果の数字が入る箇所を【結果：〇〇%】のように空欄にした完成形）→「3. 記事から自社サービスへのつなげ方」（結果→課題→自社の提供価値、の順。断定しない）
+- **調査結果の数字を作らない**。必ず空欄にする
+- 設問は見込み客の課題が数字で出るものにする（時間・頻度・困りごと・選ぶ基準）`,
+  wantedly_story: `Wantedly のストーリー（採用向け。1500〜2500字）。
+- 働く人・仕事内容・カルチャーが伝わる記事。一人称または社員インタビュー形式
+- タイトルは求職者が検索しそうな言葉（職種・働き方・成長）を含める
+- 「事業の前提」にある事実だけを使う。社員名・数字・制度は与えられていなければ【要確認】と書く
+- 最後に「こんな人に会いたい」を3つ`,
+  job_posting_schema: `採用サイト向けの構造化データと、ファクトの見出し化指示。
+- 本文の構成: 「1. 採用ページに置くファクトの見出し（募集要項・制度・働き方を見出し＋箇条書きで）」→「2. JSON-LD」を \`\`\`json のコードブロックで Organization・JobPosting（1職種分の雛形）・FAQPage（採用の質問5問）
+- 給与・勤務地・雇用形態など与えられていない項目は "【要記入】" の文字列にする（勝手に埋めない）
+- JobPosting は Google の求人構造化データの必須項目（title, description, datePosted, hiringOrganization, jobLocation）を揃える`,
   listing_memo: `AI が根拠にしている媒体への掲載を整理するメモ（箇条書き中心）。
 - 「実測で AI が引用した媒体」ごとに、自社が載っているか（own_source_domains にあれば載っている）、載っていなければ登録・掲載の手順を1〜3行で
 - Wikipedia は「特筆性（第三者の信頼できる情報源での言及）が要る。自社で書かない」ことを明記する
@@ -80,7 +93,12 @@ ${JA_ONLY_RULE}
 
 出力: {"title":"タイトル","body":"本文（Markdown）"}`;
 
-export async function draftAioContent(kind: AioDraftKind, project: AioProject, latest: AioCheck | null): Promise<{ title: string; body: string; guard: GuardVerdict }> {
+export async function draftAioContent(
+  kind: AioDraftKind,
+  project: AioProject,
+  latest: AioCheck | null,
+  brief?: { title: string; target: string; outline: string } | null
+): Promise<{ title: string; body: string; guard: GuardVerdict }> {
   const def = AIO_DRAFT_KINDS.find((k) => k.kind === kind);
   if (!def) throw new Error("未対応の下書きです");
   const seen = latest
@@ -106,6 +124,7 @@ export async function draftAioContent(kind: AioDraftKind, project: AioProject, l
     "",
     "# いまの見え方（実測）",
     ...seen,
+    ...(brief ? ["", "# 月次計画で決めた内容（これに沿って書く）", `タイトル: ${brief.title}`, `答える問い: ${brief.target}`, `構成: ${brief.outline}`] : []),
   ].filter((l) => l !== "");
 
   const res = await askJson<{ title?: string; body?: string }>(DRAFT_SYSTEM, lines.join("\n"), { maxTokens: 6000, timeoutMs: 150_000 });

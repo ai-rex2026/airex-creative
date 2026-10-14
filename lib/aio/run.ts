@@ -22,25 +22,36 @@ export function buildAioPrompt(area: string, category: string): string {
   return `${where}${category.trim()}を探しています。\nおすすめの会社・サービスを5〜8件、それぞれ選んだ理由と情報源（URL）つきで教えてください。`;
 }
 
+/** 手動実測の月次上限。月次の自動計測（source = monthly）は数えない */
 export async function quota(sb: SupabaseClient, projectId: string) {
   const period = jstPeriodKey();
-  const { count } = await sb.from("aio_checks").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("period", period);
+  const { count } = await sb.from("aio_checks").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("period", period).neq("source", "monthly");
   const used = count ?? 0;
   return { period, limit: AIO_MONTHLY_LIMIT, used, remaining: Math.max(0, AIO_MONTHLY_LIMIT - used) };
 }
 
-/** 実測を1件受け付ける（sb は service role。aio_checks への書き込みはサーバーだけ） */
-export async function createCheck(sb: SupabaseClient, projectId: string, area: string, category: string) {
+/**
+ * 実測を1件受け付ける（sb は service role。aio_checks への書き込みはサーバーだけ）。
+ * promptText は AI に投げる文そのもの。promptId は対策プロンプト（aio_prompts）の id（無ければ null＝探し方からの定型文）。
+ * source = monthly（月次の自動計測）は手動の上限を消費しない
+ */
+export async function createCheck(
+  sb: SupabaseClient,
+  projectId: string,
+  promptText: string,
+  opts: { promptId?: string | null; source?: "manual" | "monthly" } = {}
+) {
+  const source = opts.source ?? "manual";
   const q = await quota(sb, projectId);
-  if (q.remaining <= 0) throw new Error(`実測は 1 か月に ${q.limit} 回までです。翌月まではお待ちください。`);
+  if (source === "manual" && q.remaining <= 0) throw new Error(`実測は 1 か月に ${q.limit} 回までです。翌月まではお待ちください。`);
   const engine = preferredEngine();
   const { data, error } = await sb
     .from("aio_checks")
-    .insert({ project_id: projectId, status: "pending", engine, model: engine === "gemini" ? GEMINI_MODEL : ANSWER_MODEL, prompt: buildAioPrompt(area, category), period: q.period })
+    .insert({ project_id: projectId, prompt_id: opts.promptId ?? null, source, status: "pending", engine, model: engine === "gemini" ? GEMINI_MODEL : ANSWER_MODEL, prompt: promptText, period: q.period })
     .select("id")
     .single();
   if (error || !data) throw new Error("実測を開始できませんでした");
-  return { checkId: data.id as string, remaining: Math.max(0, q.remaining - 1) };
+  return { checkId: data.id as string, remaining: source === "manual" ? Math.max(0, q.remaining - 1) : q.remaining };
 }
 
 const EXTRACT_SYSTEM = `あなたはAIの回答テキストから、挙げられた会社・サービス・店舗の名前を抽出する処理系です。

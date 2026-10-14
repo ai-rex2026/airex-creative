@@ -62,3 +62,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
   vercel_get_deployment_status で SHA 一致と READY）は読み取りのみ
 - Vercel のビルドが `next/font/google` の取得失敗で ERROR になることがある（今回の修正とは無関係の一時的な失敗）。
   その場合は vercel_redeploy（repo_id 1358086007, ref main）で再ビルドすると通った
+
+## 反映の手順（2026-10-13 追記・Mac から）
+
+- サンドボックスの `git push` は通らないが、**Mac 側の AI OSI URI Deploy MCP には git があり `github_clone` / `github_push` が通る**（Windows 側の「git が無い」注意は Mac には当てはまらない）
+- 手順: `github_clone`（dest は連結フォルダ内、例 Drive の `99.個人用作業フォルダ/_airex-creative-work`）→ サンドボックスで `git diff --binary <base> HEAD > patch` → `device_commit_files` で転送 → `device_bash` で `git apply`（`unable to unlink` の warning は無視してよい。削除権限が無いだけで内容は書き換わる）→ 転送した patch は `mv -n` で `.git/` 配下へ退避 → `github_push`
+- 反映前に、`git diff | sha256sum` と `git ls-files --others --exclude-standard | sort | xargs sha256sum | sha256sum` を両側で突き合わせて完全一致を確認する（転記ミスが起きない方法なので、`github_put_files` より安全）
+- 反映後は `git fetch origin main && git diff HEAD origin/main` が空であることを確認する

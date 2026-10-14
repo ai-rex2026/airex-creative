@@ -38,9 +38,10 @@ export type MeoStoreRow = {
   meo_store: MeoStoreSnapshot | null;
   meo_store_candidates: StoreCandidate[] | null;
   meo_gbp_location: string | null;
+  meo_rank_origin?: unknown;
 };
 
-export const MEO_STORE_COLUMNS = "id, owner_id, name, industry, meo_place_id, meo_place_source, meo_store, meo_store_candidates, meo_gbp_location";
+export const MEO_STORE_COLUMNS = "id, owner_id, name, industry, meo_place_id, meo_place_source, meo_store, meo_store_candidates, meo_gbp_location, meo_rank_origin";
 
 /** 日次グラフの表示日数 */
 export const DAILY_TREND_DAYS = 30;

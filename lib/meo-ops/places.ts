@@ -248,3 +248,41 @@ export function hostOf(u: string | null | undefined): string {
     return "";
   }
 }
+
+// ── キーワード順位（lib/meo-ops/keywords.ts から使う） ──────────────
+export type RankedPlace = { placeId: string; name: string; rating: number | null; reviewCount: number | null; photoCount: number | null };
+
+/**
+ * 決めた起点（緯度経度＋半径）からキーワードで Text Search し、並び順のまま返す。
+ * locationBias（制限ではなく寄せ）にするのは、地図アプリで検索したときに近い並びにするため。
+ * 取れなかったときは null（呼び出し側で「測れなかった」として扱い、記録しない）
+ */
+export async function searchRankedPlaces(
+  keyword: string,
+  origin: { latitude: number; longitude: number; radiusMeters: number },
+  limit = 20
+): Promise<RankedPlace[] | null> {
+  const data = await request<{ places?: RawPlace[] }>(
+    "POST",
+    `${ENDPOINT}/places:searchText`,
+    "places.id,places.displayName,places.rating,places.userRatingCount,places.photos",
+    {
+      textQuery: keyword,
+      languageCode: "ja",
+      regionCode: "JP",
+      maxResultCount: Math.min(Math.max(limit, 1), 20),
+      rankPreference: "RELEVANCE",
+      locationBias: { circle: { center: { latitude: origin.latitude, longitude: origin.longitude }, radius: origin.radiusMeters } },
+    }
+  );
+  if (!data) return null;
+  return (data.places ?? [])
+    .filter((p) => p.id)
+    .map((p) => ({
+      placeId: p.id!,
+      name: p.displayName?.text ?? "",
+      rating: typeof p.rating === "number" ? p.rating : null,
+      reviewCount: typeof p.userRatingCount === "number" ? p.userRatingCount : null,
+      photoCount: Array.isArray(p.photos) ? p.photos.length : null,
+    }));
+}

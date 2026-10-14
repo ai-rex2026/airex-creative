@@ -5,16 +5,18 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { deleteAioDraftAction, deleteAioProjectAction, generateAioDraftAction, markAioDraftDoneAction, runAioCheckAction } from "@/app/aio-actions";
 import { AioProjectForm } from "@/components/aio/AioProjectForm";
+import { PromptMonitor } from "@/components/aio/PromptMonitor";
+import { GapPlan } from "@/components/aio/GapPlan";
 import { MeoPageHeader, SectionTitle } from "@/components/meo/Workspace";
 import { Btn, Card, Dialog, ErrorNote, GuardNotes, Icon, cn } from "@/components/meo/ui";
-import { AIO_DRAFT_KINDS, type AioCheck, type AioDraft, type AioDraftKind, type AioProject } from "@/lib/aio/types";
+import { AIO_DRAFT_KINDS, type AioCheck, type AioContentPlan, type AioDraft, type AioDraftKind, type AioGapReport, type AioProject, type AioPrompt } from "@/lib/aio/types";
 
 /**
  * AIO のワークスペース（対象1件）。
  * 上: 「今どうか」= AI に実際に聞いた結果（因果は主張しない。結果をそのまま見せる）
  * 下: 「何をすべきか」= 下書き（人が確認してコピーして使う。自動では公開しない）
  */
-export function AioWorkspace({ project, checks, drafts, quota }: { project: AioProject; checks: AioCheck[]; drafts: AioDraft[]; quota: { remaining: number; limit: number } }) {
+export function AioWorkspace({ project, checks, drafts, prompts, gap, plans, quota }: { project: AioProject; checks: AioCheck[]; drafts: AioDraft[]; prompts: AioPrompt[]; gap: AioGapReport | null; plans: AioContentPlan[]; quota: { remaining: number; limit: number } }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -26,17 +28,21 @@ export function AioWorkspace({ project, checks, drafts, quota }: { project: AioP
   const limit = quota.limit;
   const [submitting, setSubmitting] = useState(false);
   const [startedId, setStartedId] = useState<string | null>(null);
-  const running = checks.find((c) => c.status === "pending" || c.status === "running") ?? null;
-  const latest = checks.find((c) => c.status === "completed") ?? null;
-  const failed = !running && checks[0]?.status === "failed" ? checks[0] : null;
+  // ここは「探し方」からの簡易実測（promptId なし）だけを扱う。対策プロンプトの実測は PromptMonitor
+  const simple = checks.filter((c) => c.promptId === null);
+  const anyPending = checks.some((c) => c.status === "pending" || c.status === "running");
+  const running = simple.find((c) => c.status === "pending" || c.status === "running") ?? null;
+  const latest = simple.find((c) => c.status === "completed") ?? null;
+  const failed = !running && simple[0]?.status === "failed" ? simple[0] : null;
   const awaiting = startedId !== null && !checks.some((c) => c.id === startedId);
   const isRunning = submitting || awaiting || running !== null;
 
+  // 確認中は読み直す。対策プロンプトの一括実測（長時間）は 20 秒おきに緩める
   useEffect(() => {
-    if (!running && !awaiting) return;
-    const t = setInterval(() => router.refresh(), 5000);
+    if (!running && !awaiting && !anyPending) return;
+    const t = setInterval(() => router.refresh(), running || awaiting ? 5000 : 20000);
     return () => clearInterval(t);
-  }, [running, awaiting, router]);
+  }, [running, awaiting, anyPending, router]);
 
   const run = async () => {
     setSubmitting(true);
@@ -68,8 +74,8 @@ export function AioWorkspace({ project, checks, drafts, quota }: { project: AioP
     }
   };
 
-  const mentionedCount = checks.filter((c) => c.status === "completed" && c.mentioned).length;
-  const completedCount = checks.filter((c) => c.status === "completed").length;
+  const mentionedCount = simple.filter((c) => c.status === "completed" && c.mentioned).length;
+  const completedCount = simple.filter((c) => c.status === "completed").length;
   const citedDomains = latest ? [...new Set(latest.citedSources.map((c) => c.domain).filter(Boolean))] : [];
 
   return (
@@ -119,11 +125,13 @@ export function AioWorkspace({ project, checks, drafts, quota }: { project: AioP
         </div>
       </Dialog>
 
-      {/* ── 今どうか ── */}
+      <PromptMonitor project={project} prompts={prompts} checks={checks} remaining={remaining} limit={limit} onRemaining={setRemaining} />
+
+      {/* ── 今どうか（探し方での簡易実測） ── */}
       <Card>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <SectionTitle>① 今どうか（AI検索での見え方を実測）</SectionTitle>
+            <SectionTitle>② 今どうか（「探し方」1本での簡易実測）</SectionTitle>
             <p className="mt-1 text-xs text-[#8B877F]">実際に AI に聞いて、挙がった事業者と根拠にした媒体をそのまま記録します。どの AI で測ったかは結果に出ます</p>
           </div>
           <div className="flex items-center gap-3">
@@ -182,11 +190,11 @@ export function AioWorkspace({ project, checks, drafts, quota }: { project: AioP
               <summary className="cursor-pointer text-xs text-[#6B6862]">AIの回答全文を見る</summary>
               <div className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-[#2E2D29]">{latest.rawAnswer}</div>
             </details>
-            {checks.filter((c) => c.status === "completed").length > 1 && (
+            {simple.filter((c) => c.status === "completed").length > 1 && (
               <div>
                 <p className="text-xs font-semibold text-[#2E2D29]">これまでの実測</p>
                 <ul className="mt-1 space-y-0.5">
-                  {checks.filter((c) => c.status === "completed").slice(0, 12).map((c) => (
+                  {simple.filter((c) => c.status === "completed").slice(0, 12).map((c) => (
                     <li key={c.id} className="text-xs text-[#6B6862]">
                       {new Date(c.completedAt ?? c.createdAt).toLocaleDateString("ja-JP")}：{c.mentioned ? `${c.rank}番目` : "挙がらず"}（{c.engine}）
                     </li>
@@ -208,12 +216,14 @@ export function AioWorkspace({ project, checks, drafts, quota }: { project: AioP
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
+      <GapPlan project={project} gap={gap} plans={plans} hasResults={checks.some((c) => c.status === "completed")} />
+
       {/* ── 何をすべきか ── */}
       <Card>
-        <SectionTitle>② 何をすべきか（AIに拾われるための下書き）</SectionTitle>
+        <SectionTitle>⑤ 下書きを作る（AIに拾われるための文章）</SectionTitle>
         <p className="mt-1 text-xs text-[#8B877F]">他社の AIO サービスが施策として売っているものを、ここで AI が下書きします。内容を確認して、コピーして各媒体に載せてください（自動では公開しません）。作成と同時に表現チェックを通します</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {AIO_DRAFT_KINDS.map((k) => {
+          {AIO_DRAFT_KINDS.filter((k) => !k.recruit || prompts.some((p) => p.active && p.category === "recruit") || drafts.some((d) => d.kind === k.kind)).map((k) => {
             const count = drafts.filter((d) => d.kind === k.kind).length;
             const busy = generatingKind === k.kind;
             return (
