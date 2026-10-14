@@ -388,3 +388,20 @@ export async function fetchMetrics(token: string, location: string, now = new Da
   );
   return sumMetrics(r, iso(start), iso(end));
 }
+
+export type GbpMedia = { name: string; format: "PHOTO" | "VIDEO"; url: string; category: string; description: string };
+
+/**
+ * ビジネスプロフィールに自社が載せた写真・動画（オーナーの素材）。location は accounts/{a}/locations/{l}。
+ * Google マップに第三者（お客様）が投稿した写真は含めない（著作権・Google の規約上、SNS に転用しない）
+ */
+export async function listMedia(token: string, location: string, max = 100): Promise<GbpMedia[]> {
+  const r = await gget<{ mediaItems?: { name?: string; mediaFormat?: string; googleUrl?: string; description?: string; locationAssociation?: { category?: string } }[] }>(
+    `https://mybusiness.googleapis.com/v4/${location}/media?pageSize=${Math.min(100, max)}`,
+    token,
+    "写真"
+  );
+  return (r.mediaItems ?? [])
+    .filter((m) => m.name && m.googleUrl && (m.mediaFormat === "PHOTO" || m.mediaFormat === "VIDEO"))
+    .map((m) => ({ name: m.name!, format: m.mediaFormat as "PHOTO" | "VIDEO", url: m.googleUrl!, category: m.locationAssociation?.category ?? "", description: m.description ?? "" }));
+}

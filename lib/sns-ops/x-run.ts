@@ -141,15 +141,15 @@ export async function stepDrafts(sb: SupabaseClient, userId: string, opt: { coun
 }
 
 /** まだ作っていない画像だけを作る（1枚ごとに保存）。案ごとに直列で、時間切れの前に止める */
-export async function stepImages(sb: SupabaseClient, admin: SupabaseClient, userId: string, opt: { postId?: string; deadline?: number } = {}): Promise<string> {
-  let q = sb.from("sns_posts").select("id, media").eq("user_id", userId).eq("status", "draft").order("created_at", { ascending: false }).limit(20);
+export async function stepImages(sb: SupabaseClient, admin: SupabaseClient, userId: string, opt: { postId?: string; deadline?: number; aspect?: string; platform?: string } = {}): Promise<string> {
+  let q = sb.from("sns_posts").select("id, media").eq("user_id", userId).eq("status", "draft").eq("platform", opt.platform ?? "x").order("created_at", { ascending: false }).limit(20);
   if (opt.postId) q = q.eq("id", opt.postId);
   const { data } = await q;
   let made = 0;
   let failed = 0;
   for (const r of (data ?? []) as { id: string; media: OpsMedia[] }[]) {
     if (opt.deadline && Date.now() > opt.deadline) break;
-    const media = (r.media ?? []).map((m) => ({ ...m, aspect: "16:9" }));
+    const media = (r.media ?? []).map((m) => ({ ...m, aspect: opt.aspect ?? "16:9" }));
     if (!media.some((m) => !m.path && !m.hasText && m.type === "image")) continue;
     const res = await fillImages(defaultImageDeps(admin, SNS_MEDIA_BUCKET), `${userId}/${r.id}`, media, async (next) => {
       await sb.from("sns_posts").update({ media: next.map(stripAspect), updated_at: new Date().toISOString() }).eq("id", r.id);

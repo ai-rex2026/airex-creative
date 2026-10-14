@@ -38,6 +38,7 @@ export function OpsPostCard({ post, selected, onSelect }: { post: OpsPost; selec
   const editable = post.status === "draft" || post.status === "failed" || post.status === "approved";
   const [lv, lvCls] = post.guard ? (LEVEL[post.guard.level] ?? LEVEL.green) : ["チェック前", "bg-[#F4F3F0] text-[#6B6862]"];
   const [st, stCls] = STATUS[post.status];
+  const isX = post.platform === "x";
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -75,13 +76,13 @@ export function OpsPostCard({ post, selected, onSelect }: { post: OpsPost; selec
       {post.target && (post.target.text || post.target.lastMessage) && (
         <div className="mt-2 rounded-lg border-l-4 border-[#E8E5E0] bg-[#FAF9F7] px-3 py-2 text-xs text-[#6B6862]">
           <p className="font-semibold text-[#2E2D29]">
-            {post.kind === "dm" ? `DM：${post.target.senderName ?? ""}` : `@${post.target.author ?? ""}`}
+            {post.kind === "dm" ? `DM：${post.target.senderName ?? ""}` : post.kind === "reply" && !isX ? `コメント：${post.target.author ?? ""}` : `@${post.target.author ?? ""}`}
             {post.target.url && (
               <a href={post.target.url} target="_blank" rel="noreferrer" className="ml-2 font-normal text-[#3E5C76] underline">
                 元の投稿
               </a>
             )}
-            {post.kind !== "dm" && post.kind !== "repost" && <span className="ml-2 font-normal text-[#A5A198]">{post.target.summoned ? "（API で送れます）" : "（X の画面から送ります）"}</span>}
+            {isX && post.kind !== "dm" && post.kind !== "repost" && <span className="ml-2 font-normal text-[#A5A198]">{post.target.summoned ? "（API で送れます）" : "（X の画面から送ります）"}</span>}
           </p>
           <p className="mt-0.5 line-clamp-3 whitespace-pre-wrap">{post.target.text ?? post.target.lastMessage}</p>
         </div>
@@ -90,7 +91,7 @@ export function OpsPostCard({ post, selected, onSelect }: { post: OpsPost; selec
       {editing ? (
         <div className="mt-3 space-y-2">
           <Textarea rows={4} value={body} onChange={(e) => setBody(e.target.value)} />
-          <p className={cn("text-[10px]", chars(body) > 140 ? "text-[#A8705A]" : "text-[#A5A198]")}>{chars(body)} / 140字</p>
+          {isX ? <p className={cn("text-[10px]", chars(body) > 140 ? "text-[#A8705A]" : "text-[#A5A198]")}>{chars(body)} / 140字</p> : <p className="text-[10px] text-[#A5A198]">{Array.from(body).length}字</p>}
           {post.kind === "post" && (
             <>
               {thread.map((t, i) => (
@@ -99,7 +100,7 @@ export function OpsPostCard({ post, selected, onSelect }: { post: OpsPost; selec
                   <p className={cn("text-[10px]", chars(t) > 140 ? "text-[#A8705A]" : "text-[#A5A198]")}>続き{i + 1}：{chars(t)} / 140字</p>
                 </div>
               ))}
-              {thread.length < 6 && (
+              {isX && thread.length < 6 && (
                 <button type="button" className="text-xs text-[#6B6862] underline" onClick={() => setThread([...thread, ""])}>
                   ＋ 続き（リプライ）を足す
                 </button>
@@ -168,9 +169,9 @@ export function OpsPostCard({ post, selected, onSelect }: { post: OpsPost; selec
           結果：表示 {post.metrics.impressions ?? "–"}・いいね {post.metrics.likes ?? 0}・リポスト {post.metrics.reposts ?? 0}・返信 {post.metrics.replies ?? 0}・ブックマーク {post.metrics.bookmarks ?? "–"}
         </p>
       )}
-      {post.status === "published" && post.externalIds[0] && post.kind !== "dm" && (
-        <a href={`https://x.com/i/status/${post.externalIds[0]}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-[#3E5C76] underline">
-          X で見る <Icon name="external" className="h-3 w-3" />
+      {post.status === "published" && post.externalIds[0] && post.kind !== "dm" && (isX || post.target?.url) && (
+        <a href={isX ? `https://x.com/i/status/${post.externalIds[0]}` : post.target!.url!} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-[#3E5C76] underline">
+          {isX ? "X で見る" : "投稿を見る"} <Icon name="external" className="h-3 w-3" />
         </a>
       )}
       {error && <div className="mt-2"><ErrorNote>{error}</ErrorNote></div>}
@@ -182,7 +183,7 @@ export function OpsPostCard({ post, selected, onSelect }: { post: OpsPost; selec
               直す
             </Btn>
           )}
-          {(post.kind === "post" || post.kind === "quote" || post.kind === "reply") && post.media.length < 4 && (
+          {(post.kind === "post" || (isX && (post.kind === "quote" || post.kind === "reply"))) && post.media.length < (isX ? 4 : 10) && (
             <>
               <Btn variant="outline" size="sm" disabled={busy !== null} onClick={() => setShowAddImg((v) => !v)}>
                 <Icon name="imagePlus" className="h-3.5 w-3.5" /> 画像を作る

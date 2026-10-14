@@ -159,3 +159,29 @@ export function xWeightedLength(text: string): number {
   }
   return n;
 }
+
+/** 自分の投稿に付けた画像・動画（素材として取り込む） */
+export async function xOwnMedia(token: string, myUserId: string, max = 50, f: Fetch = fetch): Promise<{ key: string; type: string; url: string; text: string; postId: string }[]> {
+  const q = new URLSearchParams({
+    expansions: "attachments.media_keys",
+    "media.fields": "media_key,type,url,preview_image_url,variants",
+    exclude: "retweets,replies",
+    max_results: String(Math.min(100, Math.max(5, max))),
+  });
+  const r = await call<{
+    data?: { id: string; text: string; attachments?: { media_keys?: string[] } }[];
+    includes?: { media?: { media_key: string; type: string; url?: string; preview_image_url?: string; variants?: { content_type?: string; bit_rate?: number; url?: string }[] }[] };
+  }>(f, token, `/users/${myUserId}/tweets?${q}`);
+  const media = new Map((r.includes?.media ?? []).map((m) => [m.media_key, m]));
+  const out: { key: string; type: string; url: string; text: string; postId: string }[] = [];
+  for (const t of r.data ?? []) {
+    for (const k of t.attachments?.media_keys ?? []) {
+      const m = media.get(k);
+      if (!m) continue;
+      const video = (m.variants ?? []).filter((v) => v.content_type === "video/mp4").sort((a, b) => (b.bit_rate ?? 0) - (a.bit_rate ?? 0))[0];
+      const url = m.type === "photo" ? m.url : video?.url;
+      if (url) out.push({ key: k, type: m.type === "photo" ? "image" : "video", url, text: t.text, postId: t.id });
+    }
+  }
+  return out;
+}

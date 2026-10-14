@@ -106,12 +106,12 @@ export async function loadXConfig(sb: SupabaseClient, userId: string): Promise<{
 }
 
 /** 集めた投稿を保存する（同じ投稿は数字だけ新しくする） */
-export async function saveObserved(sb: SupabaseClient, userId: string, source: "bench" | "search" | "own", items: ObservedX[], myHandle: string | null) {
+export async function saveObserved(sb: SupabaseClient, userId: string, source: "bench" | "search" | "own", items: ObservedX[], myHandle: string | null, platform: string = "x") {
   if (!items.length) return 0;
   const me = (myHandle ?? "").toLowerCase();
   const rows = items.map((x) => ({
     user_id: userId,
-    platform: "x",
+    platform,
     source,
     external_id: x.externalId,
     author: x.author,

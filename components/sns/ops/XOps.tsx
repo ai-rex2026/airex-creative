@@ -89,7 +89,7 @@ export function XOps({
 
 // ── 共通：まとめて承認 ─────────────────────
 
-function useStep() {
+export function useStep() {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +111,7 @@ function useStep() {
   return { busy, error, info, run, setInfo };
 }
 
-function Notes({ error, info }: { error: string | null; info: string | null }) {
+export function Notes({ error, info }: { error: string | null; info: string | null }) {
   return (
     <>
       {error && <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>}
@@ -120,7 +120,7 @@ function Notes({ error, info }: { error: string | null; info: string | null }) {
   );
 }
 
-function ApprovalList({ items, empty }: { items: OpsPost[]; empty: string }) {
+export function ApprovalList({ items, empty }: { items: OpsPost[]; empty: string }) {
   const router = useRouter();
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
@@ -387,7 +387,7 @@ function AnalysisTab({ report, observed }: { report: PatternReport | null; obser
   );
 }
 
-function ObservedTable({ title, items }: { title: string; items: ObservedPost[] }) {
+export function ObservedTable({ title, items }: { title: string; items: ObservedPost[] }) {
   if (!items.length) return null;
   return (
     <Card>

@@ -46,6 +46,11 @@ export const META_SCOPES = [
   "instagram_basic",
   "instagram_manage_insights",
   "business_management",
+  // SNS運用：投稿・コメントの返信・DM（Meta のアプリレビューが要る）
+  "instagram_content_publish",
+  "instagram_manage_comments",
+  "instagram_manage_messages",
+  "pages_manage_metadata",
 ].join(",");
 
 export function hasMetaApp() {

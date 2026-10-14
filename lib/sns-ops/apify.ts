@@ -108,3 +108,77 @@ export async function searchHotPosts(run: ApifyRunner, keywords: string[], minFa
   });
   return items.map(toObservedX).filter((x): x is ObservedX => !!x);
 }
+
+const iso = (v: unknown) => {
+  if (typeof v === "number") return new Date(v > 1e12 ? v : v * 1000).toISOString();
+  if (typeof v !== "string" || !v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+};
+
+/** Instagram：伸びているアカウントの直近の投稿（プロフィールの latestPosts） */
+export async function fetchInstagramBench(run: ApifyRunner, handles: string[]): Promise<ObservedX[]> {
+  const hs = handles.map((h) => h.replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "").split(/[/?]/)[0].trim()).filter((h) => /^[A-Za-z0-9._]{1,30}$/.test(h)).slice(0, 10);
+  if (!hs.length) return [];
+  const items = await run(process.env.APIFY_ACTOR_INSTAGRAM || "apify/instagram-profile-scraper", { usernames: hs });
+  const out: ObservedX[] = [];
+  for (const prof of items) {
+    const handle = str(prof.username);
+    const followers = num(prof.followersCount);
+    for (const p of (Array.isArray(prof.latestPosts) ? prof.latestPosts : []) as Record<string, unknown>[]) {
+      const id = str(p.id) || str(p.shortCode);
+      if (!id) continue;
+      out.push({
+        externalId: id,
+        author: handle,
+        authorName: str(prof.fullName),
+        authorFollowers: followers,
+        text: str(p.caption),
+        url: str(p.url) || (str(p.shortCode) ? `https://www.instagram.com/p/${str(p.shortCode)}/` : ""),
+        media: str(p.displayUrl) ? [{ type: str(p.type).toLowerCase() || "image", url: str(p.displayUrl) }] : [],
+        likes: num(p.likesCount),
+        reposts: null,
+        replies: num(p.commentsCount),
+        quotes: null,
+        views: num(p.videoViewCount) ?? num(p.videoPlayCount),
+        bookmarks: null,
+        isReply: false,
+        conversationId: null,
+        postedAt: iso(p.timestamp),
+      });
+    }
+  }
+  return out;
+}
+
+/** TikTok：伸びているアカウントの直近の動画 */
+export async function fetchTiktokBench(run: ApifyRunner, handles: string[], perAccount = 8): Promise<ObservedX[]> {
+  const hs = handles.map((h) => h.replace(/^@/, "").replace(/^https?:\/\/(www\.)?tiktok\.com\/@?/, "").split(/[/?]/)[0].trim()).filter((h) => /^[A-Za-z0-9._]{1,30}$/.test(h)).slice(0, 8);
+  if (!hs.length) return [];
+  const items = await run(process.env.APIFY_ACTOR_TIKTOK || "clockworks/tiktok-profile-scraper", { profiles: hs, resultsPerPage: perAccount, commentsPerPost: 0 });
+  return items
+    .map((v): ObservedX | null => {
+      const id = str(v.id);
+      if (!id) return null;
+      const a = (v.authorMeta as Record<string, unknown>) ?? {};
+      return {
+        externalId: id,
+        author: str(a.name),
+        authorName: str(a.nickName),
+        authorFollowers: num(a.fans),
+        text: str(v.text),
+        url: str(v.webVideoUrl),
+        media: [],
+        likes: num(v.diggCount),
+        reposts: num(v.shareCount),
+        replies: num(v.commentCount),
+        quotes: null,
+        views: num(v.playCount),
+        bookmarks: num(v.collectCount),
+        isReply: false,
+        conversationId: null,
+        postedAt: iso(v.createTimeISO) ?? iso(v.createTime),
+      };
+    })
+    .filter((x): x is ObservedX => !!x);
+}

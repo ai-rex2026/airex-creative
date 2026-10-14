@@ -106,9 +106,19 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## SNS運用（媒体ごとの運用）（2026-10-16 追記）
 
-- 左メニュー「SNS運用」の下に X運用／Instagram運用／TikTok運用／YouTube運用（`/sns/[platform]`）。1回目は X 運用と、各社のアプリの鍵の登録。Instagram・TikTok・YouTube の運用画面と動画づくりは2回目
+- 左メニュー「SNS運用」の下に X運用／Instagram運用／TikTok運用／YouTube運用（`/sns/[platform]`）。X は `components/sns/ops/XOps.tsx`、ほかの3つは `MediaOps.tsx`
 - 各社のアプリの鍵：`sns_app_credentials`（本人のセッションから読めない表・`sealToken` で暗号化）。連携・トークン更新は自社の鍵 → 無ければ共通の鍵（環境変数）。`sns_connections.app_client_id` で、どの鍵で発行したかを覚える（`lib/social-connect/app-creds.ts`）
 - X 運用の工程（`lib/sns-ops/x-run.ts`）：集める（Apify。`claim_sns_apify_call` で1ユーザー1日6回まで）→ 自分の投稿の数字（X API）→ 型の分析 → 投稿案（画像・スレッド）→ 画像 → 反応の候補 → DM の返信案。毎日の自動は `/api/cron/sns-ops`（30分おき）で、`sns_daily_runs` に工程ごとの済み印。2回失敗した工程はその日はやめる
 - 送るのは承認した案だけ（`approveOpsPostsAction`）。スレッドは投稿1つごとに `external_ids` を保存し、続きから送る（`lib/sns-ops/x-publish.ts`）
 - X の規約（2026-02-23〜）：他人の投稿への API のリプライ・引用は、相手がこちらをメンション／こちらの投稿への返信のときだけ。それ以外は X の投稿画面（`xIntentUrl`）を開いて人が送る
 - 運用の案は `sns_posts` の `source` が `ops`／`ops_auto`。旧来の「媒体ごとの文面をまとめて作る」（`/sns`）は `manual`／`auto` だけを表示する
+
+## 動画づくりと Instagram・TikTok・YouTube の運用（2026-10-17 追記）
+
+- 動画は `sns_videos`（台本＝場面ごとのナレーション・テロップ・素材 or AI 画像）。ショート（縦 1080×1920・20〜30秒。TikTok・リール・YouTube ショート）と長尺（横 1280×720・10〜20分。YouTube。章立て → 章ごとの場面）
+- 準備（`prepareVideo`）：長尺の残りの章 → 素材の無い場面の AI 画像 → ナレーション（Gemini TTS。`GEMINI_TTS_MODEL`）。1つできるごとに保存し、済んだものは作らない。画面は ready まで `prepareVideoAction` を繰り返す
+- 書き出しはブラウザ（`components/sns/ops/render-video.ts`。WebCodecs＋mp4-muxer）。テロップは canvas で組む（画像生成モデルに文字を描かせない）。Instagram・TikTok は H.264＋AAC 必須（strict。Mac/Windows の Chrome）、YouTube は VP9／Opus でも可（relaxed）。アップロードは TUS（署名つき・x-signature）
+- 送信（`publishVideo`）：YouTube はアップロード先、TikTok は publish_id、Instagram はコンテナ ID を `publish_state` に先に保存し、やり直しは続きから（二重投稿しない）。TikTok の公開範囲は人が選ぶ（監査前のアプリは SELF_ONLY だけ）。AI 生成の申告を付ける
+- 素材（`sns_materials`）：自社のビジネスプロフィールの写真（Google マップに第三者が投稿した写真は使わない）・自分の X／Instagram の投稿・アップロード・事実のメモ・AI 写真。取り込みは各社の配信元のホストだけ許可
+- Instagram の投稿・コメント・DM、YouTube のコメントは `sns_posts`（platform は meta／youtube）。送るのは `sendApprovedMedia`（承認済みだけ）。TikTok はコメント・DM の API が無いので扱わない
+- 検証は外部 API を差し替えて行う（`creds`／`fetch`／`wait` を引数で渡せる）。書き出しは Playwright の Chromium で VP9＋Opus の経路を確かめた（H.264／AAC は Chromium に無いので Chrome で確認する）

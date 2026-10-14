@@ -12,6 +12,7 @@ import { OPS_POST_COLUMNS, rowToOpsPost } from "@/lib/sns-ops/ops-store";
 import { lengthWarnings } from "@/lib/sns-ops/x-brain";
 import { xIntentUrl } from "@/lib/sns-ops/x-api";
 import type { OpsMedia, XOpsConfig } from "@/lib/sns-ops/ops-types";
+import { sendApprovedMedia } from "@/lib/sns-ops/media-run";
 import { SNS_MEDIA_BUCKET, sendApproved, stripAspect, stepBench, stepDms, stepDrafts, stepEngage, stepImages, stepOwn, stepPatterns, stepSearch } from "@/lib/sns-ops/x-run";
 
 /**
@@ -30,10 +31,7 @@ async function me() {
   return { sb, userId: user.id };
 }
 
-const refresh = () => {
-  revalidatePath("/sns/x");
-  revalidatePath("/sns");
-};
+const refresh = () => revalidatePath("/sns", "layout");
 const now = () => new Date().toISOString();
 
 // ── 各社のアプリの鍵 ─────────────────────
@@ -159,9 +157,12 @@ export async function approveOpsPostsAction(ids: string[], opt: { sendNow: boole
         out.push({ id, result: "scheduled", message: "時間の都合で、30分以内の自動送信に回しました" });
         continue;
       }
-      const r = await sendApproved(sb, admin, userId, id);
+      const r = post.platform === "x" ? await sendApproved(sb, admin, userId, id) : await sendApprovedMedia(sb, admin, userId, id);
       if (r === "needs_human") {
         out.push({ id, result: "needs_human", intentUrl: xIntentUrl({ text: post.body, replyTo: post.kind === "reply" ? post.target?.externalId : null, quoteUrl: post.kind === "quote" ? post.target?.url : null }) });
+      } else if (r === "processing") {
+        await sb.from("sns_posts").update({ scheduled_at: now() }).eq("id", id);
+        out.push({ id, result: "scheduled", message: "媒体側で処理中です。30分以内の自動で続きを送ります" });
       } else out.push({ id, result: "published" });
     } catch (e) {
       out.push({ id, result: "error", message: e instanceof Error ? e.message : String(e) });
@@ -204,7 +205,7 @@ export async function regenerateOpsImageAction(id: string, key: string, prompt?:
   const media = post.media.map((m) => (m.key === key ? { ...m, prompt: prompt?.trim() ? prompt.trim().slice(0, 600) : m.prompt, path: null, hasText: false, error: null, regen } : m));
   await sb.from("sns_posts").update({ media, media_ids: {}, updated_at: now() }).eq("id", id);
   const admin = createAdminClient();
-  const r = await fillImages(defaultImageDeps(admin, SNS_MEDIA_BUCKET), `${userId}/${id}`, media.map((m) => ({ ...m, aspect: "16:9" })), async (next) => {
+  const r = await fillImages(defaultImageDeps(admin, SNS_MEDIA_BUCKET), `${userId}/${id}`, media.map((m) => ({ ...m, aspect: post.platform === "meta" ? "4:5" : "16:9" })), async (next) => {
     await sb.from("sns_posts").update({ media: next.map(stripAspect), updated_at: now() }).eq("id", id);
   });
   refresh();
@@ -215,10 +216,10 @@ export async function regenerateOpsImageAction(id: string, key: string, prompt?:
 export async function addOpsImageAction(id: string, prompt: string, alt: string) {
   const { sb, userId } = await me();
   const post = await loadOwned(sb, userId, id);
-  if (post.media.length >= 4) throw new Error("画像は4枚までです");
+  if (post.media.length >= (post.platform === "x" ? 4 : 10)) throw new Error(`画像は${post.platform === "x" ? 4 : 10}枚までです`);
   const media: OpsMedia[] = [...post.media, { key: `img${Date.now()}`, type: "image", path: null, prompt: prompt.slice(0, 600), alt: alt.slice(0, 80) }];
   await sb.from("sns_posts").update({ media, updated_at: now() }).eq("id", id);
-  await stepImages(sb, createAdminClient(), userId, { postId: id, deadline: Date.now() + 200_000 });
+  await stepImages(sb, createAdminClient(), userId, { postId: id, deadline: Date.now() + 200_000, platform: post.platform, aspect: post.platform === "meta" ? "4:5" : "16:9" });
   refresh();
 }
 
@@ -238,7 +239,7 @@ export async function attachOpsUploadAction(id: string, path: string, alt: strin
   const { sb, userId } = await me();
   const post = await loadOwned(sb, userId, id);
   if (!path.startsWith(`${userId}/${id}/upload-`)) throw new Error("この画像は使えません");
-  if (post.media.length >= 4) throw new Error("画像は4枚までです");
+  if (post.media.length >= (post.platform === "x" ? 4 : 10)) throw new Error(`画像は${post.platform === "x" ? 4 : 10}枚までです`);
   const { data } = await createAdminClient().storage.from(SNS_MEDIA_BUCKET).list(`${userId}/${id}`, { search: path.split("/").pop() });
   if (!data?.length) throw new Error("アップロードした画像が見つかりません");
   const media: OpsMedia[] = [...post.media, { key: `up${Date.now()}`, type: "image", path, prompt: "", alt: alt.slice(0, 80) }];
