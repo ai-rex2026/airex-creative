@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, useTransition } from "react";
 import { deleteReplyAction, replyToReviewAction } from "@/app/meo-actions";
 import { MeoPageHeader, useMeo } from "@/components/meo/Workspace";
 import { FilterPills, ReviewCard } from "@/components/meo/parts";
-import { ErrorNote } from "@/components/meo/ui";
+import { ErrorNote, Icon } from "@/components/meo/ui";
+import { meoPath } from "@/lib/meo-ops/logic";
 import type { MeoReview } from "@/lib/meo-ops/types";
 
 type Filter = "all" | "unreplied" | "needsUpdate" | "lowRating";
@@ -79,6 +81,17 @@ function Reviews() {
           クチコミの取り込みと返信の送信には、Googleビジネスプロフィールとの連携が必要です。「設定」タブから連携してください。
         </p>
       )}
+      <Link
+        href={`${meoPath(storeId)}?sec=fix&open=kit`}
+        className="flex items-center gap-3 rounded-2xl border border-[#E0D6C8] bg-[#FBF8F3] px-4 py-3 text-sm hover:border-[#C9A84C]"
+      >
+        <Icon name="star" className="h-5 w-5 shrink-0 text-[#8A5340]" />
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold text-[#2E2D29]">店頭QRの口コミ画面（口コミを増やす）</span>
+          <span className="block text-xs text-[#8B877F]">QRコードの印刷、お客様のスマホに出る画面の確認、POP・会計時のひとことはこちら</span>
+        </span>
+        <Icon name="arrowRight" className="h-4 w-4 text-[#A5A198]" />
+      </Link>
       <FilterPills items={FILTERS} value={filter} counts={counts} onChange={setFilter} />
       {saveError && <ErrorNote>{saveError}</ErrorNote>}
       {refreshing && <p className="text-xs text-[#8B877F]">最新の状態に更新しています…</p>}

@@ -68,7 +68,17 @@ export type AioPack = {
   words: { word: string; why: string }[];
 };
 export type GuardPack = { hits: (GuardHit & { where: string })[]; checked: number; level: "green" | "yellow" | "red" };
-export type Winner = { name: string; url?: string; works: string[]; evidence: string };
+export type Winner = {
+  name: string;
+  url?: string;
+  works: string[];
+  evidence: string;
+  /** Google の登録情報（実測）。AI に作らせない数字 */
+  rating?: number | null;
+  reviewCount?: number | null;
+  /** 何を読めたか：page=相手のページを直接読んだ / search=web 検索で集めた / places=Google の登録情報だけ / none=何も取れず */
+  read?: "page" | "search" | "places" | "none";
+};
 export type WinnersPack = {
   from: "ai" | "places";
   items: Winner[];

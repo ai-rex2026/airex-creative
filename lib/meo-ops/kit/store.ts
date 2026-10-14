@@ -99,7 +99,7 @@ function cmp(now: number | null, prev: number | null, higherIsBetter = true): Ki
  * 画面の一番上の「今の数字」と前回比。
  * AI検索で挙がったか（最新と1つ前の実測）・マップ順位（上位3位に入る語の数。今月と前回の計測）・口コミ数と平均評価（今と約4週前）。
  */
-export async function buildNumbers(sb: SupabaseClient, storeId: string, store: MeoStoreSnapshot | null, scoreTotal: number | null): Promise<KitNumber[]> {
+export async function buildNumbers(sb: SupabaseClient, storeId: string, store: MeoStoreSnapshot | null, score: { total: number; rank: string } | null): Promise<KitNumber[]> {
   const ago = new Date(Date.now() - 28 * 86400_000);
   const [checks, kw, ranks, daily] = await Promise.all([
     sb.from("ai_search_checks").select("mentioned, rank, created_at").eq("store_id", storeId).eq("status", "completed").order("created_at", { ascending: false }).limit(2),
@@ -159,7 +159,7 @@ export async function buildNumbers(sb: SupabaseClient, storeId: string, store: M
     delta: cmp(store?.rating ?? null, d0?.average_rating ?? null),
     note: "Google の登録情報から",
   });
-  if (scoreTotal != null) out.push({ key: "score", label: "集客スコア", value: `${scoreTotal}点`, prev: null, delta: null, note: "今のページを、評価の基準ごとに採点した合計" });
+  if (score) out.push({ key: "score", label: "集客スコア", value: `${score.total}点（${score.rank}）`, prev: null, delta: null, note: "今のページを、評価の基準ごとに採点した合計" });
   return out;
 }
 
@@ -200,7 +200,7 @@ export async function loadKitData(sb: SupabaseClient, row: KitRow): Promise<KitD
     steps,
     plan: toPlan(kit.data?.plan),
     auto: toAuto(kit.data?.auto),
-    numbers: await buildNumbers(sb, row.id, store, results.score?.total ?? null),
+    numbers: await buildNumbers(sb, row.id, store, results.score ? { total: results.score.total, rank: results.score.rank } : null),
     pendingCount: pending.count ?? 0,
     reviewUrl,
     reviewPagePath: `/review?${qs.toString()}`,

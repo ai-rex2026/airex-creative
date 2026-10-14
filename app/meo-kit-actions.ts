@@ -171,9 +171,10 @@ export async function runWinnersAction(id: string): Promise<{ ok: boolean; error
       if (k && !(own && (k.includes(own) || own.includes(k))) && !listed.includes(n)) listed.push(n);
     }
   const from = listed.length ? "ai" : "places";
-  const names = (listed.length ? listed : (ctx.store?.competitors ?? []).map((c) => c.name)).filter(Boolean).slice(0, 3);
+  // AI検索で挙がった店は名前だけなので Google で特定し直す。近くの同業は placeId を持っているのでそのまま使う
+  const rivals = (listed.length ? listed.map((name) => ({ name })) : (ctx.store?.competitors ?? []).map((c) => ({ name: c.name, placeId: c.placeId }))).filter((r) => r.name).slice(0, 3);
   try {
-    const result = await stepWinners(ctx, names, from);
+    const result = await stepWinners(ctx, rivals, from);
     await saveStep(sb, id, "winners", result);
     return { ok: true, error: null };
   } catch (e) {

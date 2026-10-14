@@ -22,7 +22,9 @@ export type Render =
   | "aio-jsonld"
   | "winners"
   | "measure"
-  | "guard";
+  | "guard"
+  | "score-fix"
+  | "winners-actions";
 
 export type PlanItem = {
   id: string;
@@ -71,7 +73,7 @@ export function buildPlan(r: KitResults, kind: KitKind, ctx: { unreplied: number
     id: "kit",
     render: "kit",
     source: "kit",
-    title: "口コミのQRコードを店に置いて、会計時にひとこと添える",
+    title: "店頭QRの口コミ画面を用意する（QRを置いて、会計時にひとこと）",
     where: kind === "beauty" ? "鏡の横・レジ" : kind === "food" ? "テーブル・レジ" : "受付・レジ",
     minutes: 10,
     why: "口コミはお願いしないと増えません。QRならその場でスマホから書けます。星が低い人の声はまずお店に届きます",
@@ -87,10 +89,31 @@ export function buildPlan(r: KitResults, kind: KitKind, ctx: { unreplied: number
     why: "返信が並んでいると、これから来る人に丁寧なお店だと伝わります。低い評価ほど早く返します",
   });
   if (kind === "food") push({ id: "coupon", render: "coupon", source: "coupon", title: "再来店クーポンを配り始める", where: "会計時・LINE", minutes: 5, why: "口コミとは切り離して、来た人全員に渡します（口コミの条件にしない）" });
-  if (kind === "beauty") push({ id: "insta", render: "insta", source: null, title: "インスタにも同じ切り口で投稿する", where: "SNS運用", minutes: 15, why: "連携した SNS ごとに書き分けた投稿案を、言葉のチェックつきで作れます" });
+  if (kind === "beauty") push({ id: "insta", render: "insta", source: null, title: "インスタにも同じ切り口で投稿する", where: "SNS運用", minutes: 15, repeat: "毎週", why: "連携した SNS ごとに書き分けた投稿案を、言葉のチェックつきで作れます" });
   push({ id: "aio-ask", render: "aio-ask", source: "aio", title: "AIにどう紹介されているか確かめる", where: "ChatGPT・Google の AIモード", minutes: 2, why: "「このお店ってどんな店？」と聞いたときのAIの答えと、AIがまだ知らない強みを出しています" });
   push({ id: "aio-faq", render: "aio-faq", source: "aio", title: "「よくある質問」をサイトかGoogleマップに載せる", where: "お店のHP／Googleビジネスプロフィール", minutes: 10, why: "AIは質問の形で情報を拾うので、AIに聞かれたときに答えてもらいやすくなります" });
   push({ id: "aio-jsonld", render: "aio-jsonld", source: "aio", title: "店舗情報の構造化データをサイトに貼る（制作会社に渡すだけ）", where: "お店のHP", minutes: 5, why: "検索エンジンやAIが、店名・住所・営業時間を機械的に読めるようになります。Google の登録情報から作っています" });
+  const low = (r.score?.items ?? []).filter((x) => x.score < 80 && x.fix);
+  if (low.length)
+    push({
+      id: "score-fix",
+      render: "score-fix",
+      source: "score",
+      title: `集客スコアで点の低い所を直す（${low.length}か所）`,
+      where: "お店のページ",
+      minutes: 10,
+      why: "採点で80点に届かなかった基準と、その直し方です。直して載せたら「今の状態」で採点し直すと点数が変わります",
+    });
+  if (r.winners?.actions.length)
+    push({
+      id: "winners-actions",
+      render: "winners-actions",
+      source: "winners",
+      title: "先に挙がる店との差を埋める（今月やること）",
+      where: "Googleマップ・お店のページ",
+      minutes: 15,
+      why: `${r.winners.items.map((x) => x.name).slice(0, 3).join("・")}と比べて出した、今月やることです。差の中身は「今の状態」で見られます`,
+    });
   push({
     id: "winners",
     render: "winners",
