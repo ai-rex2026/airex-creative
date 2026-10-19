@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { draftPostAction, draftReplyAction } from "@/app/meo-actions";
+import { draftPostAction, draftReplyAction, generatePostImageAction, uploadPostImageAction } from "@/app/meo-actions";
 import {
   calcCompleteness,
   dismissPromptForToday,
@@ -356,6 +356,10 @@ export function PostCard({
       </div>
       <h3 className="mt-3 font-semibold text-[#2E2D29]">{post.title}</h3>
       <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-[#6B6862]">{post.body}</p>
+      {post.imageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={post.imageUrl} alt="投稿の画像" className="mt-3 h-32 w-44 rounded-lg border border-[#E8E5E0] object-cover" />
+      )}
       {post.errorMessage && <p className="mt-2 text-xs text-[#A8705A]">Googleへの配信に失敗しました: {post.errorMessage}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[#8B877F]">
         <span className="inline-flex items-center gap-1">
@@ -460,6 +464,23 @@ const ACTION_BUTTONS = [
   { value: "call", label: "電話する" },
 ];
 
+/** 投稿の画像をブラウザで長辺1600pxに縮める（アップロードを軽く保つ）。縮められないときは元のまま */
+async function shrinkImage(file: File): Promise<File> {
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    if (scale === 1 && file.size <= 1_500_000) return file;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext("2d")?.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.85));
+    return blob ? new File([blob], "post.jpg", { type: "image/jpeg" }) : file;
+  } catch {
+    return file;
+  }
+}
+
 /** GBP最新情報の投稿作成。AI生成 → 編集 → 予約 の順で1画面に収める */
 export function PostComposer({
   storeId,
@@ -484,6 +505,37 @@ export function PostComposer({
   const [isSaving, setIsSaving] = useState(false);
   const [hits, setHits] = useState<GuardHit[]>([]);
   const [genError, setGenError] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageHint, setImageHint] = useState("");
+  const [imageBusy, setImageBusy] = useState<"upload" | "ai" | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+
+  const onPickImage = async (file: File | undefined) => {
+    if (!file) return;
+    setImageBusy("upload");
+    setImageError(null);
+    try {
+      const form = new FormData();
+      form.set("file", await shrinkImage(file));
+      setImageUrl((await uploadPostImageAction(storeId, form)).url);
+    } catch (e) {
+      setImageError(e instanceof Error ? e.message : "画像をアップロードできませんでした");
+    } finally {
+      setImageBusy(null);
+    }
+  };
+
+  const makeImage = async () => {
+    setImageBusy("ai");
+    setImageError(null);
+    try {
+      setImageUrl((await generatePostImageAction(storeId, { title, body, hint: imageHint })).url);
+    } catch (e) {
+      setImageError(e instanceof Error ? e.message : "画像を作れませんでした");
+    } finally {
+      setImageBusy(null);
+    }
+  };
 
   const generate = async () => {
     setIsGenerating(true);
@@ -512,7 +564,7 @@ export function PostComposer({
         body: body.trim(),
         status,
         scheduledAt: status === "scheduled" && scheduledAt ? new Date(scheduledAt).toISOString() : null,
-        imageUrl: null,
+        imageUrl,
         actionButton: actionButton === "none" ? null : { label, url: websiteUrl ?? "" },
         aiGenerated,
       });
@@ -568,6 +620,33 @@ export function PostComposer({
         </div>
 
         <GuardNotes hits={hits} />
+
+        <div className="space-y-2">
+          <Label>画像（任意）</Label>
+          {imageUrl && (
+            <div className="flex items-start gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imageUrl} alt="投稿に添える画像" className="h-28 w-36 rounded-lg border border-[#E8E5E0] object-cover" />
+              <Btn variant="outline" size="sm" onClick={() => setImageUrl(null)} disabled={imageBusy !== null}>
+                画像を外す
+              </Btn>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <label className={cn("inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#E0DBD1] bg-white px-3 py-1.5 text-sm font-semibold text-[#2E2D29] hover:bg-[#F4F3F0]", imageBusy !== null && "pointer-events-none opacity-50")}>
+              <Icon name={imageBusy === "upload" ? "loader" : "image"} className="h-3.5 w-3.5" />
+              {imageBusy === "upload" ? "アップロード中..." : "画像をアップロード"}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={imageBusy !== null} onChange={(e) => { void onPickImage(e.target.files?.[0]); e.target.value = ""; }} />
+            </label>
+            <Btn variant="outline" size="sm" onClick={makeImage} disabled={imageBusy !== null || (!title.trim() && !body.trim())}>
+              <Icon name={imageBusy === "ai" ? "loader" : "sparkles"} className="h-3.5 w-3.5" />
+              {imageBusy === "ai" ? "画像を作っています（20〜40秒）..." : "AIで画像を作る"}
+            </Btn>
+          </div>
+          <Input value={imageHint} onChange={(e) => setImageHint(e.target.value)} maxLength={200} placeholder="AI画像の方向性（任意）例: 明るい店内、木のテーブル、自然光" disabled={imageBusy !== null} />
+          <p className="text-xs text-[#A5A198]">JPEG・PNG・WebP。AIが作る画像には文字を入れません。投稿の内容に合っているか、公開前に確認してください。</p>
+          {imageError && <p className="text-xs text-[#A8705A]">{imageError}</p>}
+        </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">

@@ -140,6 +140,11 @@ export function AiSearchResultCard({ check, storeName }: { check: AiSearchCheck;
             「{check.queryArea} {check.queryCategory}」で質問
           </p>
         </div>
+        {check.errorMessage && check.engine === "claude" && (
+          <p className="mt-2 rounded-lg bg-[#F8F1ED] px-3 py-2 text-xs leading-relaxed text-[#8A5340]">
+            今回はGeminiで測れなかったため、Claudeで測定しました。理由: {check.errorMessage.replace(/^Geminiが使えなかったためClaudeで測定しました:\s*/, "").slice(0, 200)}
+          </p>
+        )}
         {check.mentioned ? (
           <p className="disp mt-3 text-xl font-black text-[#2E2D29]">
             候補に挙がりました

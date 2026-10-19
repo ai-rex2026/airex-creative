@@ -10,6 +10,7 @@ import { jstDateKey, writeDaily } from "@/lib/meo-ops/daily";
 import { citationQuota, rowToCitation, runCitationCheck } from "@/lib/meo-ops/citations";
 import { loadKeywordData, measureStoreKeywords, normalizeOrigin, originFromStore, suggestKeywords, MAX_KEYWORDS, type RankOrigin } from "@/lib/meo-ops/keywords";
 import { createCheck, defaultQuery, quota, runCheck } from "@/lib/meo-ops/ai-search";
+import { defaultImageDeps, makeOne } from "@/lib/aio/images";
 import { draftDescription, draftPost, draftReply, suggestSearchTerm } from "@/lib/meo-ops/writer";
 import { MEO_STORE_COLUMNS, rowToReview, type MeoStoreRow } from "@/lib/meo-ops/workspace";
 import { buildAiSearchPrompt, DEFAULT_AI_REPLY_SETTINGS } from "@/lib/meo-ops/logic";
@@ -223,6 +224,68 @@ export async function createPostAction(id: string, p: MeoPostInput) {
   });
   if (error) throw new Error("投稿の保存に失敗しました");
   refresh(id);
+}
+
+// ── 投稿の画像 ─────────────────────────────────
+/** 投稿の画像の置き場。Google が公開URLから取りに来るので公開バケット（投稿としてGoogleに載る画像だけを置く） */
+const POST_IMAGE_BUCKET = "meo-post-images";
+/** Google の写真の上限は5MB。ブラウザ側で縮小して送るので、サーバーでも念のため止める */
+const POST_IMAGE_MAX_BYTES = 4_500_000;
+const POST_IMAGE_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+
+async function ensurePostImageBucket(admin: ReturnType<typeof createAdminClient>) {
+  const { data } = await admin.storage.getBucket(POST_IMAGE_BUCKET);
+  if (data) return;
+  const { error } = await admin.storage.createBucket(POST_IMAGE_BUCKET, { public: true, fileSizeLimit: 5 * 1024 * 1024 });
+  if (error && !/already exists/i.test(error.message)) throw new Error("画像の保存先を用意できませんでした");
+}
+
+function postImageUrl(admin: ReturnType<typeof createAdminClient>, path: string) {
+  return admin.storage.from(POST_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+/** 自分で用意した画像を投稿用にアップロードする。公開URLを返す（保存はこのURLを投稿に入れて行う） */
+export async function uploadPostImageAction(id: string, form: FormData): Promise<{ url: string }> {
+  await owned(id);
+  const file = form.get("file");
+  if (!(file instanceof File)) throw new Error("画像を選んでください");
+  const ext = POST_IMAGE_TYPES[file.type];
+  if (!ext) throw new Error("画像は JPEG・PNG・WebP のいずれかにしてください");
+  if (file.size > POST_IMAGE_MAX_BYTES) throw new Error("画像が大きすぎます（5MB以下にしてください）");
+  if (file.size < 1024) throw new Error("画像が小さすぎます");
+  const admin = createAdminClient();
+  await ensurePostImageBucket(admin);
+  const path = `${id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await admin.storage.from(POST_IMAGE_BUCKET).upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type, upsert: false });
+  if (error) throw new Error("画像を保存できませんでした");
+  return { url: postImageUrl(admin, path) };
+}
+
+/**
+ * 投稿に添える画像をAIで作る。人が「AIで画像を作る」を押したときだけ呼ばれる。
+ * 画像の中に文字は入れない（AGENTS.md）。文字が入ったら1回だけ作り直し、2回とも入っていたら使わない。
+ */
+export async function generatePostImageAction(id: string, input: { title: string; body: string; hint?: string }): Promise<{ url: string }> {
+  const { row } = await owned(id);
+  const title = input.title.trim().slice(0, 100);
+  const body = input.body.trim().slice(0, 300);
+  if (!title && !body) throw new Error("先にタイトルか本文を入力してください。内容に合わせて画像を作ります");
+  const store = row.meo_store;
+  const prompt = [
+    "Create a photo-style image to accompany a Google Business Profile post for a local business in Japan.",
+    store?.category ? `Business type: ${store.category}.` : "",
+    `Post title (Japanese): ${title}`,
+    body ? `Post text (Japanese): ${body}` : "",
+    input.hint?.trim() ? `Additional direction: ${input.hint.trim().slice(0, 200)}` : "",
+    "Show the atmosphere, product or service described, in a way that fits the post. Do not depict identifiable real people's faces closely.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const admin = createAdminClient();
+  await ensurePostImageBucket(admin);
+  const r = await makeOne(defaultImageDeps(admin, POST_IMAGE_BUCKET), id, { key: "ai", prompt, path: null, aspect: "4:3" });
+  if (!("path" in r)) throw new Error("文字が入った画像しか作れませんでした。方向性を書き足して、もう一度お試しください");
+  return { url: postImageUrl(admin, r.path) };
 }
 
 const POST_ACTION_TYPE: Record<string, GbpPostAction> = { 予約する: "BOOK", 詳細を見る: "LEARN_MORE", 電話する: "CALL" };
@@ -474,7 +537,10 @@ export async function gbpListLocationsAction(id: string): Promise<{ locations: G
 async function syncReviews(id: string, userId: string, account: string, location: string) {
   const token = await gbpToken(userId);
   const reviews = await listReviews(token, account, location);
-  const r = await saveReviews(createAdminClient(), id, reviews);
+  const admin = createAdminClient();
+  const r = await saveReviews(admin, id, reviews);
+  // 取り込んだ時刻を残す（画面の「口コミ最終取り込み」。列が無い環境でも取り込み自体は成功させる）
+  await admin.from("stores").update({ meo_reviews_synced_at: new Date().toISOString() }).eq("id", id);
   return { fetched: reviews.length, ...r };
 }
 
