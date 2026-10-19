@@ -63,7 +63,10 @@ export function ArticleCard({ article, wp }: { article: AioArticle; wp: AioWpInf
     setError(null);
     setDone(null);
     try {
-      await fn();
+      const r = (await fn()) as { ok?: boolean; error?: string; failed?: number; imageErrors?: string[] } | undefined;
+      // Server Action は失敗を値で返す（本番では throw した文面が画面に届かないため）
+      if (r && r.ok === false) throw new Error(r.error || "うまくいきませんでした");
+      if (r && r.failed) throw new Error(`画像を${r.failed}枚作れませんでした${r.imageErrors?.length ? `：${r.imageErrors.join(" / ")}` : ""}`);
       if (ok) setDone(ok);
       router.refresh();
     } catch (e) {
