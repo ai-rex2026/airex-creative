@@ -425,3 +425,16 @@ export function guessAreaFromAddress(address: string | null): string {
   const m = /^(.+?[市区町村])/.exec(text);
   return m ? m[1] : "";
 }
+
+/**
+ * AI に渡す「今日」の事実（日本時間）。文章づくりで季節・時期を取り違えないために、必ず日付と季節を渡す。
+ * 例: 「今日の日付（日本時間）: 2026年10月19日（10月・秋）」
+ */
+export function todayFact(now: Date = new Date()): string {
+  const jst = new Date(now.getTime() + 9 * 3600 * 1000);
+  const y = jst.getUTCFullYear();
+  const m = jst.getUTCMonth() + 1;
+  const d = jst.getUTCDate();
+  const season = m >= 3 && m <= 5 ? "春" : m >= 6 && m <= 8 ? "夏" : m >= 9 && m <= 11 ? "秋" : "冬";
+  return `今日の日付（日本時間）: ${y}年${m}月${d}日（${m}月・${season}）`;
+}

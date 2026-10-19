@@ -2,6 +2,7 @@ import { askJson, MODEL_FAST } from "../anthropic";
 import { checkGuard, checkGuardDict } from "../guardrail";
 import type { GuardHit, Industry } from "../types";
 import { normalizeJapanese } from "./japanese";
+import { todayFact } from "./logic";
 import type { MeoAiReplySettings, MeoReview, MeoStoreSnapshot } from "./types";
 
 /**
@@ -73,6 +74,9 @@ ${JA_ONLY_RULE}
 - 「No.1」「必ず」「絶対」「最高」「最安」など根拠の要る表現は使わない
 - タイトルは30文字以内、本文は300文字以内。絵文字は使わない
 - 来店・予約につながる一文で締める
+- 「今日の日付」が与えられている。季節・時期の話は、必ずその日付の月と季節に合わせる。ほかの季節の行事・食材・気候・服装は書かない
+  （例: 秋に「夏休み」「梅雨」「お花見」を書かない）。時期の限定表現（「今月」「今週」など）も与えられた日付を基準にする
+- 季節の話題でも、与えられていない行事の日付・イベント名・期間は創作しない。月や季節の一般的な様子にとどめる
 
 出力: {"title":"タイトル","body":"本文"}`;
 
@@ -115,6 +119,7 @@ export async function draftPost(store: Pick<MeoStoreSnapshot, "name" | "category
     store?.address ? `所在地: ${store.address}` : "",
     store?.openingHours?.length ? `営業時間: ${store.openingHours.join(" / ")}` : "",
     `投稿テーマ: ${POST_THEMES[theme] ?? theme}`,
+    todayFact(),
   ].filter(Boolean);
   const res = await askJson<{ title?: string; body?: string }>(POST_SYSTEM, facts.join("\n"), { model: MODEL_FAST, maxTokens: 1200, timeoutMs: 60_000 });
   const title = normalizeJapanese(String(res.title ?? "").trim()).slice(0, 200);

@@ -4,6 +4,7 @@ import type { Industry } from "../../types";
 import { ask } from "../ai-search";
 import { normalizeJapanese } from "../japanese";
 import type { MeoStoreSnapshot } from "../types";
+import { todayFact } from "../logic";
 import { findPlaceNear, getPlaceDetails } from "../places";
 import { hpbSalonUrl, keywordHits, KIND_LABEL, lawOf, LIMITS, rankOf, readPage, RULES, withCount, writeReviewUrl } from "./text";
 import type {
@@ -67,7 +68,7 @@ function placeFacts(c: KitCtx): string {
 
 export function facts(c: KitCtx): string {
   const d = c.results.diagnose;
-  const lines = [placeFacts(c)];
+  const lines = [placeFacts(c), todayFact()];
   if (d) {
     lines.push(
       `店名: ${d.name}`,
@@ -332,7 +333,7 @@ export async function stepMeo(c: KitCtx): Promise<MeoPack> {
     `あなたは Googleビジネスプロフィール（Googleマップ）の文章を書く人です。
 - description.after は店舗の説明文（${L.description}文字以内）。何の店で、誰に、何が強いかを事実で。狙う語は自然に入るところにだけ
 - description.why は、今の説明文と比べて何が変わるかを1〜2文（今の説明文が無ければ「今の説明文が登録されていないので、お店の情報から作りました。」から始める）
-- posts は週1本×4週の投稿文（各200〜400文字）。季節・メニュー・スタッフ・来店前の不安への答え など切り口を変える。口コミの引用・一般論は書かない
+- posts は週1本×4週の投稿文（各200〜400文字）。季節・メニュー・スタッフ・来店前の不安への答え など切り口を変える。季節の話は「今日の日付」の月・季節に合わせ、ほかの季節の話は書かない。口コミの引用・一般論は書かない
 - calendar は posts に対応する4週分の {week:"第1週", theme:"..."}
 ${c.kind === "food" ? `- menu は看板メニュー3品の紹介文（各120文字以内）。サイトにあるメニューだけ` : ""}
 ${RULES}
@@ -619,7 +620,7 @@ export async function nextSeriesPost(c: KitCtx): Promise<{ series: SeriesPack; p
 - 「選ばれない理由」への答えを最低4本入れる
 - title はテーマの題（25文字以内）、angle は何を書くか1文
 ${RULES}`,
-      `${facts(c)}\n今月: ${new Date().getMonth() + 1}月\n\n出力: {"themes":[{"title":"","angle":""}]}`,
+      `${facts(c)}\n\n出力: {"themes":[{"title":"","angle":""}]}`,
       { maxTokens: 2000 }
     );
     series = { themes: (t.themes ?? []).slice(0, 12).map((x) => ({ title: N(x.title), angle: N(x.angle) })), posts: [] };
