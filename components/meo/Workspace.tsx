@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { searchStoreCandidatesAction, selectStoreAction } from "@/app/meo-actions";
-import { formatDate, MEO_TABS, meoPath } from "@/lib/meo-ops/logic";
+import { formatDate, formatDateTime, MEO_TABS, meoPath } from "@/lib/meo-ops/logic";
 import type { GbpConnectionStatus, MeoStore, MeoWorkspaceData, StoreCandidate } from "@/lib/meo-ops/types";
 import { Btn, cn, Dialog, Icon, Input } from "./ui";
 
@@ -154,7 +154,7 @@ function MeoStoreHeader({ data, storeId, unrepliedCount }: { data: MeoWorkspaceD
           {store.lastSyncedAt && (
             <span className="inline-flex items-center gap-1.5">
               <Icon name="refresh" className="h-3.5 w-3.5" />
-              最終同期 {formatDate(store.lastSyncedAt)}
+              口コミ最終取り込み {formatDateTime(store.lastSyncedAt)}
             </span>
           )}
         </div>

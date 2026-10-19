@@ -243,7 +243,7 @@ export async function loadWorkspace(
   a: MeoStoreRow,
   gbpConnected: boolean
 ): Promise<MeoWorkspaceData> {
-  const [reviews, posts, metrics, daily, settings, checks, summary] = await Promise.all([
+  const [reviews, posts, metrics, daily, settings, checks, summary, synced] = await Promise.all([
     sb.from("meo_reviews").select("*").eq("store_id", a.id).order("reviewed_at", { ascending: false }).limit(500),
     sb.from("meo_posts").select("*").eq("store_id", a.id).order("created_at", { ascending: false }).limit(200),
     sb.from("meo_metrics").select("*").eq("store_id", a.id).order("period", { ascending: false }).limit(1).maybeSingle(),
@@ -251,6 +251,8 @@ export async function loadWorkspace(
     sb.from("meo_settings").select("*").eq("store_id", a.id).maybeSingle(),
     sb.from("ai_search_checks").select("*").eq("store_id", a.id).order("created_at", { ascending: false }).limit(AI_CHECK_HISTORY_LIMIT),
     sb.from("ai_search_summary").select("*").eq("store_id", a.id).maybeSingle(),
+    // 口コミを Google から最後に取り込んだ時刻。列が無い環境でもページ全体を壊さないよう、別に読んで失敗は無視する
+    sb.from("stores").select("meo_reviews_synced_at").eq("id", a.id).maybeSingle(),
   ]);
 
   const reviewList = (reviews.data ?? []).map((r) => rowToReview(r));
@@ -274,7 +276,7 @@ export async function loadWorkspace(
       ratingRank: store?.ratingRank ?? null,
       competitorCount: store?.competitors.length ?? 0,
       // 同期のタイミングはクチコミの取り込み日時で代用する
-      lastSyncedAt: reviewList[0]?.createdAt ?? null,
+      lastSyncedAt: (synced.data as { meo_reviews_synced_at?: string | null } | null)?.meo_reviews_synced_at ?? null,
     },
     checklist: buildProfileChecklist(store, profileDraft),
     reviews: reviewList,
