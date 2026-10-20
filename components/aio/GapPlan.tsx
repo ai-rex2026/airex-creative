@@ -55,8 +55,12 @@ export function GapPlan({ project, gap, plans, hasResults }: { project: AioProje
         // 自社サイト記事・note は、運用のタブで画像つき・公開まで扱う
         const it = plan.items.find((i) => i.id === itemId);
         const channel = kind === "site_article" ? "site" : "note";
-        const articleId = await createAioArticleAction(project.id, channel, it ? { title: it.title, target: it.target, outline: it.outline } : null, { planId: plan.id, itemId });
-        await finishAioArticleAction(articleId).catch(() => undefined);
+        const created = await createAioArticleAction(project.id, channel, it ? { title: it.title, target: it.target, outline: it.outline } : null, { planId: plan.id, itemId });
+        if (!created.ok) {
+          setError(created.error);
+          return;
+        }
+        await finishAioArticleAction(created.id).catch(() => undefined);
         router.push(`/aio/${project.id}?tab=${channel}`);
         return;
       }

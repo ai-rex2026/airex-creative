@@ -67,6 +67,13 @@ const asKind = (k: string): AioChannelKind => {
   return k as AioChannelKind;
 };
 const refresh = (id: string) => revalidatePath(`/aio/${id}`);
+
+/**
+ * 本番では、Server Action が throw した Error の文面は画面に届かず「An error occurred in the Server Components render」
+ * に置き換わる。失敗の理由を人に見せたい操作は、throw せず値で返す。
+ */
+export type ActionFail = { ok: false; error: string };
+const failOf = (e: unknown, fallback: string): ActionFail => ({ ok: false, error: e instanceof Error && e.message ? e.message : fallback });
 const now = () => new Date().toISOString();
 
 async function loadChannel(sb: Sb, projectId: string, kind: AioChannelKind) {
@@ -125,6 +132,19 @@ export async function buildAioStrategyAction(projectId: string, kindRaw: string)
  * 書き終えたあとに時間が残っていれば、法令チェックもこの場で通す
  */
 export async function createAioArticleAction(
+  projectId: string,
+  kindRaw: string,
+  brief: ArticleBrief | null,
+  plan?: { planId: string; itemId: string }
+): Promise<{ ok: true; id: string } | ActionFail> {
+  try {
+    return { ok: true, id: await createAioArticle(projectId, kindRaw, brief, plan) };
+  } catch (e) {
+    return failOf(e, "記事を作れませんでした");
+  }
+}
+
+async function createAioArticle(
   projectId: string,
   kindRaw: string,
   brief: ArticleBrief | null,
@@ -203,7 +223,15 @@ export async function createAioArticleAction(
 }
 
 /** 記事の仕上げ：法令チェック（まだなら）と、まだ無い画像を作る。何度押しても、済んだ分はやり直さない */
-export async function finishAioArticleAction(articleId: string): Promise<{ made: number; failed: number; guard: string | null }> {
+export async function finishAioArticleAction(articleId: string): Promise<{ ok: true; made: number; failed: number; guard: string | null; imageErrors: string[] } | ActionFail> {
+  try {
+    return await finishAioArticle(articleId);
+  } catch (e) {
+    return failOf(e, "仕上げられませんでした");
+  }
+}
+
+async function finishAioArticle(articleId: string) {
   const { sb, project, article } = await ownedArticle(articleId);
   let level: string | null = article.guard?.level ?? null;
   if (!article.guard) {
@@ -216,15 +244,29 @@ export async function finishAioArticleAction(articleId: string): Promise<{ made:
     await sb.from("aio_articles").update({ images, updated_at: now() }).eq("id", articleId);
   });
   refresh(project.id);
-  return { ...r, guard: level };
+  // 作れなかった画像の理由（画面に出す。保存された最新の状態から拾う）
+  const { data: fresh } = await sb.from("aio_articles").select("images").eq("id", articleId).maybeSingle();
+  const imageErrors = ((fresh?.images ?? []) as AioArticleImage[]).filter((i) => !i.path && i.error).map((i) => i.error as string);
+  return { ok: true as const, ...r, guard: level, imageErrors: [...new Set(imageErrors)] };
 }
 
 /** 画像を1枚作り直す（説明を変えてもよい）。WordPress に送り済みなら、次に送るときに新しい画像を送り直す */
-export async function regenerateAioImageAction(articleId: string, key: string, prompt?: string) {
+export async function regenerateAioImageAction(articleId: string, key: string, prompt?: string): Promise<{ ok: true } | ActionFail> {
+  try {
+    await regenerateAioImage(articleId, key, prompt);
+    return { ok: true };
+  } catch (e) {
+    return failOf(e, "画像を作れませんでした");
+  }
+}
+
+async function regenerateAioImage(articleId: string, key: string, prompt?: string) {
   const { sb, project, article, wpMedia } = await ownedArticle(articleId);
   const target = article.images.find((i) => i.key === key);
   if (!target) throw new Error("画像が見つかりません");
-  const regen = ((target as AioArticleImage & { regen?: number }).regen ?? 0) + 1;
+  // 上限は「できあがった画像を作り直した回数」。まだ作れていない画像の再試行は数えない（失敗が続いても使い切らない）
+  const prev = (target as AioArticleImage & { regen?: number }).regen ?? 0;
+  const regen = target.path ? prev + 1 : prev;
   if (regen > 5) throw new Error("この画像は作り直しの上限（5回）に達しました");
   const images = article.images.map((i) => (i.key === key ? { ...i, prompt: prompt?.trim() ? prompt.trim().slice(0, 800) : i.prompt, path: null, hasText: false, error: null, regen } : i));
   const media = { ...wpMedia };
@@ -235,7 +277,11 @@ export async function regenerateAioImageAction(articleId: string, key: string, p
     await sb.from("aio_articles").update({ images: next, updated_at: now() }).eq("id", articleId);
   });
   refresh(project.id);
-  if (r.failed) throw new Error("画像を作れませんでした。説明を変えてもう一度お試しください");
+  if (r.failed) {
+    const { data: fresh } = await sb.from("aio_articles").select("images").eq("id", articleId).maybeSingle();
+    const why = ((fresh?.images ?? []) as AioArticleImage[]).find((i) => i.key === key)?.error;
+    throw new Error(why ? `画像を作れませんでした：${why}` : "画像を作れませんでした。説明を変えてもう一度お試しください");
+  }
 }
 
 /** 人が直した本文を保存する。保存と同時に法令チェックをやり直す */

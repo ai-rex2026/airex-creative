@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { askJsonWithImages, MODEL_FAST } from "../anthropic";
+import { geminiGenerate, hasGemini } from "../gemini";
 import { recordAiCall } from "../ai-context";
 
 /**
@@ -49,15 +50,48 @@ async function geminiImage(prompt: string, aspect: string): Promise<GeneratedIma
   return { bytes: Buffer.from(data, "base64"), mime: part?.inlineData?.mimeType ?? part?.inline_data?.mime_type ?? "image/png" };
 }
 
+const DETECT_SYSTEM = `画像に文字（日本語・英語・数字・記号のロゴ・看板の文字・透かし）が描かれているかを判定します。ぼやけた看板や模様のような文字も「あり」とします。
+出力: {"hasText":false}`;
+
+/** 判定に使う AI がどちらも使えなかった（画像に文字があったわけではない） */
+export class TextCheckUnavailableError extends Error {}
+
+/**
+ * 画像に文字が入っていないかを AI に見せて確かめる。
+ * 費用の低い Gemini を先に使い、使えないときだけ Claude に切り替える。どちらも使えないときは
+ * 「文字が入っていた」とは扱わず、TextCheckUnavailableError で理由を返す（原因が画面に出るように）
+ */
 async function detectText(img: GeneratedImage): Promise<boolean> {
-  const r = await askJsonWithImages<{ hasText?: boolean }>(
-    `画像に文字（日本語・英語・数字・記号のロゴ・看板の文字・透かし）が描かれているかを判定します。ぼやけた看板や模様のような文字も「あり」とします。
-出力: {"hasText":false}`,
-    "画像 0 に文字はありますか。",
-    [{ media: img.mime, base64: img.bytes.toString("base64") }],
-    { model: MODEL_FAST, maxTokens: 100, timeoutMs: 40_000, forceAnthropic: true }
-  );
-  return r.hasText === true;
+  const reasons: string[] = [];
+  const b64 = img.bytes.toString("base64");
+  if (hasGemini()) {
+    try {
+      const r = await geminiGenerate({
+        system: DETECT_SYSTEM,
+        parts: [{ text: "画像に文字はありますか。" }, { inline_data: { mime_type: img.mime, data: b64 } }],
+        maxTokens: 1000,
+        json: true,
+        timeoutMs: 40_000,
+      });
+      const j = JSON.parse(r.text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim()) as { hasText?: unknown };
+      if (typeof j.hasText === "boolean") return j.hasText;
+      reasons.push("Gemini の判定結果を読めませんでした");
+    } catch (e) {
+      reasons.push(`Gemini: ${e instanceof Error ? e.message.slice(0, 120) : "失敗"}`);
+    }
+  }
+  try {
+    const r = await askJsonWithImages<{ hasText?: boolean }>(DETECT_SYSTEM, "画像 0 に文字はありますか。", [{ media: img.mime, base64: b64 }], {
+      model: MODEL_FAST,
+      maxTokens: 100,
+      timeoutMs: 40_000,
+      forceAnthropic: true,
+    });
+    return r.hasText === true;
+  } catch (e) {
+    reasons.push(`Claude: ${e instanceof Error ? e.message.slice(0, 120) : "失敗"}`);
+  }
+  throw new TextCheckUnavailableError(reasons.join(" / "));
 }
 
 export function defaultImageDeps(admin: SupabaseClient, bucket: string = IMAGE_BUCKET): ImageDeps {
@@ -85,9 +119,9 @@ export async function makeOne(deps: ImageDeps, basePath: string, img: ImgLike): 
     let text = false;
     try {
       text = await deps.hasText(g);
-    } catch {
-      // 判定に失敗したときは使える画像として扱わない（文字入りを通すより、作り直しを選ぶ）
-      text = true;
+    } catch (e) {
+      // 判定できなかった画像は使わない（文字入りを通さない）。ただし「文字が入っていた」とは言わず、本当の理由を返す
+      throw new Error(`画像の文字チェックができませんでした（${e instanceof Error ? e.message.slice(0, 160) : "原因不明"}）。時間をおいて作り直してください`);
     }
     if (!text) {
       const path = `${basePath}/${img.key}-${Date.now()}.${extOf(g.mime)}`;
@@ -127,7 +161,7 @@ export async function fillImages<T extends ImgLike>(
           throw new Error("text");
         }
       } catch (e) {
-        if (!(e instanceof Error && e.message === "text")) await save(idx, { error: e instanceof Error ? e.message.slice(0, 200) : "画像を作れませんでした" });
+        if (!(e instanceof Error && e.message === "text")) await save(idx, { error: e instanceof Error ? e.message.slice(0, 300) : "画像を作れませんでした" });
         throw e;
       }
     })

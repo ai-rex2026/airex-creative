@@ -24,17 +24,26 @@ export function useArticleMaker(projectId: string) {
     setPhase("writing");
     let articleId: string | null = null;
     try {
-      articleId = await createAioArticleAction(projectId, kind, brief, plan);
+      const created = await createAioArticleAction(projectId, kind, brief, plan);
+      if (!created.ok) {
+        setError(created.error);
+        return null;
+      }
+      articleId = created.id;
       router.refresh();
       setPhase("finishing");
       const r = await finishAioArticleAction(articleId);
-      if (r.failed) setNotice(`画像を${r.failed}枚作れませんでした。記事のカードから作り直せます`);
+      if (!r.ok) {
+        setError(`記事は保存しました。仕上げ（表現チェック・画像）で止まりました：${r.error}。記事のカードの「仕上げる」で続きから再開できます`);
+        router.refresh();
+        return articleId;
+      }
+      if (r.failed) setNotice(`画像を${r.failed}枚作れませんでした。${r.imageErrors.length ? `理由：${r.imageErrors.join(" / ")}。` : ""}記事のカードから作り直せます`);
       if (r.guard === "red") setNotice((n) => `${n ? `${n}。` : ""}表現チェックで「要修正」があります。記事のカードで確認してください`);
       router.refresh();
       return articleId;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "記事を作れませんでした";
-      setError(articleId ? `記事は保存しました。仕上げ（表現チェック・画像）で止まりました：${msg}。記事のカードの「仕上げる」で続きから再開できます` : msg);
+      setError(e instanceof Error ? e.message : "記事を作れませんでした");
       router.refresh();
       return articleId;
     } finally {
