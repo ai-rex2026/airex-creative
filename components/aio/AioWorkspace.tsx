@@ -16,10 +16,11 @@ import { AIO_DRAFT_KINDS, type AioCheck, type AioContentPlan, type AioDraft, typ
  * 上: 「今どうか」= AI に実際に聞いた結果（因果は主張しない。結果をそのまま見せる）
  * 下: 「何をすべきか」= 下書き（人が確認してコピーして使う。自動では公開しない）
  */
-export type AioTab = "site" | "note" | "results" | "ai";
+export type AioTab = "site" | "note" | "prtimes" | "results" | "ai";
 export const AIO_TABS: { key: AioTab; label: string; hint: string }[] = [
   { key: "site", label: "自社サイト記事", hint: "コラムの記事を作って WordPress で公開" },
   { key: "note", label: "note", hint: "note の記事を作って貼って投稿" },
+  { key: "prtimes", label: "PR TIMES", hint: "プレスリリースの入稿内容（画像・動画つき）を作る" },
   { key: "results", label: "効果と改善", hint: "記事ごとの数字と改善案" },
   { key: "ai", label: "AIでの見え方", hint: "AIに聞いたとき挙がるか" },
 ];
