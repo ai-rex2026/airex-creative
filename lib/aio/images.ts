@@ -23,7 +23,8 @@ export type GeneratedImage = { bytes: Buffer; mime: string };
 
 export type ImageDeps = {
   generate: (prompt: string, aspect: string) => Promise<GeneratedImage>;
-  hasText: (img: GeneratedImage) => Promise<boolean>;
+  /** 文字の有無。見つけた文字も返せる（画面に理由を出すため） */
+  hasText: (img: GeneratedImage) => Promise<boolean | { hasText: boolean; seen?: string[] }>;
   upload: (path: string, img: GeneratedImage) => Promise<void>;
 };
 
@@ -64,7 +65,7 @@ export class TextCheckUnavailableError extends Error {}
  * 費用の低い Gemini を先に使い、使えないときだけ Claude に切り替える。どちらも使えないときは
  * 「文字が入っていた」とは扱わず、TextCheckUnavailableError で理由を返す（原因が画面に出るように）
  */
-async function detectText(img: GeneratedImage): Promise<boolean> {
+async function detectText(img: GeneratedImage): Promise<boolean | { hasText: boolean; seen?: string[] }> {
   const reasons: string[] = [];
   const b64 = img.bytes.toString("base64");
   if (hasGemini()) {
@@ -79,8 +80,11 @@ async function detectText(img: GeneratedImage): Promise<boolean> {
       const j = JSON.parse(r.text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim()) as { hasText?: unknown; seen?: unknown };
       if (typeof j.hasText === "boolean") {
         // 原因をあとで追えるよう、見つけた文字をログに残す（画像は残さない）
-        if (j.hasText) console.warn("[aio-image] 文字を検出", Array.isArray(j.seen) ? j.seen.slice(0, 5) : j.seen);
-        return j.hasText;
+        const seen = Array.isArray(j.seen) ? j.seen.map((x) => String(x).trim()).filter(Boolean).slice(0, 5) : undefined;
+        if (j.hasText) console.warn("[aio-image] 文字を検出", seen);
+        // 「あり」と答えても見つけた文字を1つも挙げられないときは、文字なしとみなす（判定 AI の取り違えを通さないため。推測にもとづく扱い）
+        if (j.hasText && seen && seen.length === 0) return { hasText: false, seen };
+        return { hasText: j.hasText, seen };
       }
       reasons.push("Gemini の判定結果を読めませんでした");
     } catch (e) {
@@ -118,8 +122,9 @@ const extOf = (mime: string) => (mime.includes("jpeg") ? "jpg" : mime.includes("
 export type ImgLike = { key: string; prompt: string; path: string | null; role?: string; aspect?: string; hasText?: boolean; error?: string | null };
 
 /** 1枚作る（文字が入っていたら最大2回作り直す）。保存したパスを返す */
-export async function makeOne(deps: ImageDeps, basePath: string, img: ImgLike): Promise<{ path: string } | { hasText: true }> {
+export async function makeOne(deps: ImageDeps, basePath: string, img: ImgLike): Promise<{ path: string } | { hasText: true; seen: string[] }> {
   const aspect = img.aspect ?? (img.role === "eyecatch" ? "16:9" : "4:3");
+  const seen: string[] = [];
   for (let attempt = 0; attempt < 3; attempt++) {
     const prompt =
       attempt === 0
@@ -128,7 +133,9 @@ export async function makeOne(deps: ImageDeps, basePath: string, img: ImgLike): 
     const g = await deps.generate(prompt, aspect);
     let text = false;
     try {
-      text = await deps.hasText(g);
+      const d = await deps.hasText(g);
+      text = typeof d === "boolean" ? d : d.hasText;
+      if (typeof d !== "boolean" && d.hasText && d.seen) seen.push(...d.seen);
     } catch (e) {
       // 判定できなかった画像は使わない（文字入りを通さない）。ただし「文字が入っていた」とは言わず、本当の理由を返す
       throw new Error(`画像の文字チェックができませんでした（${e instanceof Error ? e.message.slice(0, 160) : "原因不明"}）。時間をおいて作り直してください`);
@@ -139,7 +146,7 @@ export async function makeOne(deps: ImageDeps, basePath: string, img: ImgLike): 
       return { path };
     }
   }
-  return { hasText: true };
+  return { hasText: true, seen: [...new Set(seen)].slice(0, 5) };
 }
 
 /**
@@ -167,7 +174,8 @@ export async function fillImages<T extends ImgLike>(
         const r = await makeOne(deps, basePath, img);
         if ("path" in r) await save(idx, { path: r.path, hasText: false, error: null });
         else {
-          await save(idx, { hasText: true, error: "文字が入った画像しか作れませんでした。説明を変えて作り直してください" });
+          const found = r.seen.length ? `（検出された文字: ${r.seen.map((t) => `「${t.slice(0, 20)}」`).join("")}）` : "（検出された文字の内容は取れませんでした）";
+          await save(idx, { hasText: true, error: `文字が入った画像しか作れませんでした${found}。説明を変えて作り直してください` });
           throw new Error("text");
         }
       } catch (e) {
