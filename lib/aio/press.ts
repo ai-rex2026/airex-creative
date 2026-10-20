@@ -32,7 +32,7 @@ const SYSTEM = `あなたは日本の広報担当者です。PR TIMES などの�
 - companyProfile: 会社概要（会社名・所在地・代表者・設立・事業内容・URL）。与えられていない項目は「【要確認：所在地】」の形
 - relatedLinks: 関連リンクを最大3件（与えられた URL だけ。無ければ空配列）
 - todo: 入稿前に人が確かめる項目。本文や会社概要に残した【要確認】の一覧を、重複なく短く
-- images: メイン画像1枚（role "eyecatch"）と、本文中の画像を最大${PRESS_MAX_INLINE_IMAGES}枚（role "inline"。afterH2 は何番目の ## の直後に置くか、0 始まり）。prompt は画像生成 AI への英語の説明で、文字・看板・ロゴ・画面のスクリーンショット・グラフ・実在の人物や他社の商品は描かせない。alt と caption は日本語（画像の中には入れない。caption は画像の説明1文）
+- images: メイン画像1枚（role "eyecatch"）と、本文中の画像を最大${PRESS_MAX_INLINE_IMAGES}枚（role "inline"。afterH2 は何番目の ## の直後に置くか、0 始まり）。prompt は画像生成 AI への英語の説明で、文字・看板・ロゴ・画面のスクリーンショット・グラフ・実在の人物や他社の商品は描かせない。値札・予算表・電卓・カレンダー・書類・ホワイトボード・メニュー表・パッケージなど文字や数字が載りがちな物も描かせない（数字の話題でも、人・手・場所・自然・無地の物の場面で表す）。alt と caption は日本語（画像の中には入れない。caption は画像の説明1文）
 
 出力: {"titleOptions":["",""," "],"subtitle":"","lead":"","body":"","keywords":[""],"companyProfile":"","relatedLinks":[{"label":"","url":""}],"todo":[""],"images":[{"role":"eyecatch","afterH2":null,"prompt":"English description","alt":"","caption":""}]}`;
 

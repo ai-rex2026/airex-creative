@@ -26,7 +26,27 @@ export type ImageDeps = {
   /** 文字の有無。見つけた文字も返せる（画面に理由を出すため） */
   hasText: (img: GeneratedImage) => Promise<boolean | { hasText: boolean; seen?: string[] }>;
   upload: (path: string, img: GeneratedImage) => Promise<void>;
+  /** 文字が出た画像の説明を、文字が載りがちな物を除いた場面に書き換える（任意） */
+  rewrite?: (prompt: string, seen: string[]) => Promise<string>;
 };
+
+/** 文字が出たときの再試行用に、説明から「文字が載る物」を外して書き直す。失敗したら null */
+async function rewritePrompt(prompt: string, seen: string[]): Promise<string | null> {
+  if (!hasGemini()) return null;
+  try {
+    const r = await geminiGenerate({
+      system:
+        "You rewrite image-generation prompts. The previous image accidentally contained readable text. Rewrite the prompt in English as one concise scene (max 60 words) that conveys the same topic and mood WITHOUT any object that normally carries text or numbers: price tags, charts, graphs, calculators, calendars, documents, screens, menus, signs, packaging, books, whiteboards. Prefer people (seen from behind or at a distance), hands, natural light, landscapes, plain unlabeled objects. Output only the prompt.",
+      parts: [{ text: `Original prompt: ${prompt}\nText that appeared: ${seen.join(", ") || "unknown"}` }],
+      maxTokens: 300,
+      timeoutMs: 30_000,
+    });
+    const t = r.text.trim().replace(/^"|"$/g, "");
+    return t.length >= 20 ? t.slice(0, 800) : null;
+  } catch {
+    return null;
+  }
+}
 
 async function geminiImage(prompt: string, aspect: string): Promise<GeneratedImage> {
   const key = process.env.GEMINI_API_KEY;
@@ -109,6 +129,7 @@ export function defaultImageDeps(admin: SupabaseClient, bucket: string = IMAGE_B
   return {
     generate: geminiImage,
     hasText: detectText,
+    rewrite: async (prompt, seen) => (await rewritePrompt(prompt, seen)) ?? prompt,
     upload: async (path, img) => {
       const { error } = await admin.storage.from(bucket).upload(path, img.bytes, { contentType: img.mime, upsert: true });
       if (error) throw new Error(`画像を保存できませんでした：${error.message}`);
@@ -126,10 +147,11 @@ export async function makeOne(deps: ImageDeps, basePath: string, img: ImgLike): 
   const aspect = img.aspect ?? (img.role === "eyecatch" ? "16:9" : "4:3");
   const seen: string[] = [];
   for (let attempt = 0; attempt < 3; attempt++) {
+    const base = attempt > 0 && deps.rewrite ? await deps.rewrite(img.prompt, seen).catch(() => img.prompt) : img.prompt;
     const prompt =
       attempt === 0
         ? img.prompt
-        : `${img.prompt}\nThe previous attempt contained text. Do not draw any text, letters, signs or logos at all. Compose a simple scene of people, nature or objects without screens, paper or signage.`;
+        : `${base}\nThe previous attempt contained text. Do not draw any text, letters, signs or logos at all. Compose a simple scene of people, nature or objects without screens, paper or signage.`;
     const g = await deps.generate(prompt, aspect);
     let text = false;
     try {
