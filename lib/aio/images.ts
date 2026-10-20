@@ -7,7 +7,7 @@ import { recordAiCall } from "../ai-context";
  * 記事の画像（アイキャッチ・本文中）を作る。
  *
  * - 画像の中に文字を入れない（AGENTS.md：日本語の文字を画像生成モデルに描かせない）。
- *   指示で禁止し、できた画像を AI に見せて文字が入っていたら作り直す。2回とも入っていたら使わない
+ *   指示で禁止し、できた画像を AI に見せて文字が入っていたら作り直す。3回とも入っていたら使わない
  * - 1枚できるごとにその場で保存する（1枚の失敗で他の成功を捨てない。再試行は未生成の画像だけ）
  */
 
@@ -16,6 +16,7 @@ export const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-i
 
 const NO_TEXT =
   "Absolutely no text of any kind: no letters, no words, no numbers, no captions, no logos, no watermarks, no signage, no labels, no user-interface screenshots. " +
+  "Do not show laptop or phone screens, documents, books, magazines, posters, whiteboards, product packaging, shop signs or name tags facing the camera; if such objects appear they must be blank, turned away, out of focus or out of frame. " +
   "Photorealistic or clean editorial illustration style, natural light, uncluttered composition with space around the subject.";
 
 export type GeneratedImage = { bytes: Buffer; mime: string };
@@ -50,8 +51,10 @@ async function geminiImage(prompt: string, aspect: string): Promise<GeneratedIma
   return { bytes: Buffer.from(data, "base64"), mime: part?.inlineData?.mimeType ?? part?.inline_data?.mime_type ?? "image/png" };
 }
 
-const DETECT_SYSTEM = `画像に文字（日本語・英語・数字・記号のロゴ・看板の文字・透かし）が描かれているかを判定します。ぼやけた看板や模様のような文字も「あり」とします。
-出力: {"hasText":false}`;
+const DETECT_SYSTEM = `画像に、人が読める文字（日本語・英語・数字・ロゴ・看板や画面や書類の文字・透かし）がはっきり描かれているかを判定します。
+次は「文字なし」とします: 布・壁・木目・葉などの模様やテクスチャ、遠くて小さく読み取れない形、ピントが外れて文字と判別できないぼかし、線や図形だけの装飾。
+読める文字が1語でもあれば「あり」とします。
+出力: {"seen":["見つけた文字（なければ空配列）"],"hasText":false}`;
 
 /** 判定に使う AI がどちらも使えなかった（画像に文字があったわけではない） */
 export class TextCheckUnavailableError extends Error {}
@@ -73,8 +76,12 @@ async function detectText(img: GeneratedImage): Promise<boolean> {
         json: true,
         timeoutMs: 40_000,
       });
-      const j = JSON.parse(r.text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim()) as { hasText?: unknown };
-      if (typeof j.hasText === "boolean") return j.hasText;
+      const j = JSON.parse(r.text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim()) as { hasText?: unknown; seen?: unknown };
+      if (typeof j.hasText === "boolean") {
+        // 原因をあとで追えるよう、見つけた文字をログに残す（画像は残さない）
+        if (j.hasText) console.warn("[aio-image] 文字を検出", Array.isArray(j.seen) ? j.seen.slice(0, 5) : j.seen);
+        return j.hasText;
+      }
       reasons.push("Gemini の判定結果を読めませんでした");
     } catch (e) {
       reasons.push(`Gemini: ${e instanceof Error ? e.message.slice(0, 120) : "失敗"}`);
@@ -110,11 +117,14 @@ const extOf = (mime: string) => (mime.includes("jpeg") ? "jpg" : mime.includes("
 /** 画像の共通の形（記事の画像・SNS の画像） */
 export type ImgLike = { key: string; prompt: string; path: string | null; role?: string; aspect?: string; hasText?: boolean; error?: string | null };
 
-/** 1枚作る（文字が入っていたら1回だけ作り直す）。保存したパスを返す */
+/** 1枚作る（文字が入っていたら最大2回作り直す）。保存したパスを返す */
 export async function makeOne(deps: ImageDeps, basePath: string, img: ImgLike): Promise<{ path: string } | { hasText: true }> {
   const aspect = img.aspect ?? (img.role === "eyecatch" ? "16:9" : "4:3");
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const prompt = attempt === 0 ? img.prompt : `${img.prompt}\nThe previous attempt contained text. Do not draw any text, letters, signs or logos at all.`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const prompt =
+      attempt === 0
+        ? img.prompt
+        : `${img.prompt}\nThe previous attempt contained text. Do not draw any text, letters, signs or logos at all. Compose a simple scene of people, nature or objects without screens, paper or signage.`;
     const g = await deps.generate(prompt, aspect);
     let text = false;
     try {
