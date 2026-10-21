@@ -83,19 +83,33 @@ export async function planColumns(
 // ── 2. 公式サイトを読む ─────────────────────
 
 /** ページの種類。種類ごとに1ページずつ読む（見つかった順に5件、だと会社概要がフッターにあるサイトで落ちるため） */
-const KINDS: { kind: string; re: RegExp }[] = [
-  { kind: "会社概要", re: /(company|corporate|about|profile|outline|overview|会社概要|会社情報|企業情報|会社案内|運営会社)/i },
+const KINDS: { kind: string; re: RegExp; best?: RegExp }[] = [
+  {
+    kind: "会社概要",
+    re: /(company|corporate|about|profile|outline|overview|会社概要|会社情報|企業情報|企業概要|会社案内|運営会社)/i,
+    // 会社の基本情報そのもののページ（入口のページより優先する）
+    best: /(outline|profile|overview|corporate\/data|company\/info|会社概要|企業概要|会社情報|基本情報)/i,
+  },
   { kind: "料金", re: /(price|pricing|plan|fee|cost|料金|費用|価格|プラン)/i },
-  { kind: "機能・サービス", re: /(feature|function|service|solution|product|機能|特徴|強み|サービス|ソリューション)/i },
-  { kind: "実績", re: /(case|works|result|customer|voice|実績|事例|導入|お客様)/i },
+  { kind: "機能・サービス", re: /(feature|function|service|solution|product|business|機能|特徴|強み|サービス|ソリューション|事業)/i },
+  { kind: "実績", re: /(case|works|result|customer|client|voice|実績|事例|導入|お客様|取引先)/i },
   { kind: "よくある質問", re: /(faq|question|qa|よくある|質問)/i },
   { kind: "サポート", re: /(support|flow|step|サポート|流れ|ご利用)/i },
 ];
 
-export function pickPagesByKind(html: string, base: string): { url: string; kind: string }[] {
+/** 比較に使わないページ（採用・ニュース・規約・代表メッセージなど。会社概要らしい URL でも中身が違う） */
+const SKIP = /(recruit|career|interview|news|press|blog|column|topics|terms|privacy|policy|sitemap|contact|inquiry|message|ceo|greeting|philosophy|history|sustainab|ir\/(library|news|stock)|採用|求人|ニュース|お知らせ|規約|プライバシー|お問い合わせ|メッセージ|ごあいさつ|挨拶|沿革|理念)/i;
+
+/** 会社概要のページに、会社の基本情報が書かれているらしいか */
+const COMPANY_FACTS = /(資本金|設立|創業|従業員|社員数|代表者|所在地|本社)/;
+
+type Link = { url: string; label: string };
+
+function linksOf(html: string, base: string): Link[] {
   const host = new URL(base).hostname.replace(/^www\./, "");
-  const found = new Map<string, string>();
   const baseNorm = base.replace(/[#?].*$/, "").replace(/\/$/, "");
+  const out: Link[] = [];
+  const seen = new Set<string>();
   for (const m of html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)) {
     let u: URL;
     try {
@@ -107,12 +121,32 @@ export function pickPagesByKind(html: string, base: string): { url: string; kind
     if (/\.(pdf|jpe?g|png|gif|webp|zip|svg)$/i.test(u.pathname)) continue;
     u.hash = "";
     const s = u.toString();
-    if (s.replace(/\/$/, "") === baseNorm) continue;
-    const label = m[2].replace(/<[^>]+>/g, " ");
-    for (const k of KINDS) {
+    if (s.replace(/\/$/, "") === baseNorm || seen.has(s)) continue;
+    seen.add(s);
+    out.push({ url: s, label: m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() });
+  }
+  return out;
+}
+
+/** 会社概要として一番それらしいリンク（基本情報のページ ＞ 入口のページ） */
+function bestCompanyLink(links: Link[]): string | null {
+  const k = KINDS[0];
+  const ok = links.filter((l) => !SKIP.test(decodeURIComponent(l.url)) && !SKIP.test(l.label) && (k.re.test(l.url) || k.re.test(l.label)));
+  return (ok.find((l) => k.best!.test(l.url) || k.best!.test(l.label)) ?? ok[0])?.url ?? null;
+}
+
+export function pickPagesByKind(html: string, base: string): { url: string; kind: string }[] {
+  const links = linksOf(html, base);
+  const found = new Map<string, string>();
+  const company = bestCompanyLink(links);
+  if (company) found.set("会社概要", company);
+  for (const l of links) {
+    const path = decodeURIComponent(new URL(l.url).pathname);
+    if (SKIP.test(path) || SKIP.test(l.label)) continue;
+    for (const k of KINDS.slice(1)) {
       if (found.has(k.kind)) continue;
-      if (k.re.test(u.pathname) || k.re.test(label)) {
-        if (![...found.values()].includes(s)) found.set(k.kind, s);
+      if (k.re.test(path) || k.re.test(l.label)) {
+        if (![...found.values()].includes(l.url)) found.set(k.kind, l.url);
         break;
       }
     }
@@ -126,10 +160,27 @@ export async function readSite(url: string, deps: Pick<ComparisonDeps, "fetchPag
   const got = await Promise.allSettled(picks.map((p) => deps.fetchPage(p.url)));
   const pages: SitePage[] = [{ url: top.finalUrl, kind: "トップ", text: htmlToText(top.html).slice(0, 12_000) }];
   const notes: string[] = [];
+  let companyHtml: { html: string; finalUrl: string } | null = null;
   got.forEach((r, i) => {
-    if (r.status === "fulfilled") pages.push({ url: r.value.finalUrl, kind: picks[i].kind, text: htmlToText(r.value.html).slice(0, 12_000) });
-    else notes.push(`${picks[i].kind}のページ（${picks[i].url}）を開けませんでした`);
+    if (r.status === "fulfilled") {
+      pages.push({ url: r.value.finalUrl, kind: picks[i].kind, text: htmlToText(r.value.html).slice(0, 12_000) });
+      if (picks[i].kind === "会社概要") companyHtml = r.value;
+    } else notes.push(`${picks[i].kind}のページ（${picks[i].url}）を開けませんでした`);
   });
+  // 会社概要が入口のページ（会社情報の一覧）で基本情報が無いときは、その中の会社概要のページをもう1つ読む
+  const ch = companyHtml as { html: string; finalUrl: string } | null;
+  if (ch && !COMPANY_FACTS.test(htmlToText(ch.html))) {
+    const deeper = bestCompanyLink(linksOf(ch.html, ch.finalUrl).filter((l) => !pages.some((p) => p.url === l.url)));
+    if (deeper) {
+      try {
+        const d = await deps.fetchPage(deeper);
+        pages.push({ url: d.finalUrl, kind: "会社概要", text: htmlToText(d.html).slice(0, 12_000) });
+      } catch {
+        notes.push(`会社概要のページ（${deeper}）を開けませんでした`);
+      }
+    }
+  }
+  if (!pages.some((p) => p.kind === "会社概要" && COMPANY_FACTS.test(p.text))) notes.push("公式サイトで会社の基本情報（資本金・従業員数など）のページを見つけられませんでした");
   return { pages, notes };
 }
 
@@ -172,26 +223,39 @@ const SEARCH_SYSTEM = `あなたは比較メディアの調査担当です。Goo
 - 検索結果のページにはっきり書かれている値だけ。推測・評判・口コミは書かない。見つからない項目は書かない
 - 1行に1項目、「項目名：値」の形で書く（値は60字以内）。前置き・まとめは書かない`;
 
+/** 検索の回答の1行から「項目名：値」を読む（太字・箇条書き・番号・【】の揺れを吸収する） */
+export function parseSearchLine(line: string, columns: string[]): { col: string; value: string } | null {
+  const t = normalizeJapanese(line.trim())
+    .replace(/\*\*|__/g, "")
+    .replace(/^(?:[・\-*•●■◆]|\d+[.)．、])\s*/, "")
+    .replace(/^【([^】]+)】\s*/, "$1：");
+  const m = t.match(/^(.{1,30}?)\s*[：:]\s*(.+)$/);
+  if (!m) return null;
+  const key = m[1].replace(/[\s「」『』]/g, "");
+  const col = columns.find((c) => key === c) ?? columns.find((c) => key.includes(c) || c.includes(key));
+  const value = m[2].replace(/\[\d+(?:,\s*\d+)*\]/g, "").trim().slice(0, 120);
+  if (!col || !value || /^(不明|見つかりません|見つかりませんでした|記載なし|なし|非公開|情報なし|-)/.test(value)) return null;
+  return { col, value };
+}
+
 export async function searchMissing(
   item: { name: string; url: string },
   missing: string[],
   deps: Pick<ComparisonDeps, "search">
-): Promise<CmpCells> {
-  if (!missing.length || !deps.search) return {};
-  const r = await deps.search(SEARCH_SYSTEM, `「${item.name}」（公式サイト: ${item.url}）の次の項目を調べてください：${missing.join("、")}`);
+): Promise<{ cells: CmpCells; note: string | null }> {
+  if (!missing.length) return { cells: {}, note: null };
+  if (!deps.search) return { cells: {}, note: "検索で補う設定が無いため、検索していません" };
+  const r = await deps.search(SEARCH_SYSTEM, `「${item.name}」（公式サイト: ${item.url || "不明"}）の次の項目を調べてください：${missing.join("、")}`);
   // 検索の根拠（出典）が取れなかった回答は使わない
-  if (!r.sources.length) return {};
+  if (!r.sources.length) return { cells: {}, note: "検索の根拠（出典）が取れなかったため、検索の結果を使いませんでした" };
   const src = [...new Set(r.sources.map((s) => s.title).filter(Boolean))].slice(0, 3).join("・") || "Google検索";
   const out: CmpCells = {};
   for (const line of r.text.split("\n")) {
-    const m = normalizeJapanese(line.trim()).replace(/^[・\-*\s]+/, "").match(/^(.{1,20}?)\s*[：:]\s*(.+)$/);
-    if (!m) continue;
-    const col = missing.find((c) => c === m[1].trim());
-    const value = m[2].trim().slice(0, 120);
-    if (!col || !value || /^(不明|見つかりません|記載なし|なし)/.test(value)) continue;
-    out[col] = { value, source: src, via: "search" };
+    const p = parseSearchLine(line, missing);
+    if (p && !out[p.col]) out[p.col] = { value: p.value, source: src, via: "search" };
   }
-  return out;
+  const left = missing.filter((c) => !out[c]);
+  return { cells: out, note: left.length ? `検索でも見つからなかった項目：${left.join("・")}` : null };
 }
 
 /** 記事を書く AI に渡す比較表（Markdown）。空欄は「公式サイトで確認」 */

@@ -268,13 +268,15 @@ export async function researchComparisonRowAction(comparisonId: string, rowId: s
       } else {
         try {
           // 読んだ本文は数日使い回す（同じ会社を別の記事で比べるたびに読み直さない）
-          const { data: cache } = await sb.from("aio_site_cache").select("pages, fetched_at").eq("project_id", t.projectId).eq("url", row.url).maybeSingle();
+          // 先頭の v2: はページの選び方の版。選び方を直したら上げて、古い選び方で読んだ本文を使わない
+          const cacheKey = `v2:${row.url}`;
+          const { data: cache } = await sb.from("aio_site_cache").select("pages, fetched_at").eq("project_id", t.projectId).eq("url", cacheKey).maybeSingle();
           let pages: SitePage[] | null = cache && Date.now() - new Date(String(cache.fetched_at)).getTime() < SITE_CACHE_MS ? (cache.pages as SitePage[]) : null;
           if (!pages?.length) {
             const r = await readSite(row.url, deps);
             pages = r.pages;
             errs.push(...r.notes);
-            await sb.from("aio_site_cache").upsert({ project_id: t.projectId, url: row.url, pages, fetched_at: now() }, { onConflict: "project_id,url" });
+            await sb.from("aio_site_cache").upsert({ project_id: t.projectId, url: cacheKey, pages, fetched_at: now() }, { onConflict: "project_id,url" });
           }
           cells = { ...(await extractCells({ name: row.name }, t.columns, pages, deps)), ...cells };
         } catch (e) {
@@ -287,7 +289,9 @@ export async function researchComparisonRowAction(comparisonId: string, rowId: s
     const missing = t.columns.filter((c) => !cells[c]?.value);
     if (missing.length) {
       try {
-        cells = { ...(await searchMissing({ name: row.name, url: row.url }, missing, deps)), ...cells };
+        const sr = await searchMissing({ name: row.name, url: row.url }, missing, deps);
+        cells = { ...sr.cells, ...cells };
+        if (sr.note) errs.push(sr.note);
       } catch (e) {
         errs.push(`検索で補えませんでした（${e instanceof Error ? e.message : "不明"}）`);
       }
