@@ -129,7 +129,13 @@ export async function syncKeywordGscAction(projectId: string): Promise<{ ok: tru
         notes.push(`${label}：${g.reason instanceof Error ? g.reason.message : "取得できませんでした"}`);
         continue;
       }
-      const byQuery = new Map(g.value.rows.map((r) => [normKeyword(r.query), r]));
+      // 何を見て候補を決めたかを返す（Search Console の画面と数字が合わないときに突き合わせるため）
+      const rows = g.value.rows;
+      const imp = rows.filter((r) => r.impressions >= 20);
+      const low = imp.filter((r) => r.position > 10);
+      const dup = low.filter((r) => have.has(normKeyword(r.query))).length;
+      notes.push(`${label}：${g.value.site}・${g.value.from}〜${g.value.to}（28日）の${rows.length}語のうち、表示20回以上 ${imp.length}語・そのうち11位以下 ${low.length}語・すでに一覧にある語 ${dup}語`);
+      const byQuery = new Map(rows.map((r) => [normKeyword(r.query), r]));
       // その語の書く先のサイトの数字を当てる（既存ページを直す語は自社サイト）
       const mine = list.filter((k) => (sites[i].target === "satellite" ? k.target === "satellite" : k.target !== "satellite"));
       for (const k of mine) {
