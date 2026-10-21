@@ -10,6 +10,7 @@ import {
   listAioWpCategoriesAction,
   setAioChannelSourceAction,
   setAioSatelliteAction,
+  collectSatelliteFactsAction,
   setAioWpCategoryAction,
 } from "@/app/aio-content-actions";
 import { SectionTitle } from "@/components/meo/Workspace";
@@ -452,6 +453,30 @@ function SatelliteCard({ project, channel }: { project: AioProject; channel: Aio
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const setItem = (k: number, patch: Partial<AioSatelliteItem>) => setF({ ...f, items: f.items.map((x, i) => (i === k ? { ...x, ...patch } : x)) });
+  const [collecting, setCollecting] = useState<number | null>(null);
+  // 1件ずつ順に集める（設定の同時書き込みを避ける）。集めた事実は欄に入り、保存済みの商品ならその場で保存される
+  const collect = async (targets: number[]) => {
+    setError(null);
+    setInfo(null);
+    const msgs: string[] = [];
+    let cur = f;
+    for (const k of targets) {
+      const it = cur.items[k];
+      if (!it?.name.trim() || !it.url.trim()) continue;
+      setCollecting(k);
+      const r = await collectSatelliteFactsAction(project.id, { name: it.name, url: it.url }, { theme: cur.theme, basis: cur.rankingBasis ?? "" });
+      if (!r.ok) {
+        msgs.push(r.error);
+        continue;
+      }
+      cur = { ...cur, items: cur.items.map((x, i) => (i === k ? { ...x, facts: r.facts } : x)) };
+      setF(cur);
+      if (r.notes.length) msgs.push(`${it.name}：${r.notes.join(" / ")}`);
+    }
+    setCollecting(null);
+    if (msgs.length) setError(msgs.join(" / "));
+    if (cur !== f) setInfo("集めた事実を欄に入れました。内容を確かめ、違うところは直して「保存する」を押してください");
+  };
   const save = async () => {
     setBusy(true);
     setError(null);
@@ -505,12 +530,22 @@ function SatelliteCard({ project, channel }: { project: AioProject; channel: Aio
               </label>
             </div>
             <Input className="mt-2" value={it.affiliateUrl ?? ""} onChange={(e) => setItem(k, { affiliateUrl: e.target.value })} placeholder="アフィリエイトリンク（任意。入れると、記事内の公式サイトへのリンクがこの URL に差し替わります）" />
-            <Textarea rows={2} className="mt-2" value={it.facts} onChange={(e) => setItem(k, { facts: e.target.value })} placeholder="記事に書いてよい事実（公式サイトなどの公開情報から。料金・特徴・対応範囲など。ここに無いことは記事に書きません）" />
-            <div className="mt-1 text-right">
+            <Textarea rows={it.facts ? 6 : 2} className="mt-2" value={it.facts} onChange={(e) => setItem(k, { facts: e.target.value })} placeholder="記事に書いてよい事実（公式サイトなどの公開情報から。料金・特徴・対応範囲など。ここに無いことは記事に書きません）" />
+            <div className="mt-1 flex items-center justify-end gap-3">
+              <button type="button" disabled={collecting !== null || !it.name.trim() || !it.url.trim()} className="text-[11px] text-[#6B6862] underline disabled:opacity-40" onClick={() => collect([k])}>
+                {collecting === k ? "集めています…" : "公式サイト・検索から事実を集める"}
+              </button>
               <button type="button" className="text-[11px] text-[#8B877F] underline" onClick={() => setF({ ...f, items: f.items.filter((_, i) => i !== k) })}>外す</button>
             </div>
           </div>
         ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <Btn variant="outline" size="sm" disabled={collecting !== null || busy} onClick={() => collect(f.items.map((x, i) => (x.facts.trim() ? -1 : i)).filter((i) => i >= 0))}>
+            {collecting !== null ? <Icon name="loader" /> : null}
+            事実が空の商品をまとめて集める
+          </Btn>
+          <span className="text-[11px] text-[#A5A198]">公式サイトのトップと料金・機能・会社概要などのページ（最大5件）を読み、Google検索で公開情報を補います。1件あたり1〜2分かかります</span>
+        </div>
         {f.items.length < 20 && (
           <button type="button" className="text-xs text-[#6B6862] underline" onClick={() => setF({ ...f, items: [...f.items, { ...EMPTY_ITEM }] })}>＋ 競合（商品・サービス）を足す</button>
         )}

@@ -15,6 +15,7 @@ import { discoverWpApi, wpSavePost, wpUploadImage, wpVerify, type WpConn } from 
 import { sendToWordPress, type WpMedia } from "@/lib/aio/publish";
 import { parseNoteMetrics, reviewContent, type NoteRow } from "@/lib/aio/review";
 import { assertPublicUrl } from "@/lib/aio/net";
+import { collectItemFacts } from "@/lib/aio/satellite-facts";
 import { ARTICLE_MONTHLY_LIMIT, isWpKind, type AioArticleImage, type AioChannelKind, type AioSatellite } from "@/lib/aio/content-types";
 import type { AioPlanItem, AioProject } from "@/lib/aio/types";
 
@@ -138,7 +139,7 @@ export async function setAioSatelliteAction(projectId: string, input: AioSatelli
     const { sb } = await owned(projectId);
     const t = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
     const items = (Array.isArray(input.items) ? input.items : [])
-      .map((i) => ({ name: t(i.name, 80), url: t(i.url, 400), facts: t(i.facts, 1200), own: !!i.own, affiliateUrl: t(i.affiliateUrl, 1000) }))
+      .map((i) => ({ name: t(i.name, 80), url: t(i.url, 400), facts: t(i.facts, 3000), own: !!i.own, affiliateUrl: t(i.affiliateUrl, 1000) }))
       .filter((i) => i.name)
       .slice(0, 20);
     for (const i of items) {
@@ -155,6 +156,37 @@ export async function setAioSatelliteAction(projectId: string, input: AioSatelli
     return { ok: true };
   } catch (e) {
     return failOf(e, "保存できませんでした");
+  }
+}
+
+/**
+ * サテライトの「比較する商品・サービス」の1件について、公式サイト（と検索）から事実を集めて「記事に書いてよい事実」に入れる。
+ * 集めた分はその場で保存する（保存済みの設定に同じ名前の商品があるとき）。画面は1件ずつ順に呼ぶ（設定の同時書き込みを避ける）
+ */
+export async function collectSatelliteFactsAction(
+  projectId: string,
+  item: { name: string; url: string },
+  ctx: { theme: string; basis: string }
+): Promise<{ ok: true; facts: string; saved: boolean; notes: string[] } | ActionFail> {
+  try {
+    const { sb } = await owned(projectId);
+    const name = String(item.name ?? "").trim().slice(0, 80);
+    const url = String(item.url ?? "").trim().slice(0, 400);
+    if (!name) throw new Error("商品・サービス名を入れてください");
+    if (url) assertPublicUrl(url);
+    const r = await collectItemFacts({ name, url }, { theme: String(ctx.theme ?? "").slice(0, 300), basis: String(ctx.basis ?? "").slice(0, 400) });
+    const ch = await loadChannel(sb, projectId, "satellite");
+    const sat = ch?.satellite ?? null;
+    let saved = false;
+    if (sat && sat.items.some((i) => i.name === name)) {
+      const items = sat.items.map((i) => (i.name === name ? { ...i, facts: r.text } : i));
+      await upsertChannel(sb, projectId, "satellite", { satellite: { ...sat, items } });
+      saved = true;
+    }
+    refresh(projectId);
+    return { ok: true, facts: r.text, saved, notes: r.notes };
+  } catch (e) {
+    return failOf(e, "事実を集められませんでした");
   }
 }
 
