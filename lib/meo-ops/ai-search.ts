@@ -281,8 +281,9 @@ function groundedDomain(uri: string, title: string): string {
   return domainOf(uri);
 }
 
-/** Gemini（Google 検索つき）に定型の質問を投げる。費用は Claude の約10分の1 */
-async function askGemini(question: string, deadline: number) {
+/** Gemini（Google 検索つき）に定型の質問を投げる。費用は Claude の約10分の1。
+ * URLレポートのAIO（lib/report-aio.ts）は Claude に切り替えず、これだけを使う */
+export async function askGemini(question: string, deadline: number) {
   const left = deadline - Date.now();
   if (left < 10_000) throw new Error("AI検索が時間内に終わりませんでした");
   const r = await geminiGenerate({

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { Analysis } from "@/lib/analysis";
 import type { ScoreLevel } from "@/lib/types";
-import { withAdAccounts, withSiteHealth } from "@/lib/summary-tab";
+import { withAdAccounts, withAio, withSiteHealth } from "@/lib/summary-tab";
 
 const PILL: Record<string, [string, string]> = {
   queued: ["分析中", ""],
@@ -59,7 +59,7 @@ export function AnalysisList({ rows, adNames = [], isGuest = false }: { rows: An
             const to = a.status === "done" ? `/analysis/${a.id}/report` : `/analysis/${a.id}/waiting`;
             const site = a.url ? a.url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "入力テキスト";
             const s = a.summary;
-            const evs = withAdAccounts(withSiteHealth(a.category_evaluations ?? null), adNames, isGuest, a.ad_review, a.public_ads);
+            const evs = withAio(withAdAccounts(withSiteHealth(a.category_evaluations ?? null), adNames, isGuest, a.ad_review, a.public_ads), a.aio, isGuest);
             return (
               <div key={a.id} className="card" style={{ padding: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

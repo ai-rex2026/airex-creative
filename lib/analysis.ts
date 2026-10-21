@@ -33,6 +33,7 @@ import { collectAdPerformance, type AdPerfCollection } from "./ads/performance";
 import { AD_PLATFORMS } from "./ads/platforms";
 import { fetchPublicAds, publicAdsNote, readCreatives, reviewPublicAds, type PublicAds } from "./public-ads";
 import { createAdminClient } from "./supabase/admin";
+import { aioDeadline, aioSkipped, analyzeAio, buildAioPrompts, measureAioPrompt, type ReportAio } from "./report-aio";
 
 /** 本番と同じ見た目の短いID（英数20文字） */
 export function newAnalysisId() {
@@ -101,6 +102,8 @@ export type Analysis = {
   ad_review: AdReview | null;
   /** 公開情報から見た出稿中の広告（2026-10-06〜。lib/public-ads.ts）。それ以前の分析と、未登録ユーザーの分析には無い */
   public_ads: PublicAds | null;
+  /** AI検索での見え方（AIO。2026-10-21〜。lib/report-aio.ts）。それ以前の分析には無い */
+  aio?: ReportAio | null;
   kpi: KpiTree | null;
   /** 選ばれたKPIのID。自由入力ぶんも id を振ってここに入る */
   kpi_selected: { id: string; name: string; custom?: boolean }[] | null;
@@ -768,6 +771,52 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       if (!diagnosis) throw new Error("診断結果が見つかりません");
       const ad_review = await analyzeAdReview(a.ad_review, diagnosis, a.margin);
       return await save({ ad_review, step: "要約をまとめています", progress: 95 });
+    }
+    // AI検索での見え方（AIO。2026-10-21新設。lib/report-aio.ts）。サマリーの施策の材料（台帳）に入れるので、
+    // その前に済ませる。問いを作る→Geminiで実測（1問終わるたびに保存）→施策を書く、の3段階で、
+    // 済んだ段階・測り終えた問いはやり直さない。未登録ユーザーの分析では測らない（出稿中の広告と同じ扱い）
+    // 列（analyses.aio。Docs/sql/2026-10-21-report-aio.sql）がまだ無い環境では保存できず、毎回測り直す（＝課金が重なる）
+    // ことになるので、列の有無を先に確かめ、無ければこの工程を飛ばす
+    const aioColumn = a.aio !== undefined || !(await sb.from("analyses").select("aio").eq("id", id).maybeSingle()).error;
+    if (aioColumn && !a.aio) {
+      const diagnosis = a.diagnosis;
+      if (!diagnosis) throw new Error("診断結果が見つかりません");
+      const { data: owner } = await createAdminClient().auth.admin.getUserById(a.owner_id).catch(() => ({ data: { user: null } }));
+      const aio =
+        !owner?.user || owner.user.is_anonymous
+          ? aioSkipped("会員登録すると、AI検索（Gemini）での見え方を実測します")
+          : await buildAioPrompts(diagnosis, a.site, a.meo).catch((e) =>
+              aioSkipped(`AIに投げる問いを作れませんでした（${e instanceof Error ? e.message.slice(0, 120) : String(e).slice(0, 120)}）`)
+            );
+      return await save({ aio, step: "AI検索での見え方を調べています", progress: 95 });
+    }
+    if (a.aio && a.aio.stage === "prompts") {
+      // 1問終わるたびに保存する。同じ列（aio）への書き込みなので、手元の1つの値に結果を重ねてから順番に保存する
+      // 残り時間が短いバーストでは投げない（途中で切れて「失敗」扱いになるのを避け、次のバーストに回す）
+      if (deadline - Date.now() < 80_000) {
+        await new Promise((r) => setTimeout(r, Math.max(0, deadline - Date.now() - 5_000)));
+        return a;
+      }
+      const cur: ReportAio = { ...a.aio, prompts: [...a.aio.prompts] };
+      const until = aioDeadline(deadline);
+      let chain: Promise<unknown> = Promise.resolve();
+      await Promise.allSettled(
+        cur.prompts.map(async (p, i) => {
+          if (p.status !== "pending") return;
+          const r = await measureAioPrompt(p, cur, until);
+          cur.prompts[i] = r;
+          chain = chain.then(() => save({ aio: { ...cur, prompts: [...cur.prompts] } }));
+          await chain;
+        })
+      );
+      // 時間切れなどで測れなかった問いは失敗として残し、次へ進む（同じ問いを何度も投げ直さない）
+      const prompts = cur.prompts.map((p) => (p.status === "pending" ? { ...p, status: "error" as const, error: "時間内に終わりませんでした" } : p));
+      return await save({ aio: { ...cur, prompts, stage: "measured" }, step: "AI検索での見え方を調べています", progress: 95 });
+    }
+    if (a.aio && a.aio.stage === "measured") {
+      const diagnosis = a.diagnosis;
+      if (!diagnosis) throw new Error("診断結果が見つかりません");
+      return await save({ aio: await analyzeAio(a.aio, diagnosis, a.site), step: "要約をまとめています", progress: 96 });
     }
     // サマリータブ（カテゴリ別評価＋優先度の高い施策）。2026-10-04新設。
     // LPカテゴリの評価がPageSpeedの実測（speed）を使うため、speedが確定する

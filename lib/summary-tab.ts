@@ -14,6 +14,7 @@ import type { GscData } from "./google";
 import type { AdOps } from "./ad-ops";
 import type { AdReview } from "./ad-review";
 import type { PublicAds } from "./public-ads";
+import { scoreAio, type ReportAio } from "./report-aio-types";
 import { facts, fixNodes, flag, RULES, type Measure, type MeasurePlan } from "./measures";
 import { MEASURED_ANCHORS, topicSection, type SourceItem } from "./measure-sources";
 
@@ -29,7 +30,7 @@ import { MEASURED_ANCHORS, topicSection, type SourceItem } from "./measure-sourc
  * そのまま使う（このファイル単体でPromise.allを使う箇所は無い）。
  */
 
-export type CategoryKey = "広告の準備" | "広告" | "MEO" | "SEO強度" | "対策キーワード充足度" | "LP" | "SNS" | "検索サジェスト" | "外部施策";
+export type CategoryKey = "広告の準備" | "広告" | "MEO" | "SEO強度" | "対策キーワード充足度" | "AIO" | "LP" | "SNS" | "検索サジェスト" | "外部施策";
 
 export type CategoryEvaluation = {
   category: CategoryKey;
@@ -388,6 +389,30 @@ export function withAdAccounts(
   return at < 0 ? [ad, ...rest] : [...rest.slice(0, at + 1), ad, ...rest.slice(at + 1)];
 }
 
+/**
+ * 「AIO」（AI検索での見え方。lib/report-aio.ts）の評価を「対策キーワード充足度」の次に差し込む（表示専用・保存しない）。
+ * 2026-10-21: 保存済みの評価（category_evaluations）は作り直さず、画面を開くたびに実測結果（analyses.aio）から作る。
+ * それ以前の分析には実測が無いので、分析不可として出す
+ */
+export function withAio(evs: CategoryEvaluation[] | null, aio: ReportAio | null | undefined, isGuest = false): CategoryEvaluation[] | null {
+  if (!evs) return evs;
+  const anchor = "sec-aio";
+  let ev: CategoryEvaluation;
+  if (!aio) {
+    ev = { category: "AIO", score: null, measured: false, basis: "この分析の作成時にはAI検索の実測がありません", sectionAnchor: isGuest ? "/login?mode=signup" : anchor };
+  } else if (aio.skipped) {
+    ev = { category: "AIO", score: null, measured: false, basis: aio.skipped, sectionAnchor: isGuest ? "/login?mode=signup" : anchor };
+  } else if (aio.stage !== "done") {
+    ev = { category: "AIO", score: null, measured: false, basis: "AI検索での見え方を測っています", sectionAnchor: anchor };
+  } else {
+    const { score, basis } = scoreAio(aio);
+    ev = { category: "AIO", score, measured: score !== null, basis, sectionAnchor: anchor };
+  }
+  const rest = evs.filter((e) => e.category !== "AIO");
+  const at = rest.findIndex((e) => e.category === "対策キーワード充足度");
+  return at < 0 ? [...rest, ev] : [...rest.slice(0, at + 1), ev, ...rest.slice(at + 1)];
+}
+
 /** 実測ソースが無いため常に分析不可（2026-10-04・既決） */
 function evalOutreach(): CategoryEvaluation {
   return { category: "外部施策", score: null, measured: false, basis: "実測できるソースがありません", sectionAnchor: "sec-outreach" };
@@ -617,7 +642,7 @@ function ledgerToMeasures(picked: SourceItem[], kpi: KpiTree, prefix: string): M
 }
 
 /** 「カテゴリ別評価」のカテゴリ名（evaluateCategories が返す category と同じ語） */
-export const CATEGORY_NAMES = ["広告の準備", "広告", "MEO", "SEO強度", "対策キーワード充足度", "LP", "SNS", "検索サジェスト", "外部施策"] as const;
+export const CATEGORY_NAMES = ["広告の準備", "広告", "MEO", "SEO強度", "対策キーワード充足度", "AIO", "LP", "SNS", "検索サジェスト", "外部施策"] as const;
 
 /**
  * 施策の文面から、どのカテゴリの施策かを推定する（AIが category を返さなかった・古い分析向け）。
@@ -629,6 +654,7 @@ const CATEGORY_HINTS: Record<(typeof CATEGORY_NAMES)[number], RegExp> = {
   MEO: /MEO|Googleマップ|ビジネスプロフィール|GBP|口コミ|店舗情報|写真投稿|営業時間/g,
   SEO強度: /SEO|内部リンク|メタ|タイトルタグ|構造化データ|サイトマップ|見出し|robots|canonical|被リンク/g,
   対策キーワード充足度: /キーワード|検索クエリ|Search Console|記事|コラム|コンテンツ|検索順位|検索流入/g,
+  AIO: /AIO|LLMO|GEO|AI検索|AIに(引用|推薦|挙げ)|生成AI|ChatGPT|Gemini|Perplexity|AI Overview/g,
   LP: /LP|ランディング|表示速度|ファーストビュー|CTA|予約フォーム|入力フォーム|導線|料金表|ページ速度/g,
   SNS: /SNS|Instagram|インスタ|TikTok|YouTube|ショート動画|リール|X（|Twitter|Facebook|LINE|投稿|フォロワー/g,
   検索サジェスト: /サジェスト|指名検索|ブランド名で検索|ブランド検索/g,

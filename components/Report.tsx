@@ -51,6 +51,8 @@ import { PlatformIcon, normalizePlatform } from "./PlatformIcons";
 import { AdReviewSection } from "./AdReviewSection";
 import { PublicAdsSection } from "./PublicAdsSection";
 import { RealBadge } from "./RealBadge";
+import { AioSection } from "./AioSection";
+import type { ReportAio } from "@/lib/report-aio-types";
 import type { PublicAds } from "@/lib/public-ads";
 import type { AdReview } from "@/lib/ad-review";
 
@@ -176,6 +178,7 @@ export function Report({
   snsPlan = null,
   adReview = null,
   publicAds = null,
+  aio = null,
 }: {
   d: Diagnosis;
   copies: BannerCopy[];
@@ -218,6 +221,8 @@ export function Report({
   adReview?: AdReview | null;
   /** 公開情報から見た出稿中の広告（lib/public-ads.ts）。2026-10-06以前の分析と、未登録ユーザーの分析には無い */
   publicAds?: PublicAds | null;
+  /** AI検索での見え方（AIO。2026-10-21〜）。それ以前の分析には無い */
+  aio?: ReportAio | null;
 }) {
   const [picked, setPicked] = useState<number[]>(copies.map((_, i) => i).slice(0, 3));
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "google-lb"]);
@@ -1498,6 +1503,8 @@ export function Report({
               <ContactCta label="SEO運用・自動化について相談する" />
             </>
           )}
+          {/* AI検索での見え方（AIO）。SEO記事設計の次に置く（2026-10-21） */}
+          <AioSection data={aio} isGuest={isGuest} />
           {suggests && (
             <>
               <div className="sec-head">

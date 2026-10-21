@@ -19,6 +19,9 @@ import { generateSocialInsights, type SocialInsightPlan } from "@/lib/social-ins
 import type { YoutubeAnalyticsData } from "@/lib/google";
 import type { SnsPlan } from "@/lib/sns-plan";
 import { isB2c } from "@/lib/biz-model";
+import { hasGemini } from "@/lib/gemini";
+import type { MeoScan } from "@/lib/meo";
+import { analyzeAio, buildAioPrompts, measureAioPrompt } from "@/lib/report-aio";
 
 /**
  * 以前に作ったレポートへ、後から増えた項目を足す（作り直さずに、無い部分だけ作る）。
@@ -29,6 +32,7 @@ import { isB2c } from "@/lib/biz-model";
  * - SEO記事設計（seo_articles）
  * - 競合サイトの比較分析（competitors.analysis。競合ページを読むだけで、外部の有料APIは使わない）
  * - 一般消費者向けのビジネスでの Facebook の扱いの反映（social_insights・sns_plan の作り直し）
+ * - AI検索での見え方（aio。Gemini への実測。会員のみ。2026-10-21〜）
  */
 
 /** Facebookを優先度の低い媒体として扱う前の版で作られた、SNS分析・運用プランが残っているか */
@@ -54,12 +58,29 @@ async function ownedRow(id: string, columns: string) {
   return { sb, user, row: data as unknown as Record<string, unknown> };
 }
 
+/**
+ * AIO（analyses.aio）を後から足せるか。会員で、Gemini が使え、列があり、まだ測っていない（または測れなかった）とき。
+ * 列は 2026-10-21 に足したので、別の select にして列が無い環境でも他の項目の判定を壊さない
+ */
+async function ownedAio(id: string): Promise<{ addable: boolean }> {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user || user.is_anonymous || !hasGemini()) return { addable: false };
+  const { data, error } = await sb.from("analyses").select("aio").eq("id", id).eq("owner_id", user.id).maybeSingle();
+  if (error || !data) return { addable: false };
+  const aio = (data as { aio: { skipped?: string | null; prompts?: { status: string }[] } | null }).aio;
+  return { addable: !aio || (!!aio.skipped && !(aio.prompts ?? []).length && /会員登録|作れません/.test(aio.skipped)) };
+}
+
 /** 足りない項目の一覧。画面の「新しい項目を追加」ボタンの出し分けに使う */
 export async function missingSections(id: string): Promise<string[]> {
   const { row } = await ownedRow(
     id,
     "status, diagnosis, sns_plan, outreach, keywords, seo_articles, industry_vertical, competitors, social_insights"
   );
+  const aioRow = await ownedAio(id);
   if (row.status !== "done" || !row.diagnosis) return [];
   const out: string[] = [];
   if (!row.sns_plan || (row.sns_plan as SnsPlan).error) out.push("SNSオーガニック運用・SNSキャンペーン企画");
@@ -69,6 +90,7 @@ export async function missingSections(id: string): Promise<string[]> {
   if (k && k.rows.length > 0 && k.rows.every((r) => r.volume === undefined)) out.push("月間検索数の推定");
   if (!row.industry_vertical) out.push("業種別優先度の判定");
   if (!row.seo_articles) out.push("SEO記事設計");
+  if (aioRow.addable) out.push("AI検索での見え方（AIO）");
   const stale = staleFacebook(row, row.diagnosis as Diagnosis);
   if (stale.insights || stale.plan) out.push("Facebookの扱い（一般消費者向けの前提を反映したSNS分析）");
   return out;
@@ -83,6 +105,8 @@ export async function addMissingSections(id: string) {
   if (row.status !== "done" || !row.diagnosis) throw new Error("レポートが完成してから追加できます");
   const d = row.diagnosis as Diagnosis;
   const site = (row.site as SiteScan | null) ?? null;
+
+  const aioAddable = (await ownedAio(id)).addable;
 
   const provider = ((row.ai_provider as AiProvider | null) ?? "anthropic");
   after(() => withAi(provider, async () => {
@@ -164,6 +188,21 @@ export async function addMissingSections(id: string) {
             if (p.channels.length || p.campaign) patch.sns_plan = p;
           })
           .catch(() => undefined)
+      );
+    }
+    if (aioAddable) {
+      // 問いを作る→3問を並列に実測→施策を書く。1問でも測れたときだけ保存する（測れなければ「追加する」を残す）
+      tasks.push(
+        (async () => {
+          const { data: m } = await admin.from("analyses").select("meo").eq("id", id).maybeSingle();
+          const meo = ((m?.meo as MeoScan | null) ?? null);
+          const base = await buildAioPrompts(d, site, meo);
+          if (base.skipped) return;
+          const until = Date.now() + 170_000;
+          const prompts = await Promise.all(base.prompts.map((p) => measureAioPrompt(p, base, until)));
+          if (!prompts.some((p) => p.status === "ok")) return;
+          patch.aio = await analyzeAio({ ...base, prompts, stage: "measured" }, d, site);
+        })().catch(() => undefined)
       );
     }
     await Promise.all(tasks);

@@ -1,6 +1,7 @@
 import type { AdOps } from "./ad-ops";
 import type { AdReview } from "./ad-review";
 import type { PublicAds } from "./public-ads";
+import type { ReportAio } from "./report-aio-types";
 import type { KeywordPlan, LinePlan, LpoPlan } from "./deep";
 import type { MeoScan } from "./meo";
 import { meoStoreActions } from "./meo-actions";
@@ -46,7 +47,7 @@ export type SourceItem = {
  * 2026-10-06: 以前は「どの章の打ち手か」で付ける・付けないを決めていたため、対策キーワード章の表示速度の打ち手を
  * 表示速度の欄にリンクし直したときに、未確認の印だけが残って注記が付いていた
  */
-export const MEASURED_ANCHORS = new Set(["sec-tags", "sec-meo", "sec-lpo", "sec-speed", "sec-adreview", "sec-pubads"]);
+export const MEASURED_ANCHORS = new Set(["sec-tags", "sec-meo", "sec-lpo", "sec-speed", "sec-adreview", "sec-pubads", "sec-aio"]);
 
 /**
  * LP（受け皿のページ）の改修の話か。分析データのどの章に書かれていても、リンク先は「LP改善」にする。
@@ -73,6 +74,8 @@ export type LedgerInput = {
   ad_review?: AdReview | null;
   /** 公開情報から見た出稿中の広告（2026-10-06〜）。それ以前の分析には無い */
   public_ads?: PublicAds | null;
+  /** AI検索での見え方（AIO。2026-10-21〜）。それ以前の分析には無い */
+  aio?: ReportAio | null;
 };
 
 /** 1章から拾う件数の上限。台帳が長すぎるとAIへの入力が膨らむだけで選ばれない */
@@ -119,7 +122,7 @@ export function buildLedger(a: LedgerInput): SourceItem[] {
       // 表示速度の話は、書かれている章に関係なく表示速度の欄へリンクする
       const topic = topicSection(text, speedShown);
       // 広告の実績分析の打ち手は、文面にLPなどの語があっても広告の欄のまま（実績の数字が根拠のため）
-      const moved = !!topic && anchor !== "sec-adreview" && anchor !== "sec-pubads" && topic.anchor !== anchor && !(anchor === "sec-speed" && topic.anchor === "sec-lpo");
+      const moved = !!topic && anchor !== "sec-adreview" && anchor !== "sec-pubads" && anchor !== "sec-aio" && topic.anchor !== anchor && !(anchor === "sec-speed" && topic.anchor === "sec-lpo");
       const finalAnchor = moved ? topic!.anchor : anchor;
       out.push({
         id: `s${out.length + 1}`,
@@ -229,6 +232,11 @@ export function buildLedger(a: LedgerInput): SourceItem[] {
       ...(a.public_ads.legal ?? []).slice(0, 2).map((l) => `広告の表現を直す：「${l.text}」（${l.law}）`),
       ...(a.public_ads.measures ?? []).map((m) => `${m.title}（${m.why}）`),
     ]);
+  }
+
+  // AI検索での見え方（Geminiでの実測）。2026-10-21〜。既存の分析の番号がずれないよう最後に足す
+  if (a.aio?.stage === "done" && !a.aio.skipped) {
+    add("AI検索での見え方（AIO）", "sec-aio", "AIO", (a.aio.measures ?? []).map((m) => `${m.title}（${m.why}）`));
   }
 
   return out;
