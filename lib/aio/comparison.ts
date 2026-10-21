@@ -323,12 +323,12 @@ export function sparseColumns(columns: string[], rows: { cells: Record<string, {
   return columns.filter((c) => rows.filter((r) => String(r.cells[c]?.value ?? "").trim()).length * 2 < rows.length);
 }
 
-/** 記事を書く AI に渡す比較表（Markdown）。空欄は「公式サイトで確認」 */
+/** 記事を書く AI に渡す比較表（Markdown）。空欄は「確認できませんでした」 */
 export function comparisonTable(columns: string[], rows: { name: string; cells: CmpCells }[]): string {
   const esc = (s: string) => s.replace(/\|/g, "／").replace(/\n/g, " ");
   return [
     `| 商品・サービス | ${columns.map(esc).join(" | ")} |`,
     `| --- | ${columns.map(() => "---").join(" | ")} |`,
-    ...rows.map((r) => `| ${esc(r.name)} | ${columns.map((c) => esc(r.cells[c]?.value || "公式サイトで確認")).join(" | ")} |`),
+    ...rows.map((r) => `| ${esc(r.name)} | ${columns.map((c) => esc(r.cells[c]?.value || "確認できませんでした")).join(" | ")} |`),
   ].join("\n");
 }

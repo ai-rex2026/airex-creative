@@ -192,7 +192,7 @@ export function ComparisonReview({ maker }: { maker: ReturnType<typeof useArticl
     <div className="mt-4 rounded-xl border border-[#E8E5E0] p-3">
       <p className="text-xs font-semibold text-[#2E2D29]">比較表の下調べ（{filled}/{rows.length * columns.length}マス）</p>
       <p className="mt-1 text-[11px] leading-relaxed text-[#8B877F]">
-        公式サイトと検索で集めた値です。違う値・空欄は直してから「この表で記事を書く」を押してください。記事の比較表とランキングはこの表の値だけで書き、空欄は「公式サイトで確認」になります。
+        公式サイトと検索で集めた値です。違う値・空欄は直してから「この表で記事を書く」を押してください。記事の比較表とランキングはこの表の値だけで書き、空欄は「確認できませんでした」になります。
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         <span className="text-[#8B877F]">記事に使う項目（押すと外す／戻す。半分以上の会社で空欄の項目は外してあります）：</span>
