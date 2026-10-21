@@ -146,7 +146,7 @@ export function AioSection({ data, isGuest = false }: { data: ReportAio | null |
       <p className="sub" style={{ marginTop: 8 }}>
         ※AIの回答は問いの書き方・時期・利用者によって変わります。この結果は{ok[0]?.at ? ` ${new Date(ok[0].at).toLocaleDateString("ja-JP")} 時点の` : ""}1回の実測で、施策を行えば候補に挙がることを約束するものではありません。
       </p>
-      <ContactCta label="SEO運用・自動化について相談する" />
+      <ContactCta label="AIO運用・自動化について相談する" />
     </>
   );
 }
