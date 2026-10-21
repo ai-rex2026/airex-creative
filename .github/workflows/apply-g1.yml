@@ -1,0 +1,34 @@
+name: apply-g1
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-g1.yml"
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch
+        run: |
+          set -euo pipefail
+          cat .buildtmp/g1/chunks/chunk-*.b64 | tr -d '\n\r ' | base64 -d | gunzip > /tmp/p.diff
+          echo "ef461e8ddcb900bd8d11b3aca0d0de2785619eaeed0122bbab599023d3eb40da  /tmp/p.diff" | sha256sum -c -
+          git apply /tmp/p.diff
+          git rm -rq .buildtmp/g1 .github/workflows/apply-g1.yml
+          git add -A
+          git config user.name "suzuki"
+          git config user.email "suzuki.yuichiro.libertad@gmail.com"
+          git commit -q -F - <<'MSG'
+          Search Console / GA4 の Google 連携をログインと別の OAuth にする
+
+          - 以前はログイン（Supabase の signInWithOAuth）経由で、別の Google アカウントで許可するとログインごと切り替わっていた
+          - ビジネスプロフィールと同じ独立した OAuth（/api/gbp/start?kind=gsc、戻り先は登録済みの /api/gbp/callback）で、更新トークンだけを預かる
+          - 設定画面に連携したアカウントのメールアドレスを表示（google_connections.email）
+
+          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy
+          MSG
+          git push origin HEAD:main
