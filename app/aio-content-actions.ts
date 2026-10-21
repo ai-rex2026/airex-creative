@@ -16,6 +16,7 @@ import { sendToWordPress, type WpMedia } from "@/lib/aio/publish";
 import { parseNoteMetrics, reviewContent, type NoteRow } from "@/lib/aio/review";
 import { assertPublicUrl } from "@/lib/aio/net";
 import { collectItemFacts } from "@/lib/aio/satellite-facts";
+import { comparisonTable, defaultComparisonDeps, extractCells, planColumns, readSite, searchMissing, type CmpCells, type SitePage } from "@/lib/aio/comparison";
 import { ARTICLE_MONTHLY_LIMIT, isWpKind, type AioArticleImage, type AioChannelKind, type AioSatellite } from "@/lib/aio/content-types";
 import type { AioPlanItem, AioProject } from "@/lib/aio/types";
 
@@ -190,6 +191,138 @@ export async function collectSatelliteFactsAction(
   }
 }
 
+// ── 比較表の下調べ（サテライトの比較記事。2026-10-21） ─────────────────────
+
+export type CmpRow = { id: string; name: string; url: string; cells: CmpCells; status: string; error: string | null };
+export type CmpTable = { id: string; topic: string; columns: string[]; rows: CmpRow[] };
+const SITE_CACHE_MS = 5 * 864e5;
+const rowOf = (r: Record<string, unknown>): CmpRow => ({
+  id: String(r.id),
+  name: String(r.item_name ?? ""),
+  url: String(r.item_url ?? ""),
+  cells: (r.cells as CmpCells) ?? {},
+  status: String(r.status ?? "pending"),
+  error: (r.error as string | null) ?? null,
+});
+
+async function loadCmp(sb: Sb, comparisonId: string): Promise<CmpTable & { projectId: string }> {
+  const { data: c } = await sb.from("aio_comparisons").select("id, project_id, topic, columns").eq("id", comparisonId).maybeSingle();
+  if (!c) throw new Error("比較表が見つかりません");
+  const { data: rows } = await sb.from("aio_comparison_rows").select("id, item_name, item_url, cells, status, error").eq("comparison_id", comparisonId).order("position");
+  return {
+    id: String(c.id),
+    projectId: String(c.project_id),
+    topic: String(c.topic ?? ""),
+    columns: Array.isArray(c.columns) ? (c.columns as string[]) : [],
+    rows: ((rows ?? []) as Record<string, unknown>[]).map(rowOf),
+  };
+}
+
+/** 記事のテーマから比較項目を決め、比べる商品ごとの行を作る（値はまだ空） */
+export async function startComparisonAction(projectId: string, brief: ArticleBrief | null): Promise<{ ok: true; table: CmpTable } | ActionFail> {
+  try {
+    const { sb } = await owned(projectId);
+    const ch = await loadChannel(sb, projectId, "satellite");
+    const sat = ch?.satellite;
+    const items = (sat?.items ?? []).filter((i) => i.name.trim());
+    if (!sat || !items.length) throw new Error("サテライトサイトの「比較する商品・サービス」を先に入れてください");
+    // 月の上限（検索つきの AI を呼ぶ回数の歯止め）
+    const [y, m] = jstPeriodKey().split("-").map(Number);
+    const since = new Date(Date.UTC(y, m - 1, 1) - 9 * 3600e3).toISOString();
+    const { count } = await sb.from("aio_comparisons").select("id", { count: "exact", head: true }).eq("project_id", projectId).gte("created_at", since);
+    if ((count ?? 0) >= ARTICLE_MONTHLY_LIMIT * 2) throw new Error(`今月の比較表の下調べの上限（${ARTICLE_MONTHLY_LIMIT * 2}回）に達しました`);
+    const topic = [brief?.title, brief?.target].map((v) => String(v ?? "").trim()).filter(Boolean).join(" / ").slice(0, 300);
+    const columns = await planColumns({ topic, theme: sat.theme, basis: sat.rankingBasis ?? "", items: items.map((i) => i.name) }, defaultComparisonDeps());
+    const { data: c, error } = await sb.from("aio_comparisons").insert({ project_id: projectId, topic, columns }).select("id").single();
+    if (error || !c) throw new Error(`比較表を保存できませんでした：${error?.message ?? ""}`);
+    const { error: e2 } = await sb.from("aio_comparison_rows").insert(items.map((i, k) => ({ comparison_id: c.id, project_id: projectId, position: k, item_name: i.name.slice(0, 80), item_url: i.url })));
+    if (e2) throw new Error(`比較表の行を保存できませんでした：${e2.message}`);
+    const t = await loadCmp(sb, String(c.id));
+    return { ok: true, table: { id: t.id, topic: t.topic, columns: t.columns, rows: t.rows } };
+  } catch (e) {
+    return failOf(e, "比較表の下調べを始められませんでした");
+  }
+}
+
+/**
+ * 1社ぶんの値を集める（公式サイト → 足りない項目だけ検索）。工程ごとにその行だけ保存し、済んだ工程はやり直さない
+ */
+export async function researchComparisonRowAction(comparisonId: string, rowId: string): Promise<{ ok: true; row: CmpRow } | ActionFail> {
+  try {
+    const { sb } = await me();
+    const t = await loadCmp(sb, comparisonId);
+    await owned(t.projectId);
+    const row = t.rows.find((r) => r.id === rowId);
+    if (!row) throw new Error("比較表の行が見つかりません");
+    if (row.status === "done") return { ok: true, row };
+    const deps = defaultComparisonDeps();
+    const save = async (patch: Record<string, unknown>) => {
+      await sb.from("aio_comparison_rows").update({ ...patch, updated_at: now() }).eq("id", rowId);
+    };
+    let cells: CmpCells = { ...row.cells };
+    const errs: string[] = [];
+
+    if (row.status === "pending") {
+      if (!row.url) {
+        errs.push("公式サイトの URL が無いため、検索だけで調べました");
+      } else {
+        try {
+          // 読んだ本文は数日使い回す（同じ会社を別の記事で比べるたびに読み直さない）
+          const { data: cache } = await sb.from("aio_site_cache").select("pages, fetched_at").eq("project_id", t.projectId).eq("url", row.url).maybeSingle();
+          let pages: SitePage[] | null = cache && Date.now() - new Date(String(cache.fetched_at)).getTime() < SITE_CACHE_MS ? (cache.pages as SitePage[]) : null;
+          if (!pages?.length) {
+            const r = await readSite(row.url, deps);
+            pages = r.pages;
+            errs.push(...r.notes);
+            await sb.from("aio_site_cache").upsert({ project_id: t.projectId, url: row.url, pages, fetched_at: now() }, { onConflict: "project_id,url" });
+          }
+          cells = { ...(await extractCells({ name: row.name }, t.columns, pages, deps)), ...cells };
+        } catch (e) {
+          errs.push(`公式サイトから集められませんでした（${e instanceof Error ? e.message : "不明"}）`);
+        }
+      }
+      await save({ cells, status: "site", error: errs.join(" / ") || null });
+    }
+
+    const missing = t.columns.filter((c) => !cells[c]?.value);
+    if (missing.length) {
+      try {
+        cells = { ...(await searchMissing({ name: row.name, url: row.url }, missing, deps)), ...cells };
+      } catch (e) {
+        errs.push(`検索で補えませんでした（${e instanceof Error ? e.message : "不明"}）`);
+      }
+    }
+    await save({ cells, status: "done", error: errs.join(" / ") || null });
+    return { ok: true, row: { ...row, cells, status: "done", error: errs.join(" / ") || null } };
+  } catch (e) {
+    return failOf(e, "値を集められませんでした");
+  }
+}
+
+/** 人が直した比較表を保存する（直した値は via=manual） */
+export async function saveComparisonAction(comparisonId: string, rows: { id: string; cells: Record<string, string> }[]): Promise<{ ok: true } | ActionFail> {
+  try {
+    const { sb } = await me();
+    const t = await loadCmp(sb, comparisonId);
+    await owned(t.projectId);
+    for (const r of rows) {
+      const cur = t.rows.find((x) => x.id === r.id);
+      if (!cur) continue;
+      const cells: CmpCells = {};
+      for (const c of t.columns) {
+        const v = String(r.cells[c] ?? "").trim().slice(0, 120);
+        if (!v) continue;
+        cells[c] = cur.cells[c]?.value === v ? cur.cells[c] : { value: v, source: null, via: "manual" };
+      }
+      // 1行ずつ保存する（途中で失敗しても、保存できた行は残る）
+      await sb.from("aio_comparison_rows").update({ cells, updated_at: now() }).eq("id", r.id);
+    }
+    return { ok: true };
+  } catch (e) {
+    return failOf(e, "比較表を保存できませんでした");
+  }
+}
+
 // ── 記事 ─────────────────────
 
 /**
@@ -202,10 +335,12 @@ export async function createAioArticleAction(
   brief: ArticleBrief | null,
   plan?: { planId: string; itemId: string },
   /** SEO運用の対策キーワード（seo_keywords.id）。この語で書いた記事として結び付ける */
-  keywordId?: string | null
+  keywordId?: string | null,
+  /** サテライトの比較表の下調べ（aio_comparisons.id）。この表の値で比較表とランキングを書く */
+  comparisonId?: string | null
 ): Promise<{ ok: true; id: string } | ActionFail> {
   try {
-    return { ok: true, id: await createAioArticle(projectId, kindRaw, brief, plan, keywordId ?? null) };
+    return { ok: true, id: await createAioArticle(projectId, kindRaw, brief, plan, keywordId ?? null, comparisonId ?? null) };
   } catch (e) {
     return failOf(e, "記事を作れませんでした");
   }
@@ -216,7 +351,8 @@ async function createAioArticle(
   kindRaw: string,
   brief: ArticleBrief | null,
   plan?: { planId: string; itemId: string },
-  keywordId: string | null = null
+  keywordId: string | null = null,
+  comparisonId: string | null = null
 ): Promise<string> {
   const started = Date.now();
   const kind = asKind(kindRaw);
@@ -245,7 +381,14 @@ async function createAioArticle(
     ? { title: brief.title?.trim().slice(0, 160), target: brief.target?.trim().slice(0, 160), outline: brief.outline?.trim().slice(0, 1200), note: brief.note?.trim().slice(0, 800) }
     : null;
   if (kind === "satellite" && !(ch?.satellite?.items ?? []).length) throw new Error("サテライトサイトの「扱う商品・サービス」を先に入れてください（記事に書いてよい事実の出どころになります）");
+  let comparison: string | null = null;
+  if (kind === "satellite" && comparisonId) {
+    const t = await loadCmp(sb, comparisonId);
+    if (t.projectId !== projectId) throw new Error("比較表が見つかりません");
+    comparison = comparisonTable(t.columns, t.rows.map((r) => ({ name: r.name, cells: r.cells })));
+  }
   const d = await draftArticle(kind, project, ch, {
+    comparison,
     brief: clean,
     recentTitles: ((recent ?? []) as { title: string }[]).map((r) => r.title),
     latestCheck: latestRow ? rowToCheck(latestRow as Record<string, unknown>) : null,
@@ -270,6 +413,7 @@ async function createAioArticle(
     .single();
   if (error || !data) throw new Error(`記事を保存できませんでした：${error?.message ?? ""}`);
   const articleId = data.id as string;
+  if (comparisonId) await sb.from("aio_comparisons").update({ article_id: articleId, updated_at: now() }).eq("id", comparisonId);
 
   if (plan) {
     const { data: p } = await sb.from("aio_content_plans").select("items").eq("id", plan.planId).eq("project_id", projectId).maybeSingle();

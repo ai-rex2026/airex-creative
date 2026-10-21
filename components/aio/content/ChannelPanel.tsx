@@ -16,7 +16,7 @@ import {
 import { SectionTitle } from "@/components/meo/Workspace";
 import { Btn, Card, ErrorNote, Icon, Input, Label, Select, Textarea, cn } from "@/components/meo/ui";
 import { ArticleCard } from "@/components/aio/content/ArticleCard";
-import { PhaseNote, useArticleMaker } from "@/components/aio/content/useArticleMaker";
+import { ComparisonReview, PhaseNote, useArticleMaker } from "@/components/aio/content/useArticleMaker";
 import type { AioArticle, AioChannel, AioChannelKind, AioContentReview, AioSatellite, AioSatelliteItem, AioWpInfo } from "@/lib/aio/content-types";
 import type { AioProject } from "@/lib/aio/types";
 import type { SeoKeyword } from "@/lib/seo/keywords";
@@ -147,7 +147,8 @@ export function ChannelPanel({
             {maker.busy ? "作成中" : "記事を書く（画像つき）"}
           </Btn>
         </div>
-        <PhaseNote phase={maker.phase} />
+        <PhaseNote phase={maker.phase} progress={maker.progress} />
+        <ComparisonReview maker={maker} />
         {maker.error && <div className="mt-3"><ErrorNote>{maker.error}</ErrorNote></div>}
         {maker.notice && <p className="mt-3 rounded-xl bg-[#FBF4E4] px-3 py-2 text-xs text-[#8A6A1E]">{maker.notice}</p>}
       </Card>

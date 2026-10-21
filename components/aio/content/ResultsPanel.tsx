@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { addAioNoteMetricsAction, fetchAioSiteMetricsAction, reviewAioChannelAction } from "@/app/aio-content-actions";
 import { SectionTitle } from "@/components/meo/Workspace";
 import { Btn, Card, ErrorNote, Icon, Input, Label, Select, Textarea, cn } from "@/components/meo/ui";
-import { PhaseNote, useArticleMaker } from "@/components/aio/content/useArticleMaker";
+import { ComparisonReview, PhaseNote, useArticleMaker } from "@/components/aio/content/useArticleMaker";
 import type { AioArticle, AioChannel, AioChannelKind, AioContentReview, AioMetric } from "@/lib/aio/content-types";
 import type { AioProject } from "@/lib/aio/types";
 
@@ -296,7 +296,8 @@ function ReviewBlock({ project, kind, review, canRun }: { project: AioProject; k
                   </li>
                 ))}
               </ul>
-              <PhaseNote phase={maker.phase} />
+              <PhaseNote phase={maker.phase} progress={maker.progress} />
+        <ComparisonReview maker={maker} />
               {maker.error && <div className="mt-2"><ErrorNote>{maker.error}</ErrorNote></div>}
             </div>
           )}

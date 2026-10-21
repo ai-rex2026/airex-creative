@@ -108,7 +108,7 @@ export async function draftArticle(
   kind: AioChannelKind,
   project: AioProject,
   ch: AioChannel | null,
-  ctx: { brief?: ArticleBrief | null; recentTitles: string[]; latestCheck: AioCheck | null; queries: AioMetric["queries"] }
+  ctx: { brief?: ArticleBrief | null; recentTitles: string[]; latestCheck: AioCheck | null; queries: AioMetric["queries"]; comparison?: string | null }
 ): Promise<DraftedArticle> {
   const b = ctx.brief ?? {};
   const lines = [
@@ -121,6 +121,9 @@ export async function draftArticle(
     project.siteSummary ? `Webサイトの見出し: ${project.siteSummary}` : "",
     "",
     ...channelGuide(kind, ch, project),
+    ctx.comparison
+      ? `\n# 比較表の下調べ（この記事用に公式サイト・検索で集め、人が確かめた値。比較表はこの項目と値をそのまま使い、ランキングの根拠にする。「公式サイトで確認」はこの表で空欄の項目だけ）\n${ctx.comparison}`
+      : "",
     ctx.recentTitles.length ? `\nこの画面で最近作った記事（重ならないようにする）: ${ctx.recentTitles.slice(0, 15).join(" / ")}` : "",
     ctx.queries.length ? `\n検索で実際に表示されている語（Search Console）: ${ctx.queries.slice(0, 15).map((q) => `${q.query}（表示${q.impressions}・順位${q.position}）`).join(" / ")}` : "",
     ctx.latestCheck ? `\nAI に聞いたときに挙がった事業者: ${ctx.latestCheck.listed.slice(0, 8).join(" / ") || "（なし）"}。自社は${ctx.latestCheck.mentioned ? `${ctx.latestCheck.rank}番目` : "挙がらなかった"}` : "",
