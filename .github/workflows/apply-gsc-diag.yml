@@ -20,10 +20,5 @@ jobs:
           git add -A
           git config user.name suzuki
           git config user.email suzuki.yuichiro.libertad@gmail.com
-          git commit -q -F - <<'MSG'
-SEO運用：Search Console 反映時に、取得した期間・プロパティと候補の内訳を表示する
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy
-MSG
+          git commit -q -m "SEO運用：Search Console 反映時に、取得した期間・プロパティと候補の内訳を表示する" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
           git push origin HEAD:main
