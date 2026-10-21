@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { askJson, MODEL_FAST } from "../anthropic";
 import { GeminiUnavailableError, geminiGenerate, hasGemini } from "../gemini";
 import { normalizeJapanese } from "../meo-ops/japanese";
@@ -8,7 +9,9 @@ import { fetchHtml, htmlToText } from "./net";
  * 1. 比較項目を決める（記事のタイトル・狙う語・基準から。AI 1回・少量）
  * 2. 各社の公式サイトを読む：トップ＋会社概要・料金・機能・実績・FAQ・サポートを種類ごとに1ページずつ（読んだ本文は数日使い回す）
  * 3. 決めた項目に沿って、読んだ本文に書かれている値だけを表の形で抜き出す（Gemini 3.1 Flash-Lite。使えなければ Claude Haiku）
- * 4. 公式サイトで埋まらなかった項目だけを Google 検索つきの Gemini で補う（根拠の出典が無い回答は捨てる）
+ * 4. 公式サイトで埋まらなかった項目だけを検索で補う：Gemini（Google 検索つき）→ 出典が取れなければ「必ず検索する」と指示して1回だけやり直し
+ *    → それでも出典が無ければ Claude Haiku の Web 検索（出典が必ず付く）。根拠の出典が無い回答は捨てる
+ * 5. 半分以上の会社で空欄の項目は、確認画面で既定で外す（人が戻せる）
  * 表は人が確かめて直してから、本文を書く。外部は ComparisonDeps で差し替えて検証できる
  */
 
@@ -21,8 +24,41 @@ export type ComparisonDeps = {
   /** JSON を返す安い AI（抜き出し・項目決め） */
   json: <T>(system: string, user: string) => Promise<T>;
   /** Google 検索つき。使えない環境では null */
-  search: ((system: string, question: string) => Promise<{ text: string; sources: { uri: string; title: string }[] }>) | null;
+  search: SearchFn | null;
+  /** search で出典が取れなかったときの代わり（Claude の Web 検索）。使えない環境では null */
+  searchFallback: SearchFn | null;
 };
+type SearchFn = (system: string, question: string) => Promise<{ text: string; sources: { uri: string; title: string }[] }>;
+
+/** Claude Haiku の Web 検索。回答の引用（citations）を出典にする */
+async function claudeSearch(system: string, question: string) {
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const res = (await client.messages.create(
+    {
+      model: MODEL_FAST,
+      max_tokens: 2000,
+      system,
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3, user_location: { type: "approximate", country: "JP", timezone: "Asia/Tokyo" } }],
+      messages: [{ role: "user", content: question }],
+    } as unknown as Anthropic.Messages.MessageCreateParamsNonStreaming,
+    { timeout: 90_000, maxRetries: 0 }
+  )) as unknown as { content: { type: string; text?: string; citations?: { url?: string; title?: string }[] | null }[] };
+  const text = res.content.filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+  const seen = new Set<string>();
+  const sources: { uri: string; title: string }[] = [];
+  for (const b of res.content) {
+    for (const c of b.citations ?? []) {
+      if (!c.url || seen.has(c.url)) continue;
+      seen.add(c.url);
+      let host = "";
+      try {
+        host = new URL(c.url).hostname.replace(/^www\./, "");
+      } catch {}
+      sources.push({ uri: c.url, title: host || String(c.title ?? "") });
+    }
+  }
+  return { text, sources };
+}
 
 function parseJson<T>(text: string): T {
   const t = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
@@ -55,12 +91,14 @@ export const defaultComparisonDeps = (): ComparisonDeps => ({
         return { text: r.text, sources: (r.grounding?.sources ?? []).map((s) => ({ uri: s.uri, title: s.title })) };
       }
     : null,
+  searchFallback: process.env.ANTHROPIC_API_KEY ? claudeSearch : null,
 });
 
 // ── 1. 比較項目 ─────────────────────
 
 const COLUMNS_SYSTEM = `あなたは比較メディアの編集者です。記事のテーマから、読者が選ぶときに比べたい項目を決めます。
-- 公式サイトや会社の公開情報で確かめられる、事実で埋まる項目にする（「おすすめ度」「満足度」「評判」のような評価の項目は入れない）
+- 公式サイト・会社概要・登記・プレスリリースなど公開情報で確かめられる、事実で埋まる項目だけにする（例：資本金・設立年・従業員数・本社所在地・提供サービス・料金・対応媒体・取得資格・導入実績の公開数）
+- 「得意な〇〇」「強み」「おすすめ度」「満足度」「評判」「取引先の規模」のような、評価・自己申告・非公開になりがちな項目は入れない
 - テーマに合わせて選ぶ（例：会社の信頼性が気になるテーマなら 資本金・設立年・従業員数、費用が気になるなら 初期費用・月額費用・最低契約期間）
 - 4〜8個。1項目は12字以内の名詞
 出力は JSON: {"columns":["…"]}`;
@@ -241,13 +279,34 @@ export function parseSearchLine(line: string, columns: string[]): { col: string;
 export async function searchMissing(
   item: { name: string; url: string },
   missing: string[],
-  deps: Pick<ComparisonDeps, "search">
+  deps: Pick<ComparisonDeps, "search" | "searchFallback">
 ): Promise<{ cells: CmpCells; note: string | null }> {
   if (!missing.length) return { cells: {}, note: null };
-  if (!deps.search) return { cells: {}, note: "検索で補う設定が無いため、検索していません" };
-  const r = await deps.search(SEARCH_SYSTEM, `「${item.name}」（公式サイト: ${item.url || "不明"}）の次の項目を調べてください：${missing.join("、")}`);
+  if (!deps.search && !deps.searchFallback) return { cells: {}, note: "検索で補う設定が無いため、検索していません" };
+  const q = `「${item.name}」（公式サイト: ${item.url || "不明"}）の次の項目を調べてください：${missing.join("、")}`;
+  const notes: string[] = [];
+  let r: { text: string; sources: { uri: string; title: string }[] } | null = null;
+  // Gemini → 出典が無ければ「必ず検索する」と指示して1回だけやり直し → それでも無ければ Claude の Web 検索
+  const tries: { fn: SearchFn | null; system: string; label: string }[] = [
+    { fn: deps.search, system: SEARCH_SYSTEM, label: "Gemini" },
+    { fn: deps.search, system: `${SEARCH_SYSTEM}\n- 学習済みの知識で答えず、必ず Google 検索を実行し、検索結果のページに書かれている値だけを答える`, label: "Gemini（再試行）" },
+    { fn: deps.searchFallback, system: SEARCH_SYSTEM, label: "Claude" },
+  ];
+  for (const t of tries) {
+    if (!t.fn) continue;
+    try {
+      const got = await t.fn(t.system, q);
+      if (got.sources.length) {
+        r = got;
+        break;
+      }
+      notes.push(`${t.label}：出典なし`);
+    } catch (e) {
+      notes.push(`${t.label}：${e instanceof Error ? e.message.slice(0, 80) : "失敗"}`);
+    }
+  }
   // 検索の根拠（出典）が取れなかった回答は使わない
-  if (!r.sources.length) return { cells: {}, note: "検索の根拠（出典）が取れなかったため、検索の結果を使いませんでした" };
+  if (!r) return { cells: {}, note: `検索の根拠（出典）が取れなかったため、検索の結果を使いませんでした（${notes.join(" / ")}）` };
   const src = [...new Set(r.sources.map((s) => s.title).filter(Boolean))].slice(0, 3).join("・") || "Google検索";
   const out: CmpCells = {};
   for (const line of r.text.split("\n")) {
@@ -256,6 +315,12 @@ export async function searchMissing(
   }
   const left = missing.filter((c) => !out[c]);
   return { cells: out, note: left.length ? `検索でも見つからなかった項目：${left.join("・")}` : null };
+}
+
+/** 半分以上の会社で空欄の項目（確認画面で既定で外す） */
+export function sparseColumns(columns: string[], rows: { cells: Record<string, { value?: string } | undefined> }[]): string[] {
+  if (!rows.length) return [];
+  return columns.filter((c) => rows.filter((r) => String(r.cells[c]?.value ?? "").trim()).length * 2 < rows.length);
 }
 
 /** 記事を書く AI に渡す比較表（Markdown）。空欄は「公式サイトで確認」 */

@@ -304,11 +304,21 @@ export async function researchComparisonRowAction(comparisonId: string, rowId: s
 }
 
 /** 人が直した比較表を保存する（直した値は via=manual） */
-export async function saveComparisonAction(comparisonId: string, rows: { id: string; cells: Record<string, string> }[]): Promise<{ ok: true } | ActionFail> {
+export async function saveComparisonAction(
+  comparisonId: string,
+  rows: { id: string; cells: Record<string, string> }[],
+  /** 記事に使う項目（外した項目は記事に出さない）。省略時は今の項目のまま */
+  columns?: string[]
+): Promise<{ ok: true } | ActionFail> {
   try {
     const { sb } = await me();
     const t = await loadCmp(sb, comparisonId);
     await owned(t.projectId);
+    if (columns) {
+      const keep = t.columns.filter((c) => columns.includes(c));
+      if (!keep.length) throw new Error("記事に使う項目を1つ以上残してください");
+      await sb.from("aio_comparisons").update({ columns: keep, updated_at: now() }).eq("id", comparisonId);
+    }
     for (const r of rows) {
       const cur = t.rows.find((x) => x.id === r.id);
       if (!cur) continue;

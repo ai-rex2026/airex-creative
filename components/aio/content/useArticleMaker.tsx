@@ -17,7 +17,11 @@ import type { AioChannelKind } from "@/lib/aio/content-types";
 export type MakePhase = null | "researching" | "writing" | "finishing";
 
 type MakeArgs = { kind: AioChannelKind; brief: ArticleBrief | null; plan?: { planId: string; itemId: string }; keywordId?: string | null };
-export type CmpReview = { args: MakeArgs; table: CmpTable; edits: Record<string, Record<string, string>> };
+export type CmpReview = { args: MakeArgs; table: CmpTable; edits: Record<string, Record<string, string>>; hidden: string[] };
+
+/** 半分以上の会社で空欄の項目（比べられないので、既定で記事から外す。人が戻せる） */
+const sparseOf = (t: CmpTable) =>
+  t.columns.filter((c) => t.rows.filter((r) => String(r.cells[c]?.value ?? "").trim()).length * 2 < t.rows.length);
 
 /** 同時に集める社数（公式サイトの読み取りと AI 呼び出しを詰め込みすぎない） */
 const PARALLEL = 3;
@@ -104,7 +108,7 @@ export function useArticleMaker(projectId: string) {
         return null;
       }
       const table = await research(s.table);
-      setReview({ args, table, edits: {} });
+      setReview({ args, table, edits: {}, hidden: sparseOf(table) });
       return null;
     } catch (e) {
       setError(e instanceof Error ? e.message : "比較表の下調べができませんでした");
@@ -122,7 +126,7 @@ export function useArticleMaker(projectId: string) {
     setPhase("researching");
     try {
       const table = await research(review.table);
-      setReview({ ...review, table });
+      setReview({ ...review, table, hidden: sparseOf(table) });
     } finally {
       setPhase(null);
     }
@@ -139,7 +143,12 @@ export function useArticleMaker(projectId: string) {
       id: r.id,
       cells: Object.fromEntries(review.table.columns.map((c) => [c, review.edits[r.id]?.[c] ?? r.cells[c]?.value ?? ""])),
     }));
-    const saved = await saveComparisonAction(review.table.id, rows);
+    const keep = review.table.columns.filter((c) => !review.hidden.includes(c));
+    if (!keep.length) {
+      setError("記事に使う項目を1つ以上残してください");
+      return null;
+    }
+    const saved = await saveComparisonAction(review.table.id, rows, keep);
     if (!saved.ok) {
       setError(saved.error);
       return null;
@@ -150,7 +159,10 @@ export function useArticleMaker(projectId: string) {
     return write(args, id);
   };
 
-  return { make, phase, error, notice, busy: phase !== null, review, progress, editCell, retryResearch, writeFromReview, cancelReview: () => setReview(null) };
+  const toggleColumn = (col: string) =>
+    review && setReview({ ...review, hidden: review.hidden.includes(col) ? review.hidden.filter((c) => c !== col) : [...review.hidden, col] });
+
+  return { make, phase, error, notice, busy: phase !== null, review, progress, editCell, toggleColumn, retryResearch, writeFromReview, cancelReview: () => setReview(null) };
 }
 
 export function PhaseNote({ phase, progress }: { phase: MakePhase; progress?: string | null }) {
@@ -172,7 +184,8 @@ const VIA: Record<string, string> = { site: "公式", search: "検索", manual: 
 export function ComparisonReview({ maker }: { maker: ReturnType<typeof useArticleMaker> }) {
   const r = maker.review;
   if (!r) return null;
-  const { columns, rows } = r.table;
+  const { rows } = r.table;
+  const columns = r.table.columns.filter((c) => !r.hidden.includes(c));
   const filled = rows.reduce((n, row) => n + columns.filter((c) => (r.edits[row.id]?.[c] ?? row.cells[c]?.value ?? "").trim()).length, 0);
   const failed = rows.filter((x) => x.status !== "done");
   return (
@@ -181,6 +194,17 @@ export function ComparisonReview({ maker }: { maker: ReturnType<typeof useArticl
       <p className="mt-1 text-[11px] leading-relaxed text-[#8B877F]">
         公式サイトと検索で集めた値です。違う値・空欄は直してから「この表で記事を書く」を押してください。記事の比較表とランキングはこの表の値だけで書き、空欄は「公式サイトで確認」になります。
       </p>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+        <span className="text-[#8B877F]">記事に使う項目（押すと外す／戻す。半分以上の会社で空欄の項目は外してあります）：</span>
+        {r.table.columns.map((c) => {
+          const off = r.hidden.includes(c);
+          return (
+            <button key={c} type="button" onClick={() => maker.toggleColumn(c)} className={`rounded-full border px-2 py-0.5 ${off ? "border-[#E8E5E0] text-[#A5A198] line-through" : "border-[#2E2D29] text-[#2E2D29]"}`}>
+              {c}
+            </button>
+          );
+        })}
+      </div>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[640px] border-collapse text-xs">
           <thead>
