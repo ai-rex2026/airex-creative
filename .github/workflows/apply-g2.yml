@@ -1,0 +1,33 @@
+name: apply-g2
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-g2.yml"
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch
+        run: |
+          set -euo pipefail
+          cat .buildtmp/g2/chunks/chunk-*.b64 | tr -d '\n\r ' | base64 -d | gunzip > /tmp/p.diff
+          echo "a743d022e60fc7d19883d1b7c36a00572ae8d21a1f8e8b169b980e0d009b5030  /tmp/p.diff" | sha256sum -c -
+          git apply /tmp/p.diff
+          git rm -rq .buildtmp/g2 .github/workflows/apply-g2.yml
+          git add -A
+          git config user.name "suzuki"
+          git config user.email "suzuki.yuichiro.libertad@gmail.com"
+          git commit -q -F - <<'MSG'
+          SEO運用：Search Console のサイトの選び方を直し、見つからない理由を出す
+
+          - ドメインプロパティはサブドメインも含めて当て、URL プレフィックスはホストの一致で当てる（未確認のプロパティは除く）
+          - 見つからないときは、連携中のアカウントと見られるサイトを添えて出す。サイト一覧の API の失敗も理由を出す
+
+          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy
+          MSG
+          git push origin HEAD:main
