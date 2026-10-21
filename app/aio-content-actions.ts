@@ -138,11 +138,18 @@ export async function setAioSatelliteAction(projectId: string, input: AioSatelli
     const { sb } = await owned(projectId);
     const t = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
     const items = (Array.isArray(input.items) ? input.items : [])
-      .map((i) => ({ name: t(i.name, 80), url: t(i.url, 400), facts: t(i.facts, 1200), own: !!i.own }))
+      .map((i) => ({ name: t(i.name, 80), url: t(i.url, 400), facts: t(i.facts, 1200), own: !!i.own, affiliateUrl: t(i.affiliateUrl, 1000) }))
       .filter((i) => i.name)
       .slice(0, 20);
-    for (const i of items) if (i.url) assertPublicUrl(i.url);
-    const satellite: AioSatellite = { mediaName: t(input.mediaName, 80), theme: t(input.theme, 300), operator: t(input.operator, 120), relation: t(input.relation, 80), items };
+    for (const i of items) {
+      if (i.url) assertPublicUrl(i.url);
+      if (i.affiliateUrl) {
+        assertPublicUrl(i.affiliateUrl);
+        // 差し替える先（記事内の公式サイトへのリンク）が無いと、アフィリエイトリンクを置けない
+        if (!i.url) throw new Error(`「${i.name}」の公式サイトの URL を入れてください（記事内の公式サイトへのリンクを、公開時にアフィリエイトリンクに差し替えます）`);
+      }
+    }
+    const satellite: AioSatellite = { mediaName: t(input.mediaName, 80), theme: t(input.theme, 300), operator: t(input.operator, 120), relation: t(input.relation, 80), items, rankingBasis: t(input.rankingBasis, 400) };
     await upsertChannel(sb, projectId, "satellite", { satellite });
     refresh(projectId);
     return { ok: true };

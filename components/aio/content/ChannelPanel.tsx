@@ -438,7 +438,7 @@ function WordPressCard({ project, kind, wp, hasSource }: { project: AioProject; 
   );
 }
 
-const EMPTY_ITEM: AioSatelliteItem = { name: "", url: "", facts: "", own: false };
+const EMPTY_ITEM: AioSatelliteItem = { name: "", url: "", facts: "", own: false, affiliateUrl: "" };
 
 /**
  * サテライトサイトの設定（2026-10-21）。運営者の表記と「扱う商品・サービス」（記事に書いてよい事実）を入れる。
@@ -466,8 +466,9 @@ function SatelliteCard({ project, channel }: { project: AioProject; channel: Aio
     <Card>
       <SectionTitle>⓪ サテライトサイトの設定（運営者の表記・扱う商品）</SectionTitle>
       <p className="mt-1 text-xs leading-relaxed text-[#8B877F]">
-        自社とは別のドメインで、他社の商品・サービスも公平に扱う比較・解説メディアとして運営します。記事に書けるのは、下の「扱う商品・サービス」に入れた事実だけです。
-        公開するときは、冒頭に運営者の表記（運営者の商品を扱う記事は PR 表記も）を、運営者の商品・自社サイトへのリンクに rel=&quot;sponsored&quot; を自動で入れます。
+        自社とは別のドメインで、運営者の商品と競合を同じ基準で比べる比較・ランキングメディアとして運営します。記事に書けるのは、下の「比較する商品・サービス」に入れた事実だけで、記事にはできるだけ全商品の比較表とランキングを入れます。
+        公開するときは、冒頭に運営者の表記（運営者の商品やアフィリエイトリンクを含む記事は PR 表記も）を入れ、運営者の商品・自社サイトへのリンクとアフィリエイトリンクに rel=&quot;sponsored&quot; を自動で付けます。
+        アフィリエイトリンクを入れた商品は、記事内の公式サイトへのリンクが公開時にアフィリエイトリンクへ差し替わります。
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <div>
@@ -487,18 +488,23 @@ function SatelliteCard({ project, channel }: { project: AioProject; channel: Aio
           <Input value={f.relation} onChange={(e) => setF({ ...f, relation: e.target.value })} placeholder="例：自社運営／グループ会社" />
         </div>
       </div>
+      <div className="mt-3">
+        <Label>比較・ランキングの基準（任意）</Label>
+        <Textarea rows={2} value={f.rankingBasis ?? ""} onChange={(e) => setF({ ...f, rankingBasis: e.target.value })} placeholder="例：料金の分かりやすさ／対応範囲／サポート体制／導入実績の公開状況。空なら記事ごとに基準を決めて、記事の中で先に示します" />
+      </div>
       <div className="mt-4 space-y-2">
-        <p className="text-xs font-semibold text-[#2E2D29]">扱う商品・サービス（{f.items.length}件）</p>
+        <p className="text-xs font-semibold text-[#2E2D29]">比較する商品・サービス（運営者の商品と競合・{f.items.length}件）</p>
         {f.items.map((it, k) => (
           <div key={k} className="rounded-xl border border-[#E8E5E0] p-3">
             <div className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
-              <Input value={it.name} onChange={(e) => setItem(k, { name: e.target.value })} placeholder="商品・サービス名" />
+              <Input value={it.name} onChange={(e) => setItem(k, { name: e.target.value })} placeholder="商品・サービス名（競合の会社名・サービス名）" />
               <Input value={it.url} onChange={(e) => setItem(k, { url: e.target.value })} placeholder="公式サイトの URL" />
               <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-[#6B6862]">
                 <input type="checkbox" checked={it.own} onChange={(e) => setItem(k, { own: e.target.checked })} />
                 運営者の商品
               </label>
             </div>
+            <Input className="mt-2" value={it.affiliateUrl ?? ""} onChange={(e) => setItem(k, { affiliateUrl: e.target.value })} placeholder="アフィリエイトリンク（任意。入れると、記事内の公式サイトへのリンクがこの URL に差し替わります）" />
             <Textarea rows={2} className="mt-2" value={it.facts} onChange={(e) => setItem(k, { facts: e.target.value })} placeholder="記事に書いてよい事実（公式サイトなどの公開情報から。料金・特徴・対応範囲など。ここに無いことは記事に書きません）" />
             <div className="mt-1 text-right">
               <button type="button" className="text-[11px] text-[#8B877F] underline" onClick={() => setF({ ...f, items: f.items.filter((_, i) => i !== k) })}>外す</button>
@@ -506,7 +512,7 @@ function SatelliteCard({ project, channel }: { project: AioProject; channel: Aio
           </div>
         ))}
         {f.items.length < 20 && (
-          <button type="button" className="text-xs text-[#6B6862] underline" onClick={() => setF({ ...f, items: [...f.items, { ...EMPTY_ITEM }] })}>＋ 商品・サービスを足す</button>
+          <button type="button" className="text-xs text-[#6B6862] underline" onClick={() => setF({ ...f, items: [...f.items, { ...EMPTY_ITEM }] })}>＋ 競合（商品・サービス）を足す</button>
         )}
       </div>
       {error && <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>}

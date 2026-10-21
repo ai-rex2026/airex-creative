@@ -32,6 +32,8 @@ export type AioSatelliteItem = {
   facts: string;
   /** 自社（運営者・関連会社）の商品か */
   own: boolean;
+  /** アフィリエイトリンク（任意。2026-10-21）。公開時に、記事内の公式サイトへのリンクをこの URL に差し替え、rel="sponsored" と広告の表記を付ける */
+  affiliateUrl?: string;
 };
 
 export type AioSatellite = {
@@ -43,8 +45,10 @@ export type AioSatellite = {
   operator: string;
   /** 自社との関係（自社運営・グループ会社・提携 など） */
   relation: string;
-  /** 扱う商品・サービス */
+  /** 扱う商品・サービス（運営者の商品と競合） */
   items: AioSatelliteItem[];
+  /** 比較・ランキングの基準（任意。2026-10-21）。空なら記事の中で基準を先に示してから並べる */
+  rankingBasis?: string;
 };
 
 /** 既存記事から読んだトンマナ。記事を書くときにそのまま指示として渡す */
