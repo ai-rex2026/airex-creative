@@ -1,0 +1,36 @@
+name: apply-aio2
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-aio2.yml"
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch
+        run: |
+          set -euo pipefail
+          cat .buildtmp/aio2/chunks/chunk-*.b64 | tr -d '\n\r ' | base64 -d | gunzip > /tmp/p.diff
+          echo "c155be02f1010296c8935de5fc40340876a97d7e5a8a7e354d0263c14d710098  /tmp/p.diff" | sha256sum -c -
+          git apply /tmp/p.diff
+          git rm -rq .buildtmp/aio2 .github/workflows/apply-aio2.yml
+          git add -A
+          git config user.name "suzuki"
+          git config user.email "suzuki.yuichiro.libertad@gmail.com"
+          git commit -q -F - <<'MSG'
+          AIOの検索なし回答への対応・相談ボタン、サイドバーを全体レポートでまとめる
+
+          - Gemini が Google 検索を使わずに答えた問いは1回投げ直し、それでも検索しなければ知識だけの回答を「検索なし」として使う
+          - AIOの章の下に「SEO運用・自動化について相談する」ボタン
+          - 測れなかった問いだけを「追加する」から測り直せるように
+          - サイドバー: 新規分析・分析サマリーを「全体レポート」の下にまとめ、店舗以下と1行あける。「最近の分析」を削除
+          - 分析サマリーの「推定」バッジを小さく、所要時間の目安を10〜20分に
+
+          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy
+          MSG
+          git push origin HEAD:main
