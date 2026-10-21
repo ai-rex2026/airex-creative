@@ -454,3 +454,44 @@ export async function fetchPageMetrics(
 
   return { from: fmt(from), to: fmt(to), gscSite, ga4Property, pages: [...byUrl.values()], notes };
 }
+
+/**
+ * Search Console：サイト全体の検索語の直近28日（2026-10-21・SEO運用の対策キーワード用）。
+ * 対策キーワードの実測（表示・クリック・平均順位）に使うため、上位10件ではなく多めに取る。
+ * サイトはこのアカウントで所有しているものから URL のドメインで探す（chosenSite があればそれ）
+ */
+export async function fetchGscQueries(
+  refreshToken: string,
+  url: string,
+  opt: { chosenSite?: string | null; rowLimit?: number } = {}
+): Promise<{ site: string; from: string; to: string; rows: GscRow[] } | null> {
+  const token = await accessToken(refreshToken);
+  const h = { authorization: `Bearer ${token}` };
+  const host = new URL(url).host.replace(/^www\./, "");
+  let site = opt.chosenSite ?? null;
+  if (!site) {
+    const listed = await fetch("https://searchconsole.googleapis.com/webmasters/v3/sites", { headers: h, signal: AbortSignal.timeout(15000) }).then((r) => r.json());
+    const sites = ((listed.siteEntry ?? []) as { siteUrl: string }[]).map((s) => s.siteUrl);
+    // ドメインプロパティ（sc-domain:）を優先し、無ければ URL プレフィックスのプロパティ
+    site = sites.find((s) => s === `sc-domain:${host}`) ?? sites.find((s) => s.includes(host)) ?? null;
+  }
+  if (!site) return null;
+  const to = new Date(Date.now() - 2 * 864e5); // 直近2日ぶんは未確定
+  const from = new Date(to.getTime() - 28 * 864e5);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const res = await fetch(`https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(site)}/searchAnalytics/query`, {
+    method: "POST",
+    headers: { ...h, "content-type": "application/json" },
+    body: JSON.stringify({ startDate: fmt(from), endDate: fmt(to), dimensions: ["query"], rowLimit: Math.min(5000, opt.rowLimit ?? 1000) }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const j = await res.json();
+  if (!res.ok) throw new Error(`Search Console の数字を取れませんでした（${j.error?.message ?? res.status}）`);
+  const rows = (j.rows ?? []) as { keys: string[]; clicks: number; impressions: number; ctr: number; position: number }[];
+  return {
+    site,
+    from: fmt(from),
+    to: fmt(to),
+    rows: rows.map((r) => ({ query: r.keys[0], clicks: r.clicks, impressions: r.impressions, ctr: +(r.ctr * 100).toFixed(1), position: +r.position.toFixed(1) })),
+  };
+}

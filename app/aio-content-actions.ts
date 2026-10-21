@@ -161,10 +161,12 @@ export async function createAioArticleAction(
   projectId: string,
   kindRaw: string,
   brief: ArticleBrief | null,
-  plan?: { planId: string; itemId: string }
+  plan?: { planId: string; itemId: string },
+  /** SEO運用の対策キーワード（seo_keywords.id）。この語で書いた記事として結び付ける */
+  keywordId?: string | null
 ): Promise<{ ok: true; id: string } | ActionFail> {
   try {
-    return { ok: true, id: await createAioArticle(projectId, kindRaw, brief, plan) };
+    return { ok: true, id: await createAioArticle(projectId, kindRaw, brief, plan, keywordId ?? null) };
   } catch (e) {
     return failOf(e, "記事を作れませんでした");
   }
@@ -174,7 +176,8 @@ async function createAioArticle(
   projectId: string,
   kindRaw: string,
   brief: ArticleBrief | null,
-  plan?: { planId: string; itemId: string }
+  plan?: { planId: string; itemId: string },
+  keywordId: string | null = null
 ): Promise<string> {
   const started = Date.now();
   const kind = asKind(kindRaw);
@@ -234,6 +237,15 @@ async function createAioArticle(
     const items = Array.isArray(p?.items) ? (p!.items as AioPlanItem[]) : [];
     const next = items.map((i) => (i.id === plan.itemId ? { ...i, status: "drafted" as const, draftId: articleId } : i));
     await sb.from("aio_content_plans").update({ items: next, updated_at: now() }).eq("id", plan.planId).eq("project_id", projectId);
+  }
+
+  // 対策キーワードに結び付ける（その語の記事として数え、状態を「作成中」にする）。表が無い環境では何もしない
+  if (keywordId) {
+    const { data: kw } = await sb.from("seo_keywords").select("article_ids, status").eq("id", keywordId).eq("project_id", projectId).maybeSingle();
+    if (kw) {
+      const ids = [...new Set([...((kw.article_ids as string[] | null) ?? []), articleId])];
+      await sb.from("seo_keywords").update({ article_ids: ids, status: kw.status === "todo" ? "writing" : kw.status, updated_at: now() }).eq("id", keywordId);
+    }
   }
 
   // 法令チェック：時間が残っていればこの場で（残っていなければ、続けて呼ぶ finishAioArticleAction が必ず通す）
@@ -444,6 +456,15 @@ export async function sendAioArticleToWpAction(articleId: string, mode: "draft" 
         },
         post: async (p) => {
           const published = p.status === "publish";
+          // この記事を当てた対策キーワードを「公開済み」にし、記事の URL を残す（表が無い環境では何もしない）
+          if (published) {
+            await sb
+              .from("seo_keywords")
+              .update({ status: "published", target_url: p.link, updated_at: now() })
+              .eq("project_id", project.id)
+              .contains("article_ids", [articleId])
+              .then(() => undefined, () => undefined);
+          }
           await sb
             .from("aio_articles")
             .update({

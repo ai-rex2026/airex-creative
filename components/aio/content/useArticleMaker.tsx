@@ -18,13 +18,13 @@ export function useArticleMaker(projectId: string) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const make = async (kind: AioChannelKind, brief: ArticleBrief | null, plan?: { planId: string; itemId: string }) => {
+  const make = async (kind: AioChannelKind, brief: ArticleBrief | null, plan?: { planId: string; itemId: string }, keywordId?: string | null) => {
     setError(null);
     setNotice(null);
     setPhase("writing");
     let articleId: string | null = null;
     try {
-      const created = await createAioArticleAction(projectId, kind, brief, plan);
+      const created = await createAioArticleAction(projectId, kind, brief, plan, keywordId ?? null);
       if (!created.ok) {
         setError(created.error);
         return null;

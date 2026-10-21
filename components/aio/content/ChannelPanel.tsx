@@ -18,6 +18,7 @@ import { ArticleCard } from "@/components/aio/content/ArticleCard";
 import { PhaseNote, useArticleMaker } from "@/components/aio/content/useArticleMaker";
 import type { AioArticle, AioChannel, AioChannelKind, AioContentReview, AioSatellite, AioSatelliteItem, AioWpInfo } from "@/lib/aio/content-types";
 import type { AioProject } from "@/lib/aio/types";
+import type { SeoKeyword } from "@/lib/seo/keywords";
 
 /**
  * 1つの媒体（自社サイトのコラム／note）の運用画面。
@@ -30,9 +31,14 @@ export function ChannelPanel({
   articles,
   wp,
   review,
+  keywords = [],
+  initialKeywordId = null,
 }: {
   project: AioProject;
   kind: AioChannelKind;
+  /** SEO運用の対策キーワード（この媒体に書く先が向いているもの）。選ぶとその語で書き、記事と結び付く */
+  keywords?: SeoKeyword[];
+  initialKeywordId?: string | null;
   channel: AioChannel | null;
   articles: AioArticle[];
   wp: AioWpInfo | null;
@@ -41,7 +47,10 @@ export function ChannelPanel({
   const isNote = kind === "note";
   const isSat = kind === "satellite";
   const maker = useArticleMaker(project.id);
-  const [brief, setBrief] = useState({ title: "", target: "", note: "" });
+  const initialKw = keywords.find((k) => k.id === initialKeywordId) ?? null;
+  const [brief, setBrief] = useState({ title: "", target: initialKw?.keyword ?? "", note: initialKw?.action ? `参考：${initialKw.action}` : "" });
+  const [keywordId, setKeywordId] = useState<string | null>(initialKw?.id ?? null);
+  const pickable = keywords.filter((k) => k.status === "todo" || k.status === "writing").slice(0, 12);
   const ready = !!channel && (channel.hasSource ? !!channel.style : !!channel.strategy);
 
   const ideas = [
@@ -65,12 +74,42 @@ export function ChannelPanel({
             : "既存のコラムと同じトンマナで、タイトル・説明文・スラッグ・アイキャッチと本文中の画像まで作ります。WordPress と連携していれば「承認して公開」で公開できます"}
         </p>
         {!ready && <p className="mt-3 rounded-xl bg-[#FBF8F3] px-3 py-2 text-xs text-[#8A5340]">先に ① で{channel?.hasSource === false ? "立ち上げの方針" : "既存記事の分析"}をしておくと、トンマナに合った記事になります（無くても作れます）</p>}
+        {pickable.length > 0 && (
+          <div className="mt-3">
+            <p className="text-[11px] text-[#8B877F]">対策キーワードから選ぶ（選ぶと、その語の記事として結び付きます）</p>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {pickable.map((k) => (
+                <button
+                  key={k.id}
+                  type="button"
+                  onClick={() => {
+                    setKeywordId(k.id);
+                    setBrief({ title: "", target: k.keyword, note: k.action ? `参考：${k.action}` : "" });
+                  }}
+                  className={cn("rounded-full border px-2.5 py-1 text-left text-[11px]", keywordId === k.id ? "border-[#2E2D29] bg-[#2E2D29] text-white" : "border-[#E8E5E0] text-[#2E2D29] hover:border-[#C9A84C]")}
+                >
+                  {k.keyword}
+                  <span className="ml-1 text-[10px] opacity-70">（優先度{k.priority}{k.articleIds.length ? `・記事${k.articleIds.length}本` : ""}）</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {keywordId && (
+          <p className="mt-2 text-[11px] text-[#6B6862]">
+            対策キーワード「{keywords.find((k) => k.id === keywordId)?.keyword}」の記事として作ります。
+            <button type="button" className="ml-1 underline" onClick={() => setKeywordId(null)}>結び付けない</button>
+          </p>
+        )}
         {ideas.length > 0 && (
           <div className="mt-3">
             <p className="text-[11px] text-[#8B877F]">候補から選ぶ</p>
             <div className="mt-1 flex flex-wrap gap-1.5">
               {ideas.map((i, k) => (
-                <button key={k} type="button" onClick={() => setBrief({ title: i.title, target: i.target, note: "" })} className="rounded-full border border-[#E8E5E0] px-2.5 py-1 text-left text-[11px] text-[#2E2D29] hover:border-[#C9A84C]">
+                <button key={k} type="button" onClick={() => {
+                    setKeywordId(null);
+                    setBrief({ title: i.title, target: i.target, note: "" });
+                  }} className="rounded-full border border-[#E8E5E0] px-2.5 py-1 text-left text-[11px] text-[#2E2D29] hover:border-[#C9A84C]">
                   {i.title}
                   <span className="ml-1 text-[10px] text-[#A5A198]">（{i.from}）</span>
                 </button>
@@ -93,7 +132,16 @@ export function ChannelPanel({
           <Textarea rows={2} value={brief.note} onChange={(e) => setBrief({ ...brief, note: e.target.value })} />
         </div>
         <div className="mt-3 flex items-center justify-end gap-3">
-          <Btn onClick={() => maker.make(kind, brief.title || brief.target || brief.note ? brief : null).then((id) => id && setBrief({ title: "", target: "", note: "" }))} disabled={maker.busy}>
+          <Btn
+            onClick={() =>
+              maker.make(kind, brief.title || brief.target || brief.note ? brief : null, undefined, keywordId).then((id) => {
+                if (!id) return;
+                setBrief({ title: "", target: "", note: "" });
+                setKeywordId(null);
+              })
+            }
+            disabled={maker.busy}
+          >
             {maker.busy ? <Icon name="loader" /> : <Icon name="sparkles" className="h-4 w-4" />}
             {maker.busy ? "作成中" : "記事を書く（画像つき）"}
           </Btn>
