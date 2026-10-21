@@ -1,0 +1,34 @@
+name: apply-report-aio
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-report-aio.yml"
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch
+        run: |
+          set -euo pipefail
+          cat .buildtmp/report-aio/chunks/chunk-*.b64 | tr -d '\n\r ' | base64 -d | gunzip > /tmp/p.diff
+          echo "a126b51e4072f4202eb633a19357704f73afa4288f1711f191ac811a5c14be49  /tmp/p.diff" | sha256sum -c -
+          git apply /tmp/p.diff
+          git rm -rq .buildtmp/report-aio .github/workflows/apply-report-aio.yml
+          git add -A
+          git config user.name "suzuki"
+          git config user.email "suzuki.yuichiro.libertad@gmail.com"
+          git commit -q -F - <<'MSG'
+          URLレポートにAIO（AI検索での見え方）を追加
+
+          - Geminiに見込み客の問いを3本投げ、自社名が候補に挙がるか・自社サイトが引用されるかを実測（lib/report-aio.ts）
+          - サマリーのカテゴリ別評価に「AIO」、分析データタブのSEO記事設計の次に章を追加
+          - AIに引用されやすくするための施策を生成し、サマリー施策の台帳にも反映
+
+          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy
+          MSG
+          git push origin HEAD:main
