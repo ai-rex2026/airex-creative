@@ -272,7 +272,10 @@ export async function googleConnection() {
   } = await sb.auth.getUser();
   if (!user) return null;
   const { data } = await sb.from("google_connections").select("connected_at").eq("user_id", user.id).maybeSingle();
-  return data ?? null;
+  if (!data) return null;
+  // どのアカウントで許可したか（2026-10-21〜。列が無い環境・以前の連携では null）
+  const { data: e } = await sb.from("google_connections").select("email").eq("user_id", user.id).maybeSingle();
+  return { ...data, email: ((e as { email?: string | null } | null)?.email ?? null) as string | null };
 }
 
 export async function disconnectGoogle() {

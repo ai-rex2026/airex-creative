@@ -29,7 +29,9 @@ export async function GET(req: Request) {
   // Supabase はプロバイダのトークンを保持しないため、こちらで持つ必要がある。
   const refresh = data.session?.provider_refresh_token;
   const userId = data.session?.user?.id;
-  if (refresh && userId) {
+  // 2026-10-21: 連携は /api/gbp/start?kind=gsc（ログインと別の OAuth）に移した。ログインの Google 認証で受け取った
+  // 更新トークンには Search Console の許可が無いので、許可が付いているときだけ保存する（別アカウントで連携した分を上書きしない）
+  if (refresh && userId && (url.searchParams.get("scope") ?? "").includes("webmasters.readonly")) {
     const admin = createAdminClient();
     await admin.from("google_connections").upsert({
       user_id: userId,

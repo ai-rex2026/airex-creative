@@ -85,8 +85,8 @@ export default async function SettingsPage({
               <b>Search Console / Google Analytics 4 / YouTube</b>
               <small>
                 {conn
-                  ? `連携済み（${new Date(conn.connected_at).toLocaleDateString("ja-JP")}）。分析するとレポートに実データが入ります。`
-                  : "連携すると、検索クエリ・順位・流入チャネルに加え、自社YouTubeチャンネルの非公開指標（推定視聴時間・純増登録者数・主な流入経路など）も推定ではなく実データで出せます。"}
+                  ? `連携済み${conn.email ? `（${conn.email}）` : ""}・${new Date(conn.connected_at).toLocaleDateString("ja-JP")}。分析するとレポートに実データが入ります。別のアカウントにするときは、連携を解除してからもう一度連携します。`
+                  : "ログインしているアカウントとは別の Google アカウントでも連携できます（許可の画面でアカウントを選びます）。連携すると、検索クエリ・順位・流入チャネルに加え、自社YouTubeチャンネルの非公開指標（推定視聴時間・純増登録者数・主な流入経路など）も推定ではなく実データで出せます。"}
               </small>
             </div>
             {hasGoogleApp() ? (
@@ -95,6 +95,8 @@ export default async function SettingsPage({
               <span className="tag warn">未設定</span>
             )}
           </div>
+          {first(sp.google_error) && <div className="r"><small style={{ color: "var(--ng)" }}>Google と連携できませんでした：{first(sp.google_error)}</small></div>}
+          {first(sp.google_ok) && <div className="r"><small style={{ color: "var(--ok)" }}>Google と連携しました。</small></div>}
         </div>
 
         {!hasGoogleApp() && (

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
-import { gbpAuthUrl, gbpRedirectUri, hasGbpApp } from "@/lib/gbp/oauth";
+import { gbpAuthUrl, gbpRedirectUri, gscAuthUrl, hasGbpApp } from "@/lib/gbp/oauth";
 
 /**
  * Googleビジネスプロフィールの連携を始める（MEO運用の「設定」タブ、または設定画面から）。
@@ -10,11 +10,13 @@ import { gbpAuthUrl, gbpRedirectUri, hasGbpApp } from "@/lib/gbp/oauth";
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const store = url.searchParams.get("store") ?? "";
+  // kind=gsc は Search Console / GA4 / YouTube の連携（2026-10-21〜。ログインを変えない）。戻り先は設定画面
+  const gsc = url.searchParams.get("kind") === "gsc";
+  const store = gsc ? "" : url.searchParams.get("store") ?? "";
   // 戻り先に使うので、パスに使える文字だけ通す（オープンリダイレクト・パス操作の防止）
   const safeId = /^[A-Za-z0-9_-]{1,64}$/.test(store) ? store : "";
   const dest = safeId ? `/stores/${safeId}/settings` : "/settings";
-  const back = (msg: string) => NextResponse.redirect(new URL(`${dest}?gbp_error=${encodeURIComponent(msg)}`, url.origin));
+  const back = (msg: string) => NextResponse.redirect(new URL(`${dest}?${gsc ? "google_error" : "gbp_error"}=${encodeURIComponent(msg)}`, url.origin));
 
   if (!hasGbpApp()) return back("Google連携が未設定です（GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET）");
 
@@ -23,11 +25,11 @@ export async function GET(req: Request) {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) return NextResponse.redirect(new URL(`/login?callbackUrl=${encodeURIComponent(dest)}`, url.origin));
-  if (user.is_anonymous) return back("店舗を連携するには、先に無料登録してください");
+  if (user.is_anonymous) return back(gsc ? "Google と連携するには、先に無料登録してください" : "店舗を連携するには、先に無料登録してください");
 
   const state = randomBytes(16).toString("hex");
-  const res = NextResponse.redirect(gbpAuthUrl(gbpRedirectUri(req.url), state));
-  res.cookies.set("gbp_oauth", JSON.stringify({ state, store: safeId }), {
+  const res = NextResponse.redirect(gsc ? gscAuthUrl(gbpRedirectUri(req.url), state) : gbpAuthUrl(gbpRedirectUri(req.url), state));
+  res.cookies.set("gbp_oauth", JSON.stringify({ state, store: safeId, kind: gsc ? "gsc" : "gbp" }), {
     httpOnly: true,
     secure: true,
     sameSite: "lax",

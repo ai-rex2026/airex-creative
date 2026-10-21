@@ -2,38 +2,22 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { disconnectGoogle } from "@/app/actions";
 
-// lib/google.ts の GOOGLE_SCOPES と同じ内容を保つこと（クライアント側でこのファイルだけ独立して使うため複製）
-const SCOPES =
-  "https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/yt-analytics.readonly";
-
 /**
- * Search Console / GA4 を読む許可をもらう。
- * 更新トークンが要るので access_type=offline と prompt=consent を必ず付ける。
+ * Search Console / GA4 / YouTube を読む許可をもらう。ログインしているアカウントとは別の Google アカウントでも許可できる
+ * （許可の画面でアカウントを選ぶ。更新トークンを受け取るため access_type=offline と prompt=consent を付ける：lib/gbp/oauth.ts）。
  */
 export function GoogleConnect({ connected, isGuest = false }: { connected: boolean; isGuest?: boolean }) {
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const router = useRouter();
 
-  async function connect() {
+  // 2026-10-21: ログイン（Supabase）を経由せず、別の OAuth で許可をもらう（/api/gbp/start?kind=gsc）。
+  // 以前はログイン経由だったため、ログインと別の Google アカウントで許可すると、ログインまで切り替わっていた
+  function connect() {
     setErr(null);
-    const sb = createClient();
-    const redirectTo = `${location.origin}/auth/callback?next=${encodeURIComponent("/settings")}`;
-    const {
-      data: { user },
-    } = await sb.auth.getUser();
-    const opts = {
-      redirectTo,
-      scopes: SCOPES,
-      queryParams: { access_type: "offline", prompt: "consent" },
-    };
-    const res = user?.is_anonymous
-      ? await sb.auth.linkIdentity({ provider: "google", options: opts })
-      : await sb.auth.signInWithOAuth({ provider: "google", options: opts });
-    if (res.error) setErr(res.error.message);
+    location.href = "/api/gbp/start?kind=gsc";
   }
 
   if (connected) {

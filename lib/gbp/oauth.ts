@@ -151,3 +151,59 @@ export async function gbpAccessToken(userId: string): Promise<string | null> {
     throw e;
   }
 }
+
+// ── Search Console / GA4 / YouTube（2026-10-21〜。ログインとは別の OAuth） ─────────────────
+// 以前は Supabase のログイン（signInWithOAuth）で許可をもらっていたため、ログインと別の Google アカウントで
+// 許可すると、AI-REX のログインまでそのアカウントに切り替わっていた。ビジネスプロフィールと同じく、
+// ログインを変えずに、許可したアカウントの更新トークンだけを google_connections に預かる。
+// 戻り先は Google 側に登録済みの /api/gbp/callback を使い回す（state のクッキーの kind で振り分ける）。
+
+/** lib/google.ts の GOOGLE_SCOPES と同じ（＋どのアカウントで許可したかを見せるためのメールアドレス） */
+export const GSC_SCOPES = [
+  "https://www.googleapis.com/auth/webmasters.readonly",
+  "https://www.googleapis.com/auth/analytics.readonly",
+  "https://www.googleapis.com/auth/yt-analytics.readonly",
+  "https://www.googleapis.com/auth/userinfo.email",
+].join(" ");
+
+export function gscAuthUrl(redirectUri: string, state: string): string {
+  const u = new URL(gbpAuthUrl(redirectUri, state));
+  u.searchParams.set("scope", GSC_SCOPES);
+  return u.toString();
+}
+
+/** 認可コード → 更新トークン（Search Console の読み取りが許可されたかも確かめる） */
+export async function exchangeGscCode(code: string, redirectUri: string) {
+  const j = await tokenRequest({
+    code,
+    client_id: process.env.GOOGLE_CLIENT_ID ?? "",
+    client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+    redirect_uri: redirectUri,
+    grant_type: "authorization_code",
+  });
+  if (!j.refresh_token) {
+    throw new Error("Google から更新トークンが返りませんでした。Google アカウントの「サードパーティ製アプリとサービス」で一度このアプリを削除してから、もう一度連携してください");
+  }
+  if (!(j.scope ?? "").includes("webmasters.readonly")) {
+    throw new Error("Search Console の読み取りが許可されませんでした。許可の画面で、すべての項目にチェックを入れてください");
+  }
+  let email: string | null = null;
+  try {
+    const info = await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: { authorization: `Bearer ${j.access_token}` }, signal: AbortSignal.timeout(10000) }).then((r) => r.json());
+    email = typeof info.email === "string" ? info.email : null;
+  } catch {
+    email = null;
+  }
+  return { refreshToken: j.refresh_token, scope: j.scope ?? null, email };
+}
+
+/**
+ * 保存する。google_connections の refresh_token は、レポート・SEO運用など多くの箇所が平文で読んでいるので、従来どおり平文のまま
+ * （本人のセッションからは自分の行だけが読める）。メールアドレスは列が無い環境でも連携自体は通るよう、別の更新にする
+ */
+export async function saveGscConnection(userId: string, t: { refreshToken: string; scope: string | null; email: string | null }) {
+  const admin = createAdminClient();
+  const { error } = await admin.from("google_connections").upsert({ user_id: userId, refresh_token: t.refreshToken, scope: t.scope, connected_at: new Date().toISOString() });
+  if (error) throw new Error(`連携情報を保存できませんでした：${error.message}`);
+  if (t.email) await admin.from("google_connections").update({ email: t.email }).eq("user_id", userId).then(() => undefined, () => undefined);
+}
