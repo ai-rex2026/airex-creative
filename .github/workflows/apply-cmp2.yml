@@ -1,0 +1,24 @@
+name: apply-cmp2
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/apply-cmp2.yml"]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: apply
+        run: |
+          set -euo pipefail
+          cat .buildtmp/cmp2/chunks/chunk-*.b64 | tr -d '\n\r ' | base64 -d | gunzip > /tmp/p.patch
+          echo "997ccb76dfa59c383eea5898868bb0e403433cfc12cead521e73240275f38fd1  /tmp/p.patch" | sha256sum -c
+          git apply /tmp/p.patch
+          git rm -rq .buildtmp/cmp2 .github/workflows/apply-cmp2.yml
+          git add -A
+          git config user.name suzuki
+          git config user.email suzuki.yuichiro.libertad@gmail.com
+          git commit -q -m "比較表の下調べ：会社概要ページの選び方と検索結果の読み取りを直し、空欄の理由を残す" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
+          git push origin HEAD:main
