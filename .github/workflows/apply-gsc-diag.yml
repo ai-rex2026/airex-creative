@@ -1,0 +1,29 @@
+name: apply-gsc-diag
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/apply-gsc-diag.yml"]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: apply
+        run: |
+          set -euo pipefail
+          cat .buildtmp/gsc-diag/chunks/chunk-*.b64 | tr -d '\n\r ' | base64 -d | gunzip > /tmp/p.patch
+          echo "277b4b3ba56db8f58905d148f40e594df505eac4fe37c1e3eee7adb44cb1dbe8  /tmp/p.patch" | sha256sum -c
+          git apply /tmp/p.patch
+          git rm -rq .buildtmp/gsc-diag .github/workflows/apply-gsc-diag.yml
+          git add -A
+          git config user.name suzuki
+          git config user.email suzuki.yuichiro.libertad@gmail.com
+          git commit -q -F - <<'MSG'
+SEO運用：Search Console 反映時に、取得した期間・プロパティと候補の内訳を表示する
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy
+MSG
+          git push origin HEAD:main
