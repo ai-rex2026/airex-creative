@@ -26,7 +26,7 @@ export default async function AioPage() {
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
         <h2 style={{ fontSize: 20 }}>AIO（AI検索対策）</h2>
         <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 6 }}>
-          ChatGPT・Gemini などに「おすすめを教えて」と聞かれたとき、自社が候補に挙がるかを実測し、挙がるための文章（自社サイト記事・note・プレスリリース・FAQ）を AI が下書きします。会社・サービス単位で登録します（店舗は MEO運用と共用できます）。
+          ChatGPT・Gemini などに「おすすめを教えて」と聞かれたとき、自社が候補に挙がるかを実測し、挙がるための文章（note・プレスリリース・FAQ など）を AI が下書きします（自社サイトの記事は SEO運用で扱います）。会社・サービス単位で登録します（店舗は MEO運用と共用できます）。
         </p>
 
         {rows.length === 0 ? (

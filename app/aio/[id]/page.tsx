@@ -11,19 +11,24 @@ import { loadContent } from "@/lib/aio/content-store";
 import { signImages } from "@/lib/aio/images";
 import { quota } from "@/lib/aio/run";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { InternalPanel } from "@/components/seo/InternalPanel";
+import { loadInternalTasks } from "@/lib/seo/internal-store";
+import { forTab } from "@/lib/seo/internal";
 
 export const metadata = { title: "AIO｜AI-REX Studio" };
 
 // 実測（web検索つきの AI 問い合わせ）・記事の本文づくり・画像づくり・WordPress への送信を1回の Action で行うので、実行時間を確保する
 export const maxDuration = 300;
 
-const TABS: AioTab[] = ["site", "note", "prtimes", "results", "ai"];
+const TABS: AioTab[] = ["note", "prtimes", "internal", "results", "ai"];
 
 export default async function AioProjectPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
   const { tab: rawTab } = await searchParams;
-  // 運用（記事づくり）を主にする。既定は「自社サイト記事」
-  const tab: AioTab = TABS.includes(rawTab as AioTab) ? (rawTab as AioTab) : "site";
+  // 2026-10-21: 自社サイト記事は SEO運用へ移した。以前のリンク（?tab=site）は SEO運用の同じタブへ送る
+  if (rawTab === "site" || rawTab === "satellite") redirect(`/seo/${id}?tab=${rawTab}`);
+  // 運用（記事づくり）を主にする。既定は「note」
+  const tab: AioTab = TABS.includes(rawTab as AioTab) ? (rawTab as AioTab) : "note";
   const sb = await createClient();
   const {
     data: { user },
@@ -42,7 +47,7 @@ export default async function AioProjectPage({ params, searchParams }: { params:
   ]);
 
   let body: React.ReactNode = null;
-  if (tab === "site" || tab === "note") {
+  if (tab === "note") {
     // 画像の署名は1回にまとめる（記事ごとに呼ばない）
     const list = content.articles.filter((a) => a.channel === tab);
     const signed = await signImages(admin, list.flatMap((a) => a.images));
@@ -58,7 +63,9 @@ export default async function AioProjectPage({ params, searchParams }: { params:
     const releases = list.map((r) => ({ ...r, images: r.images.map(() => signed[k++]) }));
     body = <PressPanel project={data.project} releases={releases} />;
   } else if (tab === "results") {
-    body = <ResultsPanel project={data.project} channels={content.channels} articles={content.articles} metrics={content.metrics} reviews={content.reviews} googleConnected={!!gconn} />;
+    body = <ResultsPanel project={data.project} channels={content.channels} articles={content.articles} metrics={content.metrics} reviews={content.reviews} googleConnected={!!gconn} kinds={["note"]} />;
+  } else if (tab === "internal") {
+    body = <InternalPanel project={data.project} tasks={forTab(await loadInternalTasks(sb, id), "aio")} tab="aio" />;
   }
 
   return (

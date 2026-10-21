@@ -46,14 +46,30 @@ const SYSTEM = `あなたは日本の事業者のオウンドメディア（自�
 
 出力: {"title":"記事タイトル","slug":"英小文字とハイフンだけのURL用スラッグ（5語以内）","metaDescription":"検索結果に出る説明文（110字前後）","keywords":["狙う検索語（3〜6個）"],"target":"この記事が答える問い","body":"本文（Markdown）","hashtags":["note 用のハッシュタグ（#なし。サイト記事なら空）"],"images":[{"role":"eyecatch","afterH2":null,"prompt":"English description","alt":"日本語の代替テキスト"}]}`;
 
+/**
+ * サテライトサイト（第三者ドメインの比較・解説メディア）で足す決まり。
+ * 他社の商品を名指しで扱うので、自社サイト用の「他社を名指しで比べない」を、事実に基づく公平な比較に置き換える。
+ * PR 表記と運営者の表記・自社リンクの rel="sponsored" はコードで付けるので、AI には書かせない
+ */
+export const SATELLITE_RULES = `
+# サテライトサイトの記事で守ること（上の「他社を名指しで比べたり貶めたりしない」はここでは次のように読み替える）
+- 第三者の比較・解説メディアとして、読者が選ぶための基準を先に示し、与えられた商品・サービスをその基準で公平に紹介する
+- 各商品について書いてよいのは「扱う商品・サービス」に書かれた事実だけ。価格・機能・実績・評判・口コミを補わない（分からないことは「公式サイトで確認」と書く）
+- 他社を貶めない。順位づけ・「おすすめ1位」・「最もおすすめ」などの序列をつけない。運営者の商品だけを持ち上げない
+- 各商品の公式サイトへのリンクは、与えられた URL を Markdown のリンクで1回ずつ置く（それ以外の URL を作らない）
+- 「PR」「広告」の表記、運営者の説明は書かない（公開するときに決まった文面を自動で入れる）`;
+
 function channelGuide(kind: AioChannelKind, ch: AioChannel | null, project: AioProject): string[] {
   const st = ch?.style;
   const chars = st?.measured.avgChars ? Math.min(6000, Math.max(1500, Math.round(st.measured.avgChars / 100) * 100)) : kind === "note" ? 2000 : 3000;
+  const sat = kind === "satellite" ? ch?.satellite ?? null : null;
   const lines = [
     `# 媒体`,
     kind === "note"
       ? "note。一人称（私たち／私）で、現場で見てきたこと・考えを語る読み物。宣伝色を抑え、最後に自社サイトへの案内を1〜2文。ハッシュタグを3〜5個"
-      : "自社サイトのコラム（WordPress）。検索語を含むタイトル、見出し5〜7個、最後に「よくある質問」3問とまとめ。自社の紹介・問い合わせへの案内は最後の1節だけ",
+      : kind === "satellite"
+        ? `第三者の比較・解説メディア（WordPress）${sat?.mediaName ? `「${sat.mediaName}」` : ""}。${sat?.theme ? `扱うテーマ: ${sat.theme}。` : ""}検索語を含むタイトル、選び方の基準 → 商品・サービスごとの紹介 → 比較の表 → よくある質問3問 → まとめ。特定の事業者の宣伝の文体にしない`
+        : "自社サイトのコラム（WordPress）。検索語を含むタイトル、見出し5〜7個、最後に「よくある質問」3問とまとめ。自社の紹介・問い合わせへの案内は最後の1節だけ",
     `目安の文字数: ${chars}字前後（既存記事に合わせる）`,
   ];
   if (st) {
@@ -72,7 +88,14 @@ function channelGuide(kind: AioChannelKind, ch: AioChannel | null, project: AioP
   } else if (ch?.strategy) {
     lines.push("", "# 媒体の方針（これから始める）", `コンセプト: ${ch.strategy.concept}`, ch.strategy.categories.length ? `カテゴリ: ${ch.strategy.categories.map((c) => c.name).join(" / ")}` : "");
   }
-  if (project.url) lines.push(kind === "note" ? `記事の最後に案内する自社サイト: ${project.url}` : "");
+  if (sat?.items.length) {
+    lines.push(
+      "",
+      "# 扱う商品・サービス（書いてよい事実はここにあるものだけ）",
+      ...sat.items.map((i, k) => `${k + 1}. ${i.name}（公式: ${i.url || "URLなし"}）: ${i.facts || "事実の入力なし（名前と公式サイトへの案内だけにする）"}`)
+    );
+  }
+  if (project.url && kind === "note") lines.push(`記事の最後に案内する自社サイト: ${project.url}`);
   return lines.filter((l) => l !== "");
 }
 
@@ -84,7 +107,7 @@ export async function draftArticle(
 ): Promise<DraftedArticle> {
   const b = ctx.brief ?? {};
   const lines = [
-    "# 事業の前提",
+    kind === "satellite" ? "# 運営者（このメディアの運営会社。記事の中で特別扱いしない）" : "# 事業の前提",
     `事業者名: ${project.name}`,
     project.aliases.length ? `サービス名・別名: ${project.aliases.join(", ")}` : "",
     project.url ? `URL: ${project.url}` : "",
@@ -113,7 +136,7 @@ export async function draftArticle(
     body?: string;
     hashtags?: unknown[];
     images?: { role?: string; afterH2?: number | null; prompt?: string; alt?: string }[];
-  }>(SYSTEM, lines.join("\n"), { maxTokens: 10000, timeoutMs: 170_000 });
+  }>(kind === "satellite" ? SYSTEM + SATELLITE_RULES : SYSTEM, lines.join("\n"), { maxTokens: 10000, timeoutMs: 170_000 });
 
   const n = (v: unknown, max: number) => normalizeJapanese(String(v ?? "").trim()).slice(0, max);
   const bodyMd = normalizeJapanese(String(res.body ?? "").trim()).replace(/^#\s+.+\n+/, "");

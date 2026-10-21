@@ -16,11 +16,12 @@ import { AIO_DRAFT_KINDS, type AioCheck, type AioContentPlan, type AioDraft, typ
  * 上: 「今どうか」= AI に実際に聞いた結果（因果は主張しない。結果をそのまま見せる）
  * 下: 「何をすべきか」= 下書き（人が確認してコピーして使う。自動では公開しない）
  */
-export type AioTab = "site" | "note" | "prtimes" | "results" | "ai";
+// 2026-10-21: 自社サイト記事は SEO運用（/seo）へ移した。内部対策は SEO運用と同じリストを AIO の印で絞って出す
+export type AioTab = "note" | "prtimes" | "internal" | "results" | "ai";
 export const AIO_TABS: { key: AioTab; label: string; hint: string }[] = [
-  { key: "site", label: "自社サイト記事", hint: "コラムの記事を作って WordPress で公開" },
   { key: "note", label: "note", hint: "note の記事を作って貼って投稿" },
   { key: "prtimes", label: "PR TIMES", hint: "プレスリリースの入稿内容（画像・動画つき）を作る" },
+  { key: "internal", label: "内部対策", hint: "自社サイトでやること（SEO と共通）" },
   { key: "results", label: "効果と改善", hint: "記事ごとの数字と改善案" },
   { key: "ai", label: "AIでの見え方", hint: "AIに聞いたとき挙がるか" },
 ];
@@ -118,6 +119,9 @@ export function AioWorkspace({
             <Btn variant="outline" size="sm" onClick={() => setEditing(true)}>
               対象の設定
             </Btn>
+            <Link href={`/seo/${project.id}`} className="inline-flex h-8 items-center rounded-lg px-3 text-xs text-[#6B6862] hover:bg-[#F4F3F0]">
+              SEO運用へ
+            </Link>
             <Link href="/aio" className="inline-flex h-8 items-center rounded-lg px-3 text-xs text-[#6B6862] hover:bg-[#F4F3F0]">
               一覧へ
             </Link>
@@ -268,7 +272,7 @@ export function AioWorkspace({
       {/* ── 何をすべきか ── */}
       <Card>
         <SectionTitle>⑤ 下書きを作る（AIに拾われるための文章）</SectionTitle>
-        <p className="mt-1 text-xs text-[#6B6862]">自社サイトの記事と note の記事は、上のタブ「自社サイト記事」「note」で、画像つき・公開まで作れます。</p>
+        <p className="mt-1 text-xs text-[#6B6862]">note の記事は上のタブ「note」で、自社サイトの記事は SEO運用の「自社サイト記事」で、画像つき・公開まで作れます。</p>
         <p className="mt-1 text-xs text-[#8B877F]">他社の AIO サービスが施策として売っているものを、ここで AI が下書きします。内容を確認して、コピーして各媒体に載せてください（自動では公開しません）。作成と同時に表現チェックを通します</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {AIO_DRAFT_KINDS.filter((k) => k.kind !== "site_article" && k.kind !== "note_article").filter((k) => !k.recruit || prompts.some((p) => p.active && p.category === "recruit") || drafts.some((d) => d.kind === k.kind)).map((k) => {

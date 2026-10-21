@@ -328,7 +328,7 @@ function EditDialog({ article, onClose, onSaved }: { article: AioArticle; onClos
           <Label>タイトル</Label>
           <Input value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
-        {article.channel === "site" ? (
+        {article.channel !== "note" ? (
           <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
             <div>
               <Label>説明文（検索結果に出る）</Label>

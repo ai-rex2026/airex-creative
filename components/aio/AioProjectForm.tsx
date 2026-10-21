@@ -9,7 +9,7 @@ import type { AioProject } from "@/lib/aio/types";
 import { INDUSTRY_LABEL, type Industry } from "@/lib/types";
 
 /** AIO の対象の登録・編集フォーム。URL から AI に候補を考えさせ、人が直して保存する */
-export function AioProjectForm({ mode, project, onSaved }: { mode: "create" | "edit"; project?: AioProject; onSaved?: () => void }) {
+export function AioProjectForm({ mode, project, onSaved, basePath = "/aio" }: { mode: "create" | "edit"; project?: AioProject; onSaved?: () => void; /** 登録後に開く画面（SEO運用から登録したときは /seo） */ basePath?: "/aio" | "/seo" }) {
   const router = useRouter();
   const [f, setF] = useState<AioProjectInput>({
     name: project?.name ?? "",
@@ -53,7 +53,7 @@ export function AioProjectForm({ mode, project, onSaved }: { mode: "create" | "e
     try {
       if (mode === "create") {
         const id = await createAioProjectAction(f);
-        router.push(`/aio/${id}`);
+        router.push(`${basePath}/${id}`);
       } else if (project) {
         await updateAioProjectAction(project.id, f);
         onSaved?.();

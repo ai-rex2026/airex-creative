@@ -1,6 +1,6 @@
 import { askJson } from "../anthropic";
 import { normalizeJapanese } from "../meo-ops/japanese";
-import type { AioArticle, AioChannel, AioChannelKind, AioContentReview, AioMetric } from "./content-types";
+import { CHANNEL_LABEL, type AioArticle, type AioChannel, type AioChannelKind, type AioContentReview, type AioMetric } from "./content-types";
 import type { AioProject } from "./types";
 
 /**
@@ -117,7 +117,7 @@ export async function reviewContent(
   const list = [...merged.values()].sort((a, b) => (b.views ?? b.impressions ?? 0) - (a.views ?? a.impressions ?? 0)).slice(0, 40);
 
   const user = [
-    `媒体: ${kind === "note" ? "note" : "自社サイトのコラム"}`,
+    `媒体: ${CHANNEL_LABEL[kind]}`,
     `事業者: ${project.name}（見込み客の探し方: ${project.area ? `${project.area}で` : ""}${project.category}）`,
     ch?.style ? `媒体のトンマナ: ${ch.style.summary}` : "",
     ch?.style?.topics.length ? `既存記事のテーマ: ${ch.style.topics.join(" / ")}` : "",

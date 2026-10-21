@@ -9,13 +9,14 @@ import {
   disconnectAioWordPressAction,
   listAioWpCategoriesAction,
   setAioChannelSourceAction,
+  setAioSatelliteAction,
   setAioWpCategoryAction,
 } from "@/app/aio-content-actions";
 import { SectionTitle } from "@/components/meo/Workspace";
 import { Btn, Card, ErrorNote, Icon, Input, Label, Select, Textarea, cn } from "@/components/meo/ui";
 import { ArticleCard } from "@/components/aio/content/ArticleCard";
 import { PhaseNote, useArticleMaker } from "@/components/aio/content/useArticleMaker";
-import type { AioArticle, AioChannel, AioChannelKind, AioContentReview, AioWpInfo } from "@/lib/aio/content-types";
+import type { AioArticle, AioChannel, AioChannelKind, AioContentReview, AioSatellite, AioSatelliteItem, AioWpInfo } from "@/lib/aio/content-types";
 import type { AioProject } from "@/lib/aio/types";
 
 /**
@@ -38,6 +39,7 @@ export function ChannelPanel({
   review: AioContentReview | null;
 }) {
   const isNote = kind === "note";
+  const isSat = kind === "satellite";
   const maker = useArticleMaker(project.id);
   const [brief, setBrief] = useState({ title: "", target: "", note: "" });
   const ready = !!channel && (channel.hasSource ? !!channel.style : !!channel.strategy);
@@ -49,14 +51,17 @@ export function ChannelPanel({
 
   return (
     <div className="space-y-6">
+      {isSat && <SatelliteCard project={project} channel={channel} />}
       <SourceCard project={project} kind={kind} channel={channel} />
-      {!isNote && channel && <WordPressCard project={project} wp={wp} hasSource={channel.hasSource} />}
+      {!isNote && channel && <WordPressCard project={project} kind={kind} wp={wp} hasSource={channel.hasSource} />}
 
       <Card>
         <SectionTitle>② 記事をつくる（本文・画像・表現チェックまで）</SectionTitle>
         <p className="mt-1 text-xs text-[#8B877F]">
           {isNote
             ? "既存の note 記事と同じ語り口で、見出し・ハッシュタグ・見出し画像と本文中の画像まで作ります。できたら「note に貼る形でコピー」で貼り付けて、投稿は人が行います"
+            : isSat
+              ? "選び方の基準と、「扱う商品・サービス」に入れた事実だけで比較・解説の記事を作ります。WordPress に送るとき、冒頭に運営者と PR の表記を、運営者の商品へのリンクに rel=\"sponsored\" を自動で入れます"
             : "既存のコラムと同じトンマナで、タイトル・説明文・スラッグ・アイキャッチと本文中の画像まで作ります。WordPress と連携していれば「承認して公開」で公開できます"}
         </p>
         {!ready && <p className="mt-3 rounded-xl bg-[#FBF8F3] px-3 py-2 text-xs text-[#8A5340]">先に ① で{channel?.hasSource === false ? "立ち上げの方針" : "既存記事の分析"}をしておくと、トンマナに合った記事になります（無くても作れます）</p>}
@@ -76,7 +81,7 @@ export function ChannelPanel({
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div>
             <Label>タイトル案（空なら AI が決める）</Label>
-            <Input value={brief.title} onChange={(e) => setBrief({ ...brief, title: e.target.value })} placeholder={isNote ? "例：私たちが〇〇を始めた理由" : "例：〇〇の選び方｜失敗しないための5つの基準"} />
+            <Input value={brief.title} onChange={(e) => setBrief({ ...brief, title: e.target.value })} placeholder={isNote ? "例：私たちが〇〇を始めた理由" : isSat ? "例：〇〇サービスの選び方と主な5社の比較" : "例：〇〇の選び方｜失敗しないための5つの基準"} />
           </div>
           <div>
             <Label>答える問い・狙う語（任意）</Label>
@@ -150,7 +155,7 @@ function SourceCard({ project, kind, channel }: { project: AioProject; kind: Aio
 
   return (
     <Card>
-      <SectionTitle>① 媒体の準備（{isNote ? "note のアカウント" : "自社サイトのコラム"}）</SectionTitle>
+      <SectionTitle>① 媒体の準備（{isNote ? "note のアカウント" : kind === "satellite" ? "サテライトサイト" : "自社サイトのコラム"}）</SectionTitle>
       <div className="mt-3 flex flex-wrap gap-2">
         {[true, false].map((v) => (
           <button
@@ -159,13 +164,13 @@ function SourceCard({ project, kind, channel }: { project: AioProject; kind: Aio
             onClick={() => setHasSource(v)}
             className={cn("rounded-full border px-3 py-1 text-xs", hasSource === v ? "border-[#2E2D29] bg-[#2E2D29] text-white" : "border-[#E0DBD1] text-[#6B6862]")}
           >
-            {v ? (isNote ? "アカウントがある" : "コラムのページがある") : isNote ? "まだアカウントが無い" : "コラムのページがまだ無い"}
+            {v ? (isNote ? "アカウントがある" : kind === "satellite" ? "サイトがある" : "コラムのページがある") : isNote ? "まだアカウントが無い" : kind === "satellite" ? "サイトがまだ無い" : "コラムのページがまだ無い"}
           </button>
         ))}
       </div>
       {hasSource ? (
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={isNote ? "https://note.com/アカウント名" : "https://自社ドメイン/column/（記事の一覧ページ）"} />
+          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={isNote ? "https://note.com/アカウント名" : kind === "satellite" ? "https://サテライトのドメイン/（記事の一覧ページ）" : "https://自社ドメイン/column/（記事の一覧ページ）"} />
           <Btn onClick={saveAndGo} disabled={busy !== null || !url.trim()} className="shrink-0">
             {busy === "go" ? <Icon name="loader" /> : <Icon name="search" className="h-4 w-4" />}
             {busy === "go" ? "読んでいます（1〜2分）" : st ? "読み直す" : "既存記事を読んでトンマナを分析"}
@@ -173,7 +178,7 @@ function SourceCard({ project, kind, channel }: { project: AioProject; kind: Aio
         </div>
       ) : (
         <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-[#FAF9F7] px-3 py-2">
-          <p className="text-xs text-[#6B6862]">{isNote ? "アカウントの開設手順と、プロフィール・マガジン・最初に書く記事の方針を作ります" : "WordPress の設置手順と、コラムの方針・カテゴリ・最初に書く記事を作ります"}</p>
+          <p className="text-xs text-[#6B6862]">{isNote ? "アカウントの開設手順と、プロフィール・マガジン・最初に書く記事の方針を作ります" : kind === "satellite" ? "別ドメインでの WordPress の設置・運営者と PR の表記の手順と、メディアの方針・カテゴリ・最初に書く記事を作ります" : "WordPress の設置手順と、コラムの方針・カテゴリ・最初に書く記事を作ります"}</p>
           <Btn onClick={saveAndGo} disabled={busy !== null} className="shrink-0">
             {busy === "go" ? <Icon name="loader" /> : <Icon name="sparkles" className="h-4 w-4" />}
             {busy === "go" ? "作っています（1分ほど）" : sg ? "方針を作り直す" : "立ち上げの方針を作る"}
@@ -278,9 +283,10 @@ function Mini({ label, value }: { label: string; value: string }) {
   );
 }
 
-function WordPressCard({ project, wp, hasSource }: { project: AioProject; wp: AioWpInfo | null; hasSource: boolean }) {
+function WordPressCard({ project, kind, wp, hasSource }: { project: AioProject; kind: AioChannelKind; wp: AioWpInfo | null; hasSource: boolean }) {
   const router = useRouter();
-  const [form, setForm] = useState({ siteUrl: project.url ?? "", user: "", appPassword: "" });
+  const isSat = kind === "satellite";
+  const [form, setForm] = useState({ siteUrl: isSat ? "" : project.url ?? "", user: "", appPassword: "" });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -303,7 +309,7 @@ function WordPressCard({ project, wp, hasSource }: { project: AioProject; wp: Ai
   return (
     <Card>
       <div className="flex items-center justify-between gap-3">
-        <SectionTitle>WordPress と連携（承認ボタンで公開）</SectionTitle>
+        <SectionTitle>WordPress と連携{isSat ? "（サテライトサイト・自社サイトとは別）" : ""}（承認ボタンで公開）</SectionTitle>
         {wp && <span className="rounded-full bg-[#EAF3EE] px-2.5 py-0.5 text-[11px] font-semibold text-[#2F6B4A]">連携中</span>}
       </div>
       {wp ? (
@@ -317,17 +323,17 @@ function WordPressCard({ project, wp, hasSource }: { project: AioProject; wp: Ai
               {cats ? (
                 <Select
                   value={String(wp.categoryId ?? "")}
-                  onChange={(v) => run("cat", () => setAioWpCategoryAction(project.id, v ? Number(v) : null))}
+                  onChange={(v) => run("cat", () => setAioWpCategoryAction(project.id, v ? Number(v) : null, kind))}
                   options={[{ value: "", label: "WordPress の既定" }, ...cats.map((c) => ({ value: String(c.id), label: c.name }))]}
                 />
               ) : (
-                <Btn variant="outline" size="sm" disabled={busy !== null} onClick={() => run("cats", async () => setCats(await listAioWpCategoriesAction(project.id)))}>
+                <Btn variant="outline" size="sm" disabled={busy !== null} onClick={() => run("cats", async () => setCats(await listAioWpCategoriesAction(project.id, kind)))}>
                   {busy === "cats" ? <Icon name="loader" /> : null}
                   {wp.categoryId ? `カテゴリ ID ${wp.categoryId}（変更する）` : "カテゴリを選ぶ"}
                 </Btn>
               )}
             </div>
-            <Btn variant="ghost" size="sm" disabled={busy !== null} onClick={() => confirm("WordPress との連携を外しますか？（公開済みの記事は消えません）") && run("off", () => disconnectAioWordPressAction(project.id))}>
+            <Btn variant="ghost" size="sm" disabled={busy !== null} onClick={() => confirm("WordPress との連携を外しますか？（公開済みの記事は消えません）") && run("off", () => disconnectAioWordPressAction(project.id, kind))}>
               連携を外す
             </Btn>
           </div>
@@ -339,7 +345,7 @@ function WordPressCard({ project, wp, hasSource }: { project: AioProject; wp: Ai
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <Label>サイトのURL</Label>
-              <Input value={form.siteUrl} onChange={(e) => setForm({ ...form, siteUrl: e.target.value })} placeholder="https://example.com" />
+              <Input value={form.siteUrl} onChange={(e) => setForm({ ...form, siteUrl: e.target.value })} placeholder={isSat ? "https://サテライトのドメイン" : "https://example.com"} />
             </div>
             <div>
               <Label>ユーザー名</Label>
@@ -366,7 +372,7 @@ function WordPressCard({ project, wp, hasSource }: { project: AioProject; wp: Ai
               disabled={busy !== null || !form.siteUrl || !form.user || !form.appPassword}
               onClick={() =>
                 run("connect", async () => {
-                  const r = await connectAioWordPressAction(project.id, form);
+                  const r = await connectAioWordPressAction(project.id, form, kind);
                   setCats(r.categories);
                   setForm({ ...form, appPassword: "" });
                   setInfo(`「${r.siteName}」と連携しました（${r.userName}）。投稿するカテゴリを選んでください`);
@@ -380,6 +386,90 @@ function WordPressCard({ project, wp, hasSource }: { project: AioProject; wp: Ai
         </div>
       )}
       {wp && error && <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>}
+    </Card>
+  );
+}
+
+const EMPTY_ITEM: AioSatelliteItem = { name: "", url: "", facts: "", own: false };
+
+/**
+ * サテライトサイトの設定（2026-10-21）。運営者の表記と「扱う商品・サービス」（記事に書いてよい事実）を入れる。
+ * 運営者を伏せた自社商品の推奨は景品表示法のステマ規制に触れるおそれがあるため、運営者の表記が無いと WordPress に送れない
+ */
+function SatelliteCard({ project, channel }: { project: AioProject; channel: AioChannel | null }) {
+  const router = useRouter();
+  const init: AioSatellite = channel?.satellite ?? { mediaName: "", theme: "", operator: project.name, relation: "自社運営", items: [{ ...EMPTY_ITEM, name: project.name, url: project.url ?? "", own: true }] };
+  const [f, setF] = useState<AioSatellite>(init);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const setItem = (k: number, patch: Partial<AioSatelliteItem>) => setF({ ...f, items: f.items.map((x, i) => (i === k ? { ...x, ...patch } : x)) });
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    const r = await setAioSatelliteAction(project.id, f);
+    setBusy(false);
+    if (!r.ok) return setError(r.error);
+    setInfo("保存しました");
+    router.refresh();
+  };
+  return (
+    <Card>
+      <SectionTitle>⓪ サテライトサイトの設定（運営者の表記・扱う商品）</SectionTitle>
+      <p className="mt-1 text-xs leading-relaxed text-[#8B877F]">
+        自社とは別のドメインで、他社の商品・サービスも公平に扱う比較・解説メディアとして運営します。記事に書けるのは、下の「扱う商品・サービス」に入れた事実だけです。
+        公開するときは、冒頭に運営者の表記（運営者の商品を扱う記事は PR 表記も）を、運営者の商品・自社サイトへのリンクに rel=&quot;sponsored&quot; を自動で入れます。
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label>メディアの名前</Label>
+          <Input value={f.mediaName} onChange={(e) => setF({ ...f, mediaName: e.target.value })} placeholder="例：〇〇の選び方ガイド" />
+        </div>
+        <div>
+          <Label>扱うテーマ・読者</Label>
+          <Input value={f.theme} onChange={(e) => setF({ ...f, theme: e.target.value })} placeholder="例：中小企業の広告運用の外注を検討している担当者向け" />
+        </div>
+        <div>
+          <Label>運営者の表記（必須）</Label>
+          <Input value={f.operator} onChange={(e) => setF({ ...f, operator: e.target.value })} placeholder="例：株式会社〇〇" />
+        </div>
+        <div>
+          <Label>自社との関係</Label>
+          <Input value={f.relation} onChange={(e) => setF({ ...f, relation: e.target.value })} placeholder="例：自社運営／グループ会社" />
+        </div>
+      </div>
+      <div className="mt-4 space-y-2">
+        <p className="text-xs font-semibold text-[#2E2D29]">扱う商品・サービス（{f.items.length}件）</p>
+        {f.items.map((it, k) => (
+          <div key={k} className="rounded-xl border border-[#E8E5E0] p-3">
+            <div className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
+              <Input value={it.name} onChange={(e) => setItem(k, { name: e.target.value })} placeholder="商品・サービス名" />
+              <Input value={it.url} onChange={(e) => setItem(k, { url: e.target.value })} placeholder="公式サイトの URL" />
+              <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-[#6B6862]">
+                <input type="checkbox" checked={it.own} onChange={(e) => setItem(k, { own: e.target.checked })} />
+                運営者の商品
+              </label>
+            </div>
+            <Textarea rows={2} className="mt-2" value={it.facts} onChange={(e) => setItem(k, { facts: e.target.value })} placeholder="記事に書いてよい事実（公式サイトなどの公開情報から。料金・特徴・対応範囲など。ここに無いことは記事に書きません）" />
+            <div className="mt-1 text-right">
+              <button type="button" className="text-[11px] text-[#8B877F] underline" onClick={() => setF({ ...f, items: f.items.filter((_, i) => i !== k) })}>外す</button>
+            </div>
+          </div>
+        ))}
+        {f.items.length < 20 && (
+          <button type="button" className="text-xs text-[#6B6862] underline" onClick={() => setF({ ...f, items: [...f.items, { ...EMPTY_ITEM }] })}>＋ 商品・サービスを足す</button>
+        )}
+      </div>
+      {error && <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>}
+      {info && <p className="mt-3 rounded-xl bg-[#EAF3EE] px-3 py-2 text-xs text-[#2F6B4A]">{info}</p>}
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-[11px] text-[#A5A198]">表記の方針は、運用を始める前に専門家（弁護士など）に確認することをおすすめします。</p>
+        <Btn onClick={save} disabled={busy || !f.operator.trim()} className="shrink-0">
+          {busy ? <Icon name="loader" /> : null}
+          保存する
+        </Btn>
+      </div>
     </Card>
   );
 }

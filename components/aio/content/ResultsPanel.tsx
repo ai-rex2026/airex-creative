@@ -20,6 +20,7 @@ export function ResultsPanel({
   metrics,
   reviews,
   googleConnected,
+  kinds = ["site", "note"],
 }: {
   project: AioProject;
   channels: Partial<Record<AioChannelKind, AioChannel>>;
@@ -27,11 +28,17 @@ export function ResultsPanel({
   metrics: AioMetric[];
   reviews: Partial<Record<AioChannelKind, AioContentReview>>;
   googleConnected: boolean;
+  /** 出す媒体。SEO運用は自社サイト・サテライトサイト、AIO は note（2026-10-21） */
+  kinds?: AioChannelKind[];
 }) {
   return (
     <div className="space-y-6">
-      <SiteResults project={project} channel={channels.site ?? null} metrics={metrics.filter((m) => m.channel === "site")} review={reviews.site ?? null} googleConnected={googleConnected} articles={articles.filter((a) => a.channel === "site")} />
-      <NoteResults project={project} metrics={metrics.filter((m) => m.channel === "note")} review={reviews.note ?? null} articles={articles.filter((a) => a.channel === "note")} />
+      {(["site", "satellite"] as const)
+        .filter((k) => kinds.includes(k))
+        .map((k) => (
+          <SiteResults key={k} kind={k} project={project} channel={channels[k] ?? null} metrics={metrics.filter((m) => m.channel === k)} review={reviews[k] ?? null} googleConnected={googleConnected} articles={articles.filter((a) => a.channel === k)} />
+        ))}
+      {kinds.includes("note") && <NoteResults project={project} metrics={metrics.filter((m) => m.channel === "note")} review={reviews.note ?? null} articles={articles.filter((a) => a.channel === "note")} />}
     </div>
   );
 }
@@ -68,7 +75,7 @@ function useRun() {
   return { busy, error, info, run };
 }
 
-function SiteResults({ project, channel, metrics, review, googleConnected, articles }: { project: AioProject; channel: AioChannel | null; metrics: AioMetric[]; review: AioContentReview | null; googleConnected: boolean; articles: AioArticle[] }) {
+function SiteResults({ kind, project, channel, metrics, review, googleConnected, articles }: { kind: "site" | "satellite"; project: AioProject; channel: AioChannel | null; metrics: AioMetric[]; review: AioContentReview | null; googleConnected: boolean; articles: AioArticle[] }) {
   const { busy, error, info, run } = useRun();
   const rows = useMemo(() => latestByPage(metrics).sort((a, b) => (b.impressions ?? b.views ?? 0) - (a.impressions ?? a.views ?? 0)), [metrics]);
   const mine = new Set(articles.map((a) => a.id));
@@ -78,11 +85,11 @@ function SiteResults({ project, channel, metrics, review, googleConnected, artic
     <Card>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <SectionTitle>自社サイトのコラム：記事ごとの数字（直近28日）</SectionTitle>
-          <p className="mt-1 text-xs text-[#8B877F]">Search Console（表示・クリック・順位・検索語）と GA4（閲覧数・滞在時間）を、コラムのURLの下にある記事に絞って取り込みます</p>
+          <SectionTitle>{kind === "satellite" ? "サテライトサイト" : "自社サイトのコラム"}：記事ごとの数字（直近28日）</SectionTitle>
+          <p className="mt-1 text-xs text-[#8B877F]">Search Console（表示・クリック・順位・検索語）と GA4（閲覧数・滞在時間）を、{kind === "satellite" ? "サテライトサイトの記事一覧の URL" : "コラムのURL"}の下にある記事に絞って取り込みます</p>
         </div>
         {googleConnected ? (
-          <Btn onClick={() => run("fetch", async () => { const r = await fetchAioSiteMetricsAction(project.id); return `${r.pages}ページ分を取り込みました${r.notes.length ? `（${r.notes.join(" / ")}）` : ""}`; })} disabled={busy !== null} className="shrink-0">
+          <Btn onClick={() => run("fetch", async () => { const r = await fetchAioSiteMetricsAction(project.id, kind); return `${r.pages}ページ分を取り込みました${r.notes.length ? `（${r.notes.join(" / ")}）` : ""}`; })} disabled={busy !== null} className="shrink-0">
             {busy === "fetch" ? <Icon name="loader" /> : <Icon name="refresh" className="h-4 w-4" />}
             {busy === "fetch" ? "取り込み中" : "数字を取り込む"}
           </Btn>
@@ -131,7 +138,7 @@ function SiteResults({ project, channel, metrics, review, googleConnected, artic
         <p className="mt-4 rounded-xl border border-dashed border-[#D8D4CC] p-5 text-center text-xs text-[#8B877F]">まだ数字がありません</p>
       )}
 
-      <ReviewBlock project={project} kind="site" review={review} canRun={rows.length > 0} />
+      <ReviewBlock project={project} kind={kind} review={review} canRun={rows.length > 0} />
     </Card>
   );
 }

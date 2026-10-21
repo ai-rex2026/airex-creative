@@ -1,4 +1,5 @@
-import type { AioArticle } from "./content-types";
+import type { AioArticle, AioSatellite } from "./content-types";
+import { applySatellite } from "./satellite";
 import { mdToHtml } from "./md";
 import type { WpConn, WpPostInput } from "./wordpress";
 
@@ -26,7 +27,7 @@ export async function sendToWordPress(
   conn: WpConn,
   article: Pick<AioArticle, "id" | "title" | "slug" | "metaDescription" | "bodyMd" | "images" | "wpPostId">,
   media: WpMedia,
-  opt: { status: "draft" | "publish"; categoryId: number | null },
+  opt: { status: "draft" | "publish"; categoryId: number | null; satellite?: { config: AioSatellite; projectUrl: string | null } | null },
   save: PublishSave
 ): Promise<{ wpPostId: number; link: string; status: string; media: WpMedia }> {
   const m: WpMedia = { ...media };
@@ -40,7 +41,9 @@ export async function sendToWordPress(
     await save.media({ ...m });
   }
   const inline = article.images.filter((i) => i.role === "inline" && m[i.key]).map((i) => ({ afterH2: i.afterH2, src: m[i.key].url, alt: i.alt }));
-  const content = mdToHtml(article.bodyMd, inline);
+  const html = mdToHtml(article.bodyMd, inline);
+  // サテライトサイトは、運営者・PR の表記と rel="sponsored" をコードで必ず入れる
+  const content = opt.satellite ? applySatellite(html, opt.satellite.config, article.bodyMd, opt.satellite.projectUrl) : html;
   const r = await deps.savePost(conn, article.wpPostId, {
     title: article.title,
     content,

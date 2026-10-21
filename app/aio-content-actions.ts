@@ -15,7 +15,7 @@ import { discoverWpApi, wpSavePost, wpUploadImage, wpVerify, type WpConn } from 
 import { sendToWordPress, type WpMedia } from "@/lib/aio/publish";
 import { parseNoteMetrics, reviewContent, type NoteRow } from "@/lib/aio/review";
 import { assertPublicUrl } from "@/lib/aio/net";
-import { ARTICLE_MONTHLY_LIMIT, type AioArticleImage, type AioChannelKind } from "@/lib/aio/content-types";
+import { ARTICLE_MONTHLY_LIMIT, isWpKind, type AioArticleImage, type AioChannelKind, type AioSatellite } from "@/lib/aio/content-types";
 import type { AioPlanItem, AioProject } from "@/lib/aio/types";
 
 /**
@@ -61,12 +61,19 @@ async function ownedArticle(articleId: string) {
   };
 }
 
-const KINDS: AioChannelKind[] = ["site", "note"];
+const KINDS: AioChannelKind[] = ["site", "note", "satellite"];
 const asKind = (k: string): AioChannelKind => {
   if (!KINDS.includes(k as AioChannelKind)) throw new Error("未対応の媒体です");
   return k as AioChannelKind;
 };
-const refresh = (id: string) => revalidatePath(`/aio/${id}`);
+// 自社サイト記事・サテライトサイト・内部対策は SEO運用（/seo）、note・PR TIMES は AIO（/aio）に出す（2026-10-21）
+const refresh = (id: string) => {
+  revalidatePath(`/aio/${id}`);
+  revalidatePath(`/seo/${id}`);
+};
+/** WordPress の接続の表。サテライトサイトは自社サイトとは別のサイトなので、別の表に持つ */
+const wpTable = (kind: AioChannelKind) => (kind === "satellite" ? "aio_wp_satellite_connections" : "aio_wp_connections");
+const wpKind = (k: string | undefined): AioChannelKind => (k === "satellite" ? "satellite" : "site");
 
 /**
  * 本番では、Server Action が throw した Error の文面は画面に届かず「An error occurred in the Server Components render」
@@ -125,6 +132,25 @@ export async function buildAioStrategyAction(projectId: string, kindRaw: string)
   refresh(projectId);
 }
 
+/** サテライトサイトの設定（メディア名・テーマ・運営者・扱う商品）を保存する */
+export async function setAioSatelliteAction(projectId: string, input: AioSatellite): Promise<{ ok: true } | ActionFail> {
+  try {
+    const { sb } = await owned(projectId);
+    const t = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
+    const items = (Array.isArray(input.items) ? input.items : [])
+      .map((i) => ({ name: t(i.name, 80), url: t(i.url, 400), facts: t(i.facts, 1200), own: !!i.own }))
+      .filter((i) => i.name)
+      .slice(0, 20);
+    for (const i of items) if (i.url) assertPublicUrl(i.url);
+    const satellite: AioSatellite = { mediaName: t(input.mediaName, 80), theme: t(input.theme, 300), operator: t(input.operator, 120), relation: t(input.relation, 80), items };
+    await upsertChannel(sb, projectId, "satellite", { satellite });
+    refresh(projectId);
+    return { ok: true };
+  } catch (e) {
+    return failOf(e, "保存できませんでした");
+  }
+}
+
 // ── 記事 ─────────────────────
 
 /**
@@ -176,6 +202,7 @@ async function createAioArticle(
   const clean: ArticleBrief | null = brief
     ? { title: brief.title?.trim().slice(0, 160), target: brief.target?.trim().slice(0, 160), outline: brief.outline?.trim().slice(0, 1200), note: brief.note?.trim().slice(0, 800) }
     : null;
+  if (kind === "satellite" && !(ch?.satellite?.items ?? []).length) throw new Error("サテライトサイトの「扱う商品・サービス」を先に入れてください（記事に書いてよい事実の出どころになります）");
   const d = await draftArticle(kind, project, ch, {
     brief: clean,
     recentTitles: ((recent ?? []) as { title: string }[]).map((r) => r.title),
@@ -306,7 +333,7 @@ export async function updateAioArticleAction(articleId: string, patch: { title: 
 
 export async function deleteAioArticleAction(articleId: string) {
   const { sb, project, article } = await ownedArticle(articleId);
-  if (article.status === "published" && article.channel === "site") throw new Error("WordPress で公開済みの記事です。先に WordPress 側で非公開にしてから削除してください");
+  if (article.status === "published" && isWpKind(article.channel)) throw new Error("WordPress で公開済みの記事です。先に WordPress 側で非公開にしてから削除してください");
   await sb.from("aio_articles").delete().eq("id", articleId);
   const paths = article.images.map((i) => i.path).filter((p): p is string => !!p);
   if (paths.length) await createAdminClient().storage.from("aio-images").remove(paths).catch(() => undefined);
@@ -329,9 +356,9 @@ export async function markAioNotePostedAction(articleId: string, url: string | n
 
 // ── WordPress ─────────────────────
 
-async function wpConn(projectId: string): Promise<{ conn: WpConn; categoryId: number | null }> {
+async function wpConn(projectId: string, kind: AioChannelKind = "site"): Promise<{ conn: WpConn; categoryId: number | null }> {
   const admin = createAdminClient();
-  const { data } = await admin.from("aio_wp_connections").select("base_url, wp_user, app_password, category_id").eq("project_id", projectId).maybeSingle();
+  const { data } = await admin.from(wpTable(kind)).select("base_url, wp_user, app_password, category_id").eq("project_id", projectId).maybeSingle();
   if (!data) throw new Error("WordPress と連携していません");
   const pass = openToken(String(data.app_password));
   if (!pass) throw new Error("WordPress のパスワードを読めませんでした。連携し直してください");
@@ -339,19 +366,26 @@ async function wpConn(projectId: string): Promise<{ conn: WpConn; categoryId: nu
 }
 
 /** WordPress と連携する（REST の入口を探し、ログインと権限を確かめてから保存する） */
-export async function connectAioWordPressAction(projectId: string, input: { siteUrl: string; user: string; appPassword: string }) {
-  await owned(projectId);
+export async function connectAioWordPressAction(projectId: string, input: { siteUrl: string; user: string; appPassword: string }, kindRaw?: string) {
+  const kind = wpKind(kindRaw);
+  const { project } = await owned(projectId);
   if (!process.env.AD_TOKEN_ENC_KEY) throw new Error("サーバーの暗号鍵（AD_TOKEN_ENC_KEY）が未設定のため、パスワードを保存できません。管理者に設定を依頼してください");
   const user = input.user.trim();
   const appPassword = input.appPassword.replace(/\s+/g, "");
   if (!user || appPassword.length < 16) throw new Error("ユーザー名と、アプリケーションパスワード（24文字）を入れてください");
   const site = assertPublicUrl(input.siteUrl, { httpsOnly: true }).toString();
+  // サテライトサイトは第三者ドメインで運営する前提。自社サイトと同じドメインなら止める
+  if (kind === "satellite" && project.url) {
+    const a = new URL(site).hostname.replace(/^www\./, "");
+    const b = new URL(project.url).hostname.replace(/^www\./, "");
+    if (a === b || a.endsWith(`.${b}`)) throw new Error("サテライトサイトは自社サイトとは別のドメインで運営します。自社サイトの WordPress は「自社サイト記事」のタブで連携してください");
+  }
   const { apiRoot, name } = await discoverWpApi(site);
   const conn = { apiRoot, user, appPassword };
   const v = await wpVerify(conn);
   if (!v.me.canPublish || !v.me.canUpload) throw new Error("このユーザーには投稿の公開・画像のアップロードの権限がありません（編集者以上のユーザーで連携してください）");
   const admin = createAdminClient();
-  const { error } = await admin.from("aio_wp_connections").upsert(
+  const { error } = await admin.from(wpTable(kind)).upsert(
     { project_id: projectId, base_url: apiRoot, wp_user: user, app_password: sealToken(appPassword), site_name: name.slice(0, 120), verified_at: now(), updated_at: now() },
     { onConflict: "project_id" }
   );
@@ -360,21 +394,21 @@ export async function connectAioWordPressAction(projectId: string, input: { site
   return { siteName: name, userName: v.me.name, categories: v.categories };
 }
 
-export async function listAioWpCategoriesAction(projectId: string) {
+export async function listAioWpCategoriesAction(projectId: string, kindRaw?: string) {
   await owned(projectId);
-  const { conn } = await wpConn(projectId);
+  const { conn } = await wpConn(projectId, wpKind(kindRaw));
   return (await wpVerify(conn)).categories;
 }
 
-export async function setAioWpCategoryAction(projectId: string, categoryId: number | null) {
+export async function setAioWpCategoryAction(projectId: string, categoryId: number | null, kindRaw?: string) {
   await owned(projectId);
-  await createAdminClient().from("aio_wp_connections").update({ category_id: categoryId, updated_at: now() }).eq("project_id", projectId);
+  await createAdminClient().from(wpTable(wpKind(kindRaw))).update({ category_id: categoryId, updated_at: now() }).eq("project_id", projectId);
   refresh(projectId);
 }
 
-export async function disconnectAioWordPressAction(projectId: string) {
+export async function disconnectAioWordPressAction(projectId: string, kindRaw?: string) {
   await owned(projectId);
-  await createAdminClient().from("aio_wp_connections").delete().eq("project_id", projectId);
+  await createAdminClient().from(wpTable(wpKind(kindRaw))).delete().eq("project_id", projectId);
   refresh(projectId);
 }
 
@@ -384,11 +418,18 @@ export async function disconnectAioWordPressAction(projectId: string) {
  */
 export async function sendAioArticleToWpAction(articleId: string, mode: "draft" | "publish") {
   const { sb, project, article, wpMedia, userId } = await ownedArticle(articleId);
-  if (article.channel !== "site") throw new Error("自社サイトの記事ではありません");
+  if (!isWpKind(article.channel)) throw new Error("WordPress で公開する記事ではありません");
   if (!article.guard) throw new Error("表現チェックがまだです。「仕上げる」を押してからにしてください");
   if (mode === "draft" && article.status === "published") throw new Error("公開済みの記事です。直した内容は「承認して更新」で反映してください");
   if (mode === "publish" && article.guard.level === "red") throw new Error("表現チェックで「要修正」が残っています。本文を直して保存してから公開してください");
-  const { conn, categoryId } = await wpConn(project.id);
+  const { conn, categoryId } = await wpConn(project.id, article.channel);
+  // サテライトサイトは運営者の表記が無いと公開しない（PR 表記・運営者の明記をコードで入れるため）
+  let satellite: { config: AioSatellite; projectUrl: string | null } | null = null;
+  if (article.channel === "satellite") {
+    const ch = await loadChannel(sb, project.id, "satellite");
+    if (!ch?.satellite?.operator?.trim()) throw new Error("サテライトサイトの設定で「運営者の表記」を入れてから送ってください（記事の冒頭に運営者と PR の表記を自動で入れます）");
+    satellite = { config: ch.satellite, projectUrl: project.url };
+  }
   const admin = createAdminClient();
   try {
     const r = await sendToWordPress(
@@ -396,7 +437,7 @@ export async function sendAioArticleToWpAction(articleId: string, mode: "draft" 
       conn,
       article,
       wpMedia,
-      { status: mode, categoryId },
+      { status: mode, categoryId, satellite },
       {
         media: async (m) => {
           await sb.from("aio_articles").update({ wp_media: m, updated_at: now() }).eq("id", articleId);
@@ -430,24 +471,26 @@ export async function sendAioArticleToWpAction(articleId: string, mode: "draft" 
 const normUrl = (u: string) => u.replace(/^https?:\/\/(www\.)?/, "").replace(/[?#].*$/, "").replace(/\/+$/, "");
 
 /** Search Console・GA4 から、コラムの記事ごとの直近28日の数字を取り込む */
-export async function fetchAioSiteMetricsAction(projectId: string): Promise<{ pages: number; notes: string[] }> {
+export async function fetchAioSiteMetricsAction(projectId: string, kindRaw?: string): Promise<{ pages: number; notes: string[] }> {
+  const kind = wpKind(kindRaw);
   const { sb, userId, project } = await owned(projectId);
   if (!hasGoogleApp()) throw new Error("Google 連携がこのサーバーで有効になっていません");
   const { data: conn } = await sb.from("google_connections").select("refresh_token").eq("user_id", userId).maybeSingle();
   if (!conn?.refresh_token) throw new Error("Google（Search Console・GA4）と連携していません。設定画面から連携してください");
-  const ch = await loadChannel(sb, projectId, "site");
-  const siteUrl = ch?.sourceUrl ?? project.url;
-  if (!siteUrl) throw new Error("コラムのURL（または対象のURL）を先に入れてください");
+  const ch = await loadChannel(sb, projectId, kind);
+  // サテライトサイトは対象（自社）の URL では測らない
+  const siteUrl = ch?.sourceUrl ?? (kind === "site" ? project.url : null);
+  if (!siteUrl) throw new Error(kind === "satellite" ? "サテライトサイトの記事一覧のURLを先に入れてください" : "コラムのURL（または対象のURL）を先に入れてください");
   const pathPrefix = ch?.analytics?.pathPrefix ?? (ch?.sourceUrl ? new URL(ch.sourceUrl).pathname.replace(/\/+$/, "") || "/" : "/");
   const r = await fetchPageMetrics(String(conn.refresh_token), siteUrl, pathPrefix, { gscSite: ch?.analytics?.gscSite, ga4Property: ch?.analytics?.ga4Property });
 
-  const { data: arts } = await sb.from("aio_articles").select("id, published_url").eq("project_id", projectId).eq("channel", "site").not("published_url", "is", null);
+  const { data: arts } = await sb.from("aio_articles").select("id, published_url").eq("project_id", projectId).eq("channel", kind).not("published_url", "is", null);
   const byUrl = new Map(((arts ?? []) as { id: string; published_url: string }[]).map((a) => [normUrl(a.published_url), a.id]));
   const rows = r.pages
     .filter((p) => (p.impressions ?? 0) > 0 || (p.views ?? 0) > 0)
     .map((p) => ({
       project_id: projectId,
-      channel: "site",
+      channel: kind,
       article_id: byUrl.get(normUrl(p.url)) ?? null,
       url: p.url.slice(0, 600),
       title: p.title.slice(0, 300),
@@ -465,7 +508,7 @@ export async function fetchAioSiteMetricsAction(projectId: string): Promise<{ pa
     const { error } = await sb.from("aio_article_metrics").insert(rows);
     if (error) throw new Error(`保存できませんでした：${error.message}`);
   }
-  await upsertChannel(sb, projectId, "site", { analytics: { gscSite: r.gscSite, ga4Property: r.ga4Property, pathPrefix } });
+  await upsertChannel(sb, projectId, kind, { analytics: { gscSite: r.gscSite, ga4Property: r.ga4Property, pathPrefix } });
   refresh(projectId);
   if (!rows.length && r.notes.length) throw new Error(r.notes.join(" / "));
   return { pages: rows.length, notes: r.notes };

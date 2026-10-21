@@ -6,9 +6,46 @@ import type { GuardVerdict } from "../types";
  * 数字を見て改善案を出す、までを1つの流れで扱う。
  */
 
-export type AioChannelKind = "site" | "note";
+export type AioChannelKind = "site" | "note" | "satellite";
 
-export const CHANNEL_LABEL: Record<AioChannelKind, string> = { site: "自社サイトのコラム", note: "note" };
+export const CHANNEL_LABEL: Record<AioChannelKind, string> = { site: "自社サイトのコラム", note: "note", satellite: "サテライトサイト" };
+
+/** DB の文字列から媒体の種類を読む（不明なものは自社サイト扱い。古い行との互換） */
+export function channelKindOf(v: unknown): AioChannelKind {
+  return v === "note" ? "note" : v === "satellite" ? "satellite" : "site";
+}
+
+/** WordPress で公開する媒体（自社サイト・サテライトサイト）。note は人が投稿する */
+export const isWpKind = (k: AioChannelKind) => k === "site" || k === "satellite";
+
+/**
+ * サテライトサイト（2026-10-21〜）：自社とは別の第三者ドメインで、他社の商品・サービスも扱って発信する比較・解説メディア。
+ * Google のスパムに関する方針（リンクスキーム・大量生成）と景品表示法のステマ規制（2023-10〜）に触れないよう、
+ * 運営者の明記・自社商品の PR 表記・自社への誘導リンクの rel="sponsored" をコードで必ず付ける（AI には任せない）。
+ */
+export type AioSatelliteItem = {
+  /** 商品・サービス名 */
+  name: string;
+  /** 公式サイトなど、事実の出どころ */
+  url: string;
+  /** 記事に書いてよい事実（公開情報から人が入れたもの。ここに無い数字・価格・機能は書かない） */
+  facts: string;
+  /** 自社（運営者・関連会社）の商品か */
+  own: boolean;
+};
+
+export type AioSatellite = {
+  /** メディアの名前 */
+  mediaName: string;
+  /** 何を扱うメディアか（ジャンル・読者） */
+  theme: string;
+  /** 運営者の表記（会社名など。記事の冒頭の PR 表記と運営者情報に使う） */
+  operator: string;
+  /** 自社との関係（自社運営・グループ会社・提携 など） */
+  relation: string;
+  /** 扱う商品・サービス */
+  items: AioSatelliteItem[];
+};
 
 /** 既存記事から読んだトンマナ。記事を書くときにそのまま指示として渡す */
 export type AioStyle = {
@@ -61,6 +98,8 @@ export type AioChannel = {
   analyzedAt: string | null;
   strategy: AioStrategy | null;
   analytics: { gscSite?: string | null; ga4Property?: string | null; pathPrefix?: string | null } | null;
+  /** サテライトサイトの設定（kind=satellite のときだけ） */
+  satellite: AioSatellite | null;
 };
 
 export type AioImageRole = "eyecatch" | "inline";

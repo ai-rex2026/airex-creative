@@ -122,3 +122,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 素材（`sns_materials`）：自社のビジネスプロフィールの写真（Google マップに第三者が投稿した写真は使わない）・自分の X／Instagram の投稿・アップロード・事実のメモ・AI 写真。取り込みは各社の配信元のホストだけ許可
 - Instagram の投稿・コメント・DM、YouTube のコメントは `sns_posts`（platform は meta／youtube）。送るのは `sendApprovedMedia`（承認済みだけ）。TikTok はコメント・DM の API が無いので扱わない
 - 検証は外部 API を差し替えて行う（`creds`／`fetch`／`wait` を引数で渡せる）。書き出しは Playwright の Chromium で VP9＋Opus の経路を確かめた（H.264／AAC は Chromium に無いので Chrome で確認する）
+
+## SEO運用（2026-10-21 追記）
+
+- 左メニュー「SEO運用」（`/seo`・`/seo/[id]?tab=site|satellite|internal|results`）。対象は AIO と同じ `aio_projects` を共有する
+- 自社サイト記事は AIO から移設（`/aio/[id]?tab=site` は `/seo` へ転送）。AIO のタブは note／PR TIMES／内部対策／効果と改善／AIでの見え方
+- サテライトサイト：`aio_channels.kind='satellite'`（設定は `satellite` 列）、WordPress は `aio_wp_satellite_connections`（自社サイトとは別の接続。同じドメインは連携させない）。記事に書けるのは「扱う商品・サービス」に人が入れた事実だけ（`SATELLITE_RULES`）。公開時に運営者・PR の表記と、運営者側のドメインへのリンクの `rel="sponsored"` をコードで入れる（`lib/aio/satellite.ts`。AI に書かせない）。運営者の表記が無いと送れない
+- 内部対策：`seo_internal_tasks`（SEO と AIO で1つのリスト。`scope` = seo|aio|both で各タブに絞って出す）。洗い出しはサイト・robots.txt・llms.txt の読み取りと、同じドメインの URL レポートの指摘の取り込みだけで AI は呼ばない（`lib/seo/internal.ts`）。key で1件にまとめ、利用者の状態は上書きしない。サイトの読み取りで出した施策が次の読み取りで消えたら「済み」にする

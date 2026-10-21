@@ -1,6 +1,6 @@
 import { askJson } from "../anthropic";
 import { normalizeJapanese } from "../meo-ops/japanese";
-import type { AioChannelKind, AioSample, AioStrategy, AioStyle } from "./content-types";
+import { CHANNEL_LABEL, type AioChannelKind, type AioSample, type AioStrategy, type AioStyle } from "./content-types";
 import { apiUrl, decodeEntities, fetchHtml, htmlToText, publicFetch } from "./net";
 import type { AioProject } from "./types";
 
@@ -223,7 +223,7 @@ export async function analyzeStyle(kind: AioChannelKind, project: Pick<AioProjec
     return [`## 記事${i + 1}: ${a.title}`, `URL: ${a.url}`, h2s.length ? `見出し: ${h2s.join(" / ")}` : "", `画像の数: ${imgs}`, `本文（冒頭）: ${a.text.slice(0, per)}`].filter(Boolean).join("\n");
   });
   const user = [
-    `媒体: ${kind === "note" ? "note" : "自社サイトのコラム"}`,
+    `媒体: ${CHANNEL_LABEL[kind]}`,
     `事業者: ${project.name}（${project.category}）`,
     `実測: 記事${measured.articles}本・平均${measured.avgChars}字・見出し（h2）平均${measured.avgH2}個・です／ます率${measured.politeRatio}%`,
     "",
@@ -255,6 +255,14 @@ export const SETUP_STEPS: Record<AioChannelKind, { title: string; detail: string
     { title: "アプリケーションパスワードを発行して登録", detail: "WordPress の「ユーザー → プロフィール」の下にある「アプリケーションパスワード」で新しいパスワードを発行し、この画面の「WordPress と連携」に、ユーザー名と一緒に登録します。ログインのパスワードとは別のもので、いつでも取り消せます。" },
     { title: "Search Console と GA4", detail: "Search Console にサイトを登録してサイトマップ（/wp-sitemap.xml）を送り、GA4 のタグを入れます。設定画面で Google を連携すると、記事ごとの表示回数・クリック・閲覧数をここで見られます。" },
   ],
+  satellite: [
+    { title: "ドメインと運営者を決める", detail: "自社サイトとは別のドメインを取り、WordPress を置きます。サイトの「運営者情報」ページに、運営会社（自社またはグループ会社）を必ず明記します。運営者を伏せて自社の商品を勧めると、景品表示法のステマ規制に触れるおそれがあります。" },
+    { title: "扱う商品・サービスを決める", detail: "自社の商品だけでなく、同じジャンルの他社の商品・サービスも扱う比較・解説メディアにします。下の「扱う商品・サービス」に、公式サイトなどの公開情報から書いてよい事実を入れます（ここに無い価格・機能は記事に書きません）。" },
+    { title: "PR 表記と広告の方針を置く", detail: "自社の商品を扱う記事の冒頭には PR 表記を、自社サイトへのリンクには rel=\"sponsored\" を、この画面がコードで必ず付けます。サイト全体の「広告・PR について」のページも用意します。" },
+    { title: "https・パーマリンク・カテゴリ", detail: "SSL（https）を有効にし、パーマリンクを「投稿名」に、ジャンルごとのカテゴリを作ります。" },
+    { title: "アプリケーションパスワードを発行して登録", detail: "WordPress の「ユーザー → プロフィール」でアプリケーションパスワードを発行し、この画面の「WordPress と連携（サテライトサイト）」に登録します。自社サイトとは別の接続です。" },
+    { title: "Search Console と GA4", detail: "サテライトサイトも Search Console に登録してサイトマップを送り、GA4 のタグを入れます。効果と改善のタブで記事ごとの数字を見られます。" },
+  ],
   note: [
     { title: "アカウントを作る", detail: "会社・ブランドの名前で note のアカウントを作ります（個人のアカウントと分けます）。アカウント名（URL）は英数字の短い社名・ブランド名にします。" },
     { title: "プロフィールを整える", detail: "アイコン・ヘッダー画像・自己紹介・自社サイトへのリンクを設定します。自己紹介は下の「プロフィール文」を使えます。" },
@@ -274,7 +282,7 @@ const STRATEGY_SYSTEM = `あなたは日本の事業者のコンテンツマー�
 
 export async function buildStrategy(kind: AioChannelKind, project: AioProject): Promise<AioStrategy> {
   const user = [
-    `始める媒体: ${kind === "note" ? "note（アカウント開設から）" : "自社サイトのコラム（WordPress の設置から）"}`,
+    `始める媒体: ${kind === "note" ? "note（アカウント開設から）" : kind === "satellite" ? "サテライトサイト（自社とは別ドメインで、他社の商品・サービスも公平に扱う比較・解説メディア。WordPress の設置から）" : "自社サイトのコラム（WordPress の設置から）"}`,
     `事業者名: ${project.name}`,
     project.aliases.length ? `サービス名: ${project.aliases.join(", ")}` : "",
     project.url ? `URL: ${project.url}` : "",

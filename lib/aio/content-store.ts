@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GuardVerdict } from "../types";
-import type { AioArticle, AioArticleImage, AioChannel, AioChannelKind, AioContentReview, AioMetric, AioWpInfo } from "./content-types";
+import { channelKindOf, type AioArticle, type AioArticleImage, type AioChannel, type AioChannelKind, type AioContentReview, type AioMetric, type AioWpInfo } from "./content-types";
 
 /** aio_channels / aio_articles / aio_article_metrics / aio_content_reviews の行 → 画面の型 */
 
-export const CHANNEL_COLUMNS = "id, kind, source_url, has_source, style, samples, analyzed_at, strategy, analytics";
+// satellite 列（2026-10-21）が未適用の環境でも読めるよう、列を名指しせず * で読む
+export const CHANNEL_COLUMNS = "*";
 export const ARTICLE_COLUMNS =
   "id, channel, title, slug, meta_description, keywords, target, body_md, hashtags, images, guard, status, wp_post_id, published_url, published_at, error_message, created_at";
 export const METRIC_COLUMNS = "id, channel, article_id, url, title, source, period_from, period_to, views, clicks, impressions, position, engagement_sec, likes, comments, queries, created_at";
@@ -15,7 +16,7 @@ const numOrNull = (v: unknown) => (v === null || v === undefined || v === "" ? n
 export function rowToChannel(r: Record<string, unknown>): AioChannel {
   return {
     id: String(r.id),
-    kind: r.kind === "note" ? "note" : "site",
+    kind: channelKindOf(r.kind),
     sourceUrl: (r.source_url as string | null) ?? null,
     hasSource: r.has_source !== false,
     style: (r.style as AioChannel["style"]) ?? null,
@@ -23,13 +24,14 @@ export function rowToChannel(r: Record<string, unknown>): AioChannel {
     analyzedAt: (r.analyzed_at as string | null) ?? null,
     strategy: (r.strategy as AioChannel["strategy"]) ?? null,
     analytics: (r.analytics as AioChannel["analytics"]) ?? null,
+    satellite: (r.satellite as AioChannel["satellite"]) ?? null,
   };
 }
 
 export function rowToArticle(r: Record<string, unknown>): AioArticle {
   return {
     id: String(r.id),
-    channel: r.channel === "note" ? "note" : "site",
+    channel: channelKindOf(r.channel),
     title: String(r.title ?? ""),
     slug: String(r.slug ?? ""),
     metaDescription: String(r.meta_description ?? ""),
@@ -51,7 +53,7 @@ export function rowToArticle(r: Record<string, unknown>): AioArticle {
 export function rowToMetric(r: Record<string, unknown>): AioMetric {
   return {
     id: String(r.id),
-    channel: r.channel === "note" ? "note" : "site",
+    channel: channelKindOf(r.channel),
     articleId: (r.article_id as string | null) ?? null,
     url: String(r.url ?? ""),
     title: String(r.title ?? ""),
@@ -74,7 +76,7 @@ export function rowToReview(r: Record<string, unknown>): AioContentReview {
   const b = (r.body as Record<string, unknown>) ?? {};
   return {
     id: String(r.id),
-    channel: r.channel === "note" ? "note" : "site",
+    channel: channelKindOf(r.channel),
     summary: String(b.summary ?? ""),
     working: Array.isArray(b.working) ? (b.working as AioContentReview["working"]) : [],
     fixes: Array.isArray(b.fixes) ? (b.fixes as AioContentReview["fixes"]) : [],
@@ -89,16 +91,20 @@ export type ContentData = {
   metrics: AioMetric[];
   reviews: Partial<Record<AioChannelKind, AioContentReview>>;
   wp: AioWpInfo | null;
+  /** サテライトサイトの WordPress（自社サイトとは別の接続） */
+  wpSatellite: AioWpInfo | null;
 };
 
 /** 画面用にまとめて読む。sb は本人のセッション、admin は WordPress の接続（秘密を除いた列）と画像の署名に使う */
 export async function loadContent(sb: SupabaseClient, admin: SupabaseClient, projectId: string): Promise<ContentData> {
-  const [{ data: chs }, { data: arts }, { data: mets }, { data: revs }, { data: wp }] = await Promise.all([
+  const [{ data: chs }, { data: arts }, { data: mets }, { data: revs }, { data: wp }, { data: wps }] = await Promise.all([
     sb.from("aio_channels").select(CHANNEL_COLUMNS).eq("project_id", projectId),
     sb.from("aio_articles").select(ARTICLE_COLUMNS).eq("project_id", projectId).order("created_at", { ascending: false }).limit(60),
     sb.from("aio_article_metrics").select(METRIC_COLUMNS).eq("project_id", projectId).order("created_at", { ascending: false }).limit(400),
     sb.from("aio_content_reviews").select("id, channel, body, created_at").eq("project_id", projectId).order("created_at", { ascending: false }).limit(6),
     admin.from("aio_wp_connections").select("base_url, wp_user, site_name, category_id, verified_at").eq("project_id", projectId).maybeSingle(),
+    // 表が未作成（マイグレーション前）なら null のまま
+    admin.from("aio_wp_satellite_connections").select("base_url, wp_user, site_name, category_id, verified_at").eq("project_id", projectId).maybeSingle(),
   ]);
   const channels: ContentData["channels"] = {};
   for (const r of (chs ?? []) as Record<string, unknown>[]) {
@@ -115,8 +121,13 @@ export async function loadContent(sb: SupabaseClient, admin: SupabaseClient, pro
     articles: ((arts ?? []) as Record<string, unknown>[]).map(rowToArticle),
     metrics: ((mets ?? []) as Record<string, unknown>[]).map(rowToMetric),
     reviews,
-    wp: wp
-      ? { baseUrl: String(wp.base_url), wpUser: String(wp.wp_user), siteName: String(wp.site_name ?? ""), categoryId: (wp.category_id as number | null) ?? null, verifiedAt: (wp.verified_at as string | null) ?? null }
-      : null,
+    wp: wpInfo(wp),
+    wpSatellite: wpInfo(wps),
   };
+}
+
+function wpInfo(wp: Record<string, unknown> | null): AioWpInfo | null {
+  return wp
+    ? { baseUrl: String(wp.base_url), wpUser: String(wp.wp_user), siteName: String(wp.site_name ?? ""), categoryId: (wp.category_id as number | null) ?? null, verifiedAt: (wp.verified_at as string | null) ?? null }
+    : null;
 }

@@ -61,7 +61,8 @@ export function GapPlan({ project, gap, plans, hasResults }: { project: AioProje
           return;
         }
         await finishAioArticleAction(created.id).catch(() => undefined);
-        router.push(`/aio/${project.id}?tab=${channel}`);
+        // 自社サイト記事は SEO運用（/seo）に移した（2026-10-21）
+        router.push(channel === "site" ? `/seo/${project.id}?tab=site` : `/aio/${project.id}?tab=${channel}`);
         return;
       }
       await generateAioDraftAction(project.id, kind, { planId: plan.id, itemId });

@@ -49,7 +49,7 @@ export function MobileNav({
   active,
   account,
 }: {
-  active: "new" | "summary" | "analysis" | "stores" | "aio" | "sns" | "settings";
+  active: "new" | "summary" | "analysis" | "stores" | "seo" | "aio" | "sns" | "settings";
   /** メールアドレス。ゲストなら「ゲスト」 */
   account: string;
 }) {
@@ -103,6 +103,9 @@ export function MobileNav({
             <div style={{ height: 14 }} />
             <Link href="/stores" className={`mnav-link${active === "stores" ? " on" : ""}`} onClick={close}>
               ⌖ 店舗（MEO運用）
+            </Link>
+            <Link href="/seo" className={`mnav-link${active === "seo" ? " on" : ""}`} onClick={close}>
+              ⌕ SEO運用
             </Link>
             <Link href="/aio" className={`mnav-link${active === "aio" ? " on" : ""}`} onClick={close}>
               ◎ AIO（AI検索対策）
