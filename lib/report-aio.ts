@@ -1,5 +1,5 @@
 import { askJson } from "./anthropic";
-import { GEMINI_MODEL, hasGemini } from "./gemini";
+import { GEMINI_MODEL, geminiGenerate, hasGemini } from "./gemini";
 import { askGemini, domainOf, findOwnRank } from "./meo-ops/ai-search";
 import { guessAreaFromAddress } from "./meo-ops/logic";
 import { normalizeJapanese } from "./meo-ops/japanese";
@@ -106,9 +106,40 @@ async function extractNames(answer: string): Promise<string[]> {
 const isOwnDomain = (domain: string, own: string) => !!own && !!domain && (domain === own || domain.endsWith(`.${own}`) || own.endsWith(`.${domain}`));
 
 /** 問い1本を Gemini で実測する。失敗しても例外にせず error として返す */
+/** Gemini が Google 検索を使わずに答えたとき（askGemini がこの文言で失敗する） */
+const NOT_GROUNDED = /Google検索を使った回答になりませんでした/;
+
+/**
+ * Gemini に問いを投げる。Gemini は問いによって Google 検索を使わずに知識だけで答えることがあり、
+ * askGemini はそれを失敗にする（店舗のAI検索では「検索した結果」だけを実測とするため）。
+ * レポートでは「AIに聞いたら候補に出るか」を見たいので、1回だけ投げ直し、それでも検索を使わなければ
+ * 知識だけの回答をそのまま使う（grounded=false として画面で区別する）
+ */
+async function askForReport(question: string, deadline: number) {
+  for (let i = 0; i < 2; i++) {
+    try {
+      return { ...(await askGemini(question, deadline)), grounded: true };
+    } catch (e) {
+      if (!(e instanceof Error) || !NOT_GROUNDED.test(e.message)) throw e;
+    }
+  }
+  const left = deadline - Date.now();
+  if (left < 10_000) throw new Error("AI検索が時間内に終わりませんでした");
+  const r = await geminiGenerate({
+    system: "あなたは日本の利用者の質問に答えるアシスタントです。実在する事業者・サービスだけを挙げ、分かる範囲で情報源のURLを添えて答えてください。",
+    parts: [{ text: question }],
+    maxTokens: 6000,
+    search: true,
+    timeoutMs: Math.min(left, 150_000),
+  });
+  const text = r.text.trim();
+  if (!text) throw new Error("AI応答に本文が含まれていません");
+  return { text, cited: [] as { url: string; title: string; domain: string }[], queries: [] as string[], model: r.model ?? GEMINI_MODEL, grounded: false };
+}
+
 export async function measureAioPrompt(p: AioPromptResult, aio: Pick<ReportAio, "ownNames" | "ownDomain">, deadline: number): Promise<AioPromptResult> {
   try {
-    const r = await askGemini(p.text, deadline);
+    const r = await askForReport(p.text, deadline);
     const listed = await extractNames(r.text);
     const cited = r.cited.slice(0, MAX_CITED);
     return {
@@ -120,6 +151,7 @@ export async function measureAioPrompt(p: AioPromptResult, aio: Pick<ReportAio, 
       cited,
       ownCited: cited.some((c) => isOwnDomain(c.domain, aio.ownDomain)),
       queries: r.queries.slice(0, 10),
+      grounded: r.grounded,
       answer: r.text.slice(0, 6000),
       model: r.model || GEMINI_MODEL,
       at: new Date().toISOString(),

@@ -79,7 +79,8 @@ export function AnalysisList({ rows, adNames = [], isGuest = false }: { rows: An
                       <span className={`tag ${s.overall === "良好" ? "ok" : s.overall === "要改善" ? "ng" : "warn"}`}>
                         {s.overall}
                       </span>
-                      <span className="tag score">推定</span>
+                      {/* 総合評価はAIがサイトの読み取り結果から付けた見立て（実測値ではない）。目立たせない（2026-10-21） */}
+                      <span className="tag score" title="AIがサイトの内容から付けた見立てで、実測値ではありません" style={{ padding: "1px 7px", fontSize: 10.5, gap: 0 }}>推定</span>
                     </div>
                     <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 10 }}>{s.excerpt}</p>
 

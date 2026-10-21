@@ -1,5 +1,6 @@
 import type { ReportAio } from "@/lib/report-aio-types";
 import { RealBadge } from "./RealBadge";
+import { ContactCta } from "./ContactCta";
 
 /**
  * レポートの分析データタブ「AI検索での見え方（AIO）」（2026-10-21 新設。lib/report-aio.ts）。
@@ -73,6 +74,7 @@ export function AioSection({ data, isGuest = false }: { data: ReportAio | null |
                 <span className="tag">測定中</span>
               )}
               {p.ownCited && <span className="tag ok">自社サイトを引用</span>}
+              {p.status === "ok" && p.grounded === false && <span className="tag">検索なし（AIの知識で回答）</span>}
             </div>
             {p.status === "ok" && (
               <small style={{ display: "block", marginTop: 4 }}>
@@ -136,9 +138,15 @@ export function AioSection({ data, isGuest = false }: { data: ReportAio | null |
         </div>
       )}
       {data.analysisError && <div className="alert" style={{ marginTop: 10 }}>施策を作成できませんでした（{data.analysisError}）。実測の結果だけを表示しています。</div>}
+      {data.prompts.some((p) => p.status === "ok" && p.grounded === false) && (
+        <p className="sub" style={{ marginTop: 8 }}>
+          ※「検索なし」の問いは、GeminiがGoogle検索を使わず学習済みの知識だけで答えたものです（引用元はありません）。
+        </p>
+      )}
       <p className="sub" style={{ marginTop: 8 }}>
         ※AIの回答は問いの書き方・時期・利用者によって変わります。この結果は{ok[0]?.at ? ` ${new Date(ok[0].at).toLocaleDateString("ja-JP")} 時点の` : ""}1回の実測で、施策を行えば候補に挙がることを約束するものではありません。
       </p>
+      <ContactCta label="SEO運用・自動化について相談する" />
     </>
   );
 }

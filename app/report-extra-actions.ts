@@ -21,7 +21,7 @@ import type { SnsPlan } from "@/lib/sns-plan";
 import { isB2c } from "@/lib/biz-model";
 import { hasGemini } from "@/lib/gemini";
 import type { MeoScan } from "@/lib/meo";
-import { analyzeAio, buildAioPrompts, measureAioPrompt } from "@/lib/report-aio";
+import { analyzeAio, buildAioPrompts, measureAioPrompt, type ReportAio } from "@/lib/report-aio";
 
 /**
  * 以前に作ったレポートへ、後から増えた項目を足す（作り直さずに、無い部分だけ作る）。
@@ -62,7 +62,7 @@ async function ownedRow(id: string, columns: string) {
  * AIO（analyses.aio）を後から足せるか。会員で、Gemini が使え、列があり、まだ測っていない（または測れなかった）とき。
  * 列は 2026-10-21 に足したので、別の select にして列が無い環境でも他の項目の判定を壊さない
  */
-async function ownedAio(id: string): Promise<{ addable: boolean }> {
+async function ownedAio(id: string): Promise<{ addable: boolean; current?: ReportAio | null }> {
   const sb = await createClient();
   const {
     data: { user },
@@ -70,8 +70,15 @@ async function ownedAio(id: string): Promise<{ addable: boolean }> {
   if (!user || user.is_anonymous || !hasGemini()) return { addable: false };
   const { data, error } = await sb.from("analyses").select("aio").eq("id", id).eq("owner_id", user.id).maybeSingle();
   if (error || !data) return { addable: false };
-  const aio = (data as { aio: { skipped?: string | null; prompts?: { status: string }[] } | null }).aio;
-  return { addable: !aio || (!!aio.skipped && !(aio.prompts ?? []).length && /会員登録|作れません/.test(aio.skipped)) };
+  const aio = (data as { aio: ReportAio | null }).aio;
+  // 未実測・会員登録前で測らなかった・測れなかった問いが残っている（後者は測れなかった問いだけを測り直す）
+  return {
+    addable:
+      !aio ||
+      (!!aio.skipped && !(aio.prompts ?? []).length && /会員登録|作れません/.test(aio.skipped)) ||
+      (aio.stage === "done" && (aio.prompts ?? []).some((p) => p.status === "error")),
+    current: aio && !aio.skipped && aio.stage === "done" ? aio : null,
+  };
 }
 
 /** 足りない項目の一覧。画面の「新しい項目を追加」ボタンの出し分けに使う */
@@ -90,7 +97,7 @@ export async function missingSections(id: string): Promise<string[]> {
   if (k && k.rows.length > 0 && k.rows.every((r) => r.volume === undefined)) out.push("月間検索数の推定");
   if (!row.industry_vertical) out.push("業種別優先度の判定");
   if (!row.seo_articles) out.push("SEO記事設計");
-  if (aioRow.addable) out.push("AI検索での見え方（AIO）");
+  if (aioRow.addable) out.push(aioRow.current ? "AI検索での見え方（AIO）の測れなかった問い" : "AI検索での見え方（AIO）");
   const stale = staleFacebook(row, row.diagnosis as Diagnosis);
   if (stale.insights || stale.plan) out.push("Facebookの扱い（一般消費者向けの前提を反映したSNS分析）");
   return out;
@@ -106,7 +113,7 @@ export async function addMissingSections(id: string) {
   const d = row.diagnosis as Diagnosis;
   const site = (row.site as SiteScan | null) ?? null;
 
-  const aioAddable = (await ownedAio(id)).addable;
+  const { addable: aioAddable, current: aioCurrent } = await ownedAio(id);
 
   const provider = ((row.ai_provider as AiProvider | null) ?? "anthropic");
   after(() => withAi(provider, async () => {
@@ -196,11 +203,12 @@ export async function addMissingSections(id: string) {
         (async () => {
           const { data: m } = await admin.from("analyses").select("meo").eq("id", id).maybeSingle();
           const meo = ((m?.meo as MeoScan | null) ?? null);
-          const base = await buildAioPrompts(d, site, meo);
+          // 実測済みなら、測れなかった問いだけを測り直す（測れた問いは投げ直さない）
+          const base = aioCurrent ?? (await buildAioPrompts(d, site, meo));
           if (base.skipped) return;
           const until = Date.now() + 170_000;
-          const prompts = await Promise.all(base.prompts.map((p) => measureAioPrompt(p, base, until)));
-          if (!prompts.some((p) => p.status === "ok")) return;
+          const prompts = await Promise.all(base.prompts.map((p) => (p.status === "ok" ? p : measureAioPrompt(p, base, until))));
+          if (!prompts.some((p, i) => p.status === "ok" && base.prompts[i].status !== "ok")) return;
           patch.aio = await analyzeAio({ ...base, prompts, stage: "measured" }, d, site);
         })().catch(() => undefined)
       );

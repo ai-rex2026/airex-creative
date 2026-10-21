@@ -47,11 +47,9 @@ const CSS = `
 
 export function MobileNav({
   active,
-  hist,
   account,
 }: {
   active: "new" | "summary" | "analysis" | "stores" | "aio" | "sns" | "settings";
-  hist: MobileNavHist[];
   /** メールアドレス。ゲストなら「ゲスト」 */
   account: string;
 }) {
@@ -95,12 +93,14 @@ export function MobileNav({
               </button>
             </div>
 
-            <Link href="/analysis/new" className={`mnav-link${active === "new" ? " on" : ""}`} onClick={close}>
+            <div className="mnav-sec">全体レポート</div>
+            <Link href="/analysis/new" className={`mnav-link${active === "new" ? " on" : ""}`} style={{ paddingLeft: 24 }} onClick={close}>
               ✎ 新規分析
             </Link>
-            <Link href="/analysis" className={`mnav-link${active === "summary" ? " on" : ""}`} onClick={close}>
+            <Link href="/analysis" className={`mnav-link${active === "summary" ? " on" : ""}`} style={{ paddingLeft: 24 }} onClick={close}>
               ▤ 分析サマリー
             </Link>
+            <div style={{ height: 14 }} />
             <Link href="/stores" className={`mnav-link${active === "stores" ? " on" : ""}`} onClick={close}>
               ⌖ 店舗（MEO運用）
             </Link>
@@ -118,14 +118,6 @@ export function MobileNav({
             ].map(([href, label]) => (
               <Link key={href} href={href} className="mnav-link" style={{ paddingLeft: 32 }} onClick={close}>
                 {label}
-              </Link>
-            ))}
-
-            {hist.length > 0 && <div className="mnav-sec">最近の分析</div>}
-            {hist.map((h) => (
-              <Link key={h.id} href={h.to} className="mnav-hist" onClick={close}>
-                <span>{h.label}</span>
-                {h.text && <em>{h.text}</em>}
               </Link>
             ))}
 

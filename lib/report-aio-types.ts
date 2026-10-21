@@ -18,6 +18,8 @@ export type AioPromptResult = {
   /** 引用元に自社サイトのドメインが入ったか */
   ownCited?: boolean;
   queries?: string[];
+  /** Google 検索を使った回答か。false=検索を使わずAIの知識だけで答えた（引用元は無い） */
+  grounded?: boolean;
   answer?: string;
   model?: string;
   at?: string;

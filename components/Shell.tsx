@@ -3,18 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { IconArrowRight } from "./Chrome";
 import { MobileNav } from "./MobileNav";
 
-type HistRow = { id: string; url: string | null; status: string; diagnosis: { product?: string } | null };
-
-const PILL: Record<string, [string, string]> = {
-  queued: ["分析中", ""],
-  running: ["処理中", "run"],
-  done: ["完了", "ok"],
-  failed: ["失敗", "ng"],
-};
-
 /**
  * 管理画面の外枠。本番 /ja/analysis/* と同じく
- * 左に固定サイドバー（新規分析／分析サマリー／最近の分析）、上にアップグレード、
+ * 左に固定サイドバー（全体レポート〔新規分析／分析サマリー〕・店舗・AIO・SNS運用）、上にアップグレード、
  * ゲスト利用中は本登録を促す帯を出す。
  * 860px 以下ではサイドバーが上部バーに変わるので、ハンバーガーメニュー（MobileNav）で全項目を開く。
  */
@@ -41,18 +32,6 @@ export async function Shell({
     data: { user },
   } = await sb.auth.getUser();
 
-  const { data } = await sb
-    .from("analyses")
-    .select("id,url,status,diagnosis")
-    .order("created_at", { ascending: false })
-    .limit(8);
-  const hist = (data ?? []) as HistRow[];
-
-  const label = (h: HistRow) =>
-    h.diagnosis?.product?.slice(0, 22) ??
-    (h.url ? h.url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "分析");
-  const dest = (h: HistRow) => (h.status === "done" ? `/analysis/${h.id}/report` : `/analysis/${h.id}/waiting`);
-
   return (
     <div className="app">
       <nav className="side-nav">
@@ -64,12 +43,14 @@ export async function Shell({
 
         <MobileNav
           active={active}
-          hist={hist.map((h) => ({ id: h.id, to: dest(h), label: label(h), text: PILL[h.status]?.[0] ?? "" }))}
           account={user?.is_anonymous ? "ゲスト" : user?.email ?? "ユーザー"}
         />
 
-        <Link href="/analysis/new" className={`item${active === "new" ? " on" : ""}`}>✎ 新規分析</Link>
-        <Link href="/analysis" className={`item${active === "summary" ? " on" : ""}`}>▤ 分析サマリー</Link>
+        {/* 2026-10-21: URLから作るレポートの2項目を「全体レポート」の下にまとめ、店舗以下とは1行あける */}
+        <div className="item grp">▦ 全体レポート</div>
+        <Link href="/analysis/new" className={`item${active === "new" ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>✎ 新規分析</Link>
+        <Link href="/analysis" className={`item${active === "summary" ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>▤ 分析サマリー</Link>
+        <div className="gap" />
         <Link href="/stores" className={`item${active === "stores" ? " on" : ""}`}>⌖ 店舗（MEO運用）</Link>
         <Link href="/aio" className={`item${active === "aio" ? " on" : ""}`}>◎ AIO（AI検索対策）</Link>
         <Link href="/sns" className={`item${active === "sns" && !sub ? " on" : ""}`}>✦ SNS運用</Link>
@@ -79,23 +60,7 @@ export async function Shell({
           </Link>
         ))}
 
-        <div className="sec">
-          最近の分析
-          <Link href="/analysis">すべて</Link>
-        </div>
-        {hist.length === 0 ? (
-          <p className="empty">分析履歴はまだありません</p>
-        ) : (
-          hist.map((h) => {
-            const [text, cls] = PILL[h.status] ?? ["", ""];
-            return (
-              <Link key={h.id} href={dest(h)} className="hist">
-                <span>{label(h)}</span>
-                <em className={`pill ${cls}`} style={{ fontStyle: "normal" }}>{text}</em>
-              </Link>
-            );
-          })
-        )}
+        {/* 2026-10-21: 「最近の分析」は分析サマリーと重なるため出さない */}
 
         <Link href="/settings" className={`user${active === "settings" ? " on" : ""}`} style={{ textDecoration: "none" }}>
           <span className="av">{user?.is_anonymous ? "ゲ" : "ユー"}</span>
