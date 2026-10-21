@@ -455,6 +455,48 @@ export async function fetchPageMetrics(
   return { from: fmt(from), to: fmt(to), gscSite, ga4Property, pages: [...byUrl.values()], notes };
 }
 
+/** Search Console のプロパティの対象ホスト（sc-domain:example.com → example.com、https://www.example.com/ → example.com） */
+function propertyHost(siteUrl: string): string {
+  if (siteUrl.startsWith("sc-domain:")) return siteUrl.slice(10).toLowerCase();
+  try {
+    return new URL(siteUrl).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * 連携中のアカウントで見られるプロパティから、対象のサイトに当たるものを選ぶ（2026-10-21）。
+ * ドメインプロパティ（サブドメインも含む）を優先し、無ければ URL プレフィックスのプロパティ。
+ * 見つからないときは、何が見えていたかを添えて失敗させる（「見つかりません」だけでは原因が分からないため）
+ */
+async function pickGscSite(h: Record<string, string>, host: string): Promise<string> {
+  const res = await fetch("https://searchconsole.googleapis.com/webmasters/v3/sites", { headers: h, signal: AbortSignal.timeout(15000) });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = String(j.error?.message ?? res.status);
+    throw new Error(/insufficient|scope/i.test(msg) ? "Search Console を読む許可がありません。設定画面で連携を解除して、もう一度連携してください（許可の画面ですべてにチェックを入れます）" : `Search Console のサイト一覧を取れませんでした（${msg}）`);
+  }
+  const sites = ((j.siteEntry ?? []) as { siteUrl: string; permissionLevel?: string }[]).filter((s) => s.permissionLevel !== "siteUnverifiedUser").map((s) => s.siteUrl);
+  const h0 = host.toLowerCase().replace(/^www\./, "");
+  const hits = sites.filter((s) => {
+    const ph = propertyHost(s);
+    if (!ph) return false;
+    // ドメインプロパティはサブドメインも含む。URL プレフィックスはホストが一致するものだけ
+    return s.startsWith("sc-domain:") ? h0 === ph || h0.endsWith(`.${ph}`) : h0 === ph;
+  });
+  const pick = hits.find((s) => s.startsWith("sc-domain:")) ?? hits.find((s) => s.startsWith("https://")) ?? hits[0];
+  if (pick) return pick;
+  // どのアカウントの許可で読んでいるか（2026-10-21 以降の連携ならメールアドレスの許可がある）
+  const who = await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: h, signal: AbortSignal.timeout(8000) })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((x) => (x && typeof x.email === "string" ? `（連携中：${x.email}）` : "（連携中のアカウントは不明。2026-10-21 より前の連携のときは、設定画面で連携し直すとアカウントが表示されます）"))
+    .catch(() => "");
+  if (!sites.length) throw new Error(`連携中の Google アカウントでは、見られる Search Console のサイトがありません${who}`);
+  const seen = [...new Set(sites.map(propertyHost).filter(Boolean))].slice(0, 6).join("・");
+  throw new Error(`連携中の Google アカウントで見られるサイトの中に「${h0}」がありません${who}。見られるサイト：${seen}${sites.length > 6 ? " ほか" : ""}。対象の URL か、連携するアカウントを確かめてください`);
+}
+
 /**
  * Search Console：サイト全体の検索語の直近28日（2026-10-21・SEO運用の対策キーワード用）。
  * 対策キーワードの実測（表示・クリック・平均順位）に使うため、上位10件ではなく多めに取る。
@@ -464,18 +506,12 @@ export async function fetchGscQueries(
   refreshToken: string,
   url: string,
   opt: { chosenSite?: string | null; rowLimit?: number } = {}
-): Promise<{ site: string; from: string; to: string; rows: GscRow[] } | null> {
+): Promise<{ site: string; from: string; to: string; rows: GscRow[] }> {
   const token = await accessToken(refreshToken);
   const h = { authorization: `Bearer ${token}` };
   const host = new URL(url).host.replace(/^www\./, "");
   let site = opt.chosenSite ?? null;
-  if (!site) {
-    const listed = await fetch("https://searchconsole.googleapis.com/webmasters/v3/sites", { headers: h, signal: AbortSignal.timeout(15000) }).then((r) => r.json());
-    const sites = ((listed.siteEntry ?? []) as { siteUrl: string }[]).map((s) => s.siteUrl);
-    // ドメインプロパティ（sc-domain:）を優先し、無ければ URL プレフィックスのプロパティ
-    site = sites.find((s) => s === `sc-domain:${host}`) ?? sites.find((s) => s.includes(host)) ?? null;
-  }
-  if (!site) return null;
+  if (!site) site = await pickGscSite(h, host);
   const to = new Date(Date.now() - 2 * 864e5); // 直近2日ぶんは未確定
   const from = new Date(to.getTime() - 28 * 864e5);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);

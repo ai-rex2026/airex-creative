@@ -129,10 +129,6 @@ export async function syncKeywordGscAction(projectId: string): Promise<{ ok: tru
         notes.push(`${label}：${g.reason instanceof Error ? g.reason.message : "取得できませんでした"}`);
         continue;
       }
-      if (!g.value) {
-        notes.push(`${label}：連携中の Google アカウントで Search Console のサイトが見つかりませんでした`);
-        continue;
-      }
       const byQuery = new Map(g.value.rows.map((r) => [normKeyword(r.query), r]));
       // その語の書く先のサイトの数字を当てる（既存ページを直す語は自社サイト）
       const mine = list.filter((k) => (sites[i].target === "satellite" ? k.target === "satellite" : k.target !== "satellite"));
