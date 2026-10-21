@@ -542,7 +542,7 @@ function SatelliteCard({ project, channel }: { project: AioProject; channel: Aio
         <div className="flex flex-wrap items-center gap-3">
           <Btn variant="outline" size="sm" disabled={collecting !== null || busy} onClick={() => collect(f.items.map((x, i) => (x.facts.trim() ? -1 : i)).filter((i) => i >= 0))}>
             {collecting !== null ? <Icon name="loader" /> : null}
-            事実が空の商品をまとめて集める
+            事実が空欄の商品・サービスの情報をまとめて集める
           </Btn>
           <span className="text-[11px] text-[#A5A198]">公式サイトのトップと料金・機能・会社概要などのページ（最大5件）を読み、Google検索で公開情報を補います。1件あたり1〜2分かかります</span>
         </div>
