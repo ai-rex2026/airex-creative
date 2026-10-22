@@ -1,0 +1,24 @@
+name: apply-own
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/apply-own.yml"]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: apply
+        run: |
+          set -euo pipefail
+          cat .buildtmp/own/chunks/chunk-*.b64 | tr -d '\n\r ' | base64 -d | gunzip > /tmp/p.patch
+          echo "e65d08dcbf236332e408df2368a80a9888d6d2247702da02103206ad7b4ce27d  /tmp/p.patch" | sha256sum -c
+          git apply /tmp/p.patch
+          git rm -rq .buildtmp/own .github/workflows/apply-own.yml
+          git add -A
+          git config user.name suzuki
+          git config user.email suzuki.yuichiro.libertad@gmail.com
+          git commit -q -m "サテライト：運営者の商品をランキング1位に置く設定、事業内容をテーマに関わるものだけ、出典の無い値は要確認として入れる" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
+          git push origin HEAD:main
