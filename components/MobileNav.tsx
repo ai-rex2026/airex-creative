@@ -49,7 +49,7 @@ export function MobileNav({
   active,
   account,
 }: {
-  active: "new" | "summary" | "analysis" | "stores" | "seo" | "aio" | "sns" | "settings";
+  active: "new" | "summary" | "analysis" | "stores" | "seo" | "aio" | "affiliate" | "sns" | "settings";
   /** メールアドレス。ゲストなら「ゲスト」 */
   account: string;
 }) {
@@ -109,6 +109,12 @@ export function MobileNav({
             </Link>
             <Link href="/aio" className={`mnav-link${active === "aio" ? " on" : ""}`} onClick={close}>
               ◎ AIO（AI検索対策）
+            </Link>
+            <Link href="/affiliate" className={`mnav-link${active === "affiliate" ? " on" : ""}`} onClick={close}>
+              ◈ アフィリエイト運用
+            </Link>
+            <Link href="/affiliate/media" className="mnav-link" style={{ paddingLeft: 32 }} onClick={close}>
+              メディア台帳
             </Link>
             <Link href="/sns" className={`mnav-link${active === "sns" ? " on" : ""}`} onClick={close}>
               ✦ SNS運用
