@@ -517,6 +517,12 @@ function SatelliteCard({ project, channel }: { project: AioProject; channel: Aio
       <div className="mt-3">
         <Label>比較・ランキングの基準（任意）</Label>
         <Textarea rows={2} value={f.rankingBasis ?? ""} onChange={(e) => setF({ ...f, rankingBasis: e.target.value })} placeholder="例：料金の分かりやすさ／対応範囲／サポート体制／導入実績の公開状況。空なら記事ごとに基準を決めて、記事の中で先に示します" />
+        <label className="mt-2 flex items-start gap-1.5 text-xs text-[#6B6862]">
+          <input type="checkbox" className="mt-0.5" checked={f.ownFirst !== false} onChange={(e) => setF({ ...f, ownFirst: e.target.checked })} />
+          <span>
+            「運営者の商品」をランキングの1位に置く（「当メディアのおすすめ順」として書き、冒頭の PR 表記に「1位は運営者の商品」と自動で入れます。外すと、基準と事実だけで順位を付けます）
+          </span>
+        </label>
       </div>
       <div className="mt-4 space-y-2">
         <p className="text-xs font-semibold text-[#2E2D29]">比較する商品・サービス（運営者の商品と競合・{f.items.length}件）</p>

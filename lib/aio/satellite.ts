@@ -36,8 +36,9 @@ export function disclosureText(sat: AioSatellite, bodyMd: string, projectUrl: st
   if (own.length || linksOwn || aff) {
     const rel = sat.relation.trim() ? `（${sat.relation.trim()}）` : "";
     const names = own.length ? `記事内の${own.map((n) => `「${n}」`).join("・")}は運営者${rel}の商品・サービスです。` : linksOwn ? "記事内に運営者の商品・サービスへのリンクを含みます。" : "";
+    const firstText = sat.ownFirst !== false && own.length ? "記事内のランキングは、運営者の商品・サービスを1位に置いた当メディアのおすすめ順です。" : "";
     const affText = aff ? "記事内のリンクには広告（アフィリエイトリンク）を含み、リンク先での申し込み等により当メディアが報酬を受け取ることがあります。" : "";
-    return { pr: true, text: `PR：${base}${names}${affText}` };
+    return { pr: true, text: `PR：${base}${names}${firstText}${affText}` };
   }
   return { pr: false, text: base };
 }

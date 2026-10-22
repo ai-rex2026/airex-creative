@@ -15,7 +15,8 @@ import { fetchHtml, htmlToText } from "./net";
  * 表は人が確かめて直してから、本文を書く。外部は ComparisonDeps で差し替えて検証できる
  */
 
-export type CmpCell = { value: string; source: string | null; via: "site" | "search" | "manual" };
+/** via: site=公式サイト / search=検索（出典あり） / ai=出典の取れなかった AI の回答（人が確かめる前提。画面で「要確認」） / manual=手入力 */
+export type CmpCell = { value: string; source: string | null; via: "site" | "search" | "ai" | "manual" };
 export type CmpCells = Record<string, CmpCell>;
 export type SitePage = { url: string; kind: string; text: string };
 
@@ -228,6 +229,7 @@ const EXTRACT_SYSTEM = `あなたは比較メディアの調査担当です。�
 - 本文にはっきり書かれている値だけ。推測・言い換えで数字を作らない。書かれていない項目は value を空文字にする
 - 料金は条件（税込/税別・月額/初期費用など）も書く。会社情報（資本金・設立・所在地・従業員数など）は会社概要のページを優先して探す
 - 宣伝の数字（「No.1」「満足度98%」など）は「〜と記載」の形にする
+- 事業内容・提供サービス・強みなどは、記事のテーマに関わる事業だけを書く（その会社が他に展開している、テーマと関係ない事業は書かない）
 - value は60字以内。source はその値が書かれていたページの URL（与えられた URL のどれか）
 出力は JSON: {"cells":{"項目名":{"value":"…","source":"https://…"}}}`;
 
@@ -235,12 +237,13 @@ export async function extractCells(
   item: { name: string },
   columns: string[],
   pages: SitePage[],
-  deps: Pick<ComparisonDeps, "json">
+  deps: Pick<ComparisonDeps, "json">,
+  topic = ""
 ): Promise<CmpCells> {
   const body = pages.map((p) => `## ${p.kind}: ${p.url}\n${p.text}`).join("\n\n").slice(0, 50_000);
   const r = await deps.json<{ cells?: Record<string, { value?: unknown; source?: unknown }> }>(
     EXTRACT_SYSTEM,
-    `# 対象: ${item.name}\n# 比較項目: ${columns.join(" / ")}\n\n${body}`
+    `# 対象: ${item.name}\n${topic ? `# 記事のテーマ（事業内容はこれに関わるものだけ）: ${topic}\n` : ""}# 比較項目: ${columns.join(" / ")}\n\n${body}`
   );
   const urls = pages.map((p) => p.url);
   const out: CmpCells = {};
@@ -286,6 +289,8 @@ export async function searchMissing(
   const q = `「${item.name}」（公式サイト: ${item.url || "不明"}）の次の項目を調べてください：${missing.join("、")}`;
   const notes: string[] = [];
   let r: { text: string; sources: { uri: string; title: string }[] } | null = null;
+  // 出典の取れなかった回答も控えておき、どれも出典が取れなければ「要確認」として使う（人が後で確かめる前提）
+  let unsourced: string | null = null;
   // Gemini → 出典が無ければ「必ず検索する」と指示して1回だけやり直し → それでも無ければ Claude の Web 検索
   const tries: { fn: SearchFn | null; system: string; label: string }[] = [
     { fn: deps.search, system: SEARCH_SYSTEM, label: "Gemini" },
@@ -300,13 +305,24 @@ export async function searchMissing(
         r = got;
         break;
       }
+      if (!unsourced && got.text.trim()) unsourced = got.text;
       notes.push(`${t.label}：出典なし`);
     } catch (e) {
       notes.push(`${t.label}：${e instanceof Error ? e.message.slice(0, 80) : "失敗"}`);
     }
   }
   // 検索の根拠（出典）が取れなかった回答は使わない
-  if (!r) return { cells: {}, note: `検索の根拠（出典）が取れなかったため、検索の結果を使いませんでした（${notes.join(" / ")}）` };
+  if (!r) {
+    if (!unsourced) return { cells: {}, note: `検索で値を得られませんでした（${notes.join(" / ")}）` };
+    const out: CmpCells = {};
+    for (const line of unsourced.split("\n")) {
+      const p = parseSearchLine(line, missing);
+      if (p && !out[p.col]) out[p.col] = { value: p.value, source: "AIの回答（出典なし・要確認）", via: "ai" };
+    }
+    const left = missing.filter((c) => !out[c]);
+    const head = Object.keys(out).length ? `出典の取れなかった値（${Object.keys(out).join("・")}）は「要確認」として入れました` : "検索で値を得られませんでした";
+    return { cells: out, note: `${head}${left.length ? `。見つからなかった項目：${left.join("・")}` : ""}` };
+  }
   const src = [...new Set(r.sources.map((s) => s.title).filter(Boolean))].slice(0, 3).join("・") || "Google検索";
   const out: CmpCells = {};
   for (const line of r.text.split("\n")) {

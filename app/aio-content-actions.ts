@@ -151,7 +151,7 @@ export async function setAioSatelliteAction(projectId: string, input: AioSatelli
         if (!i.url) throw new Error(`「${i.name}」の公式サイトの URL を入れてください（記事内の公式サイトへのリンクを、公開時にアフィリエイトリンクに差し替えます）`);
       }
     }
-    const satellite: AioSatellite = { mediaName: t(input.mediaName, 80), theme: t(input.theme, 300), operator: t(input.operator, 120), relation: t(input.relation, 80), items, rankingBasis: t(input.rankingBasis, 400) };
+    const satellite: AioSatellite = { mediaName: t(input.mediaName, 80), theme: t(input.theme, 300), operator: t(input.operator, 120), relation: t(input.relation, 80), items, rankingBasis: t(input.rankingBasis, 400), ownFirst: input.ownFirst !== false };
     await upsertChannel(sb, projectId, "satellite", { satellite });
     refresh(projectId);
     return { ok: true };
@@ -278,7 +278,7 @@ export async function researchComparisonRowAction(comparisonId: string, rowId: s
             errs.push(...r.notes);
             await sb.from("aio_site_cache").upsert({ project_id: t.projectId, url: cacheKey, pages, fetched_at: now() }, { onConflict: "project_id,url" });
           }
-          cells = { ...(await extractCells({ name: row.name }, t.columns, pages, deps)), ...cells };
+          cells = { ...(await extractCells({ name: row.name }, t.columns, pages, deps, t.topic)), ...cells };
         } catch (e) {
           errs.push(`公式サイトから集められませんでした（${e instanceof Error ? e.message : "不明"}）`);
         }

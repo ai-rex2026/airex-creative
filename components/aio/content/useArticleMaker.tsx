@@ -178,7 +178,7 @@ export function PhaseNote({ phase, progress }: { phase: MakePhase; progress?: st
   );
 }
 
-const VIA: Record<string, string> = { site: "公式", search: "検索", manual: "手入力" };
+const VIA: Record<string, string> = { site: "公式", search: "検索", ai: "⚠ 要確認（出典なし）", manual: "手入力" };
 
 /** 比較表の下調べの確認・修正。直してから「この表で記事を書く」 */
 export function ComparisonReview({ maker }: { maker: ReturnType<typeof useArticleMaker> }) {
