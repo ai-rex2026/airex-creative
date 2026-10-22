@@ -1018,7 +1018,8 @@ export function Report({
             <span className="rule" />
           </div>
           <div className="rows measure">
-            {adOps.tags.map((t, i) => (
+            {/* LINE Tag（旧仕様）は作成済みの分析でも出さない（2026-10-22） */}
+            {adOps.tags.filter((t) => !t.name.startsWith("LINE Tag")).map((t, i) => (
               <div className="r" key={i}>
                 <span
                   className="st"

@@ -98,7 +98,7 @@ export function MobileNav({
               ✎ 新規分析
             </Link>
             <Link href="/analysis" className={`mnav-link${active === "summary" ? " on" : ""}`} style={{ paddingLeft: 24 }} onClick={close}>
-              ▤ 分析サマリー
+              ▤ 分析レポート作成履歴
             </Link>
             <div style={{ height: 14 }} />
             <Link href="/stores" className={`mnav-link${active === "stores" ? " on" : ""}`} onClick={close}>

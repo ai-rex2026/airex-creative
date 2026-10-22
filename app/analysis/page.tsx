@@ -7,7 +7,7 @@ import type { Analysis } from "@/lib/analysis";
 import { adConnections } from "@/app/ad-actions";
 import { AD_PLATFORMS } from "@/lib/ads/platforms";
 
-export const metadata = { title: "分析サマリー｜AI-REX Studio" };
+export const metadata = { title: "分析レポート作成履歴｜AI-REX Studio" };
 
 const PILL: Record<string, [string, string]> = {
   queued: ["分析中", ""],
@@ -33,7 +33,7 @@ export default async function AnalysisListPage() {
   return (
     <Shell active="summary">
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
-        <h2 style={{ fontSize: 20 }}>分析サマリー</h2>
+        <h2 style={{ fontSize: 20 }}>分析レポート作成履歴</h2>
         <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 6 }}>
           これまでに分析したサイトの一覧です。
         </p>

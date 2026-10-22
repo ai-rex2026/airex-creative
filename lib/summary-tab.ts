@@ -523,10 +523,13 @@ const LEDGER_RULES = `- **施策は【分析データで提案済みの打ち手
 /** すでに実施しているかを確かめられない施策のタイトルの頭に付ける語 */
 export const UNVERIFIED_PREFIX = "（もし未実施であれば）";
 
+/** 実施しているか確かめられない施策は、たいてい実施済み（例：指名検索の広告）なので効果「大」にしない（2026-10-22） */
+const capUnverified = (m: Measure): Measure => (m.impact === "大" ? { ...m, impact: "中" } : m);
+
 function withPrefix(m: Measure, unverified: boolean): Measure {
   if (!unverified) return { ...m, unverified: false };
   const title = m.title.startsWith(UNVERIFIED_PREFIX) ? m.title : `${UNVERIFIED_PREFIX}${m.title}`;
-  return { ...m, title, unverified: true };
+  return capUnverified({ ...m, title, unverified: true });
 }
 
 /** 分析データに無い施策の上限 */
@@ -559,7 +562,7 @@ export function supplementFromLedger(measures: Measure[], ledger: SourceItem[], 
  * 画面側（components/Measures.tsx）でも、作成済みの施策に同じ補正をかける
  */
 export function reconcileSources(m: Measure, speedShown = true): Measure {
-  if (m.outside) return m;
+  if (m.outside) return m.title.startsWith(UNVERIFIED_PREFIX) ? capUnverified(m) : m;
   const topic = topicSection(m.title, speedShown);
   let sources = m.sources ?? [];
   if (topic && sources.length > 0 && !sources.some((s) => s.anchor === topic.anchor)) {
@@ -567,7 +570,9 @@ export function reconcileSources(m: Measure, speedShown = true): Measure {
   }
   const allMeasured = sources.length > 0 && sources.every((s) => MEASURED_ANCHORS.has(s.anchor));
   const title = allMeasured && m.title.startsWith(UNVERIFIED_PREFIX) ? m.title.slice(UNVERIFIED_PREFIX.length) : m.title;
-  return { ...m, sources, title, unverified: allMeasured ? false : m.unverified };
+  const out = { ...m, sources, title, unverified: allMeasured ? false : m.unverified };
+  // 作成済みの分析にも同じ扱いをかける（画面側でもこの関数を通す）
+  return out.title.startsWith(UNVERIFIED_PREFIX) ? capUnverified(out) : out;
 }
 
 /**

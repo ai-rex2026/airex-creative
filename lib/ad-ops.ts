@@ -138,13 +138,7 @@ export function diagnoseTags(site: SiteScan | null, plan: MediaPlanItem[]): Meas
       need: used(/TikTok/i) ? "必須" : "参考",
       howTo: "TikTok Business Center → [ピクセル管理] → [ピクセルを作成]。ViewContent・Contact イベントを設定してください。",
     },
-    {
-      // LINE広告は Yahoo!広告に統合済み。専用タグの新規設置は勧めない（lib/ad-platforms.ts）
-      name: "LINE Tag（旧仕様）",
-      detected: has("LINE Tag"),
-      need: "推奨",
-      howTo: "LINE広告は Yahoo!広告に統合されています。新たに LINE Tag を設置する必要はなく、Yahoo!タグ（サイトジェネラルタグ）で計測してください。",
-    },
+    // LINE Tag（旧仕様）は出さない（2026-10-22）。LINE広告は Yahoo!広告に統合済みで、利用者が今できることが無いため
   ];
 
   const sanko = (n: string) => `${n}（広告手法一覧に含まれていません。広告配信対象とするか検討してください）`;
