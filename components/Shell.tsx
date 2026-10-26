@@ -47,15 +47,15 @@ export async function Shell({
         />
 
         {/* 2026-10-21: URLから作るレポートの2項目を「全体レポート」の下にまとめ、店舗以下とは1行あける */}
-        <div className="item grp">▦ 全体レポート</div>
-        <Link href="/analysis/new" className={`item${active === "new" ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>✎ 新規分析</Link>
-        <Link href="/analysis" className={`item${active === "summary" ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>▤ 分析レポート作成履歴</Link>
+        <div className="item grp">全体レポート</div>
+        <Link href="/analysis/new" className={`item${active === "new" ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>新規分析</Link>
+        <Link href="/analysis" className={`item${active === "summary" ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>分析レポート作成履歴</Link>
         <div className="gap" />
-        <Link href="/stores" className={`item${active === "stores" ? " on" : ""}`}>⌖ 店舗（MEO運用）</Link>
-        <Link href="/seo" className={`item${active === "seo" ? " on" : ""}`}>⌕ SEO運用</Link>
-        <Link href="/aio" className={`item${active === "aio" ? " on" : ""}`}>◎ AIO（AI検索対策）</Link>
-        <Link href="/affiliate" className={`item${active === "affiliate" ? " on" : ""}`}>◈ アフィリエイト運用</Link>
-        <Link href="/sns" className={`item${active === "sns" && !sub ? " on" : ""}`}>✦ SNS運用</Link>
+        <Link href="/stores" className={`item${active === "stores" ? " on" : ""}`}>店舗（MEO運用）</Link>
+        <Link href="/seo" className={`item${active === "seo" ? " on" : ""}`}>SEO運用</Link>
+        <Link href="/aio" className={`item${active === "aio" ? " on" : ""}`}>AIO（AI検索対策）</Link>
+        <Link href="/affiliate" className={`item${active === "affiliate" ? " on" : ""}`}>アフィリエイト運用</Link>
+        <Link href="/sns" className={`item${active === "sns" && !sub ? " on" : ""}`}>SNS運用</Link>
         {SNS_SUB.map((s) => (
           <Link key={s.key} href={s.href} className={`item${active === "sns" && sub === s.key ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>
             {s.label}

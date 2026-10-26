@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
 import { NavProgress } from "@/components/NavProgress";
-import { Poppins, Open_Sans, Noto_Sans_JP } from "next/font/google";
+import { Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
 
-// 本番 airex-ad.ai と同じ組み合わせ（見出し Poppins / 本文 Open Sans / 和文 Noto Sans JP）
-const display = Poppins({ variable: "--font-display", subsets: ["latin"], weight: ["600", "700"] });
-const body = Open_Sans({ variable: "--font-body", subsets: ["latin"], weight: ["400", "600"] });
+// C案1（基本形）: 書体は Noto Sans JP だけ
 const jp = Noto_Sans_JP({ variable: "--font-jp", subsets: ["latin"], weight: ["400", "500", "700"] });
 
 export const metadata: Metadata = {
@@ -25,7 +23,7 @@ export default function RootLayout({
   return (
     <html
       lang="ja"
-      className={`${display.variable} ${body.variable} ${jp.variable} h-full antialiased`}
+      className={`${jp.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <NavProgress />{children}</body>
