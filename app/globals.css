@@ -1094,3 +1094,12 @@ a.redo{text-decoration:none;display:inline-flex;align-items:center}
   display:inline-flex;align-items:center;gap:8px;padding:0;background:none;font-size:12px;font-weight:700;color:var(--head)}
 .catmini .cm.na b{color:var(--faint);font-weight:500}
 .mlist .imp.hi{background:var(--gold);color:var(--head);font-weight:700}
+
+/* ── 状態のタグ（良好・要改善など）も色の信号機にしない（C案1）。濃さと形で見分ける ──
+   良好=金の薄い地、標準・注意=無地、要改善・NG=濃い塗り */
+.tag.ok{background:#F6EFD9;color:#6E5518;border-color:#E3D6B4}
+.tag.warn{background:#fff;color:var(--head);border-color:var(--faint)}
+.tag.ng{background:var(--btn);color:#fff;border-color:var(--btn)}
+.rows .r .pill.ok,.side-nav .hist .pill.ok{background:#F6EFD9;color:#6E5518}
+.rows .r .pill.ng,.side-nav .hist .pill.ng{background:var(--btn);color:#fff}
+.side-nav .hist .pill.run{background:var(--sunk);color:var(--muted)}
