@@ -11,12 +11,13 @@ import type { AioProject } from "@/lib/aio/types";
  * SEO運用のワークスペース（2026-10-21 新設）。対象は AIO と同じ「会社（プロジェクト）」で、記事・文体・WordPress 連携を共有する。
  * 対策キーワード（全体レポートから取り込み、書く先と状態と順位を管理）／自社サイト記事（AIO から移設）／サテライトサイト／内部対策（AIO と共通のリスト）／効果と改善
  */
-export type SeoTab = "keywords" | "site" | "satellite" | "internal" | "results";
+export type SeoTab = "keywords" | "site" | "satellite" | "internal" | "links" | "results";
 export const SEO_TABS: { key: SeoTab; label: string; hint: string }[] = [
   { key: "keywords", label: "対策キーワード", hint: "狙う語・書く先・順位" },
   { key: "site", label: "自社サイト記事", hint: "コラムの記事を作って WordPress で公開" },
   { key: "satellite", label: "サテライトサイト", hint: "別ドメインの比較・解説メディア" },
   { key: "internal", label: "内部対策", hint: "自社サイト・LP でやること" },
+  { key: "links", label: "内部リンク", hint: "記事どうしのリンクの提案" },
   { key: "results", label: "効果と改善", hint: "Search Console の数字と改善案" },
 ];
 
