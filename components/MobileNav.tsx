@@ -95,26 +95,26 @@ export function MobileNav({
 
             <div className="mnav-sec">全体レポート</div>
             <Link href="/analysis/new" className={`mnav-link${active === "new" ? " on" : ""}`} style={{ paddingLeft: 24 }} onClick={close}>
-              ✎ 新規分析
+              新規分析
             </Link>
             <Link href="/analysis" className={`mnav-link${active === "summary" ? " on" : ""}`} style={{ paddingLeft: 24 }} onClick={close}>
-              ▤ 分析レポート作成履歴
+              分析レポート作成履歴
             </Link>
             <div style={{ height: 14 }} />
             <Link href="/stores" className={`mnav-link${active === "stores" ? " on" : ""}`} onClick={close}>
-              ⌖ 店舗（MEO運用）
+              店舗（MEO運用）
             </Link>
             <Link href="/seo" className={`mnav-link${active === "seo" ? " on" : ""}`} onClick={close}>
-              ⌕ SEO運用
+              SEO運用
             </Link>
             <Link href="/aio" className={`mnav-link${active === "aio" ? " on" : ""}`} onClick={close}>
-              ◎ AIO（AI検索対策）
+              AIO（AI検索対策）
             </Link>
             <Link href="/affiliate" className={`mnav-link${active === "affiliate" ? " on" : ""}`} onClick={close}>
-              ◈ アフィリエイト運用
+              アフィリエイト運用
             </Link>
             <Link href="/sns" className={`mnav-link${active === "sns" ? " on" : ""}`} onClick={close}>
-              ✦ SNS運用
+              SNS運用
             </Link>
             {[
               ["/sns/x", "X運用"],
