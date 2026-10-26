@@ -11,6 +11,8 @@ import { signImages } from "@/lib/aio/images";
 import { loadInternalTasks } from "@/lib/seo/internal-store";
 import { forTab } from "@/lib/seo/internal";
 import { loadKeywords } from "@/lib/seo/keyword-store";
+import { LinksPanel } from "@/components/seo/LinksPanel";
+import { loadLinkData } from "@/lib/seo/links/store";
 import { KeywordsPanel } from "@/components/seo/KeywordsPanel";
 import { sortKeywords, TARGET_LABEL } from "@/lib/seo/keywords";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -20,7 +22,7 @@ export const metadata = { title: "SEO運用｜AI-REX Studio" };
 // 記事の本文づくり・画像づくり・WordPress への送信・サイトの読み取りを1回の Action で行うので、実行時間を確保する
 export const maxDuration = 300;
 
-const TABS: SeoTab[] = ["keywords", "site", "satellite", "internal", "results"];
+const TABS: SeoTab[] = ["keywords", "site", "satellite", "internal", "links", "results"];
 
 export default async function SeoProjectPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; kw?: string }> }) {
   const { id } = await params;
@@ -75,6 +77,9 @@ export default async function SeoProjectPage({ params, searchParams }: { params:
     );
   } else if (tab === "internal") {
     body = <InternalPanel project={data.project} tasks={forTab(await loadInternalTasks(sb, id), "seo")} tab="seo" />;
+  } else if (tab === "links") {
+    const { pages, suggestions } = await loadLinkData(sb, id);
+    body = <LinksPanel project={data.project} pages={pages} suggestions={suggestions} />;
   } else {
     const [content, { data: gconn }, keywords] = await Promise.all([loadContent(sb, admin, id), sb.from("google_connections").select("user_id").eq("user_id", user.id).maybeSingle(), loadKeywords(sb, id)]);
     const ranked = sortKeywords(keywords).filter((k) => k.gsc.length > 0).slice(0, 30);
