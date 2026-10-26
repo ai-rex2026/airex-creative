@@ -511,6 +511,7 @@ export async function updateMediaAction(id: string, f: { name: string; operator:
     if (error) return { ok: false, error: error.message };
     revalidatePath(`/affiliate/media/${id}`);
     revalidatePath("/affiliate/media");
+    revalidatePath("/affiliate/[id]", "page");
     return { ok: true };
   } catch (e) {
     return failOf(e, "保存できませんでした");
@@ -526,6 +527,7 @@ export async function setNoSolicitationAction(id: string, on: boolean, reason: s
     if (on) await sb.from("aff_targets").update({ status: "excluded", status_reason: "営業お断り" }).eq("media_id", id).eq("status", "collected");
     revalidatePath(`/affiliate/media/${id}`);
     revalidatePath("/affiliate/media");
+    revalidatePath("/affiliate/[id]", "page");
     return { ok: true };
   } catch (e) {
     return failOf(e, "更新できませんでした");
@@ -546,6 +548,7 @@ export async function mergeMediaAction(fromId: string, intoId: string): Promise<
     }
     await sb.from("aff_media").delete().eq("id", fromId);
     revalidatePath("/affiliate/media");
+    revalidatePath("/affiliate/[id]", "page");
     return { ok: true };
   } catch (e) {
     return failOf(e, "統合できませんでした");
@@ -560,6 +563,7 @@ export async function addAspAction(domain: string, aspName: string): Promise<{ o
     const { error } = await sb.from("aff_asp_master").upsert({ user_id: userId, domain: d, asp_name: aspName.trim() }, { onConflict: "user_id,domain" });
     if (error) return { ok: false, error: error.message };
     revalidatePath("/affiliate/media");
+    revalidatePath("/affiliate/[id]", "page");
     return { ok: true };
   } catch (e) {
     return failOf(e, "追加できませんでした");
@@ -571,6 +575,7 @@ export async function deleteAspAction(id: string): Promise<{ ok: true } | Fail> 
     const { sb } = await ctx();
     await sb.from("aff_asp_master").delete().eq("id", id);
     revalidatePath("/affiliate/media");
+    revalidatePath("/affiliate/[id]", "page");
     return { ok: true };
   } catch (e) {
     return failOf(e, "削除できませんでした");

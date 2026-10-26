@@ -54,8 +54,7 @@ export async function Shell({
         <Link href="/stores" className={`item${active === "stores" ? " on" : ""}`}>⌖ 店舗（MEO運用）</Link>
         <Link href="/seo" className={`item${active === "seo" ? " on" : ""}`}>⌕ SEO運用</Link>
         <Link href="/aio" className={`item${active === "aio" ? " on" : ""}`}>◎ AIO（AI検索対策）</Link>
-        <Link href="/affiliate" className={`item${active === "affiliate" && sub !== "media" ? " on" : ""}`}>◈ アフィリエイト運用</Link>
-        <Link href="/affiliate/media" className={`item${active === "affiliate" && sub === "media" ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>メディア台帳</Link>
+        <Link href="/affiliate" className={`item${active === "affiliate" ? " on" : ""}`}>◈ アフィリエイト運用</Link>
         <Link href="/sns" className={`item${active === "sns" && !sub ? " on" : ""}`}>✦ SNS運用</Link>
         {SNS_SUB.map((s) => (
           <Link key={s.key} href={s.href} className={`item${active === "sns" && sub === s.key ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>

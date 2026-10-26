@@ -9,6 +9,7 @@ import { hasDataForSeo } from "@/lib/affiliate/dataforseo";
 import { CollectPanel, type KwRow } from "@/components/affiliate/CollectPanel";
 import { BoardView } from "@/components/affiliate/BoardView";
 import { InfoForm } from "@/components/affiliate/InfoForm";
+import { MediaLedger } from "@/components/affiliate/MediaLedger";
 import { SuggestPanel, type SuggestRow } from "@/components/affiliate/SuggestPanel";
 
 export const metadata = { title: "アフィリエイト運用｜AI-REX Studio" };
@@ -19,6 +20,7 @@ const TABS = [
   ["collect", "収集"],
   ["board", "陣取りボード"],
   ["info", "案件情報"],
+  ["media", "メディア台帳"],
   ["cost", "AIコスト"],
 ] as const;
 
@@ -78,6 +80,8 @@ export default async function CampaignPage({ params, searchParams }: { params: P
     body = <BoardView campaignId={id} grouped={board.grouped} keywords={board.keywords} />;
   } else if (tab === "info") {
     body = <InfoForm id={id} brief={brief} />;
+  } else if (tab === "media") {
+    body = <MediaLedger sb={sb} campaignId={id} />;
   } else {
     const cost = await loadCampaignCost(sb, id);
     body = (

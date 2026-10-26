@@ -53,7 +53,7 @@ export function BoardView({ campaignId, grouped, keywords }: { campaignId: strin
                     <td style={{ padding: "6px 8px" }}>{r.rank ?? ""}</td>
                     <td style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>{r.resultTypeLabel}</td>
                     <td style={{ padding: "6px 8px" }}>
-                      {r.mediaId ? <Link href={`/affiliate/media/${r.mediaId}`}>{r.mediaName || r.mediaDomain}</Link> : r.mediaName}
+                      {r.mediaId ? <Link href={`/affiliate/media/${r.mediaId}?c=${campaignId}`}>{r.mediaName || r.mediaDomain}</Link> : r.mediaName}
                     </td>
                     <td style={{ padding: "6px 8px", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {r.articleUrl ? <a href={r.articleUrl} target="_blank" rel="noreferrer" title={r.articleTitle}>{r.articleTitle || r.articleUrl}</a> : ""}

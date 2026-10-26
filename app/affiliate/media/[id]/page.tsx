@@ -6,8 +6,10 @@ import { MediaEditor } from "@/components/affiliate/MediaEditor";
 
 export const metadata = { title: "メディア｜アフィリエイト運用" };
 
-export default async function MediaPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function MediaPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ c?: string }> }) {
   const { id } = await params;
+  const { c } = await searchParams;
+  const back = c && /^[0-9a-f-]{36}$/i.test(c) ? `/affiliate/${c}?tab=media` : "/affiliate";
   const sb = await createClient();
   const {
     data: { user },
@@ -23,9 +25,9 @@ export default async function MediaPage({ params }: { params: Promise<{ id: stri
   ]);
 
   return (
-    <Shell active="affiliate" sub="media">
+    <Shell active="affiliate">
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
-        <p style={{ fontSize: 12.5 }}><Link href="/affiliate/media">← メディア台帳</Link></p>
+        <p style={{ fontSize: 12.5 }}><Link href={back}>← メディア台帳</Link></p>
         <h2 style={{ fontSize: 20, marginTop: 6 }}>{(m.name as string) || (m.domain as string)}</h2>
         <p style={{ fontSize: 13, color: "var(--muted)" }}>{m.domain as string}</p>
         <MediaEditor
