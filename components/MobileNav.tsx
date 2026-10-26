@@ -113,9 +113,6 @@ export function MobileNav({
             <Link href="/affiliate" className={`mnav-link${active === "affiliate" ? " on" : ""}`} onClick={close}>
               ◈ アフィリエイト運用
             </Link>
-            <Link href="/affiliate/media" className="mnav-link" style={{ paddingLeft: 32 }} onClick={close}>
-              メディア台帳
-            </Link>
             <Link href="/sns" className={`mnav-link${active === "sns" ? " on" : ""}`} onClick={close}>
               ✦ SNS運用
             </Link>
