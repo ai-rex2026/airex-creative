@@ -2,7 +2,7 @@
 export function RealBadge({ label = "実データで分析" }: { label?: string }) {
   return (
     <span className="tag ok" style={{ marginLeft: 10, fontSize: 11, fontWeight: 500, verticalAlign: "middle" }}>
-      🟢{label}
+      {label}
     </span>
   );
 }

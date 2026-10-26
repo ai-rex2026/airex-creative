@@ -472,7 +472,7 @@ export function Report({
           {" "}
           <b>{x.platform}</b>
           {hasRealData(m) ? (
-            <span className="tag ok" style={{ marginLeft: 6 }}>🟢実データ取得済み</span>
+            <span className="tag ok" style={{ marginLeft: 6 }}>実データ取得済み</span>
           ) : (
             <span className="tag" style={{ marginLeft: 6 }}>⚪データ未取得</span>
           )}
@@ -1771,13 +1771,13 @@ export function Report({
                     )}
                     {b.si && (
                       <div style={{ marginTop: 10 }}>
-                        <p className="eyebrow">SNS分析{hasRealData(findAcct(b.platform, b.info?.url)) && <span className="tag ok" style={{ marginLeft: 6 }}>🟢実データで分析</span>}</p>
+                        <p className="eyebrow">SNS分析{hasRealData(findAcct(b.platform, b.info?.url)) && <span className="tag ok" style={{ marginLeft: 6 }}>実データで分析</span>}</p>
                         <GuestMask guest={isGuest} label="SNS分析は会員登録で確認できます">{renderSI(b.si)}</GuestMask>
                       </div>
                     )}
                     {b.ch && (
                       <div style={{ marginTop: 10 }}>
-                        <p className="eyebrow">SNS運用プラン{hasRealData(findAcct(b.platform, b.info?.url)) && <span className="tag ok" style={{ marginLeft: 6 }}>🟢実データで分析</span>}</p>
+                        <p className="eyebrow">SNS運用プラン{hasRealData(findAcct(b.platform, b.info?.url)) && <span className="tag ok" style={{ marginLeft: 6 }}>実データで分析</span>}</p>
                         <GuestMask guest={isGuest} label="SNS運用プランは会員登録で確認できます">
                           <SnsChannelBlock c={b.ch} />
                         </GuestMask>

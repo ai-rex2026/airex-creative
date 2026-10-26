@@ -174,7 +174,7 @@ export function Inputs({
               ) : (
                 usesFollowerCount && m && <FollowerEdit id={id} url={s.url} label={`${label}数`} />
               )}
-              <span className={`tag${m?.readable ? " ok" : ""}`}>{m?.readable ? "🟢実データで分析" : "検出"}</span>
+              <span className={`tag${m?.readable ? " ok" : ""}`}>{m?.readable ? "実データで分析" : "検出"}</span>
               {/* アカウント連携（OAuth）は未実装。LINEはデータ取得APIが無いため対象外。
                   実装までは押せない見た目にして「対応予定」であることだけ伝える */}
               {s.platform !== "LINE" && (
