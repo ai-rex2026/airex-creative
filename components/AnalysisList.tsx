@@ -1,5 +1,6 @@
 "use client";
 
+import { ScoreBars } from "@/components/ScoreBars";
 import { useState } from "react";
 import Link from "next/link";
 import type { Analysis } from "@/lib/analysis";
@@ -92,7 +93,7 @@ export function AnalysisList({ rows, adNames = [], isGuest = false }: { rows: An
                           return (
                             <div className={`cm ${tone}`} key={ev.category}>
                               <span>{ev.category}</span>
-                              <b>{ev.score ?? "分析不可"}</b>
+                              <b><ScoreBars score={ev.score} />{ev.score ?? "分析不可"}</b>
                             </div>
                           );
                         })}
