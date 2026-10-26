@@ -1,5 +1,6 @@
 "use client";
 
+import { ScoreBars } from "@/components/ScoreBars";
 import { useState, useTransition } from "react";
 import { makeRunbook, regenerateSummaryTab, toggleMeasure } from "@/app/actions";
 import type { Measure } from "@/lib/measures";
@@ -30,7 +31,7 @@ function CategoryCard({ ev, onNavigate }: { ev: CategoryEvaluation; onNavigate: 
   const body = (
     <>
       <b>{ev.category}</b>
-      <span className="sc">{ev.score === null ? "分析不可" : SCORE_LABEL[ev.score]}</span>
+      <span className="sc"><ScoreBars score={ev.score} />{ev.score === null ? "分析不可" : SCORE_LABEL[ev.score]}</span>
       <small>{ev.basis}</small>
     </>
   );

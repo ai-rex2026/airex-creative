@@ -1080,3 +1080,17 @@ a.redo{text-decoration:none;display:inline-flex;align-items:center}
 .crop .grid9 button.on{border-color:var(--btn);background:var(--btn)}
 .crop small{font-size:11px;color:var(--faint)}
 .crop .row input[type="range"]{flex:1;min-width:140px;accent-color:var(--btn)}
+
+
+/* ── 強・標準・弱は3本の棒（C案1）。緑・黄・赤の信号機にしない ── */
+.bars{display:inline-flex;gap:3px;align-items:center}
+.bars i{display:block;width:16px;height:4px;border-radius:1px;background:var(--line)}
+.bars i.f{background:var(--gold)}
+.bars.na i{background:transparent;border:1px dashed #C9C4B8}
+.cat-card .sc,.cat-card.ok .sc,.cat-card.warn .sc,.cat-card.ng .sc,.cat-card.na .sc{
+  display:flex;align-items:center;gap:8px;padding:0;background:none;font-size:13px;font-weight:700;color:var(--head)}
+.cat-card.na .sc{color:var(--faint);font-weight:500}
+.catmini .cm b,.catmini .cm.ok b,.catmini .cm.warn b,.catmini .cm.ng b{
+  display:inline-flex;align-items:center;gap:8px;padding:0;background:none;font-size:12px;font-weight:700;color:var(--head)}
+.catmini .cm.na b{color:var(--faint);font-weight:500}
+.mlist .imp.hi{background:var(--gold);color:var(--head);font-weight:700}
