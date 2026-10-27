@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { defaultComparisonDeps, claudeSearch } from "./comparison";
-import { decodeEntities, fetchHtml, htmlToText } from "./net";
+import { decodeEntities, fetchHtml, htmlToText, publicFetch } from "./net";
+import { geminiGenerate, hasGemini } from "../gemini";
 import { normalizeJapanese } from "../meo-ops/japanese";
 import type { AioProject } from "./types";
 
@@ -33,6 +34,8 @@ export const NOTE_REF_COLUMNS = "id, url, theme, title, author, likes, headings,
 export const REFRESH_DAYS = 7;
 const MAX_THEMES = 4;
 const PER_THEME = 6;
+/** 検索で見つけた記事を対象ごとに残す本数（スキの多い順） */
+const MAX_KEEP = 60;
 
 export function rowToNoteRef(r: Record<string, unknown>): NoteRef {
   return {
@@ -91,17 +94,39 @@ export function parseNotePage(html: string, url: string) {
 export type NoteRefDeps = {
   fetchPage: (url: string) => Promise<{ html: string; finalUrl: string }>;
   json: <T>(system: string, user: string) => Promise<T>;
-  /** Web 検索（本文と出典の URL）。note の記事 URL を拾う */
-  search: ((system: string, question: string) => Promise<{ text: string; sources: { uri: string; title: string }[] }>) | null;
+  /** Web 検索（本文と出典の URL）。note の記事 URL を拾う。まず安い Gemini（Google 検索つき）、URL が取れなければ searchFallback */
+  search: SearchFn | null;
+  /** Claude の Web 検索（出典が実際のページの URL で返る） */
+  searchFallback: SearchFn | null;
+  /** Gemini の出典（Google の中継 URL）を、転送先の実際の URL にする */
+  resolve: (uri: string) => Promise<string | null>;
 };
+type SearchFn = (system: string, question: string) => Promise<{ text: string; sources: { uri: string; title: string }[] }>;
+
+/** 中継 URL を1回だけ問い合わせ、転送先（Location）を返す。本文は読まない */
+async function resolveRedirect(uri: string): Promise<string | null> {
+  try {
+    const res = await publicFetch(uri, { maxRedirects: 0, timeoutMs: 8_000 });
+    return res.headers.get("location");
+  } catch (e) {
+    return (e as { redirectTo?: string }).redirectTo ?? null;
+  }
+}
 
 export const defaultNoteRefDeps = (): NoteRefDeps => {
   const c = defaultComparisonDeps();
   return {
     fetchPage: (url) => fetchHtml(url, { browserUa: true, timeoutMs: 12_000 }),
     json: c.json,
-    // 出典の URL が実際のページの URL で返る Claude の Web 検索を使う（Gemini の出典は Google の中継 URL で、note の URL が取れない）
-    search: process.env.ANTHROPIC_API_KEY ? claudeSearch : null,
+    // 費用の安い Gemini（Google 検索。月5,000回まで無料）を先に使い、note の URL が取れなかったテーマだけ Claude の Web 検索
+    search: hasGemini()
+      ? async (system, question) => {
+          const r = await geminiGenerate({ system, parts: [{ text: question }], maxTokens: 2000, search: true, timeoutMs: 90_000 });
+          return { text: r.text, sources: (r.grounding?.sources ?? []).map((s) => ({ uri: s.uri, title: s.title })) };
+        }
+      : null,
+    searchFallback: process.env.ANTHROPIC_API_KEY ? claudeSearch : null,
+    resolve: resolveRedirect,
   };
 };
 
@@ -122,10 +147,26 @@ const SEARCH_SYSTEM = `あなたは note の記事を探す調査担当です。
 - 指定のテーマについて、よく読まれている・スキが多い記事を優先する
 - 見つけた記事の URL を1行に1つ、最大${PER_THEME}件書く。URL 以外は書かない`;
 
-export async function searchNoteArticles(theme: string, deps: Pick<NoteRefDeps, "search">): Promise<string[]> {
-  if (!deps.search) return [];
-  const r = await deps.search(SEARCH_SYSTEM, `テーマ「${theme}」の note 記事を探してください（site:note.com）`);
-  return [...new Set([...findNoteUrls(r.text), ...findNoteUrls(r.sources.map((s) => s.uri).join("\n"))])].slice(0, PER_THEME);
+export async function searchNoteArticles(theme: string, deps: Pick<NoteRefDeps, "search" | "searchFallback" | "resolve">): Promise<string[]> {
+  const q = `テーマ「${theme}」の note 記事を探してください（site:note.com）`;
+  const fromResult = async (r: { text: string; sources: { uri: string; title: string }[] }) => {
+    const urls = [...findNoteUrls(r.text), ...findNoteUrls(r.sources.map((s) => s.uri).join("\n"))];
+    // Gemini の出典は Google の中継 URL。出典のサイトが note のものだけ、転送先を確かめて記事の URL にする
+    const relay = r.sources.filter((s) => !noteArticleUrl(s.uri) && /note\.com/i.test(s.title)).slice(0, PER_THEME * 2);
+    const resolved = await Promise.allSettled(relay.map((s) => deps.resolve(s.uri)));
+    for (const x of resolved) if (x.status === "fulfilled" && x.value) urls.push(...findNoteUrls(x.value));
+    return [...new Set(urls)].slice(0, PER_THEME);
+  };
+  let urls: string[] = [];
+  if (deps.search) {
+    try {
+      urls = await fromResult(await deps.search(SEARCH_SYSTEM, q));
+    } catch {
+      /* Claude で探す */
+    }
+  }
+  if (!urls.length && deps.searchFallback) urls = await fromResult(await deps.searchFallback(SEARCH_SYSTEM, q));
+  return urls;
 }
 
 /** 1件を読んで保存する（pending → done / error） */
@@ -191,6 +232,12 @@ export async function refreshNoteRefs(
     if (Date.now() > opt.deadline - 20_000) break;
     await fetchNoteRef(sb, r.id, r.url, deps);
     read++;
+  }
+  // 溜まりすぎないよう、検索で見つけた記事はスキの多い順に MAX_KEEP 本だけ残す（人が貼った記事は消さない）
+  if (due) {
+    const { data: all } = await sb.from("aio_note_refs").select("id, likes").eq("project_id", project.id).eq("source", "search").order("likes", { ascending: false, nullsFirst: false }).limit(500);
+    const drop = ((all ?? []) as { id: string }[]).slice(MAX_KEEP).map((r) => r.id);
+    if (drop.length) await sb.from("aio_note_refs").delete().in("id", drop);
   }
   return { searched: due, themes, added, read, notes };
 }

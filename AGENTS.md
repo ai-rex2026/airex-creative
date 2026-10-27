@@ -104,7 +104,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - WordPress のアプリケーションパスワードは `aio_wp_connections`（本人のセッションからは読めない表）に `sealToken` で暗号化して保存。`AD_TOKEN_ENC_KEY` が無いと連携できない
 - note の非公式 API は使わない（投稿は人。数字は手入力・貼り付け）
 - note 記事の推敲（2026-10-27・`lib/aio/humanize.ts`・`polishAioArticleAction`）：書いた直後に、AIっぽさを消す8工程（バレ箇所→語尾→まとめすぎ→前置き→体験の一言→文のリズム→日常語→読者目線の検品）を1回の AI 呼び出しで順にかけ、本文を保存してから表現チェックをかけ直す。体験の一言の金額・失敗は与えられた事実だけで、無ければ【要記入：…】を置き人が埋める（コピー時に注意を出す）。短すぎ・見出しが消えた結果は捨てて下書きのまま。記事のカードの「推敲し直す」で何度でも
-- note の参考にする人気記事（2026-10-27・`lib/aio/note-refs.ts`・`/api/cron/aio-note-refs` 毎日 3:20 JST）：前回から7日たった対象だけ、テーマ決め（AI 1回）→ テーマごとに Claude の Web 検索で note.com の記事 URL を探す（Gemini の出典は Google の中継 URL で note の URL が取れないため）→ 記事の公開ページを1本ずつ読み、埋め込みの `likeCount`（その記事の key の後ろの最初のもの）・見出し・冒頭を `aio_note_refs` に保存。note の `/search` と `/api` は robots.txt で禁止なので読まない（記事ページ `/:user/n/:key` は許可）。人が貼った URL は source=manual。検索済みの URL は pending で残り、検索はやり直さない。記事を書くとき、manual → スキの多い順に最大6本を「切り口・見出しの型」の参考として渡す（文章はまねない）
+- note の参考にする人気記事（2026-10-27・`lib/aio/note-refs.ts`・`/api/cron/aio-note-refs` 毎日 3:20 JST）：前回から7日たった対象だけ、テーマ決め（AI 1回）→ テーマごとに Web 検索で note.com の記事 URL を探す（まず Gemini の Google 検索。出典の中継 URL は1回だけ問い合わせて転送先＝記事 URL にする。取れなければ Claude の Web 検索）→ 記事の公開ページを1本ずつ読み、埋め込みの `likeCount`（その記事の key の後ろの最初のもの）・見出し・冒頭を `aio_note_refs` に保存。note の `/search` と `/api` は robots.txt で禁止なので読まない（記事ページ `/:user/n/:key` は許可）。人が貼った URL は source=manual。検索済みの URL は pending で残り、検索はやり直さない。記事を書くとき、manual → スキの多い順に最大6本を「切り口・見出しの型」の参考として渡す（文章はまねない）。検索で見つけた記事は対象ごとにスキの多い順に60本だけ残す（manual は消さない）
 
 ## SNS運用（媒体ごとの運用）（2026-10-16 追記）
 
