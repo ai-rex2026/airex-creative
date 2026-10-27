@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/sns-ops",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/aio-note-refs",
+      "schedule": "20 18 * * *"
     }
   ]
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   analyzeAioChannelAction,
   buildAioStrategyAction,
@@ -9,6 +9,10 @@ import {
   disconnectAioWordPressAction,
   listAioWpCategoriesAction,
   setAioChannelSourceAction,
+  loadNoteRefsAction,
+  addNoteRefAction,
+  deleteNoteRefAction,
+  refreshNoteRefsAction,
   setAioSatelliteAction,
   collectSatelliteFactsAction,
   setAioWpCategoryAction,
@@ -19,6 +23,7 @@ import { ArticleCard } from "@/components/aio/content/ArticleCard";
 import { ComparisonReview, PhaseNote, useArticleMaker } from "@/components/aio/content/useArticleMaker";
 import type { AioArticle, AioChannel, AioChannelKind, AioContentReview, AioSatellite, AioSatelliteItem, AioWpInfo } from "@/lib/aio/content-types";
 import type { AioProject } from "@/lib/aio/types";
+import type { NoteRef } from "@/lib/aio/note-refs";
 import type { SeoKeyword } from "@/lib/seo/keywords";
 
 /**
@@ -63,6 +68,7 @@ export function ChannelPanel({
     <div className="space-y-6">
       {isSat && <SatelliteCard project={project} channel={channel} />}
       <SourceCard project={project} kind={kind} channel={channel} />
+      {isNote && channel && <NoteRefsCard project={project} />}
       {!isNote && channel && <WordPressCard project={project} kind={kind} wp={wp} hasSource={channel.hasSource} />}
 
       <Card>
@@ -566,6 +572,94 @@ function SatelliteCard({ project, channel }: { project: AioProject; channel: Aio
           保存する
         </Btn>
       </div>
+    </Card>
+  );
+}
+
+/**
+ * note の「参考にする人気記事」（2026-10-27）。週1回、事業のテーマで note の記事を検索してスキ数・見出しを読み（自動）、
+ * 人が貼った記事も同じように読む。記事を書くとき、人が選んだ記事 → スキの多い順に最大6本を「切り口・見出しの型」の参考として渡す
+ */
+function NoteRefsCard({ project }: { project: AioProject }) {
+  const [refs, setRefs] = useState<NoteRef[]>([]);
+  const [lastAt, setLastAt] = useState<string | null>(null);
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const load = async () => {
+    const r = await loadNoteRefsAction(project.id);
+    if (r.ok) {
+      setRefs(r.refs);
+      setLastAt(r.lastAt);
+    }
+  };
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]);
+  const run = async (key: string, fn: () => Promise<{ ok: boolean; error?: string }>, ok: (r: never) => string) => {
+    setBusy(key);
+    setError(null);
+    setInfo(null);
+    const r = await fn();
+    setBusy(null);
+    if (!r.ok) return setError(r.error ?? "うまくいきませんでした");
+    setInfo(ok(r as never));
+    await load();
+  };
+  const done = refs.filter((r) => r.status === "done");
+  return (
+    <Card>
+      <SectionTitle>参考にする人気の note 記事</SectionTitle>
+      <p className="mt-1 text-xs leading-relaxed text-[#8B877F]">
+        週1回、事業のテーマで note の記事を検索し、スキ数・見出し・冒頭を読んでおきます。記事を書くときは、ここで選んだ記事 → スキの多い順に最大6本を、切り口と見出しの型の参考にします（文章はまねません）。
+        {lastAt ? `前回の検索：${new Date(lastAt).toLocaleDateString("ja-JP")}` : "まだ検索していません"}
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Input className="min-w-[260px] flex-1" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="参考にしたい note 記事の URL（https://note.com/…/n/…）" />
+        <Btn size="sm" disabled={busy !== null || !url.trim()} onClick={() => run("add", () => addNoteRefAction(project.id, url).then((r) => (r.ok && setUrl(""), r)), () => "追加して、スキ数と見出しを読みました")}>
+          {busy === "add" ? <Icon name="loader" /> : null}追加
+        </Btn>
+        <Btn
+          size="sm"
+          variant="outline"
+          disabled={busy !== null}
+          onClick={() =>
+            run("refresh", () => refreshNoteRefsAction(project.id), (r: { themes: string[]; added: number; read: number; notes: string[] }) =>
+              `テーマ「${r.themes.join("・")}」で ${r.added} 本見つけ、${r.read} 本を読みました${r.notes.length ? `（${r.notes.join(" / ")}）` : ""}`
+            )
+          }
+        >
+          {busy === "refresh" ? <Icon name="loader" /> : null}
+          {busy === "refresh" ? "調べています（2〜4分）" : "今すぐ調べる"}
+        </Btn>
+      </div>
+      {error && <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>}
+      {info && <p className="mt-3 rounded-xl bg-[#EAF3EE] px-3 py-2 text-xs text-[#2F6B4A]">{info}</p>}
+      {refs.length > 0 && (
+        <ul className="mt-3 divide-y divide-[#F0EEEA] text-xs">
+          {refs.slice(0, 30).map((r) => (
+            <li key={r.id} className="flex items-start gap-2 py-2">
+              <span className="w-14 shrink-0 text-right font-semibold text-[#2E2D29]">{r.likes !== null ? `スキ ${r.likes}` : "—"}</span>
+              <div className="min-w-0 flex-1">
+                <a href={r.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2E2D29] underline">
+                  {r.title || r.url}
+                </a>
+                <p className="text-[11px] text-[#8B877F]">
+                  {r.source === "manual" ? "選んだ記事" : `テーマ：${r.theme}`}
+                  {r.author ? `・${r.author}` : ""}
+                  {r.status === "pending" ? "・まだ読んでいません" : r.status === "error" ? `・読めませんでした（${r.error ?? ""}）` : r.headings.length ? `・見出し ${r.headings.length}個` : ""}
+                </p>
+              </div>
+              <button type="button" className="shrink-0 text-[11px] text-[#8B877F] underline" disabled={busy !== null} onClick={() => run(`del-${r.id}`, () => deleteNoteRefAction(project.id, r.id), () => "外しました")}>
+                外す
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {refs.length > 0 && <p className="mt-2 text-[11px] text-[#A5A198]">読めた記事 {done.length} 本／全 {refs.length} 本</p>}
     </Card>
   );
 }

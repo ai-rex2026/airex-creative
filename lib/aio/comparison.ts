@@ -32,7 +32,7 @@ export type ComparisonDeps = {
 type SearchFn = (system: string, question: string) => Promise<{ text: string; sources: { uri: string; title: string }[] }>;
 
 /** Claude Haiku の Web 検索。回答の引用（citations）を出典にする */
-async function claudeSearch(system: string, question: string) {
+export async function claudeSearch(system: string, question: string) {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const res = (await client.messages.create(
     {

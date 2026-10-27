@@ -11,6 +11,7 @@ import { ARTICLE_COLUMNS, CHANNEL_COLUMNS, METRIC_COLUMNS, rowToArticle, rowToCh
 import { analyzeStyle, buildStrategy, collectArticles, measure, noteUser } from "@/lib/aio/style";
 import { draftArticle, guardArticle, type ArticleBrief } from "@/lib/aio/article";
 import { polishNote } from "@/lib/aio/humanize";
+import { NOTE_REF_COLUMNS, defaultNoteRefDeps, fetchNoteRef, noteArticleUrl, noteRefsForDraft, refreshNoteRefs, rowToNoteRef, type NoteRef } from "@/lib/aio/note-refs";
 import { defaultImageDeps, downloadImage, fillImages } from "@/lib/aio/images";
 import { discoverWpApi, wpSavePost, wpUploadImage, wpVerify, type WpConn } from "@/lib/aio/wordpress";
 import { sendToWordPress, type WpMedia } from "@/lib/aio/publish";
@@ -338,6 +339,65 @@ export async function saveComparisonAction(
   }
 }
 
+// ── note の参考にする人気記事（2026-10-27） ─────────────────────
+
+export async function loadNoteRefsAction(projectId: string): Promise<{ ok: true; refs: NoteRef[]; lastAt: string | null } | ActionFail> {
+  try {
+    const { sb } = await owned(projectId);
+    const [{ data }, { data: ch }] = await Promise.all([
+      sb.from("aio_note_refs").select(NOTE_REF_COLUMNS).eq("project_id", projectId).order("likes", { ascending: false, nullsFirst: false }).limit(60),
+      sb.from("aio_channels").select("note_refs_at").eq("project_id", projectId).eq("kind", "note").maybeSingle(),
+    ]);
+    return { ok: true, refs: ((data ?? []) as Record<string, unknown>[]).map(rowToNoteRef), lastAt: (ch?.note_refs_at as string | null) ?? null };
+  } catch (e) {
+    return failOf(e, "参考記事を読めませんでした");
+  }
+}
+
+/** 人が選んだ note 記事を足して、その場で読む（スキ数・見出し・冒頭） */
+export async function addNoteRefAction(projectId: string, rawUrl: string): Promise<{ ok: true } | ActionFail> {
+  try {
+    const { sb } = await owned(projectId);
+    const url = noteArticleUrl(rawUrl);
+    if (!url) throw new Error("note の記事の URL（https://note.com/ユーザー名/n/…）を入れてください");
+    const { data: row, error } = await sb
+      .from("aio_note_refs")
+      .upsert({ project_id: projectId, url, source: "manual", status: "pending" }, { onConflict: "project_id,url" })
+      .select("id")
+      .single();
+    if (error || !row) throw new Error(`保存できませんでした：${error?.message ?? ""}`);
+    await fetchNoteRef(sb, String(row.id), url, defaultNoteRefDeps());
+    refresh(projectId);
+    return { ok: true };
+  } catch (e) {
+    return failOf(e, "追加できませんでした");
+  }
+}
+
+export async function deleteNoteRefAction(projectId: string, id: string): Promise<{ ok: true } | ActionFail> {
+  try {
+    const { sb } = await owned(projectId);
+    await sb.from("aio_note_refs").delete().eq("id", id).eq("project_id", projectId);
+    return { ok: true };
+  } catch (e) {
+    return failOf(e, "外せませんでした");
+  }
+}
+
+/** 今すぐ調べる（テーマ決め→検索→読む）。週1回の自動と同じ処理 */
+export async function refreshNoteRefsAction(projectId: string): Promise<{ ok: true; themes: string[]; added: number; read: number; notes: string[] } | ActionFail> {
+  try {
+    const { sb, project } = await owned(projectId);
+    const { data: ch } = await sb.from("aio_channels").select("id").eq("project_id", projectId).eq("kind", "note").maybeSingle();
+    if (!ch) throw new Error("先に note の媒体の準備（①）をしてください");
+    const r = await refreshNoteRefs(sb, project, { force: true, deadline: Date.now() + 240_000 });
+    refresh(projectId);
+    return { ok: true, themes: r.themes, added: r.added, read: r.read, notes: r.notes };
+  } catch (e) {
+    return failOf(e, "調べられませんでした");
+  }
+}
+
 // ── 記事 ─────────────────────
 
 /**
@@ -396,6 +456,12 @@ async function createAioArticle(
     ? { title: brief.title?.trim().slice(0, 160), target: brief.target?.trim().slice(0, 160), outline: brief.outline?.trim().slice(0, 1200), note: brief.note?.trim().slice(0, 800) }
     : null;
   if (kind === "satellite" && !(ch?.satellite?.items ?? []).length) throw new Error("サテライトサイトの「扱う商品・サービス」を先に入れてください（記事に書いてよい事実の出どころになります）");
+  // note は、参考にする人気記事（人が選んだもの → スキの多い順）を渡す。表が無い環境では渡さない
+  let noteRefs: string | null = null;
+  if (kind === "note") {
+    const { data: refs } = await sb.from("aio_note_refs").select(NOTE_REF_COLUMNS).eq("project_id", projectId).eq("status", "done").limit(60);
+    noteRefs = noteRefsForDraft(((refs ?? []) as Record<string, unknown>[]).map(rowToNoteRef)) || null;
+  }
   let comparison: string | null = null;
   if (kind === "satellite" && comparisonId) {
     const t = await loadCmp(sb, comparisonId);
@@ -404,6 +470,7 @@ async function createAioArticle(
   }
   const d = await draftArticle(kind, project, ch, {
     comparison,
+    noteRefs,
     brief: clean,
     recentTitles: ((recent ?? []) as { title: string }[]).map((r) => r.title),
     latestCheck: latestRow ? rowToCheck(latestRow as Record<string, unknown>) : null,

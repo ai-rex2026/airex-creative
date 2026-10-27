@@ -118,7 +118,7 @@ export async function draftArticle(
   kind: AioChannelKind,
   project: AioProject,
   ch: AioChannel | null,
-  ctx: { brief?: ArticleBrief | null; recentTitles: string[]; latestCheck: AioCheck | null; queries: AioMetric["queries"]; comparison?: string | null }
+  ctx: { brief?: ArticleBrief | null; recentTitles: string[]; latestCheck: AioCheck | null; queries: AioMetric["queries"]; comparison?: string | null; noteRefs?: string | null }
 ): Promise<DraftedArticle> {
   const b = ctx.brief ?? {};
   const lines = [
@@ -133,6 +133,9 @@ export async function draftArticle(
     ...channelGuide(kind, ch, project),
     ctx.comparison
       ? `\n# 比較表の下調べ（この記事用に公式サイト・検索で集め、人が確かめた値。比較表はこの項目と値をそのまま使い、ランキングの根拠にする。「確認できませんでした」はこの表で空欄の項目だけ）\n${ctx.comparison}`
+      : "",
+    ctx.noteRefs
+      ? `\n# 参考にする note の人気記事（切り口・タイトルの付け方・見出しの型・冒頭の入り方だけを参考にする。文章や言い回しをまねない。数字や事例を持ち込まない）\n${ctx.noteRefs}`
       : "",
     ctx.recentTitles.length ? `\nこの画面で最近作った記事（重ならないようにする）: ${ctx.recentTitles.slice(0, 15).join(" / ")}` : "",
     ctx.queries.length ? `\n検索で実際に表示されている語（Search Console）: ${ctx.queries.slice(0, 15).map((q) => `${q.query}（表示${q.impressions}・順位${q.position}）`).join(" / ")}` : "",
