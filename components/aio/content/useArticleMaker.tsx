@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   createAioArticleAction,
   finishAioArticleAction,
+  polishAioArticleAction,
   researchComparisonRowAction,
   saveComparisonAction,
   startComparisonAction,
@@ -14,7 +15,7 @@ import { Btn, Icon, Input } from "@/components/meo/ui";
 import type { ArticleBrief } from "@/lib/aio/article";
 import type { AioChannelKind } from "@/lib/aio/content-types";
 
-export type MakePhase = null | "researching" | "writing" | "finishing";
+export type MakePhase = null | "researching" | "writing" | "polishing" | "finishing";
 
 type MakeArgs = { kind: AioChannelKind; brief: ArticleBrief | null; plan?: { planId: string; itemId: string }; keywordId?: string | null };
 export type CmpReview = { args: MakeArgs; table: CmpTable; edits: Record<string, Record<string, string>>; hidden: string[] };
@@ -50,6 +51,17 @@ export function useArticleMaker(projectId: string) {
       }
       articleId = created.id;
       router.refresh();
+      // note は、AIっぽさを消す推敲を通してから仕上げる。推敲で止まっても下書きは残る（カードから推敲し直せる）
+      let polishNote: string | null = null;
+      if (args.kind === "note") {
+        setPhase("polishing");
+        const p = await polishAioArticleAction(articleId, args.brief?.note ?? "");
+        polishNote = p.ok
+          ? [p.fills ? `体験を入れる【要記入】が${p.fills}か所あります。note に貼る前に、ご自身の体験（金額・失敗・その時の気持ち）で埋めてください` : "", p.reasons.length ? `推敲で潰した「読者が問い合わせない理由」：${p.reasons.join(" / ")}` : ""].filter(Boolean).join("。")
+          : `推敲で止まりました（${p.error}）。記事のカードの「推敲し直す」でやり直せます`;
+        if (polishNote) setNotice(polishNote);
+        router.refresh();
+      }
       setPhase("finishing");
       const r = await finishAioArticleAction(articleId);
       if (!r.ok) {
@@ -57,7 +69,7 @@ export function useArticleMaker(projectId: string) {
         router.refresh();
         return articleId;
       }
-      if (r.failed) setNotice(`画像を${r.failed}枚作れませんでした。${r.imageErrors.length ? `理由：${r.imageErrors.join(" / ")}。` : ""}記事のカードから作り直せます`);
+      if (r.failed) setNotice((n) => `${n ? `${n}。` : ""}画像を${r.failed}枚作れませんでした。${r.imageErrors.length ? `理由：${r.imageErrors.join(" / ")}。` : ""}記事のカードから作り直せます`);
       if (r.guard === "red") setNotice((n) => `${n ? `${n}。` : ""}表現チェックで「要修正」があります。記事のカードで確認してください`);
       router.refresh();
       return articleId;
@@ -173,7 +185,9 @@ export function PhaseNote({ phase, progress }: { phase: MakePhase; progress?: st
         ? `⓪ 記事のテーマに合う比較項目を決め、各社の公式サイトと検索で値を集めています（1社1〜2分${progress ? `・${progress}` : ""}）…`
         : phase === "writing"
           ? "① 既存記事のトンマナに合わせて本文を書いています（1〜3分）…"
-          : "② 表現チェックと、文字の入らない画像（アイキャッチ＋本文中）を作っています（1〜2分）…"}
+          : phase === "polishing"
+            ? "①' AIっぽさを消す推敲をしています（バレ箇所・語尾・まとめすぎ・前置き・体験の一言・文のリズム・言い換え・読者目線の検品。1〜3分）…"
+            : "② 表現チェックと、文字の入らない画像（アイキャッチ＋本文中）を作っています（1〜2分）…"}
     </p>
   );
 }

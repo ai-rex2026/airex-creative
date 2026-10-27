@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   deleteAioArticleAction,
   finishAioArticleAction,
+  polishAioArticleAction,
   markAioNotePostedAction,
   regenerateAioImageAction,
   sendAioArticleToWpAction,
@@ -88,7 +89,9 @@ export function ArticleCard({ article, wp }: { article: AioArticle; wp: AioWpInf
         const tags = article.hashtags.length ? `\n\n${article.hashtags.map((t) => `#${t}`).join(" ")}` : "";
         await copyRich(html, article.bodyMd + tags);
       },
-      "本文をコピーしました。note の編集画面で、タイトル欄にタイトル、本文欄に貼り付けてください（見出し・箇条書きはそのまま入ります）"
+      `本文をコピーしました。note の編集画面で、タイトル欄にタイトル、本文欄に貼り付けてください（見出し・箇条書きはそのまま入ります）${
+        article.bodyMd.includes("【要記入") ? "。本文に【要記入】が残っています。投稿前にご自身の体験（金額・失敗・その時の気持ち）で埋めてください" : ""
+      }`
     );
 
   return (
@@ -192,6 +195,12 @@ export function ArticleCard({ article, wp }: { article: AioArticle; wp: AioWpInf
         </Btn>
         {isNote ? (
           <>
+            {article.status !== "published" && (
+              <Btn variant="outline" size="sm" disabled={busy !== null} onClick={() => run("polish", () => polishAioArticleAction(article.id), "推敲しました（AIっぽさを消す8工程）。表現チェックもかけ直しました")}>
+                {busy === "polish" ? <Icon name="loader" /> : <Icon name="sparkles" className="h-3.5 w-3.5" />}
+                {busy === "polish" ? "推敲しています（1〜3分）" : "推敲し直す"}
+              </Btn>
+            )}
             <Btn variant="outline" size="sm" disabled={busy !== null} onClick={copyForNote}>
               <Icon name="file" className="h-3.5 w-3.5" /> note に貼る形でコピー
             </Btn>

@@ -10,6 +10,7 @@ import { AIO_CHECK_COLUMNS, AIO_PROJECT_COLUMNS, rowToCheck, rowToProject } from
 import { ARTICLE_COLUMNS, CHANNEL_COLUMNS, METRIC_COLUMNS, rowToArticle, rowToChannel, rowToMetric } from "@/lib/aio/content-store";
 import { analyzeStyle, buildStrategy, collectArticles, measure, noteUser } from "@/lib/aio/style";
 import { draftArticle, guardArticle, type ArticleBrief } from "@/lib/aio/article";
+import { polishNote } from "@/lib/aio/humanize";
 import { defaultImageDeps, downloadImage, fillImages } from "@/lib/aio/images";
 import { discoverWpApi, wpSavePost, wpUploadImage, wpVerify, type WpConn } from "@/lib/aio/wordpress";
 import { sendToWordPress, type WpMedia } from "@/lib/aio/publish";
@@ -456,6 +457,39 @@ async function createAioArticle(
   }
   refresh(projectId);
   return articleId;
+}
+
+/**
+ * note 記事の推敲（AIっぽさを消す8工程。lib/aio/humanize.ts）。書いた直後に1回、記事のカードから何度でも。
+ * 本文を直したら、法令チェックをその場でかけ直す（直した本文のまま公開・コピーさせない）
+ */
+export async function polishAioArticleAction(
+  articleId: string,
+  writerNote?: string
+): Promise<{ ok: true; tells: string[]; reasons: string[]; fills: number; guard: string | null } | ActionFail> {
+  try {
+    const { sb, project, article } = await ownedArticle(articleId);
+    if (article.channel !== "note") throw new Error("推敲は note の記事だけです");
+    if (article.status === "published") throw new Error("公開済みの記事は推敲しません");
+    const r = await polishNote(
+      { title: article.title, bodyMd: article.bodyMd },
+      { business: [project.notes, project.siteSummary].filter(Boolean).join("\n"), writerNote: String(writerNote ?? "").slice(0, 1200) }
+    );
+    // 本文はその場で保存し、表現チェックは結果が出しだい保存する（チェックが失敗しても推敲は残る。仕上げで通す）
+    await sb.from("aio_articles").update({ body_md: r.bodyMd, guard: null, updated_at: now() }).eq("id", articleId);
+    let level: string | null = null;
+    try {
+      const guard = await guardArticle({ title: article.title, metaDescription: article.metaDescription, bodyMd: r.bodyMd }, project.industry);
+      await sb.from("aio_articles").update({ guard, updated_at: now() }).eq("id", articleId);
+      level = guard.level;
+    } catch {
+      /* 仕上げ（finishAioArticleAction）で通す */
+    }
+    refresh(project.id);
+    return { ok: true, tells: r.tells, reasons: r.reasons, fills: r.fills, guard: level };
+  } catch (e) {
+    return failOf(e, "推敲できませんでした");
+  }
 }
 
 /** 記事の仕上げ：法令チェック（まだなら）と、まだ無い画像を作る。何度押しても、済んだ分はやり直さない */

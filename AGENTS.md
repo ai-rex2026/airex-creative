@@ -103,6 +103,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 画像は Gemini（`GEMINI_IMAGE_MODEL`、既定 gemini-2.5-flash-image）。文字を描かせず、できた画像を AI に見せて文字があれば作り直し、2 回とも文字入りなら使わない。置き場は非公開バケット `aio-images`（画面は署名 URL）
 - WordPress のアプリケーションパスワードは `aio_wp_connections`（本人のセッションからは読めない表）に `sealToken` で暗号化して保存。`AD_TOKEN_ENC_KEY` が無いと連携できない
 - note の非公式 API は使わない（投稿は人。数字は手入力・貼り付け）
+- note 記事の推敲（2026-10-27・`lib/aio/humanize.ts`・`polishAioArticleAction`）：書いた直後に、AIっぽさを消す8工程（バレ箇所→語尾→まとめすぎ→前置き→体験の一言→文のリズム→日常語→読者目線の検品）を1回の AI 呼び出しで順にかけ、本文を保存してから表現チェックをかけ直す。体験の一言の金額・失敗は与えられた事実だけで、無ければ【要記入：…】を置き人が埋める（コピー時に注意を出す）。短すぎ・見出しが消えた結果は捨てて下書きのまま。記事のカードの「推敲し直す」で何度でも
 
 ## SNS運用（媒体ごとの運用）（2026-10-16 追記）
 
