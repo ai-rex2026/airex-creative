@@ -79,7 +79,17 @@ export type PublicAdsMeasure = { title: string; why: string; steps: string[]; im
 export type PublicAds = {
   stage: "fetched" | "creatives" | "done";
   fetchedAt: string;
-  meta: { status: "ok" | "none" | "skipped" | "error"; pageUrl: string | null; ads: PublicMetaAd[]; error?: string };
+  meta: {
+    status: "ok" | "none" | "skipped" | "error";
+    pageUrl: string | null;
+    ads: PublicMetaAd[];
+    error?: string;
+    /**
+     * Facebook ページが見つからず、広告ライブラリをキーワードで探したとき（2026-11-07〜）。
+     * queries＝検索した語、instagram＝照合に使った Instagram のユーザー名、domain＝照合に使ったドメイン
+     */
+    search?: { queries: string[]; instagram: string | null; domain: string | null };
+  };
   google: { status: "ok" | "none" | "skipped" | "error"; domain: string | null; ads: PublicGoogleAd[]; error?: string };
   creatives?: CreativeNote[];
   creativeError?: string;
@@ -192,25 +202,103 @@ export function dedupeGoogle(ads: PublicGoogleAd[]): PublicGoogleAd[] {
   return [...map.values()];
 }
 
+/** Facebook ページが見つからないときの手がかり（Instagram アカウントと社名・サービス名） */
+export type MetaSearchHint = { instagramHandle: string | null; names: string[] };
+
+const SEARCH_PER_QUERY = 30;
+
+/** 検索に使う語（重複・短すぎる語を除いて最大2つ） */
+export function metaSearchQueries(hint: MetaSearchHint | null): string[] {
+  const out: string[] = [];
+  for (const raw of hint?.names ?? []) {
+    // 「名前 (@handle) • Instagram …」のような題名から名前だけを取る
+    const q = raw.split(/[•|｜]/)[0].replace(/[(（]@[^)）]*[)）]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
+    if (q.length < 2 || out.some((x) => norm(x) === norm(q))) continue;
+    out.push(q);
+    if (out.length >= 2) break;
+  }
+  return out;
+}
+
+const igName = (h: string | null | undefined) => (h ?? "").replace(/^@/, "").trim().toLowerCase();
+
+/**
+ * キーワード検索の結果から、自社の広告だけを残す（似た名前の他社の広告を混ぜない）。
+ * 自社と判断するのは「リンク先が分析したサイトと同じドメイン」か「広告主の Instagram が見つかったアカウントと同じ」広告。
+ * それを出した Facebook ページの、ほかの広告（検索に引っかかったもの）も残す。
+ */
+export function pickOwnMetaItems(
+  items: Record<string, unknown>[],
+  domain: string | null,
+  instagramHandle: string | null
+): { items: Record<string, unknown>[]; pageUrl: string | null } {
+  const ig = igName(instagramHandle);
+  const isOwn = (x: Record<string, unknown>) => {
+    const h = hostOf(s(x.linkUrl));
+    if (domain && h && (h === domain || h.endsWith(`.${domain}`))) return true;
+    const adv = (x.adDetails as { advertiser?: { instagramUsername?: unknown } } | null | undefined)?.advertiser;
+    return !!ig && igName(s(adv?.instagramUsername)) === ig;
+  };
+  const own = items.filter(isOwn);
+  const pages = new Set(own.map((x) => s(x.pageId)).filter(Boolean));
+  const seen = new Set<string>();
+  const kept = items.filter((x) => {
+    if (!(isOwn(x) || pages.has(s(x.pageId)))) return false;
+    const id = s(x.adArchiveId);
+    if (id && seen.has(id)) return false;
+    if (id) seen.add(id);
+    return true;
+  });
+  const first = own[0];
+  const pageUrl = first ? s(first.pageUrl) || (s(first.pageId) ? `https://www.facebook.com/${s(first.pageId)}` : "") : "";
+  return { items: kept, pageUrl: pageUrl || null };
+}
+
 /** 工程1：Meta・Google の公開広告を取る。どちらかが失敗しても、もう一方は残す */
-export async function fetchPublicAds(analysisId: string, siteUrl: string | null, facebookUrl: string | null): Promise<PublicAds> {
+export async function fetchPublicAds(
+  analysisId: string,
+  siteUrl: string | null,
+  facebookUrl: string | null,
+  hint: MetaSearchHint | null = null
+): Promise<PublicAds> {
   const domain = hostOf(siteUrl);
+  // Facebook ページが見つからないときは、Instagram の表示名・社名で広告ライブラリを検索する（2026-11-07）。
+  // 呼び出しは1回（検索語は最大2つを1回にまとめる）。分析1回の時間に収めるため、ページ単位の取り直しはしない
+  const queries = facebookUrl ? [] : metaSearchQueries(hint);
+  const igHandle = hint?.instagramHandle ? igName(hint.instagramHandle) : null;
   const [m, g] = await Promise.allSettled([
     facebookUrl
       ? runApifyActor(analysisId, META_ACTOR, { pageUrls: [facebookUrl], country: "JP", activeStatus: "active", maxAds: MAX_META }, APIFY_TIMEOUT_MS)
-      : Promise.resolve(null),
+      : queries.length
+        ? runApifyActor(
+            analysisId,
+            META_ACTOR,
+            {
+              searchQueries: queries,
+              searchType: "keyword_exact_phrase",
+              country: "JP",
+              activeStatus: "active",
+              maxAds: SEARCH_PER_QUERY,
+              // 広告主の Instagram ユーザー名で照合するときだけ詳細を取る
+              includeAdDetails: !!igHandle,
+            },
+            APIFY_TIMEOUT_MS
+          )
+        : Promise.resolve(null),
     domain ? runApifyActor(analysisId, GOOGLE_ACTOR, { domains: [domain], region: "JP", maxAds: MAX_GOOGLE }, APIFY_TIMEOUT_MS) : Promise.resolve(null),
   ]);
   const msg = (r: PromiseRejectedResult) => (r.reason instanceof Error ? r.reason.message : String(r.reason));
 
+  const search = queries.length ? { queries, instagram: igHandle, domain } : undefined;
   const meta: PublicAds["meta"] =
     m.status === "rejected"
-      ? { status: "error", pageUrl: facebookUrl, ads: [], error: msg(m) }
+      ? { status: "error", pageUrl: facebookUrl, ads: [], error: msg(m), ...(search ? { search } : {}) }
       : m.value === null
         ? { status: "skipped", pageUrl: null, ads: [] }
         : (() => {
-            const ads = dedupeMeta(mapMetaItems(m.value)).slice(0, SHOW_META);
-            return { status: ads.length ? "ok" : "none", pageUrl: facebookUrl, ads } as PublicAds["meta"];
+            const picked = search ? pickOwnMetaItems(m.value, domain, igHandle) : { items: m.value, pageUrl: facebookUrl };
+            const ads = dedupeMeta(mapMetaItems(picked.items)).slice(0, SHOW_META);
+            return { status: ads.length ? "ok" : "none", pageUrl: picked.pageUrl, ads, ...(search ? { search } : {}) } as PublicAds["meta"];
           })();
 
   const google: PublicAds["google"] =

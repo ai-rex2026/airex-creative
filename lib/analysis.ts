@@ -446,7 +446,12 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
         return await save({ public_ads: skipped, step: "出稿中の広告を調べています", progress: 51 });
       }
       const fb = (a.social?.accounts ?? []).find((x) => /facebook/i.test(x.platform) || /facebook\.com\//i.test(x.url))?.url ?? null;
-      const public_ads = await fetchPublicAds(a.id, a.url, fb);
+      // Facebook ページが見つからないときの手がかり（Instagram アカウント・社名）。2026-11-07
+      const ig = (a.social?.accounts ?? []).find((x) => /instagram/i.test(x.platform) || /instagram\.com\//i.test(x.url)) ?? null;
+      const hint = fb
+        ? null
+        : { instagramHandle: ig?.handle || null, names: [ig?.title ?? "", a.diagnosis?.brand?.name ?? ""] };
+      const public_ads = await fetchPublicAds(a.id, a.url, fb, hint);
       return await save({ public_ads, step: "出稿中の広告を調べています", progress: 51 });
     }
     if (a.public_ads && a.public_ads.stage === "fetched") {

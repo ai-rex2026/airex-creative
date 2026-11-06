@@ -33,6 +33,12 @@ function CreativeNoteLines({ n }: { n?: Note }) {
 /** 広告が出ないときの理由 */
 function metaEmpty(m: PublicAds["meta"]): string {
   if (m.status === "error") return `Meta 広告ライブラリの取得に失敗しました${m.error ? `（${m.error.slice(0, 80)}）` : ""}。`;
+  if (m.search) {
+    const by = [m.search.domain ? `リンク先が ${m.search.domain}` : "", m.search.instagram ? `Instagram（@${m.search.instagram}）名義` : ""]
+      .filter(Boolean)
+      .join("、または");
+    return `サイトと SNS の調査で Facebook ページが見つからなかったため、Meta 広告ライブラリを「${m.search.queries.join("」「")}」で検索しましたが、${by}の配信中の広告は見つかりませんでした。別の名前で配信している場合は、サイトに Facebook ページへのリンクを置くと次の分析から直接調べられます。`;
+  }
   if (m.status === "skipped" || !m.pageUrl)
     return "サイトと SNS の調査で Facebook ページが見つからなかったため、Meta 広告ライブラリは調べていません。Facebook ページがある場合は、サイトにそのページへのリンクを置くと次の分析から調べられます。";
   return `Facebook ページ（${pathOf(m.pageUrl)}）で配信中の Meta 広告は見つかりませんでした。配信が終わった広告や、別の Facebook ページ・代理店の名義で配信している広告は含まれません。`;
@@ -112,6 +118,7 @@ function PlatformBlock({
   name,
   count,
   empty,
+  lead,
   list,
   findings,
   measures,
@@ -121,6 +128,7 @@ function PlatformBlock({
   name: string;
   count: number;
   empty: string;
+  lead?: string;
   list: React.ReactNode[];
   findings: string[];
   measures: Measure[];
@@ -130,6 +138,11 @@ function PlatformBlock({
   return (
     <div className="pa-block">
       <h3 className="pa-h">{name}</h3>
+      {lead && count > 0 && (
+        <p className="sub" style={{ margin: "0 0 8px" }}>
+          {lead}
+        </p>
+      )}
       {count > 0 ? (
         <details className="pafold">
           <summary>現状の広告（同じ素材をまとめて{count}件）を表示する</summary>
@@ -191,6 +204,11 @@ export function PublicAdsSection({ data }: { data: PublicAds | null }) {
           name="Meta 広告"
           count={meta.ads.length}
           empty={metaEmpty(meta)}
+          lead={
+            meta.search
+              ? `サイトと SNS の調査では Facebook ページが見つからなかったため、Meta 広告ライブラリを「${meta.search.queries.join("」「")}」で検索し、${[meta.search.domain ? `リンク先が ${meta.search.domain}` : "", meta.search.instagram ? `Instagram（@${meta.search.instagram}）名義` : ""].filter(Boolean).join("、または")}の広告を自社の広告として載せています${meta.pageUrl ? `（Facebook ページ：${pathOf(meta.pageUrl)}）` : ""}。検索に引っかからない広告は含まれません。`
+              : undefined
+          }
           list={meta.ads.map((a, i) => {
             const n = notes.get(`m${i + 1}`);
             return (

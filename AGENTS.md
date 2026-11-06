@@ -142,3 +142,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - `components/PublicAdsSection.tsx`：Meta・Google とも、広告が0件でも媒体ごとの欄を出し、理由を書く（Facebook ページが見つからず調べていない／配信中の広告が見つからない／取得に失敗）
 - 素材は AI（`readCreatives`）が読んだ内容（何を見せているか・動画の冒頭3秒・素材内の文字）を各広告の下に出す。Meta の素材 URL は数日で切れるので画像は載せず、広告ライブラリへのリンクだけ。Google は表示見本の画像（tpc.googlesyndication.com の保存版）を小さく載せ、広告透明性センターの個別ページ（`PublicGoogleAd.adUrl`）へリンクする。adUrl の無い古い分析はドメインの一覧に飛ばす
+- Facebook ページが見つからないとき（2026-11-07）：Instagram の表示名とブランド名（最大2語）で広告ライブラリをキーワード検索する（Apify 1回、`searchQueries`・完全一致）。自社と判断するのは「リンク先が分析したドメイン」か「広告主の Instagram ユーザー名が見つかったアカウントと同じ」広告と、それを出したページの広告だけ（`pickOwnMetaItems`）。`PublicAds.meta.search` に検索語・照合条件を残し、画面に「検索で特定した」旨と、見つからなかった理由を出す
