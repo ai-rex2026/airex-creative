@@ -137,3 +137,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 内部対策：`seo_internal_tasks`（SEO と AIO で1つのリスト。`scope` = seo|aio|both で各タブに絞って出す）。洗い出しはサイト・robots.txt・llms.txt の読み取りと、同じドメインの URL レポートの指摘の取り込みだけで AI は呼ばない（`lib/seo/internal.ts`）。key で1件にまとめ、利用者の状態は上書きしない。サイトの読み取りで出した施策が次の読み取りで消えたら「済み」にする
 - 対策キーワード（`/seo/[id]?tab=keywords`、既定のタブ）：`seo_keywords`。全体レポートの対策キーワード・SEO記事設計の取り込みと Search Console の反映（`fetchGscQueries`。直近28日・最大1000語。推移は `gsc` に最大12件）は AI なし。月間検索数は AI の推定（5段階・`volume_source`=report|ai）で、まだ推定していない語だけ1回で推定する。記事は `createAioArticleAction(..., keywordId)` で語に結び付け（`article_ids`）、WordPress で公開したら語を「公開済み」にする。1語に記事が2本以上なら警告（カニバリゼーション）
 - 内部リンクの提案（2026-10-27、`/seo/[id]?tab=links`）：`lib/seo/links/`。記事収集（サイトマップ→1ページずつ。`seo_link_pages`）→ 候補の絞り込み（文字2-gram の TF-IDF と類似度。AI なし）→ 「本当にリンクすべきか」だけを AI が判定（`Judge` を差し替え可能。いまは Claude Haiku。Jev は未導入）。`seo_link_suggestions` の status は pending→suggested|rejected、人の操作で accepted|dismissed。保存は1件ごと、保存済みの記事・判定済みの組は飛ばす（再実行で AI を重複して呼ばない）。採用基準は確率 0.7 以上かつ確信度 0.6 以上（AI の自己申告で較正されていない）。本文は自動で書き換えない（設置は人）。検証は `collect`／`html`／`Judge` を差し替えて行う
+
+## 出稿中の広告（公開情報）の表示（2026-11-07 追記）
+
+- `components/PublicAdsSection.tsx`：Meta・Google とも、広告が0件でも媒体ごとの欄を出し、理由を書く（Facebook ページが見つからず調べていない／配信中の広告が見つからない／取得に失敗）
+- 素材は AI（`readCreatives`）が読んだ内容（何を見せているか・動画の冒頭3秒・素材内の文字）を各広告の下に出す。Meta の素材 URL は数日で切れるので画像は載せず、広告ライブラリへのリンクだけ。Google は表示見本の画像（tpc.googlesyndication.com の保存版）を小さく載せ、広告透明性センターの個別ページ（`PublicGoogleAd.adUrl`）へリンクする。adUrl の無い古い分析はドメインの一覧に飛ばす

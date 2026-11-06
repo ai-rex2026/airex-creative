@@ -42,6 +42,8 @@ export type PublicGoogleAd = {
   imageUrl: string;
   headline: string;
   body: string;
+  /** 広告透明性センターのこの広告のページ（画像・動画をそこで確認できる）。2026-11-07〜 */
+  adUrl?: string;
   /** 同じ素材（同じ表示見本）の広告の数（この広告を含む）。2026-10-06 夜〜 */
   sameCount?: number;
 };
@@ -154,6 +156,9 @@ export function mapGoogleItems(items: Record<string, unknown>[]): PublicGoogleAd
     imageUrl: s(x.imageUrl),
     headline: s(x.headline),
     body: s(x.body) || s(x.adText),
+    adUrl:
+      s(x.adUrl) ||
+      (s(x.advertiserId) && s(x.creativeId) ? `https://adstransparency.google.com/advertiser/${s(x.advertiserId)}/creative/${s(x.creativeId)}?region=JP` : ""),
   }));
 }
 
