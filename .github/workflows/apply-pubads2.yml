@@ -1,0 +1,27 @@
+name: apply-pubads2
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/apply-pubads2.yml"]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: apply
+        run: |
+          set -e
+          D=.buildtmp/pubads2
+          cat $D/chunks/chunk-*.b64 | base64 -d | gunzip > $D/patch.diff
+          (cd $D && sha256sum -c patch.sha256)
+          git apply $D/patch.diff
+          git rm -r -q .buildtmp/pubads2 .github/workflows/apply-pubads2.yml
+          git config user.name suzuki
+          git config user.email suzuki.yuichiro.libertad@gmail.com
+          git add -A
+          git commit -q -m "広告の公開情報：Meta・Google が出ない理由を表示し、素材の内容・表示見本・広告透明性センターへのリンクを出す" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
+          git push origin HEAD:main
