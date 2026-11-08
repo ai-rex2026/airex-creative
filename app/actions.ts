@@ -15,7 +15,7 @@ import type { AnalysisMode, BudgetBand } from "@/lib/types";
 import type { PriceScan } from "@/lib/pricing";
 import type { SocialScan } from "@/lib/social";
 import { normalizeManualSocialInput } from "@/lib/social";
-import { processAnalysis } from "@/lib/worker";
+import { kickAnalysis } from "@/lib/worker";
 import { hasGoogleApp, listGoogleAssets, type GoogleAssets, type GoogleChoice } from "@/lib/google";
 import { generateLp } from "@/lib/lp";
 import { buildLedger } from "@/lib/measure-sources";
@@ -188,7 +188,7 @@ export async function startAnalysis(input: {
   // 画面ではなくサーバー側で走らせる。ブラウザを閉じても止まらない
   after(async () => {
     try {
-      await processAnalysis(id);
+      await kickAnalysis(id);
     } catch {
       // 取りこぼしは cron のワーカーが拾う
     }
@@ -219,7 +219,7 @@ export async function retryAnalysis(id: string) {
 
   after(async () => {
     try {
-      await processAnalysis(id);
+      await kickAnalysis(id);
     } catch {
       // 取りこぼしは cron のワーカーが拾う
     }
@@ -363,7 +363,7 @@ export async function replanForBudget(id: string, budget: BudgetBand) {
 
   after(async () => {
     try {
-      await processAnalysis(id);
+      await kickAnalysis(id);
     } catch {
       // 取りこぼしは cron のワーカーが拾う
     }

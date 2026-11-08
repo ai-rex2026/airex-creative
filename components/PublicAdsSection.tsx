@@ -186,7 +186,15 @@ export function PublicAdsSection({ data }: { data: PublicAds | null }) {
           </h2>
           <div className="sub">
             Meta 広告ライブラリ・Google 広告透明性センターで公開されている広告です（
-            {new Date(data.fetchedAt).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })} 取得）。費用・成果の数字は公開されていません
+            {new Date(data.fetchedAt).toLocaleString("ja-JP", {
+              timeZone: "Asia/Tokyo",
+              year: "numeric",
+              month: "numeric",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}{" "}
+            取得）。費用・成果の数字は公開されていません
           </div>
         </div>
         <span className="rule" />

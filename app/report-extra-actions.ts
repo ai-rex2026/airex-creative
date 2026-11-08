@@ -4,7 +4,7 @@ import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAnthropic } from "@/lib/anthropic";
-import { processAnalysis } from "@/lib/worker";
+import { kickAnalysis } from "@/lib/worker";
 import { withAi, type AiProvider } from "@/lib/ai-context";
 import { generateSnsPlan } from "@/lib/sns-plan";
 import { generateNegatives, type OutreachPlan, type SuggestScan } from "@/lib/outreach";
@@ -232,7 +232,7 @@ export async function rebuildAdPlan(id: string) {
   if (error) throw new Error("作り直しを登録できませんでした");
   after(async () => {
     try {
-      await processAnalysis(id);
+      await kickAnalysis(id);
     } catch {
       // 取りこぼしは cron のワーカーが拾う
     }

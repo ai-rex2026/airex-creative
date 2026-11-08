@@ -27,24 +27,42 @@ const MAX_CHAIN_ATTEMPTS = 6; // 240秒 x 6 ≈ 24分。それでも終わらな
  *
  * VERCEL_URL が無い（ローカル開発など）場合は何もしない。cron の安全網がそのまま効く。
  */
-async function triggerContinue(id: string, attempt: number) {
-  if (attempt > MAX_CHAIN_ATTEMPTS) return;
+async function triggerContinue(id: string, attempt: number): Promise<boolean> {
+  if (attempt > MAX_CHAIN_ATTEMPTS) return false;
   // 次のバーストは「いま本番になっているデプロイ」で動かす。VERCEL_URL は自分自身のデプロイ固有の
   // URL なので、デプロイ前から動いていた分析は古いコードのまま最後まで走ってしまう
   // （2026-10-05：修正を入れた後に作った分析で、修正前の挙動が出た）。本番ドメインを優先し、
   // 無ければ従来どおり VERCEL_URL を使う
   const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
-  if (!host) return;
+  if (!host) return false;
   const base = `https://${host}`;
   try {
-    await fetch(`${base}/api/analysis/${id}/continue?attempt=${attempt}`, {
+    const res = await fetch(`${base}/api/analysis/${id}/continue?attempt=${attempt}`, {
       method: "POST",
       headers: process.env.CRON_SECRET ? { authorization: `Bearer ${process.env.CRON_SECRET}` } : undefined,
       signal: AbortSignal.timeout(5_000),
     });
-  } catch {
+    // 5秒以内に返ってきた＝すぐ終わったか、断られた（401 など）
+    return res.ok;
+  } catch (e) {
+    // 5秒で打ち切った＝向こうで処理が続いている（送り出せた）。それ以外の失敗は送り出せていない。
     // 送り出せなくても cron の安全網（processPending）が最後には拾う
+    return e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
   }
+}
+
+/**
+ * 画面の操作（Server Action）から分析を始めるときの入口（2026-11-09）。
+ * 画面をデプロイ前から開いたままだと、Vercel のスキュー保護で Server Action が古いデプロイで動き、
+ * そのまま after() で始めた1バースト目（サイト・SNS・診断・出稿中の広告まで進むことが多い）が古いコードで走る
+ * （2026-11-07：修正後に作った分析で、修正前の挙動が出た）。本番では最初のバーストから本番ドメイン
+ * （＝いまの本番デプロイ）に渡す。渡せなかったときだけ、この場で進める
+ */
+export async function kickAnalysis(id: string) {
+  if (process.env.VERCEL_ENV === "production" && process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    if (await triggerContinue(id, 0)) return "handoff";
+  }
+  return processAnalysis(id);
 }
 
 /**
