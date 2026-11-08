@@ -125,10 +125,17 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
 
       {/* 数字 */}
       {summary.latest && (
-        <div className="mt-4 grid gap-2 sm:grid-cols-4">
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
           <Kpi label="言及率" value={summary.latest.mentionRate} prev={summary.previous?.mentionRate ?? null} unit="%" hint={`${summary.latest.mentioned} / ${summary.latest.checks} 本で自社が挙がった`} />
           <Kpi label="平均言及順位" value={summary.latest.avgRank} prev={summary.previous?.avgRank ?? null} unit="位" lowerIsBetter hint="挙がったときの平均の順番" />
-          <Kpi label="引用率" value={summary.latest.citationRate} prev={summary.previous?.citationRate ?? null} unit="%" hint="自社サイトが根拠として引用された割合" />
+          <Kpi label="引用率" value={summary.latest.citationRate} prev={summary.previous?.citationRate ?? null} unit="%" hint="AI が回答の根拠に自社サイトを参照した割合" />
+          <Kpi
+            label="紹介の根拠あり"
+            value={summary.latest.sourcedRate}
+            prev={summary.previous?.sourcedRate ?? null}
+            unit="%"
+            hint="自社の紹介に根拠 URL が付いた割合（他社の媒体も含む）"
+          />
           <Kpi label="SoV（言及シェア）" value={summary.latest.sov} prev={summary.previous?.sov ?? null} unit="%" hint="AI が挙げた事業者の延べ数に占める自社" />
         </div>
       )}
@@ -206,10 +213,16 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
                     {d.domain}
                     {d.isOwn && <span className="ml-1 rounded-full bg-[#EAF3EE] px-1.5 py-0.5 text-[10px]">自社</span>}
                   </span>
-                  <span className="shrink-0 text-xs text-[#6B6862]">{d.count}本で引用</span>
+                  <span className="shrink-0 text-xs text-[#6B6862]">{d.count > 0 ? `${d.count}本で引用` : "引用なし"}</span>
                 </li>
               ))}
             </ul>
+            {summary.ownSourceDomains.length > 0 && (
+              <p className="mt-2 text-[11px] text-[#6B6862]">
+                自社の紹介の根拠になった媒体：
+                {summary.ownSourceDomains.map((d) => `${d.domain}${d.isOwn ? "（自社）" : ""} ${d.count}本`).join("、")}
+              </p>
+            )}
             {summary.byEngine.length > 0 && (
               <p className="mt-2 text-[11px] text-[#A5A198]">測定AI: {summary.byEngine.map((e) => `${e.engine}（${e.mentioned}/${e.checks}本で言及）`).join("、")}</p>
             )}

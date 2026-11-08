@@ -148,3 +148,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## 分析の始め方（2026-11-09 追記）
 
 - 画面の操作（Server Action）から分析を始めるときは `kickAnalysis`（`lib/worker.ts`）。本番では最初のバーストから本番ドメインの `/api/analysis/[id]/continue` に渡す。画面をデプロイ前から開いたままだと Vercel のスキュー保護で Server Action が古いデプロイで動き、1バースト目（出稿中の広告まで進むことが多い）が古いコードで走るため（2026-11-07 に発生）。渡せなかったときだけその場で `processAnalysis` を回す
+
+## AIO「AIでの見え方」の引用率（2026-11-09 追記）
+
+- `lib/aio/prompts.ts` の `summarize`：引用率（`citationRate`）は「AI が回答の根拠に自社サイト（対象の URL のドメイン）を参照した回の割合」で、媒体一覧（`domains`）と同じ `citedSources` から数える。以前の「自社の紹介に根拠 URL が付いた割合（他社媒体でも可）」は `sourcedRate`（画面は「紹介の根拠あり」）と、その根拠の媒体 `ownSourceDomains` に分けた。媒体一覧は上位12に入らなくても自社サイトを必ず出す（参照なしは 0本）。過去の測定結果からの再計算だけで AI は呼ばない

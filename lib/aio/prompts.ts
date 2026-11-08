@@ -66,14 +66,25 @@ export type AioPeriodStats = {
   mentionRate: number | null;
   /** 言及したときの平均順位 */
   avgRank: number | null;
-  /** 引用率（自社ドメインが根拠として引用された割合、%） */
+  /**
+   * 引用率（AI が回答の根拠として自社サイトを参照した割合、%）。2026-11-09 に定義を変更：
+   * 以前は「自社の紹介に根拠 URL が付いた割合」（他社サイトでも数えた）で、媒体一覧と食い違っていた
+   */
   citationRate: number | null;
+  /** 自社の紹介に根拠 URL が付いた割合（%）。根拠は他社の媒体でもよい */
+  sourcedRate: number | null;
   /** Share of Voice（AI が挙げた事業者の延べ数に占める自社の割合、%） */
   sov: number | null;
 };
 
 export type AioCompetitorRow = { name: string; mentions: number; share: number; isOwn: boolean };
 export type AioDomainRow = { domain: string; count: number; isOwn: boolean };
+
+const cleanDomain = (d: string) => d.toLowerCase().replace(/^www\./, "");
+const isOwnDomain = (d: string, ownD: Set<string>) => {
+  const x = cleanDomain(d);
+  return ownD.has(x) || [...ownD].some((o) => !!o && x.endsWith(`.${o}`));
+};
 
 export type AioSummary = {
   latest: AioPeriodStats | null;
@@ -83,6 +94,8 @@ export type AioSummary = {
   byPrompt: { prompt: AioPrompt; check: AioCheck | null }[];
   competitors: AioCompetitorRow[];
   domains: AioDomainRow[];
+  /** 直近期に、自社の紹介の根拠になった媒体（自社サイト以外も含む） */
+  ownSourceDomains: AioDomainRow[];
   byEngine: { engine: string; checks: number; mentioned: number }[];
 };
 
@@ -104,11 +117,13 @@ function periodOf(c: AioCheck): string {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(d).slice(0, 7);
 }
 
-function statsFor(period: string, checks: AioCheck[], own: string[]): AioPeriodStats {
+function statsFor(period: string, checks: AioCheck[], own: string[], ownD: Set<string>): AioPeriodStats {
   const done = checks.filter((c) => c.status === "completed");
   const mentioned = done.filter((c) => c.mentioned);
   const ranks = mentioned.map((c) => c.rank).filter((r): r is number => r != null);
-  const cited = done.filter((c) => c.ownSourceDomains.length > 0).length;
+  // 媒体一覧と同じ基準：その回の AI が参照した媒体に自社サイトがあるか
+  const cited = done.filter((c) => c.citedSources.some((s) => !!s.domain && isOwnDomain(s.domain, ownD))).length;
+  const sourced = done.filter((c) => c.ownSourceDomains.length > 0).length;
   let total = 0;
   let ownCount = 0;
   for (const c of done) {
@@ -125,6 +140,7 @@ function statsFor(period: string, checks: AioCheck[], own: string[]): AioPeriodS
     mentionRate: pct(mentioned.length, done.length),
     avgRank: ranks.length ? Math.round((ranks.reduce((a, b) => a + b, 0) / ranks.length) * 10) / 10 : null,
     citationRate: pct(cited, done.length),
+    sourcedRate: pct(sourced, done.length),
     sov: pct(ownCount, total),
   };
 }
@@ -132,13 +148,14 @@ function statsFor(period: string, checks: AioCheck[], own: string[]): AioPeriodS
 /** 画面用の集計（純粋関数。AI も DB も呼ばない） */
 export function summarize(project: AioProject, prompts: AioPrompt[], checks: AioCheck[], ownDomains: string[]): AioSummary {
   const own = [project.name, ...project.aliases].filter((s) => s.trim());
+  const ownD = new Set(ownDomains.map(cleanDomain).filter(Boolean));
   const byPeriod = new Map<string, AioCheck[]>();
   for (const c of checks) {
     const p = periodOf(c);
     byPeriod.set(p, [...(byPeriod.get(p) ?? []), c]);
   }
   const periods = [...byPeriod.keys()].sort();
-  const history = periods.map((p) => statsFor(p, byPeriod.get(p)!, own)).filter((s) => s.checks > 0);
+  const history = periods.map((p) => statsFor(p, byPeriod.get(p)!, own, ownD)).filter((s) => s.checks > 0);
   const latest = history.at(-1) ?? null;
   const previous = history.at(-2) ?? null;
 
@@ -174,11 +191,23 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
   for (const c of latestChecks) {
     for (const d of new Set(c.citedSources.map((s) => s.domain).filter(Boolean))) dcount.set(d, (dcount.get(d) ?? 0) + 1);
   }
-  const ownD = new Set(ownDomains.map((d) => d.toLowerCase().replace(/^www\./, "")));
-  const domains = [...dcount.entries()]
+  const ranked = [...dcount.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 12)
-    .map(([domain, count]) => ({ domain, count, isOwn: ownD.has(domain) || [...ownD].some((o) => !!o && domain.endsWith(`.${o}`)) }));
+    .map(([domain, count]) => ({ domain, count, isOwn: isOwnDomain(domain, ownD) }));
+  // 上位12に入らなくても、自社サイトは必ず出す（参照されていなければ 0本）
+  const domains = ranked.slice(0, 12);
+  for (const d of ranked.slice(12)) if (d.isOwn) domains.push(d);
+  if (latest && ownD.size && !domains.some((d) => d.isOwn)) domains.push({ domain: [...ownD][0], count: 0, isOwn: true });
+
+  // 自社の紹介の根拠になった媒体（直近期）
+  const scount = new Map<string, number>();
+  for (const c of latestChecks) {
+    for (const d of new Set(c.ownSourceDomains.map(cleanDomain).filter(Boolean))) scount.set(d, (scount.get(d) ?? 0) + 1);
+  }
+  const ownSourceDomains = [...scount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([domain, count]) => ({ domain, count, isOwn: isOwnDomain(domain, ownD) }));
 
   // エンジン別
   const emap = new Map<string, { checks: number; mentioned: number }>();
@@ -190,7 +219,7 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
   }
   const byEngine = [...emap.entries()].map(([engine, v]) => ({ engine, ...v }));
 
-  return { latest, previous, history, byPrompt, competitors, domains, byEngine };
+  return { latest, previous, history, byPrompt, competitors, domains, ownSourceDomains, byEngine };
 }
 
 /** 自社ドメイン（URL から） */

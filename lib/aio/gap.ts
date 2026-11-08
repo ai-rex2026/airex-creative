@@ -16,7 +16,7 @@ function evidenceLines(project: AioProject, prompts: AioPrompt[], checks: AioChe
   const done = checks.filter((c) => c.status === "completed" && (!latestPeriod || periodOf(c) === latestPeriod)).slice(0, 24);
   const lines: string[] = [];
   if (s.latest) {
-    lines.push(`直近期 ${s.latest.period}: 言及率 ${s.latest.mentionRate ?? "–"}%・平均順位 ${s.latest.avgRank ?? "–"}・引用率 ${s.latest.citationRate ?? "–"}%・SoV ${s.latest.sov ?? "–"}%`);
+    lines.push(`直近期 ${s.latest.period}: 言及率 ${s.latest.mentionRate ?? "–"}%・平均順位 ${s.latest.avgRank ?? "–"}・引用率（自社サイトが AI の根拠に参照された割合） ${s.latest.citationRate ?? "–"}%・自社の紹介に根拠が付いた割合 ${s.latest.sourcedRate ?? "–"}%・SoV ${s.latest.sov ?? "–"}%`);
   }
   if (s.competitors.length) lines.push(`AI が多く挙げた事業者: ${s.competitors.map((c) => `${c.name}（${c.mentions}回${c.isOwn ? "・自社" : ""}）`).join(" / ")}`);
   if (s.domains.length) lines.push(`AI が根拠にした媒体: ${s.domains.map((d) => `${d.domain}（${d.count}本${d.isOwn ? "・自社" : ""}）`).join(" / ")}`);
