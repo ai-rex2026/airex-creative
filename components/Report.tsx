@@ -1607,7 +1607,24 @@ export function Report({
                 </div>
               )}
               <MeoStoreList meo={meo} selectedIdx={meoStoreIdx} onSelect={setMeoStoreIdx} />
-              <MeoStoreDetail store={meo.stores[meoStoreIdx] ?? meo.stores[0]} />
+              {/* 画面は選んだ店舗だけ。PDF（印刷）は全店舗を順に出す（2026-11-09） */}
+              <div className={meo.stores.length > 1 ? "no-print" : undefined}>
+                <MeoStoreDetail store={meo.stores[meoStoreIdx] ?? meo.stores[0]} />
+              </div>
+              {meo.stores.length > 1 && (
+                <div className="print-only">
+                  {meo.stores.map((st, k) => (
+                    <div key={k} className="meo-print-store" style={{ marginTop: k ? 20 : 8 }}>
+                      <p className="eyebrow">{st.self.name}</p>
+                      <MeoStoreDetail store={st} />
+                      <div className="tactic" style={{ marginTop: 10 }}>
+                        <div className="top"><b>MEO（Googleマップ）</b><span className="tag" style={{ marginLeft: 8 }}>{st.self.name}の実測から</span></div>
+                        <ul>{meoStoreActions(st).map((y, j) => <li key={j}>{y}</li>)}</ul>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
 
@@ -1616,7 +1633,7 @@ export function Report({
             const store = meo.stores[meoStoreIdx] ?? meo.stores[0];
             if (!store) return null;
             return (
-              <div className="measure" style={{ display: "grid", gap: 12, marginTop: 16 }}>
+              <div className={meo.stores.length > 1 ? "measure no-print" : "measure"} style={{ display: "grid", gap: 12, marginTop: 16 }}>
                 <div className="tactic">
                   <div className="top"><b>MEO（Googleマップ）</b><span className="tag" style={{ marginLeft: 8 }}>{store.self.name}の実測から</span></div>
                   <ul>{meoStoreActions(store).map((y, k) => <li key={k}>{y}</li>)}</ul>
@@ -1767,7 +1784,7 @@ export function Report({
             return (
               <>
                 {blocks.map((b) => (
-                  <div key={b.platform} className="measure" style={{ marginTop: 18 }}>
+                  <div key={b.platform} id={`sub-sns-${b.platform.toLowerCase()}`} className="measure" style={{ marginTop: 18 }}>
                     <p className="eyebrow"><PlatformIcon platform={b.platform} size={14} /> {b.platform}</p>
                     {b.info && (
                       <div className="rows measure" style={{ marginTop: 8 }}>
@@ -1813,7 +1830,7 @@ export function Report({
       {(!!snsPlan?.campaign || !!snsPlan?.error || !!linePlan) && (
         <>
           {snsPlan?.campaign && (
-            <div className="measure" style={{ marginTop: 16 }}>
+            <div id="sub-snscampaign" className="measure" style={{ marginTop: 16 }}>
               <p className="eyebrow">SNSキャンペーン案</p>
               <GuestMask guest={isGuest} label="SNSキャンペーン案は会員登録で確認できます">
                 <SnsCampaignCard c={snsPlan.campaign} />
@@ -1829,7 +1846,7 @@ export function Report({
           )}
 
           {linePlan && (
-            <div className="measure" style={{ marginTop: 16 }}>
+            <div id="sub-line" className="measure" style={{ marginTop: 16 }}>
               <p className="eyebrow">LINEプラン</p>
               {renderLine()}
             </div>

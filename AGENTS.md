@@ -159,3 +159,6 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - チャット（`lib/chat.ts`）のツール：`set_sections`（章の表示・非表示。すぐ反映）、`propose_rebuild`（作り直しの提案。チャットに確認ボタンを出すだけで、押すと `rebuildFromChat` が実行）、`clear_directives`。提案は `chat_messages.proposals` に残す
 - 非表示は `components/HiddenSections.tsx` が見出し（h2#sec-xxx）から次の見出しの手前までに `data-sec-hidden` を付けて隠す（画面と印刷＝PDF 出力の両方。データは消さない）。章を足したら `REPORT_SECTIONS` にも足す
 - 作り直し：ad_plan は media_plan・ad_ops・tactics を消して分析の工程に戻す（5〜10分、待機画面へ）。measures は `regenerateSummaryTab`（1〜2分）。指示は `priorityNoteFor`（業種の優先度と一緒に）と `generateTactics`・`regenerateSummaryTab` に渡り、以後の作り直しにも効く。外す媒体は AI の出力からコードでも外し、配分を100に直す（`applyExcludedChannels`）
+- 2026-11-09 追加：章の中の一部分も隠せる（`sub-` で始まる id。公式SNSアカウントの媒体ごとの欄 `sub-sns-<媒体>`・SNSキャンペーン案 `sub-snscampaign`・LINEプラン `sub-line`）。要素の id をそのまま隠す
+- AIO の照合する名前はチャットの `set_aio_names` で置き換え、保存済みの回答（`prompts[].listed`）に `findOwnRank` で照合し直す（AI は呼ばない）。所見と施策は `propose_rebuild` の target=aio（`analyzeAio`、AI 1回）で書き直す
+- MEO は画面では選んだ店舗だけ、PDF（印刷）では全店舗の詳細と店舗ごとのやることを順に出す（`.print-only`・`.no-print`）

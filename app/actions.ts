@@ -456,9 +456,10 @@ export async function sendChat(id: string, question: string): Promise<ChatMsg & 
     },
   ]);
 
-  if (applied.length > 0 || ans.prefsChanged) revalidatePath(`/analysis/${id}/report`);
+  const changed = Object.keys(ans.patch).length > 0;
+  if (changed) revalidatePath(`/analysis/${id}/report`);
 
-  return { role: "assistant", content: ans.text, flags: ans.flags, edits, proposals: ans.proposals, refresh: applied.length > 0 || ans.prefsChanged };
+  return { role: "assistant", content: ans.text, flags: ans.flags, edits, proposals: ans.proposals, refresh: changed };
 }
 
 /** チャットで直した履歴。レポートに「AIチャットで修正」と出すために読む */

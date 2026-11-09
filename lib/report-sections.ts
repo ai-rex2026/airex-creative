@@ -10,7 +10,10 @@ import type { MediaPlanItem } from "./types";
  */
 export type ReportPrefs = { hidden?: string[]; directives?: string[]; excludeChannels?: string[] };
 
-/** 隠せる章。id は画面の見出しの id（sec-xxx）の xxx */
+/**
+ * 隠せる章。id は画面の見出しの id（sec-xxx）の xxx。
+ * sub- で始まるものは章の中の一部分（要素の id そのもの。2026-11-09）
+ */
 export const REPORT_SECTIONS: { id: string; label: string }[] = [
   { id: "linked", label: "連携データ" },
   { id: "persona", label: "お客様像" },
@@ -31,6 +34,13 @@ export const REPORT_SECTIONS: { id: string; label: string }[] = [
   { id: "lpo", label: "LP改善" },
   { id: "speed", label: "表示速度" },
   { id: "social", label: "公式SNSアカウント" },
+  { id: "sub-sns-youtube", label: "公式SNSアカウントの YouTube" },
+  { id: "sub-sns-x", label: "公式SNSアカウントの X" },
+  { id: "sub-sns-tiktok", label: "公式SNSアカウントの TikTok" },
+  { id: "sub-sns-instagram", label: "公式SNSアカウントの Instagram" },
+  { id: "sub-sns-facebook", label: "公式SNSアカウントの Facebook" },
+  { id: "sub-snscampaign", label: "SNSキャンペーン案（公式SNSアカウント内）" },
+  { id: "sub-line", label: "LINEプラン（公式SNSアカウント内）" },
   { id: "outreach", label: "外部施策" },
   { id: "sched", label: "実行スケジュール" },
   { id: "aio", label: "AI検索での見え方（AIO）" },
@@ -59,7 +69,7 @@ export function sectionLabel(id: string): string {
 
 /** チャットが出す「作り直しの提案」。押すまで作り直さない（作り直すと前の内容が置き換わるため） */
 export type RebuildProposal = {
-  target: "ad_plan" | "measures";
+  target: "ad_plan" | "measures" | "aio";
   /** 作り直すときに AI に渡す指示（以後の作り直しでも効く） */
   instruction: string;
   /** 広告手法一覧から外す媒体 */
@@ -69,6 +79,7 @@ export type RebuildProposal = {
 export const REBUILD_LABEL: Record<RebuildProposal["target"], string> = {
   ad_plan: "広告手法一覧・広告運用設計・広告以外の施策と実行スケジュール",
   measures: "優先度の高い施策とカテゴリ別評価",
+  aio: "AI検索での見え方（AIO）の所見と施策",
 };
 
 const MAX_DIRECTIVES = 10;

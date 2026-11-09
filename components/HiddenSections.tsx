@@ -14,6 +14,11 @@ const ATTR = "data-sec-hidden";
 function apply(ids: string[]) {
   document.querySelectorAll(`[${ATTR}]`).forEach((el) => el.removeAttribute(ATTR));
   for (const id of ids) {
+    // 章の中の一部分（sub-xxx）は、その要素だけを隠す
+    if (id.startsWith("sub-")) {
+      document.getElementById(id)?.setAttribute(ATTR, "");
+      continue;
+    }
     const h = document.getElementById(`sec-${id}`);
     if (!h) continue;
     const head = (h.closest(".sec-head") as HTMLElement | null) ?? h;

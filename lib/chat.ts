@@ -3,6 +3,8 @@ import { checkGuardDict } from "./guardrail";
 import { applyEdit, editables, type EditResult } from "./edits";
 import type { Analysis } from "./analysis";
 import type { GuardHit } from "./types";
+import { findOwnRank } from "./meo-ops/ai-search";
+import { scoreAio } from "./report-aio-types";
 import { REBUILD_LABEL, REPORT_SECTIONS, sectionIdOf, sectionLabel, type RebuildProposal, type ReportPrefs } from "./report-sections";
 
 export type { RebuildProposal } from "./report-sections";
@@ -91,6 +93,11 @@ export function buildContext(a: Analysis): string {
     lines.push(`\n# 総評\n${a.summary.overall} / 良い点: ${a.summary.best} / 課題: ${a.summary.worst}`);
   }
 
+  if (a.aio && !a.aio.skipped) {
+    const ok = a.aio.prompts.filter((p) => p.status === "ok");
+    lines.push(`\n# AI検索での見え方（AIO）\n照合した名前: ${a.aio.ownNames.join("／") || "なし"}\n${ok.length}問中 ${ok.filter((p) => p.rank != null).length}問で候補に挙がった`);
+  }
+
   const prefs = a.report_prefs ?? {};
   const hidden = new Set(prefs.hidden ?? []);
   lines.push(`\n# レポートの章（id: 見出し・表示状態）\n${REPORT_SECTIONS.map((x) => `${x.id}: ${x.label}${hidden.has(x.id) ? "（非表示）" : ""}`).join("\n")}`);
@@ -117,10 +124,15 @@ const SYSTEM = `あなたは AI-REX Studio のレポートについて答える�
 - **広告原稿の書き換え**（edit_copy）
 - **章の表示・非表示**（set_sections）。「〇〇を非表示に」「〇〇を出して」と言われたら使う。すぐ反映され、画面と PDF 出力の両方に効く。データは消えない
 - **指示つきの作り直し**（propose_rebuild）。「〇〇媒体を除いて再設計して」「〇〇の前提で施策を作り直して」と言われたら使う。
-  作り直せるのは ad_plan（広告手法一覧・広告運用設計・広告以外の施策と実行スケジュール。5〜10分）と measures（優先度の高い施策とカテゴリ別評価。1〜2分）。
+  作り直せるのは ad_plan（広告手法一覧・広告運用設計・広告以外の施策と実行スケジュール。5〜10分）、measures（優先度の高い施策とカテゴリ別評価。1〜2分）、aio（AIO の所見と施策。1分ほど）。
   このツールは**提案を出すだけ**で、利用者が画面のボタンを押すと作り直す。だから「作り直しました」とは言わず「ボタンを押すと作り直します」と言う。
   媒体を外す指示は exclude_channels にも入れる（広告手法一覧から確実に外すため）。指示は以後の作り直しにも効く
 - **保存した指示の取り消し**（clear_directives）
+- **AIO の照合する名前の変更**（set_aio_names）。「照合した名前を A／B／C にして」と言われたら、言われた名前の一覧をそのまま渡す（足すのでなく置き換える）。
+  測ったときの AI の回答に対して照合し直すので、候補に挙がった問いの数と評価はすぐ変わる。AI に問い合わせ直すわけではない。
+  所見と施策の文章は古い名前で書いたものなので、続けて propose_rebuild（target=aio）で書き直しのボタンも出す
+- 章の中の一部分（公式SNSアカウントの LINEプラン・SNSキャンペーン案・媒体ごとの欄）も set_sections で隠せる（「レポートの章」の sub- で始まる id）
+- MEO は、PDF 出力では全店舗の情報を順に出す（画面は選んだ店舗だけ）。全店舗を PDF に出したいと言われたら、そのまま PDF 出力すればよいと案内する
 - 「再出力」「出し直し」と言われたら、表示の変更なら set_sections のあと「PDF 出力ボタンで出せます」と案内する。内容を変えたいなら propose_rebuild を使う
 - サイトの実測をやり直す・レポート全体を分析し直すことはチャットではできない。必要なら「新規分析で同じ URL を分析し直してください」と案内する
 
@@ -179,11 +191,20 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: "object",
       properties: {
-        target: { type: "string", enum: ["ad_plan", "measures"], description: "ad_plan＝広告手法一覧〜実行スケジュール、measures＝優先度の高い施策" },
+        target: { type: "string", enum: ["ad_plan", "measures", "aio"], description: "ad_plan＝広告手法一覧〜実行スケジュール、measures＝優先度の高い施策、aio＝AIOの所見と施策" },
         instruction: { type: "string", description: "作り直すときに守らせる指示。利用者の言った背景・前提を具体的に1〜3文で" },
         exclude_channels: { type: "array", items: { type: "string" }, description: "広告手法一覧から外す媒体（例：Meta広告、LINE広告）" },
       },
       required: ["target", "instruction"],
+    },
+  },
+  {
+    name: "set_aio_names",
+    description: "AIO（AI検索での見え方）で自社として照合する名前を置き換え、測ったときの回答に照合し直す（AI には問い合わせ直さない）",
+    input_schema: {
+      type: "object",
+      properties: { names: { type: "array", items: { type: "string" }, description: "照合する名前の一覧（最大8件）" } },
+      required: ["names"],
     },
   },
   {
@@ -252,7 +273,7 @@ export async function askAboutReport(
       }
       if (call.name === "propose_rebuild") {
         const inp = call.input as { target?: unknown; instruction?: unknown; exclude_channels?: unknown };
-        const target = inp.target === "ad_plan" || inp.target === "measures" ? inp.target : null;
+        const target = inp.target === "ad_plan" || inp.target === "measures" || inp.target === "aio" ? inp.target : null;
         const instruction = typeof inp.instruction === "string" ? inp.instruction.trim().slice(0, 300) : "";
         if (!target || !instruction) {
           results.push({ type: "tool_result", tool_use_id: call.id, content: "target（ad_plan か measures）と instruction が要ります", is_error: true });
@@ -261,6 +282,32 @@ export async function askAboutReport(
         const excludeChannels = (Array.isArray(inp.exclude_channels) ? inp.exclude_channels : []).filter((x): x is string => typeof x === "string" && !!x.trim()).slice(0, 8);
         if (!proposals.some((p) => p.target === target)) proposals.push({ target, instruction, excludeChannels });
         results.push({ type: "tool_result", tool_use_id: call.id, content: `画面に「${REBUILD_LABEL[target]}をこの指示で作り直す」ボタンを出しました。押されるまで作り直しません` });
+        continue;
+      }
+      if (call.name === "set_aio_names") {
+        const raw = (call.input as { names?: unknown }).names;
+        const names = [...new Set((Array.isArray(raw) ? raw : []).map((x) => String(x ?? "").trim().slice(0, 60)).filter(Boolean))].slice(0, 8);
+        const aio = (current as Analysis).aio;
+        if (!aio || aio.skipped || !aio.prompts.length) {
+          results.push({ type: "tool_result", tool_use_id: call.id, content: "このレポートには AIO の実測がありません", is_error: true });
+          continue;
+        }
+        if (!names.length) {
+          results.push({ type: "tool_result", tool_use_id: call.id, content: "名前が空です", is_error: true });
+          continue;
+        }
+        const prompts = aio.prompts.map((p) => (p.status === "ok" ? { ...p, rank: findOwnRank(p.listed ?? [], names) } : p));
+        const next = { ...aio, ownNames: names, prompts };
+        const { score, basis } = scoreAio(next);
+        const updated = { ...next, score, basis };
+        patch = { ...patch, aio: updated };
+        current = { ...current, aio: updated } as Analysis;
+        const ok = prompts.filter((p) => p.status === "ok");
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: `照合する名前を「${names.join("／")}」にして照合し直しました：${ok.length}問中 ${ok.filter((p) => p.rank != null).length}問で候補に挙がった（評価：${score ?? "—"}）。所見と施策の文章はまだ古い名前のままです`,
+        });
         continue;
       }
       if (call.name === "clear_directives") {

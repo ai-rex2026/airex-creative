@@ -250,9 +250,20 @@ export async function rebuildAdPlan(id: string) {
  */
 export async function rebuildFromChat(id: string, proposal: RebuildProposal): Promise<{ waiting: boolean }> {
   const target = proposal?.target;
-  if (target !== "ad_plan" && target !== "measures") throw new Error("作り直す対象が分かりません");
+  if (target !== "ad_plan" && target !== "measures" && target !== "aio") throw new Error("作り直す対象が分かりません");
   const { sb, user, row } = await ownedRow(id, "id, status, report_prefs");
   if (row.status !== "done") throw new Error("分析が終わってから作り直せます");
+
+  // AIO の所見と施策だけを、今の照合結果で書き直す（AI 1回。実測はやり直さない）。指示は AIO の書き直しには使わない
+  if (target === "aio") {
+    const { data } = await sb.from("analyses").select("aio, diagnosis, site").eq("id", id).eq("owner_id", user.id).maybeSingle();
+    const aio = (data?.aio as ReportAio | null) ?? null;
+    if (!aio || aio.skipped || !data?.diagnosis) throw new Error("このレポートには AIO の実測がありません");
+    const next = await analyzeAio({ ...aio, stage: "measured" }, data.diagnosis as Diagnosis, (data.site as SiteScan | null) ?? null);
+    const { error } = await sb.from("analyses").update({ aio: next }).eq("id", id).eq("owner_id", user.id);
+    if (error) throw new Error("書き直した内容を保存できませんでした");
+    return { waiting: false };
+  }
   let prefs = addDirective((row.report_prefs as ReportPrefs | null) ?? null, String(proposal.instruction ?? ""));
   prefs = addExcluded(prefs, Array.isArray(proposal.excludeChannels) ? proposal.excludeChannels.filter((x) => typeof x === "string") : []);
 
