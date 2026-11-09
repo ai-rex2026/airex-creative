@@ -1103,3 +1103,8 @@ a.redo{text-decoration:none;display:inline-flex;align-items:center}
 .rows .r .pill.ok,.side-nav .hist .pill.ok{background:#F6EFD9;color:#6E5518}
 .rows .r .pill.ng,.side-nav .hist .pill.ng{background:var(--btn);color:#fff}
 .side-nav .hist .pill.run{background:var(--sunk);color:var(--muted)}
+
+/* チャットで非表示にした章（components/HiddenSections.tsx。2026-11-09） */
+[data-sec-hidden] {
+  display: none !important;
+}

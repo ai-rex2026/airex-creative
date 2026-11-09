@@ -3,9 +3,13 @@ import { checkGuardDict } from "./guardrail";
 import { applyEdit, editables, type EditResult } from "./edits";
 import type { Analysis } from "./analysis";
 import type { GuardHit } from "./types";
+import { REBUILD_LABEL, REPORT_SECTIONS, sectionIdOf, sectionLabel, type RebuildProposal, type ReportPrefs } from "./report-sections";
+
+export type { RebuildProposal } from "./report-sections";
 
 /**
  * レポートについての質問応答と、広告原稿の書き換え。
+ * 2026-11-09〜：章の表示・非表示（すぐ反映）と、指示つきの作り直しの提案（確認ボタンを押すと実行）もできる。
  *
  * 書き換えは edit_copy ツール経由でのみ行う。会話文に新しい原稿を書かせない。
  * 差し替える前に必ずガードレールと文字数を通す（Docs/ai-chat-design.md）。
@@ -87,6 +91,15 @@ export function buildContext(a: Analysis): string {
     lines.push(`\n# 総評\n${a.summary.overall} / 良い点: ${a.summary.best} / 課題: ${a.summary.worst}`);
   }
 
+  const prefs = a.report_prefs ?? {};
+  const hidden = new Set(prefs.hidden ?? []);
+  lines.push(`\n# レポートの章（id: 見出し・表示状態）\n${REPORT_SECTIONS.map((x) => `${x.id}: ${x.label}${hidden.has(x.id) ? "（非表示）" : ""}`).join("\n")}`);
+  if (prefs.directives?.length || prefs.excludeChannels?.length) {
+    lines.push(
+      `\n# 作り直しの指示（保存済み。以後の作り直しにも効く）\n${[...(prefs.directives ?? []), ...(prefs.excludeChannels?.length ? [`使わない媒体：${prefs.excludeChannels.join("、")}`] : [])].map((x) => `- ${x}`).join("\n")}`
+    );
+  }
+
   const ed = editables(a);
   if (ed.length) {
     lines.push(
@@ -100,7 +113,16 @@ export function buildContext(a: Analysis): string {
 }
 
 const SYSTEM = `あなたは AI-REX Studio のレポートについて答えるアシスタントです。
-質問に答えるほか、**広告原稿の書き換え**ができます。
+質問に答えるほか、次のことができます。
+- **広告原稿の書き換え**（edit_copy）
+- **章の表示・非表示**（set_sections）。「〇〇を非表示に」「〇〇を出して」と言われたら使う。すぐ反映され、画面と PDF 出力の両方に効く。データは消えない
+- **指示つきの作り直し**（propose_rebuild）。「〇〇媒体を除いて再設計して」「〇〇の前提で施策を作り直して」と言われたら使う。
+  作り直せるのは ad_plan（広告手法一覧・広告運用設計・広告以外の施策と実行スケジュール。5〜10分）と measures（優先度の高い施策とカテゴリ別評価。1〜2分）。
+  このツールは**提案を出すだけ**で、利用者が画面のボタンを押すと作り直す。だから「作り直しました」とは言わず「ボタンを押すと作り直します」と言う。
+  媒体を外す指示は exclude_channels にも入れる（広告手法一覧から確実に外すため）。指示は以後の作り直しにも効く
+- **保存した指示の取り消し**（clear_directives）
+- 「再出力」「出し直し」と言われたら、表示の変更なら set_sections のあと「PDF 出力ボタンで出せます」と案内する。内容を変えたいなら propose_rebuild を使う
+- サイトの実測をやり直す・レポート全体を分析し直すことはチャットではできない。必要なら「新規分析で同じ URL を分析し直してください」と案内する
 
 答えるときに守ること:
 - 渡されたレポートの内容だけを根拠に答える。書かれていないことは「レポートには含まれていません」と言う
@@ -140,9 +162,38 @@ const TOOLS: Anthropic.Tool[] = [
       required: ["id", "text"],
     },
   },
+  {
+    name: "set_sections",
+    description: "レポートの章を非表示にする／表示に戻す。すぐ反映される。章は「レポートの章」の id で指定する",
+    input_schema: {
+      type: "object",
+      properties: {
+        hide: { type: "array", items: { type: "string" }, description: "非表示にする章の id" },
+        show: { type: "array", items: { type: "string" }, description: "表示に戻す章の id。all で全部戻す" },
+      },
+    },
+  },
+  {
+    name: "propose_rebuild",
+    description: "指示つきの作り直しを提案する（画面に確認ボタンを出す。押されるまで作り直さない）",
+    input_schema: {
+      type: "object",
+      properties: {
+        target: { type: "string", enum: ["ad_plan", "measures"], description: "ad_plan＝広告手法一覧〜実行スケジュール、measures＝優先度の高い施策" },
+        instruction: { type: "string", description: "作り直すときに守らせる指示。利用者の言った背景・前提を具体的に1〜3文で" },
+        exclude_channels: { type: "array", items: { type: "string" }, description: "広告手法一覧から外す媒体（例：Meta広告、LINE広告）" },
+      },
+      required: ["target", "instruction"],
+    },
+  },
+  {
+    name: "clear_directives",
+    description: "保存済みの作り直しの指示と、外した媒体の指定を消す（次の作り直しから効く）",
+    input_schema: { type: "object", properties: {} },
+  },
 ];
 
-export type ChatAnswer = { text: string; flags: GuardHit[]; edits: EditResult[]; patch: Record<string, unknown> };
+export type ChatAnswer = { text: string; flags: GuardHit[]; edits: EditResult[]; patch: Record<string, unknown>; proposals: RebuildProposal[]; prefsChanged: boolean };
 
 export async function askAboutReport(
   a: Analysis,
@@ -158,6 +209,9 @@ export async function askAboutReport(
   ];
 
   const edits: EditResult[] = [];
+  const proposals: RebuildProposal[] = [];
+  let prefs: ReportPrefs = { ...(a.report_prefs ?? {}) };
+  let prefsChanged = false;
   let patch: Record<string, unknown> = {};
   // 書き換えのたびにレポートが変わるので、その都度反映してから次を判断させる
   let current: Analysis = a;
@@ -177,6 +231,44 @@ export async function askAboutReport(
     const results: Anthropic.ToolResultBlockParam[] = [];
 
     for (const call of calls) {
+      if (call.name === "set_sections") {
+        const inp = call.input as { hide?: unknown; show?: unknown };
+        const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+        const showAll = list(inp.show).some((x) => x.trim().toLowerCase() === "all");
+        const hide = list(inp.hide).map(sectionIdOf);
+        const show = list(inp.show).map(sectionIdOf);
+        const unknown = [...list(inp.hide), ...list(inp.show)].filter((x, i, arr) => x.trim().toLowerCase() !== "all" && sectionIdOf(x) === null && arr.indexOf(x) === i);
+        const next = new Set(showAll ? [] : prefs.hidden ?? []);
+        for (const h of hide) if (h) next.add(h);
+        for (const h of show) if (h) next.delete(h);
+        prefs = { ...prefs, hidden: [...next] };
+        prefsChanged = true;
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: `いま非表示の章：${prefs.hidden?.length ? prefs.hidden.map(sectionLabel).join("、") : "なし"}${unknown.length ? `。見つからなかった章：${unknown.join("、")}` : ""}`,
+        });
+        continue;
+      }
+      if (call.name === "propose_rebuild") {
+        const inp = call.input as { target?: unknown; instruction?: unknown; exclude_channels?: unknown };
+        const target = inp.target === "ad_plan" || inp.target === "measures" ? inp.target : null;
+        const instruction = typeof inp.instruction === "string" ? inp.instruction.trim().slice(0, 300) : "";
+        if (!target || !instruction) {
+          results.push({ type: "tool_result", tool_use_id: call.id, content: "target（ad_plan か measures）と instruction が要ります", is_error: true });
+          continue;
+        }
+        const excludeChannels = (Array.isArray(inp.exclude_channels) ? inp.exclude_channels : []).filter((x): x is string => typeof x === "string" && !!x.trim()).slice(0, 8);
+        if (!proposals.some((p) => p.target === target)) proposals.push({ target, instruction, excludeChannels });
+        results.push({ type: "tool_result", tool_use_id: call.id, content: `画面に「${REBUILD_LABEL[target]}をこの指示で作り直す」ボタンを出しました。押されるまで作り直しません` });
+        continue;
+      }
+      if (call.name === "clear_directives") {
+        prefs = { ...prefs, directives: [], excludeChannels: [] };
+        prefsChanged = true;
+        results.push({ type: "tool_result", tool_use_id: call.id, content: "保存済みの指示を消しました。次の作り直しから効きます（今の内容は変わりません）" });
+        continue;
+      }
       const { id, text: next } = call.input as { id?: string; text?: string };
       if (!id || typeof next !== "string") {
         results.push({ type: "tool_result", tool_use_id: call.id, content: "番号と本文の両方が要ります", is_error: true });
@@ -198,5 +290,6 @@ export async function askAboutReport(
   // 会話文にまずい語が混ざっていないか、辞書だけで確認する。AI を使わないので無料
   const flags = a.diagnosis ? checkGuardDict([text], a.diagnosis.industry) : [];
 
-  return { text, flags, edits, patch };
+  if (prefsChanged) patch = { ...patch, report_prefs: prefs };
+  return { text, flags, edits, patch, proposals, prefsChanged };
 }

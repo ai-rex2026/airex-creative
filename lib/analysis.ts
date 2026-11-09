@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { diagnose } from "./diagnose";
 import { generateCopies, scoreCopies } from "./copy";
 import { generateMediaPlan } from "./media-plan";
+import { applyExcludedChannels, directiveNote, joinNotes, type ReportPrefs } from "./report-sections";
 import { generateSummary } from "./summary";
 import { findCompetitors, type CompetitorScan } from "./competitors";
 import { generateTactics, type TacticPlan } from "./tactics";
@@ -64,6 +65,8 @@ export type Analysis = {
   site: SiteScan | null;
   seo: SeoEstimate | null;
   media_plan: MediaPlanItem[] | null;
+  /** 表示設定と作り直しの指示（2026-11-09。lib/report-sections.ts）。古い分析には無い */
+  report_prefs?: ReportPrefs | null;
   summary: Summary | null;
   competitors: CompetitorScan | null;
   tactics: TacticPlan | null;
@@ -159,7 +162,8 @@ function failedChapter<T extends object>(empty: T) {
 
 /** 17業種別・優先度マトリックスから、その章向けの指示文を作る。分類が未確定（古い分析）なら何も足さない */
 function priorityNoteFor(a: Analysis, section: SectionKey): string | undefined {
-  return a.industry_vertical ? buildPriorityInstruction(a.industry_vertical, section) : undefined;
+  // 利用者がチャットで出した作り直しの指示（2026-11-09）も、業種の優先度と一緒に渡す
+  return joinNotes(a.industry_vertical ? buildPriorityInstruction(a.industry_vertical, section) : undefined, directiveNote(a.report_prefs));
 }
 
 /**
@@ -463,7 +467,11 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       return await save({ public_ads: await reviewPublicAds(a.public_ads, diagnosis, a.url), step: "広告手法を選んでいます", progress: 52 });
     }
     if (!a.media_plan) {
-      const plan = await generateMediaPlan(a.diagnosis, a.site, a.budget, priorityNoteFor(a, "media_plan"));
+      // 利用者が外した媒体は、AI が指示を守らなくてもコードで外す
+      const plan = applyExcludedChannels(
+        await generateMediaPlan(a.diagnosis, a.site, a.budget, priorityNoteFor(a, "media_plan")),
+        a.report_prefs?.excludeChannels
+      );
       return await save({ media_plan: plan, step: "広告の運用設計を書いています", progress: 55 });
     }
     // 広告運用設計。媒体ごとの「構成（キャンペーン・広告グループの骨組み）」は互いに独立、
@@ -554,7 +562,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
         jobs.push({
           key: "tactics",
           run: () =>
-            generateTactics(diagnosis, a.site, a.social, a.ad_ops, a.meo).catch(
+            generateTactics(diagnosis, a.site, a.social, a.ad_ops, a.meo, directiveNote(a.report_prefs)).catch(
               failedChapter<TacticPlan>({ items: [], schedule: [], risks: [] })
             ),
         });

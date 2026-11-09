@@ -73,7 +73,9 @@ export async function generateTactics(
   site: SiteScan | null,
   social: SocialScan | null = null,
   adOps: AdOps | null = null,
-  meo: MeoScan | null = null
+  meo: MeoScan | null = null,
+  /** 利用者からの作り直しの指示（2026-11-09） */
+  userNote = ""
 ): Promise<TacticPlan> {
   const sns = socialFacts(social);
   const ads = adOpsFacts(adOps);
@@ -100,7 +102,7 @@ items は次の領域から、この商材に効くものだけを4〜6件。効
 ${ads ? "- 広告出稿も必ずスケジュールに乗せる。下に渡す実際のキャンペーン名・媒体・予算を使い、「いつ入稿するか」「いつ最初の指標（CPA/CTR等）を見て調整するか」「いつ予算配分を見直すか」を、各媒体・各キャンペーンについて具体的なitemとして書く（出稿準備フェーズで完結させない。初動確認・調整のタイミングも後続フェーズに置く）" : "- この分析では広告出稿の設計がまだ無いため、広告関連のitemは schedule に入れない"}
 - risks は3件まで。この商材で実際に起きうるものだけ（法令・炎上・人手・季節性など）
 ${sns ? "- 実測できているSNSの数値（フォロワー数・投稿数など）がある場合は、その媒体については新規開設ではなく、今の数値・投稿頻度・投稿内容を動かす前提で具体的に書く。実測が無い媒体についてだけ、新規に始める施策として書いてよい" : ""}
-${meoNote ? "- MEO（Googleマップ）のitemは、下に渡す【Googleビジネスプロフィールの実測】の「不足している項目」を根拠にする。一般論（「口コミを増やす」「情報を充実させる」等）ではなく、渡された不足項目をそのまま埋める具体的なactionsを書く" : "- この分析ではGoogleビジネスプロフィールの実測が取れていないため、MEOのitemは出さない"}`,
+${meoNote ? "- MEO（Googleマップ）のitemは、下に渡す【Googleビジネスプロフィールの実測】の「不足している項目」を根拠にする。一般論（「口コミを増やす」「情報を充実させる」等）ではなく、渡された不足項目をそのまま埋める具体的なactionsを書く" : "- この分析ではGoogleビジネスプロフィールの実測が取れていないため、MEOのitemは出さない"}${userNote ? `\n\n${userNote}` : ""}`,
     `商材: ${d.product}
 ターゲット: ${d.audience}
 業種: ${d.industry}

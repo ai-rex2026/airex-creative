@@ -40,6 +40,7 @@ import type { MediaPlanItem, Summary } from "@/lib/types";
 import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "@/lib/types";
 import { Banner, pickFacts } from "./Banner";
 import { ReportChat } from "./ReportChat";
+import { HiddenSections } from "./HiddenSections";
 import { Measures } from "./Measures";
 import { Inputs } from "./Inputs";
 import { ContactCta } from "./ContactCta";
@@ -179,6 +180,7 @@ export function Report({
   adReview = null,
   publicAds = null,
   aio = null,
+  hiddenSections = [],
 }: {
   d: Diagnosis;
   copies: BannerCopy[];
@@ -223,6 +225,8 @@ export function Report({
   publicAds?: PublicAds | null;
   /** AI検索での見え方（AIO。2026-10-21〜）。それ以前の分析には無い */
   aio?: ReportAio | null;
+  /** チャットで非表示にした章（lib/report-sections.ts の id）。2026-11-09 */
+  hiddenSections?: string[];
 }) {
   const [picked, setPicked] = useState<number[]>(copies.map((_, i) => i).slice(0, 3));
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "google-lb"]);
@@ -606,6 +610,7 @@ export function Report({
     // 未登録ユーザーはブラウザの印刷機能からもPDFにできないようにする（globals.css の .guest-noprint）
     <div className={isGuest ? "guest-noprint" : undefined}>
       {err && <div className="alert">{err}</div>}
+      <HiddenSections ids={hiddenSections} />
 
       <div className="rep-top">
         <a className="icon-btn" href="/analysis">←</a>

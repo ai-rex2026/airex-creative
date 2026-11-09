@@ -152,3 +152,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## AIO「AIでの見え方」の引用率（2026-11-09 追記）
 
 - `lib/aio/prompts.ts` の `summarize`：引用率（`citationRate`）は「AI が回答の根拠に自社サイト（対象の URL のドメイン）を参照した回の割合」で、媒体一覧（`domains`）と同じ `citedSources` から数える。以前の「自社の紹介に根拠 URL が付いた割合（他社媒体でも可）」は `sourcedRate`（画面は「紹介の根拠あり」）と、その根拠の媒体 `ownSourceDomains` に分けた。媒体一覧は上位12に入らなくても自社サイトを必ず出す（参照なしは 0本）。過去の測定結果からの再計算だけで AI は呼ばない
+
+## レポートのチャットでの表示変更と作り直し（2026-11-09 追記）
+
+- `analyses.report_prefs`（`lib/report-sections.ts`）：`hidden`（非表示の章）・`directives`（作り直しの指示、最大10件）・`excludeChannels`（外す広告媒体）
+- チャット（`lib/chat.ts`）のツール：`set_sections`（章の表示・非表示。すぐ反映）、`propose_rebuild`（作り直しの提案。チャットに確認ボタンを出すだけで、押すと `rebuildFromChat` が実行）、`clear_directives`。提案は `chat_messages.proposals` に残す
+- 非表示は `components/HiddenSections.tsx` が見出し（h2#sec-xxx）から次の見出しの手前までに `data-sec-hidden` を付けて隠す（画面と印刷＝PDF 出力の両方。データは消さない）。章を足したら `REPORT_SECTIONS` にも足す
+- 作り直し：ad_plan は media_plan・ad_ops・tactics を消して分析の工程に戻す（5〜10分、待機画面へ）。measures は `regenerateSummaryTab`（1〜2分）。指示は `priorityNoteFor`（業種の優先度と一緒に）と `generateTactics`・`regenerateSummaryTab` に渡り、以後の作り直しにも効く。外す媒体は AI の出力からコードでも外し、配分を100に直す（`applyExcludedChannels`）

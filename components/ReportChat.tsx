@@ -3,11 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadChat, sendChat, type ChatMsg } from "@/app/actions";
+import { rebuildFromChat } from "@/app/report-extra-actions";
+import { REBUILD_LABEL, type RebuildProposal } from "@/lib/report-sections";
 import { Spinner } from "./Loading";
 
 /**
  * レポートについて聞くパネル。右から出す。
- * 質問に答えるほか、広告原稿の書き換えもできる。
+ * 質問に答えるほか、広告原稿の書き換え・章の表示／非表示・指示つきの作り直し（確認ボタンを押すと実行）ができる。
  * 実測値は書き換え対象にしていない（Docs/ai-chat-design.md）。
  */
 
@@ -16,6 +18,8 @@ const PRESETS = [
   "この予算配分にした理由は？",
   "法令で引っかかった原稿を直して",
   "見出しをもっと具体的に書き換えて",
+  "Meta広告は配信しない前提で広告手法を作り直して",
+  "出稿中の広告の章を非表示にして",
 ];
 
 export function ReportChat({ id, isGuest = false }: { id: string; isGuest?: boolean }) {
@@ -25,6 +29,7 @@ export function ReportChat({ id, isGuest = false }: { id: string; isGuest?: bool
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [running, setRunning] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -48,8 +53,8 @@ export function ReportChat({ id, isGuest = false }: { id: string; isGuest?: bool
     try {
       const a = await sendChat(id, question);
       setMsgs((m) => [...m, a]);
-      // 原稿を直したらレポート本体も変わっているので読み直す
-      if (a.edits?.some((e) => e.ok)) router.refresh();
+      // 原稿を直した・章の表示を変えたらレポート本体も変わっているので読み直す
+      if (a.refresh || a.edits?.some((e) => e.ok)) router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
       // 送れなかった質問は残さない。履歴と画面がずれる
@@ -57,6 +62,25 @@ export function ReportChat({ id, isGuest = false }: { id: string; isGuest?: bool
       setText(question);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function rebuild(p: RebuildProposal, key: string) {
+    if (running) return;
+    setErr(null);
+    setRunning(key);
+    try {
+      const r = await rebuildFromChat(id, p);
+      if (r.waiting) {
+        window.location.assign(`/analysis/${id}/waiting`);
+        return;
+      }
+      setMsgs((m) => [...m, { role: "assistant", content: `${REBUILD_LABEL[p.target]}を作り直しました。` }]);
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning(null);
     }
   }
 
@@ -86,8 +110,8 @@ export function ReportChat({ id, isGuest = false }: { id: string; isGuest?: bool
 
           <div className="cb">
             <div className="m a">
-              レポートについてお答えします。広告原稿の書き換えもできます。<br />
-              書き換えた原稿は法令チェックと文字数チェックを通ります。
+              レポートについてお答えします。広告原稿の書き換え、章の表示・非表示、指示に合わせた作り直しもできます。<br />
+              書き換えた原稿は法令チェックと文字数チェックを通ります。作り直しは、確認のボタンを押したときに行います。
             </div>
 
             {msgs.length === 0 && (
@@ -119,6 +143,26 @@ export function ReportChat({ id, isGuest = false }: { id: string; isGuest?: bool
                     )}
                   </div>
                 )}
+                {m.proposals && m.proposals.length > 0 && (
+                  <div className="medits">
+                    {m.proposals.map((p, k) => {
+                      const key = `${i}-${k}`;
+                      return (
+                        <div className="ed ok" key={key}>
+                          <b>{REBUILD_LABEL[p.target]}を作り直す</b>
+                          <span>指示：{p.instruction}</span>
+                          {p.excludeChannels.length > 0 && <span>外す媒体：{p.excludeChannels.join("、")}</span>}
+                          <small style={{ display: "block", color: "var(--muted)" }}>
+                            今の内容は置き換わります（{p.target === "ad_plan" ? "5〜10分" : "1〜2分"}）。指示は以後の作り直しにも使います。
+                          </small>
+                          <button className="btn" style={{ marginTop: 6 }} disabled={!!running || busy} onClick={() => rebuild(p, key)}>
+                            {running === key ? <Spinner label="作り直しています" /> : "この指示で作り直す"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 {m.flags && m.flags.length > 0 && (
                   <div className="mflag">
                     この回答に法令上の注意語が含まれます（{m.flags.map((f) => `「${f.text}」`).join("・")}）。
@@ -146,7 +190,7 @@ export function ReportChat({ id, isGuest = false }: { id: string; isGuest?: bool
             <button className="btn" onClick={() => ask(text)} disabled={busy || !text.trim()}>
               送信
             </button>
-            <small>広告原稿は書き換えられます。実測値（スコア・順位・アクセス数）は変更できません。⌘+Enter でも送信。</small>
+            <small>原稿の書き換え・章の非表示・指示つきの作り直しができます。実測値（スコア・順位・アクセス数）は変更できません。⌘+Enter でも送信。</small>
           </div>
         </aside>
       )}

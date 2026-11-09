@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { newAnalysisId, type Analysis } from "@/lib/analysis";
 import { askAboutReport } from "@/lib/chat";
+import type { RebuildProposal } from "@/lib/report-sections";
 import type { Measure } from "@/lib/measures";
 import { generateSummaryTab } from "@/lib/summary-tab";
 import { generateRunbook } from "@/lib/runbook";
@@ -16,6 +17,7 @@ import type { PriceScan } from "@/lib/pricing";
 import type { SocialScan } from "@/lib/social";
 import { normalizeManualSocialInput } from "@/lib/social";
 import { kickAnalysis } from "@/lib/worker";
+import { directiveNote } from "@/lib/report-sections";
 import { hasGoogleApp, listGoogleAssets, type GoogleAssets, type GoogleChoice } from "@/lib/google";
 import { generateLp } from "@/lib/lp";
 import { buildLedger } from "@/lib/measure-sources";
@@ -376,6 +378,8 @@ export type ChatMsg = {
   content: string;
   flags?: GuardHit[] | null;
   edits?: ChatEdit[] | null;
+  /** 作り直しの提案（確認ボタン）。2026-11-09〜 */
+  proposals?: RebuildProposal[] | null;
 };
 
 /** これまでのやり取り。レポートを開いたときに読む */
@@ -383,18 +387,25 @@ export async function loadChat(id: string): Promise<ChatMsg[]> {
   const sb = await createClient();
   const { data } = await sb
     .from("chat_messages")
-    .select("role, content, flags, edits")
+    // proposals 列が無い環境（マイグレーション前）でも読めるよう * で取る
+    .select("*")
     .eq("analysis_id", id)
     .order("created_at", { ascending: true })
     .limit(60);
-  return (data ?? []) as ChatMsg[];
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    role: r.role as ChatMsg["role"],
+    content: String(r.content ?? ""),
+    flags: (r.flags as ChatMsg["flags"]) ?? null,
+    edits: (r.edits as ChatMsg["edits"]) ?? null,
+    proposals: (r.proposals as ChatMsg["proposals"]) ?? null,
+  }));
 }
 
 /**
  * レポートについて質問する。
  * この段階ではレポートを書き換えない。読んで答えるだけ。
  */
-export async function sendChat(id: string, question: string): Promise<ChatMsg> {
+export async function sendChat(id: string, question: string): Promise<ChatMsg & { refresh?: boolean }> {
   assertKey();
   const q = question.trim();
   if (!q) throw new Error("質問を入力してください");
@@ -441,12 +452,13 @@ export async function sendChat(id: string, question: string): Promise<ChatMsg> {
       content: ans.text,
       flags: ans.flags.length ? ans.flags : null,
       edits: edits.length ? edits : null,
+      ...(ans.proposals.length ? { proposals: ans.proposals } : {}),
     },
   ]);
 
-  if (applied.length > 0) revalidatePath(`/analysis/${id}/report`);
+  if (applied.length > 0 || ans.prefsChanged) revalidatePath(`/analysis/${id}/report`);
 
-  return { role: "assistant", content: ans.text, flags: ans.flags, edits };
+  return { role: "assistant", content: ans.text, flags: ans.flags, edits, proposals: ans.proposals, refresh: applied.length > 0 || ans.prefsChanged };
 }
 
 /** チャットで直した履歴。レポートに「AIチャットで修正」と出すために読む */
@@ -643,7 +655,7 @@ export async function regenerateSummaryTab(id: string) {
   // 分析データタブで提案済みの打ち手から施策を組む（2026-10-05〜。古い分析も作り直すとこの方式になる）
   const plan = await generateSummaryTab(
     a.diagnosis, a.site, a.kpi, a.meo, a.pricing, a.seo, a.gsc, a.keywords, a.speed, a.lpo,
-    a.social, a.suggests, a.ad_ops, a.extra_inputs ?? [], doneTitles, undefined, buildLedger(a)
+    a.social, a.suggests, a.ad_ops, a.extra_inputs ?? [], doneTitles, directiveNote(a.report_prefs) || undefined, buildLedger(a)
   );
   const items = plan.measures.map((m, i) => ({ ...m, id: `m${Date.now()}-${i}` }));
 

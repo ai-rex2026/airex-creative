@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAnthropic } from "@/lib/anthropic";
 import { kickAnalysis } from "@/lib/worker";
+import { addDirective, addExcluded, type ReportPrefs } from "@/lib/report-sections";
+import type { RebuildProposal } from "@/lib/report-sections";
+import { regenerateSummaryTab } from "@/app/actions";
 import { withAi, type AiProvider } from "@/lib/ai-context";
 import { generateSnsPlan } from "@/lib/sns-plan";
 import { generateNegatives, type OutreachPlan, type SuggestScan } from "@/lib/outreach";
@@ -237,4 +240,41 @@ export async function rebuildAdPlan(id: string) {
       // 取りこぼしは cron のワーカーが拾う
     }
   });
+}
+
+/**
+ * チャットが出した「作り直しの提案」を実行する（確認ボタンから。2026-11-09）。
+ * 指示と外す媒体を report_prefs に保存してから作り直す（以後の作り直しにも効く）。
+ * ad_plan：広告手法一覧・広告運用設計・広告以外の施策（実行スケジュールを含む）を消して、分析の工程に戻す（5〜10分）
+ * measures：優先度の高い施策とカテゴリ別評価をその場で作り直す（1〜2分）
+ */
+export async function rebuildFromChat(id: string, proposal: RebuildProposal): Promise<{ waiting: boolean }> {
+  const target = proposal?.target;
+  if (target !== "ad_plan" && target !== "measures") throw new Error("作り直す対象が分かりません");
+  const { sb, user, row } = await ownedRow(id, "id, status, report_prefs");
+  if (row.status !== "done") throw new Error("分析が終わってから作り直せます");
+  let prefs = addDirective((row.report_prefs as ReportPrefs | null) ?? null, String(proposal.instruction ?? ""));
+  prefs = addExcluded(prefs, Array.isArray(proposal.excludeChannels) ? proposal.excludeChannels.filter((x) => typeof x === "string") : []);
+
+  if (target === "measures") {
+    const { error } = await sb.from("analyses").update({ report_prefs: prefs }).eq("id", id).eq("owner_id", user.id);
+    if (error) throw new Error("指示を保存できませんでした");
+    await regenerateSummaryTab(id);
+    return { waiting: false };
+  }
+
+  const { error } = await sb
+    .from("analyses")
+    .update({ report_prefs: prefs, media_plan: null, ad_ops: null, tactics: null, status: "queued", step: "指示に合わせて広告手法を選び直しています", progress: 50 })
+    .eq("id", id)
+    .eq("owner_id", user.id);
+  if (error) throw new Error("作り直しを登録できませんでした");
+  after(async () => {
+    try {
+      await kickAnalysis(id);
+    } catch {
+      // 取りこぼしは cron のワーカーが拾う
+    }
+  });
+  return { waiting: true };
 }
