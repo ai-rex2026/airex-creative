@@ -1,0 +1,27 @@
+name: apply-rprefs
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/apply-rprefs.yml"]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: apply
+        run: |
+          set -e
+          D=.buildtmp/rprefs
+          cat $D/chunks/chunk-*.b64 | base64 -d | gunzip > /tmp/patch.diff
+          sha256sum -c $D/patch.sha256
+          git apply /tmp/patch.diff
+          git rm -r -q .buildtmp/rprefs .github/workflows/apply-rprefs.yml
+          git config user.name suzuki
+          git config user.email suzuki.yuichiro.libertad@gmail.com
+          git add -A
+          git commit -q -m "レポートのチャットで章の表示・非表示と、指示つきの作り直し（広告手法〜実行スケジュール・施策。確認ボタンで実行）をできるようにする" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
+          git push origin HEAD:main
