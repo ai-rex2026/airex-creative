@@ -162,3 +162,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 2026-11-09 追加：章の中の一部分も隠せる（`sub-` で始まる id。公式SNSアカウントの媒体ごとの欄 `sub-sns-<媒体>`・SNSキャンペーン案 `sub-snscampaign`・LINEプラン `sub-line`）。要素の id をそのまま隠す
 - AIO の照合する名前はチャットの `set_aio_names` で置き換え、保存済みの回答（`prompts[].listed`）に `findOwnRank` で照合し直す（AI は呼ばない）。所見と施策は `propose_rebuild` の target=aio（`analyzeAio`、AI 1回）で書き直す
 - MEO は画面では選んだ店舗だけ、PDF（印刷）では全店舗の詳細と店舗ごとのやることを順に出す（`.print-only`・`.no-print`）
+
+## LPO運用（2026-11-11 追記）
+
+- 左メニュー「LPO運用」（`/lpo`・`/lpo/[id]?tab=lp|speed|heatmap|results`）。表は `lpo_projects`（LP ごと。`plan`＝LP改善・`plan_done`＝済みの key・`speed`／`speed_history`＝表示速度と推移）、`lpo_heatmaps`、`lpo_clarity`（本人のセッションから読めない表・`sealToken`）。SQL は `Docs/sql/2026-11-11-lpo-ops.sql`、画像は非公開バケット `lpo-heatmaps`
+- 登録：分析レポートから取り込む（`createLpoFromAnalysisAction`。そのレポートの LP改善・表示速度を引き継ぎ、AI・計測なし。レポートの LP改善の章にも入口のボタン）か、URL から（`buildLpoAction`：サイトの読み取り → 何を売っているか → LP改善を工程ごとに保存し、済んだ工程は飛ばす。速度は `measureSpeedAction`＝PageSpeed Insights）
+- ヒートマップ（`lib/lpo-ops/`）：Microsoft Clarity の Data Export API（直近3日・1プロジェクト1日10回・URL ごとの指標だけで画像や座標は取れない）を URL で絞って保存 → AI が改善案（`analyzeClarity`）。同じ対象の取得は20時間に1回まで。数字を先に保存してから AI。ほかのツール（Hotjar・Ptengine 等）は画面キャプチャを取り込み、ブラウザで上から順に分割（幅1200px・高さ1800px・最大8枚・合計3.8MB 以下に収まるまで画質と幅を下げる）して Sonnet に読ませる（`analyzeHeatmapImages`）。画像を先に保存し、AI が失敗しても「改善案を作り直す」でやり直せる。検証は `HeatmapDeps`・`fetchClarity` の fetcher を差し替えて行う

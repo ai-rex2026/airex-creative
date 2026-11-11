@@ -49,7 +49,7 @@ export function MobileNav({
   active,
   account,
 }: {
-  active: "new" | "summary" | "analysis" | "stores" | "seo" | "aio" | "affiliate" | "sns" | "settings";
+  active: "new" | "summary" | "analysis" | "stores" | "seo" | "aio" | "lpo" | "affiliate" | "sns" | "settings";
   /** メールアドレス。ゲストなら「ゲスト」 */
   account: string;
 }) {
@@ -109,6 +109,9 @@ export function MobileNav({
             </Link>
             <Link href="/aio" className={`mnav-link${active === "aio" ? " on" : ""}`} onClick={close}>
               AIO（AI検索対策）
+            </Link>
+            <Link href="/lpo" className={`mnav-link${active === "lpo" ? " on" : ""}`} onClick={close}>
+              LPO運用
             </Link>
             <Link href="/affiliate" className={`mnav-link${active === "affiliate" ? " on" : ""}`} onClick={close}>
               アフィリエイト運用

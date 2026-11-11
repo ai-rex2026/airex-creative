@@ -1121,3 +1121,35 @@ a.redo{text-decoration:none;display:inline-flex;align-items:center}
     break-inside: avoid-page;
   }
 }
+
+/* LPO運用のフォーム（2026-11-11） */
+.input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 14px;
+  background: #fff;
+  color: var(--text);
+}
+.lpo-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  margin: 18px 0 20px;
+}
+.lpo-tabs a {
+  flex-shrink: 0;
+  padding: 6px 12px 9px;
+  font-size: 14px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  text-decoration: none;
+}
+.lpo-tabs a.on {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--text);
+}

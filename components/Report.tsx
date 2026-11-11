@@ -41,6 +41,7 @@ import { BUDGETS, INDUSTRY_LABEL, budgetOf, shareToYen, type BudgetBand } from "
 import { Banner, pickFacts } from "./Banner";
 import { ReportChat } from "./ReportChat";
 import { HiddenSections } from "./HiddenSections";
+import { LpoImportButton } from "./lpo/LpoImportButton";
 import { Measures } from "./Measures";
 import { Inputs } from "./Inputs";
 import { ContactCta } from "./ContactCta";
@@ -1658,6 +1659,7 @@ export function Report({
                   </div>
                   <span className="rule" />
                 </div>
+                {!isGuest && <LpoImportButton analysisId={id} />}
                 {hasLpo && (
                   <div className="measure" style={{ display: "grid", gap: 12 }}>
                     {lpo!.groups.map((g, i) => (
