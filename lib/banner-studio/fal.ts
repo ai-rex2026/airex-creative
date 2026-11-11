@@ -42,8 +42,13 @@ export async function falSubmit(model: string, input: Record<string, unknown>, d
     body: JSON.stringify(input),
     signal: AbortSignal.timeout(30_000),
   });
-  if (res.status === 401 || res.status === 403) throw new Error("fal の API キーが無効です");
-  if (res.status === 402) throw new Error("fal の残高が足りません（fal のダッシュボードで支払い設定を確認してください）");
+  if (res.status === 401 || res.status === 402 || res.status === 403) {
+    // 403 は鍵の誤り以外に、残高切れ（User is locked）・許可していないモデルでも返る。fal の理由をそのまま出す
+    const why = await errText(res);
+    if (res.status === 402 || /balance|locked|billing/i.test(why)) throw new Error(`fal の残高が足りません（fal のダッシュボードの Billing で入金・支払い設定を確認してください。fal：${why}）`);
+    if (res.status === 401) throw new Error(`fal の API キーが無効です（形式は「キーID:シークレット」の1行。fal：${why}）`);
+    throw new Error(`fal に断られました（HTTP 403。キーの権限・使えるモデルの設定を確認してください。fal：${why}）`);
+  }
   if (!res.ok) throw new Error(`fal に依頼できませんでした（HTTP ${res.status}：${await errText(res)}）`);
   const j = (await res.json()) as { request_id?: string; status_url?: string; response_url?: string };
   if (!j.request_id || !j.status_url || !j.response_url) throw new Error("fal の受付の返事を読めませんでした");
