@@ -1,0 +1,27 @@
+name: apply-lpo
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/apply-lpo.yml"]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: apply
+        run: |
+          set -e
+          D=.buildtmp/lpo
+          cat $D/chunks/chunk-*.b64 | base64 -d | gunzip > /tmp/patch.diff
+          sha256sum -c $D/patch.sha256
+          git apply /tmp/patch.diff
+          git rm -r -q .buildtmp/lpo .github/workflows/apply-lpo.yml
+          git config user.name suzuki
+          git config user.email suzuki.yuichiro.libertad@gmail.com
+          git add -A
+          git commit -q -m "LPO運用を新設（LP改善・表示速度改善・ヒートマップ分析（Clarity 連携・画像取り込み）・効果のタブ）" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
+          git push origin HEAD:main
