@@ -85,7 +85,7 @@ export class TextCheckUnavailableError extends Error {}
  * 費用の低い Gemini を先に使い、使えないときだけ Claude に切り替える。どちらも使えないときは
  * 「文字が入っていた」とは扱わず、TextCheckUnavailableError で理由を返す（原因が画面に出るように）
  */
-async function detectText(img: GeneratedImage): Promise<boolean | { hasText: boolean; seen?: string[] }> {
+export async function detectText(img: GeneratedImage): Promise<boolean | { hasText: boolean; seen?: string[] }> {
   const reasons: string[] = [];
   const b64 = img.bytes.toString("base64");
   if (hasGemini()) {

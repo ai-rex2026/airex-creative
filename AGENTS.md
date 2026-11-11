@@ -168,3 +168,13 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 左メニュー「LPO運用」（`/lpo`・`/lpo/[id]?tab=lp|speed|heatmap|results`）。表は `lpo_projects`（LP ごと。`plan`＝LP改善・`plan_done`＝済みの key・`speed`／`speed_history`＝表示速度と推移）、`lpo_heatmaps`、`lpo_clarity`（本人のセッションから読めない表・`sealToken`）。SQL は `Docs/sql/2026-11-11-lpo-ops.sql`、画像は非公開バケット `lpo-heatmaps`
 - 登録：分析レポートから取り込む（`createLpoFromAnalysisAction`。そのレポートの LP改善・表示速度を引き継ぎ、AI・計測なし。レポートの LP改善の章にも入口のボタン）か、URL から（`buildLpoAction`：サイトの読み取り → 何を売っているか → LP改善を工程ごとに保存し、済んだ工程は飛ばす。速度は `measureSpeedAction`＝PageSpeed Insights）
 - ヒートマップ（`lib/lpo-ops/`）：Microsoft Clarity の Data Export API（直近3日・1プロジェクト1日10回・URL ごとの指標だけで画像や座標は取れない）を URL で絞って保存 → AI が改善案（`analyzeClarity`）。同じ対象の取得は20時間に1回まで。数字を先に保存してから AI。ほかのツール（Hotjar・Ptengine 等）は画面キャプチャを取り込み、ブラウザで上から順に分割（幅1200px・高さ1800px・最大8枚・合計3.8MB 以下に収まるまで画質と幅を下げる）して Sonnet に読ませる（`analyzeHeatmapImages`）。画像を先に保存し、AI が失敗しても「改善案を作り直す」でやり直せる。検証は `HeatmapDeps`・`fetchClarity` の fetcher を差し替えて行う
+
+## 広告運用 ＞ バナー制作（2026-11-11 追記）
+
+- 左メニュー「広告運用」（`/ads`。媒体との連携は準備中）の下に「バナー制作」（`/ads/banners`・`/ads/banners/[id]`）。表は `banner_projects`・`banner_visuals`、置き場は非公開バケット `banner-assets`（画面は `/api/banner-assets/<本人のID>/...` の同一オリジン経由）。SQL は `Docs/sql/2026-11-11-banner-studio.sql`
+- 流れ（`app/banner-actions.ts`）：URL・説明・素材（商品写真・写真・ロゴ、6点まで）→ `prepareBannerAction`（読み取り `diagnose` → コピー `generateCopies`＝法令チェックつき → 絵の基本パターン `planPatterns`＝AI 1回。工程ごとに保存し済みは飛ばす）→ 基本パターンの絵（正方形）→ 媒体のサイズへの展開 → 5秒の動画
+- 絵と動画は fal（`lib/banner-studio/fal.ts`。Queue API）。画像 `fal-ai/nano-banana`、素材を使うパターンと縦横比の作り直しは `fal-ai/nano-banana/edit`（`aspect_ratio`）、動画は `fal-ai/kling-video/v2.1/standard/image-to-video`（5秒）。送った時点で `request_id` 等を `banner_visuals` に保存し、画面からの `pollBannerAction`（6秒おき）で取り込む（Vercel の実行時間に収める）。30分たっても終わらない依頼はエラーにする。月の上限は `MONTHLY_LIMIT`
+- 絵には文字を描かせない（プロンプトで禁止＋取り込み時に `detectText` で確認し、入っていそうなら注意を出す）。コピーは `components/Banner.tsx`（DOM）で重ね、PNG／ZIP は html-to-image で書き出す。動画は文字なしで作り、ブラウザで canvas に重ねて H.264 の MP4 にする（`components/banner-studio/render-banner-video.ts`。音声なし）
+- サイズは `BANNER_SIZES`（Meta・Google・Yahoo!・LINE・TikTok・X）。各サイズに近い fal の縦横比（`nearestAspect`）の絵を使い、無ければ作り直す（「切り抜きだけ」なら fal を使わない）
+- `FAL_KEY`（Vercel の環境変数）が無いと絵と動画は作れない（コピーとパターンは作れる）。検証は `FalDeps`・`PatternDeps` を差し替えて行う
+- 自動入稿はしない（書き出したファイルを人が各媒体に入稿する）
