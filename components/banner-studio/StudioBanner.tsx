@@ -82,7 +82,15 @@ export function palette(accent: string) {
   const ctaHue = s < 0.15 ? 24 : (h + 180) % 360;
   let cta = hslToRgb(ctaHue, Math.max(0.7, s), 0.48);
   for (let i = 0; i < 20 && contrast(cta, WHITE) < 4.5; i++) cta = hslToRgb(ctaHue, Math.max(0.7, s), 0.48 - (i + 1) * 0.025);
-  return { brand: toHex(brand), cta: toHex(cta), ink: "#16181d", muted: "#4b5160" };
+  // 濃い面（墨・写真ぼかし）の上で読める明るさのブランド色
+  const DARK: [number, number, number] = [22, 24, 29];
+  let light = hslToRgb(h, Math.max(0.45, s), 0.62);
+  for (let i = 0; i < 12 && contrast(light, DARK) < 4.5; i++) light = hslToRgb(h, Math.max(0.45, s), 0.62 + (i + 1) * 0.03);
+  // 淡い面（ブランド色を白に1割混ぜる）とグラデーションの濃い側
+  const tint = base.map((v) => Math.round(255 - (255 - v) * 0.12)) as [number, number, number];
+  const [bh, bs, bl] = rgbToHsl(brand);
+  const deep = hslToRgb(bh, bs, Math.max(0.08, bl - 0.16));
+  return { brand: toHex(brand), cta: toHex(cta), ink: "#16181d", muted: "#4b5160", light: toHex(light), tint: toHex(tint), deep: toHex(deep) };
 }
 
 // ── 文字の大きさ ─────────────────────
@@ -138,6 +146,41 @@ export function resolveLayout(pattern: BannerPattern, w: number, h: number, imag
   return l;
 }
 
+/**
+ * 文字の背景（2026-11-12 夜）。成果の出るバナー・可読性の研究（NN/g：暗幕・ぼかし・半透明の箱・文字色と配置）から8種類。
+ * どれも文字と背景のコントラストを確保する（半透明は 80% 以上・暗幕は 55% 以上）。
+ */
+export type TextStyle = "white" | "tint" | "glass" | "brand" | "gradient" | "dark" | "blur" | "scrim";
+
+export const STYLE_LABEL: Record<TextStyle, string> = {
+  white: "白い面",
+  tint: "ブランド色を薄く",
+  glass: "半透明の白（写真を透かす）",
+  brand: "ブランド色の面（白文字）",
+  gradient: "ブランド色のグラデーション",
+  dark: "濃い墨の面（白文字）",
+  blur: "写真をぼかして暗く（白文字）",
+  scrim: "写真に直接（下を暗く）",
+};
+
+/** 型ごとの既定の背景（パターンごとに見た目を変える） */
+const AUTO_STYLE: Record<Archetype, TextStyle> = {
+  offer: "brand",
+  question: "glass",
+  number: "white",
+  proof: "tint",
+  scene: "blur",
+  type: "scrim",
+};
+
+/** 実際に使う背景。「写真に直接」は写真を全面に敷くレイアウト（カード・文字が主役）だけ。ほかは写真ぼかしにする */
+export function resolveStyle(pattern: BannerPattern, layout: BannerLayout, want?: TextStyle | "auto"): TextStyle {
+  const arch: Archetype = pattern.archetype ?? "scene";
+  let st: TextStyle = !want || want === "auto" ? AUTO_STYLE[arch] : want;
+  if (st === "scrim" && layout !== "card" && layout !== "type") st = "blur";
+  return st;
+}
+
 export type StudioBannerProps = {
   id?: string;
   pattern: BannerPattern;
@@ -151,17 +194,20 @@ export type StudioBannerProps = {
   logo?: string | null;
   /** レイアウトの指定（既定は自動） */
   layout?: BannerLayout | "auto";
+  /** 文字の背景の指定（既定は自動） */
+  textStyle?: TextStyle | "auto";
 };
 
 type Box = { left: number; top: number; width: number; height: number };
 
-export function StudioBanner({ id, pattern, copy, brand, w, h, image, imageAspect = 1, logo, layout = "auto" }: StudioBannerProps) {
+export function StudioBanner({ id, pattern, copy, brand, w, h, image, imageAspect = 1, logo, layout = "auto", textStyle = "auto" }: StudioBannerProps) {
   const arch: Archetype = pattern.archetype ?? "scene";
   const minSide = Math.min(w, h);
   const compact = minSide < 360; // 300×250・336×280
   const small = !compact && minSide < 480; // 600×400
   const col = palette(brand.accent || "#8B7355");
   const L = resolveLayout(pattern, w, h, imageAspect, layout);
+  const S = resolveStyle(pattern, L, textStyle);
 
   // 写真の枠と文字の面（重ねない）
   let img: Box = { left: 0, top: 0, width: w, height: h };
@@ -199,10 +245,34 @@ export function StudioBanner({ id, pattern, copy, brand, w, h, image, imageAspec
   const showSub = !tight && !small && !twoCol && !!copy.sub;
   const showEmph = !!copy.emphasis && (arch === "number" || arch === "offer" || arch === "proof" || !compact);
   const showBrand = !compact;
-  const onDark = L === "type";
+  const onBrand = S === "brand" || S === "gradient";
+  const onDark = onBrand || S === "dark" || S === "blur" || S === "scrim";
   const ink = onDark ? "#ffffff" : col.ink;
-  const muted = onDark ? "rgba(255,255,255,.86)" : col.muted;
-  const emphColor = onDark ? "#ffffff" : col.brand;
+  const muted = onDark ? "rgba(255,255,255,.88)" : col.muted;
+  const emphColor = onBrand ? "#ffffff" : onDark ? col.light : col.brand;
+  /** 写真のぼかしを背景に敷くか（透過系の面の下に写真の色が見えるように） */
+  const blurBg = !!image && (S === "glass" || S === "blur") && L !== "card" && L !== "type";
+  const panelBg: Record<TextStyle, string> = {
+    white: "#ffffff",
+    tint: col.tint,
+    glass: "rgba(255,255,255,.82)",
+    brand: col.brand,
+    gradient: `linear-gradient(135deg, ${col.brand} 0%, ${col.deep} 100%)`,
+    dark: "#16181d",
+    blur: "rgba(16,18,24,.58)",
+    scrim: "transparent",
+  };
+  /** 文字が主役のレイアウトで写真の上に敷く幕 */
+  const typeVeil: Record<TextStyle, string> = {
+    white: "rgba(255,255,255,.78)",
+    tint: `${col.tint}d9`,
+    glass: "rgba(255,255,255,.66)",
+    brand: `${col.brand}c7`,
+    gradient: `linear-gradient(135deg, ${col.brand}d0 0%, ${col.deep}e0 100%)`,
+    dark: "rgba(16,18,24,.66)",
+    blur: "rgba(16,18,24,.5)",
+    scrim: "linear-gradient(rgba(0,0,0,.30), rgba(0,0,0,.50))",
+  };
 
   const headLines = copy.headline.filter(Boolean);
   const longest = headLines.reduce((a, b) => (b.length > a.length ? b : a), "");
@@ -255,14 +325,16 @@ export function StudioBanner({ id, pattern, copy, brand, w, h, image, imageAspec
     alignItems: center ? "center" : "flex-start",
     textAlign: center ? "center" : "left",
     gap,
-    background: L === "type" ? "transparent" : "#ffffff",
-    ...(card ? { borderRadius: minSide * 0.02, boxShadow: "0 6px 24px rgba(0,0,0,.18)" } : {}),
+    background: L === "type" ? "transparent" : panelBg[S],
+    ...(card && S !== "scrim" ? { borderRadius: minSide * 0.02, boxShadow: "0 6px 24px rgba(0,0,0,.18)" } : {}),
+    ...(S === "scrim" ? { textShadow: "0 1px 8px rgba(0,0,0,.45)" } : {}),
   };
 
   const pill: CSSProperties = {
     display: "inline-block",
-    background: col.cta,
-    color: "#fff",
+    background: onBrand ? "#ffffff" : col.cta,
+    color: onBrand ? col.brand : "#fff",
+    textShadow: "none",
     fontWeight: 800,
     fontSize: ctaSize,
     lineHeight: 1,
@@ -295,7 +367,8 @@ export function StudioBanner({ id, pattern, copy, brand, w, h, image, imageAspec
       <div
         style={{
           background: onDark ? "#fff" : col.brand,
-          color: onDark ? col.brand : "#fff",
+          color: onDark ? (onBrand ? col.brand : col.ink) : "#fff",
+          textShadow: "none",
           fontWeight: 800,
           fontSize: emphSize,
           lineHeight: 1.15,
@@ -332,7 +405,24 @@ export function StudioBanner({ id, pattern, copy, brand, w, h, image, imageAspec
     <div style={{ ...panelStyle, flexDirection: "row", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>
       <div style={{ width: colA, display: "flex", flexDirection: "column", gap, alignItems: "flex-start" }}>
         {brandMark}
-        {showTarget && <div style={{ color: emphColor, fontWeight: 800, fontSize: smallSize, letterSpacing: "0.03em" }}>{copy.target}</div>}
+        {showTarget && (
+          <div
+            style={{
+              alignSelf: center ? "center" : "flex-start",
+              background: onDark ? "rgba(255,255,255,.94)" : col.brand,
+              color: onDark ? (onBrand ? col.brand : col.ink) : "#fff",
+              fontWeight: 800,
+              fontSize: smallSize,
+              lineHeight: 1.2,
+              padding: `${smallSize * 0.28}px ${smallSize * 0.6}px`,
+              borderRadius: smallSize * 0.2,
+              letterSpacing: "0.03em",
+              textShadow: "none",
+            }}
+          >
+            {copy.target}
+          </div>
+        )}
         {headline}
       </div>
       <div style={{ width: colB, display: "flex", flexDirection: "column", gap: gap * 1.4, alignItems: "center", textAlign: "center" }}>
@@ -343,7 +433,24 @@ export function StudioBanner({ id, pattern, copy, brand, w, h, image, imageAspec
   ) : (
     <div style={panelStyle}>
       {brandMark}
-      {showTarget && <div style={{ color: emphColor, fontWeight: 800, fontSize: smallSize, letterSpacing: "0.03em" }}>{copy.target}</div>}
+      {showTarget && (
+          <div
+            style={{
+              alignSelf: center ? "center" : "flex-start",
+              background: onDark ? "rgba(255,255,255,.94)" : col.brand,
+              color: onDark ? (onBrand ? col.brand : col.ink) : "#fff",
+              fontWeight: 800,
+              fontSize: smallSize,
+              lineHeight: 1.2,
+              padding: `${smallSize * 0.28}px ${smallSize * 0.6}px`,
+              borderRadius: smallSize * 0.2,
+              letterSpacing: "0.03em",
+              textShadow: "none",
+            }}
+          >
+            {copy.target}
+          </div>
+        )}
       {arch === "number" || arch === "proof" ? (
         <>
           {emph}
@@ -365,13 +472,24 @@ export function StudioBanner({ id, pattern, copy, brand, w, h, image, imageAspec
 
   return (
     <div id={id} style={root}>
+      {blurBg && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={image!}
+          alt=""
+          style={{ position: "absolute", left: -w * 0.08, top: -h * 0.08, width: w * 1.16, height: h * 1.16, objectFit: "cover", filter: `blur(${Math.round(minSide * 0.03)}px) saturate(1.1)` }}
+        />
+      )}
       {image ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={image} alt="" style={imgStyle} />
       ) : (
         <div style={{ position: "absolute", ...img, background: L === "type" ? col.brand : "#ece8e0" }} />
       )}
-      {L === "type" && <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,.30), rgba(0,0,0,.45))" }} />}
+      {L === "type" && <div style={{ position: "absolute", inset: 0, background: typeVeil[S] }} />}
+      {L === "card" && S === "scrim" && (
+        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: h * 0.62, background: "linear-gradient(rgba(0,0,0,0) 0%, rgba(0,0,0,.45) 45%, rgba(0,0,0,.78) 100%)" }} />
+      )}
       {body}
       {/* 外枠の細線（掲載面との境目） */}
       <div style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 0 1px rgba(0,0,0,.14)", pointerEvents: "none" }} />

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
 import { Spinner } from "@/components/Loading";
-import { LAYOUT_LABEL, StudioBanner, resolveLayout, type BannerLayout } from "./StudioBanner";
+import { LAYOUT_LABEL, STYLE_LABEL, StudioBanner, resolveLayout, resolveStyle, type BannerLayout, type TextStyle } from "./StudioBanner";
 import type { BannerCopy } from "@/lib/types";
 import {
   deleteBannerProjectAction,
@@ -152,6 +152,8 @@ export function BannerWorkspace({
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "meta-9x16", "google-1200x628", "google-300x250"]);
   /** 絵ごとのレイアウトの指定（既定は自動。画面の中だけで覚える） */
   const [layouts, setLayouts] = useState<Record<string, BannerLayout | "auto">>({});
+  /** 絵ごとの文字の背景の指定（既定は自動） */
+  const [styles, setStyles] = useState<Record<string, TextStyle | "auto">>({});
   const chosenBases = doneBases.filter((b) => picked.includes(b.id));
   const chosenSizes = BANNER_SIZES.filter((s) => sizes.includes(s.id));
 
@@ -339,7 +341,7 @@ export function BannerWorkspace({
                     {b.status === "done" && b.path ? (
                       <Scaled w={1080} h={1080} box={250}>
                         {p && copyFor(p) ? (
-                          <StudioBanner id={`base-${b.id}`} pattern={p} copy={copyFor(p)!} brand={d.brand} w={1080} h={1080} image={assetUrl(b.path)} logo={logo} layout={layouts[b.id] ?? "auto"} />
+                          <StudioBanner id={`base-${b.id}`} pattern={p} copy={copyFor(p)!} brand={d.brand} w={1080} h={1080} image={assetUrl(b.path)} logo={logo} layout={layouts[b.id] ?? "auto"} textStyle={styles[b.id] ?? "auto"} />
                         ) : (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={assetUrl(b.path)} alt="" style={{ width: 1080, height: 1080, objectFit: "cover" }} />
@@ -451,6 +453,20 @@ export function BannerWorkspace({
                       </option>
                     ))}
                   </select>
+                  <select
+                    className="input"
+                    style={{ width: "auto", fontSize: 13 }}
+                    value={styles[b.id] ?? "auto"}
+                    onChange={(e) => setStyles((v) => ({ ...v, [b.id]: e.target.value as TextStyle | "auto" }))}
+                    aria-label="文字の背景"
+                  >
+                    <option value="auto">文字の背景：自動（型に合わせる）</option>
+                    {(Object.keys(STYLE_LABEL) as TextStyle[]).map((k) => (
+                      <option key={k} value={k}>
+                        {STYLE_LABEL[k]}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 8 }}>
                   {chosenSizes.map((s) => {
@@ -463,7 +479,7 @@ export function BannerWorkspace({
                       <div key={s.id} style={{ display: "grid", gap: 4 }}>
                         {v?.path && pt && pc ? (
                           <Scaled w={s.w} h={s.h} box={220}>
-                            <StudioBanner id={`bs-${b.id}-${s.id}`} pattern={pt} copy={pc} brand={d.brand} w={s.w} h={s.h} image={assetUrl(v.path)} imageAspect={aspect} logo={logo} layout={layout} />
+                            <StudioBanner id={`bs-${b.id}-${s.id}`} pattern={pt} copy={pc} brand={d.brand} w={s.w} h={s.h} image={assetUrl(v.path)} imageAspect={aspect} logo={logo} layout={layout} textStyle={styles[b.id] ?? "auto"} />
                           </Scaled>
                         ) : (
                           <div style={{ width: 160, height: 120, display: "grid", placeItems: "center", background: "#f4f3f0", borderRadius: 6, fontSize: 12, color: "var(--muted)", textAlign: "center", padding: 8 }}>
@@ -472,6 +488,7 @@ export function BannerWorkspace({
                         )}
                         <small>
                           {s.media} {s.w}×{s.h}・{LAYOUT_LABEL[layout]}
+                          {pt ? `・${STYLE_LABEL[resolveStyle(pt, layout, styles[b.id] ?? "auto")]}` : ""}
                         </small>
                         {(wantsReframe || waiting) && <small style={{ color: "var(--muted)" }}>{waiting ? "文字カード用の絵を作成中" : "文字カードにするには、上のボタンで絵を作ります"}</small>}
                         {v?.path && (
