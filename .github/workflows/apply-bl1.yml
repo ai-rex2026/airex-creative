@@ -1,0 +1,27 @@
+name: apply-bl1
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/apply-bl1.yml"]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: apply
+        run: |
+          set -e
+          D=.buildtmp/bl1
+          cat $D/chunks/chunk-*.b64 | base64 -d | gunzip > /tmp/patch.diff
+          sha256sum -c $D/patch.sha256
+          git apply /tmp/patch.diff
+          git rm -r -q .buildtmp/bl1 .github/workflows/apply-bl1.yml
+          git config user.name suzuki
+          git config user.email suzuki.yuichiro.libertad@gmail.com
+          git add -A
+          git commit -q -m "バナー制作：写真と文字を分ける6レイアウト（左右・上下・文字カード・文字主役）、絵ごとに選べる、写真を隠さない構図" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_011jEDcQZVboNh2wrFzXQFmy"
+          git push origin HEAD:main
