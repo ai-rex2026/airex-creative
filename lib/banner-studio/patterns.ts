@@ -37,9 +37,9 @@ ${ARCHETYPE_LINES}
 
 成果の出るバナーの原則:
 - メッセージは1つに絞る。要素を詰め込まない
-- 主役（商品・人）は1つで大きく。主役は左か右に寄せ、反対側の約45%を文字のために空ける（type だけは主役なしの背景）
+- 主役（商品・人）は1つで、何の写真か一目で分かること。写真と文字は別の面に分けて置くので、写真の中に文字用の余白を作る必要はない（type だけは主役なしの背景）
 - 実際の場面・自然な光。商品が主役。コラージュ・白一色の背景にしない
-- 人物を使うときは、視線が文字の側（空けた側）を向くようにする
+- 人物を使うときは、表情や手元が分かる距離で、視線は正面かやや横
 
 絵の指示（prompt）:
 - 英語で 40〜80語。被写体・場面・光・色（ブランド色を取り入れる）を具体的に。構図の指示は後から足すので書かなくてよい
@@ -56,7 +56,7 @@ ${ARCHETYPE_LINES}
 - 根拠のない数値・最上級（No.1・最安など）・効果の断定・誇大な表現は使わない
 
 その他:
-- subject: 主役の位置 left / right / center（type は center）。パターン間で left と right を混ぜる
+- subject: 横長のバナーで写真を置く側 left / right（type は center）。パターン間で left と right を混ぜる
 - label は日本語 16字以内、concept は日本語 50字以内
 
 出力: {"patterns":[{"archetype":"offer","subject":"left","label":"","concept":"","prompt":"","motion":"","useMaterials":false,"copy":{"target":"","headline":["",""],"emphasis":"","emphasisLabel":"","sub":"","cta":""}}]}`;
@@ -166,22 +166,17 @@ export async function guardPatterns(patterns: BannerPattern[], industry: Industr
   });
 }
 
-/** 構図の指示（主役の位置と、文字のために空ける側） */
+/**
+ * 構図の指示。写真はレイアウト（左右分割・上下分割・文字カード）で文字と分けて置くので、
+ * 主役は中央やや上に、周りに余白を取って作る（どのレイアウトで切っても余白だけが切れ、主役が隠れない）。
+ */
 function composition(p: BannerPattern | null, aspect: string): string {
-  const a = aspectValue(aspect);
   if (p?.archetype === "type") {
     return "Composition: an abstract, uncluttered background with gentle texture and soft light; keep the center calm and evenly lit so large text can sit on top. No objects.";
   }
-  if (a < 0.9) {
-    // 縦長：主役を上に、下 45% を文字用に空ける
-    return "Composition: vertical frame. Place the main subject in the upper half, large and fully visible; keep the lower 45% of the frame calm, uncluttered and evenly toned (soft background, floor or table surface) for a text overlay.";
-  }
-  const side = p?.subject === "right" ? "right" : p?.subject === "center" ? "center" : "left";
-  if (side === "center") {
-    return "Composition: main subject centered in the upper two thirds, large; keep the lower third calm and uncluttered for a text overlay.";
-  }
-  const other = side === "left" ? "right" : "left";
-  return `Composition: place the main subject on the ${side} side of the frame (${side} 55%), large and fully visible; keep the ${other} 45% of the frame calm, uncluttered and softly out of focus for a text overlay. If a person appears, they look toward the ${other} side.`;
+  const a = aspectValue(aspect);
+  const frame = a < 0.9 ? "vertical" : a > 1.2 ? "horizontal" : "square";
+  return `Composition: ${frame} frame. Center the main subject horizontally and place it slightly above the vertical center, fully visible and clearly recognizable, occupying about 50-60% of the frame. Keep generous calm margins on every side (especially the bottom 30%), with no important details near the edges, so the image can be cropped to other shapes without cutting the subject.`;
 }
 
 /** 画像モデルに渡す最終の指示 */

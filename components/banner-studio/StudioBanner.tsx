@@ -8,7 +8,9 @@ import type { Archetype, BannerPattern, PatternCopy } from "@/lib/banner-studio/
  * バナー制作のバナー（2026-11-12）。文字は DOM で組む（画像生成モデルに描かせない）。
  *
  * 成果の出るバナーの共通点を、型ごとのレイアウトにした:
- * - 主役（絵）と文字を重ねない：絵は主役を左右どちらかに寄せて作ってあり、文字は空けた側の面に置く
+ * - 主役（絵）と文字を重ねない：写真と文字の面を分ける（左右分割・上下分割）。写真は正方形の絵をそのまま
+ *   （または余白だけ切って）見せ、何の写真か分からなくなるほど隠さない（2026-11-12 改善）
+ * - 6つのレイアウト（写真 左／右・写真 上／下・写真に文字カード・文字が主役）。サイズの形で使えないものは自動で切り替える
  * - メッセージは1つ・強弱をはっきり：いちばん大きいのは見出し（数字の型は数字）
  * - 色は2〜3色：本文は濃い墨、強調はブランド色、CTA だけ別のアクセント色（ブランド色の反対色）
  * - 小さいサイズ（300×250 など）は見出しと CTA だけに間引く
@@ -94,6 +96,48 @@ function lineSize(text: string, boxW: number, max: number) {
 
 // ── 本体 ─────────────────────
 
+export type BannerLayout = "split-left" | "split-right" | "band-bottom" | "band-top" | "card" | "type";
+
+export const LAYOUT_LABEL: Record<BannerLayout, string> = {
+  "split-left": "左に写真・右に文字",
+  "split-right": "右に写真・左に文字",
+  "band-bottom": "上に写真・下に文字",
+  "band-top": "上に文字・下に写真",
+  card: "写真の上に文字カード",
+  type: "文字が主役（背景に写真）",
+};
+
+/** 型ごとの既定のレイアウト（正方形・縦長のとき）。横長は左右分割にする */
+const AUTO_BY_ARCH: Record<Archetype, BannerLayout> = {
+  offer: "band-bottom",
+  question: "card",
+  number: "band-top",
+  proof: "band-top",
+  scene: "card",
+  type: "type",
+};
+
+/**
+ * 実際に使うレイアウトを決める。
+ * - 横長（1.3 以上）は左右分割（正方形の写真を丸ごと見せられる）。上下分割・カードは写真が大きく切れるので使わない
+ * - 正方形・縦長で左右分割を選んでも、写真の幅が細くなり何の写真か分からなくなるので上下分割にする
+ * - カードは写真を全面に敷くので、写真の縦横比がバナーと大きく違う（＝大きく切れる）ときは上下分割にする
+ */
+export function resolveLayout(pattern: BannerPattern, w: number, h: number, imageAspect = 1, want?: BannerLayout | "auto"): BannerLayout {
+  const arch: Archetype = pattern.archetype ?? "scene";
+  const ratio = w / h;
+  const wide = ratio >= 1.3;
+  const n = Number(pattern.key.replace(/\D/g, "")) || 1;
+  const sideAuto: BannerLayout = pattern.subject === "right" ? "split-right" : pattern.subject === "left" ? "split-left" : n % 2 ? "split-left" : "split-right";
+  let l: BannerLayout = !want || want === "auto" ? (arch === "type" ? "type" : wide ? sideAuto : AUTO_BY_ARCH[arch]) : want;
+  if (wide && (l === "band-bottom" || l === "band-top")) l = sideAuto;
+  if (!wide && (l === "split-left" || l === "split-right")) l = "band-bottom";
+  if (l === "card" && Math.abs(Math.log(imageAspect / ratio)) > 0.3) l = wide ? sideAuto : "band-bottom";
+  // 300×250 などの小さいサイズでは、カードの文字が読めなくなるので上下分割にする
+  if (l === "card" && Math.min(w, h) < 360) l = wide ? sideAuto : "band-bottom";
+  return l;
+}
+
 export type StudioBannerProps = {
   id?: string;
   pattern: BannerPattern;
@@ -102,62 +146,93 @@ export type StudioBannerProps = {
   w: number;
   h: number;
   image?: string | null;
+  /** 写真の縦横比（幅÷高さ）。既定は正方形 */
+  imageAspect?: number;
   logo?: string | null;
+  /** レイアウトの指定（既定は自動） */
+  layout?: BannerLayout | "auto";
 };
 
-export function StudioBanner({ id, pattern, copy, brand, w, h, image, logo }: StudioBannerProps) {
+type Box = { left: number; top: number; width: number; height: number };
+
+export function StudioBanner({ id, pattern, copy, brand, w, h, image, imageAspect = 1, logo, layout = "auto" }: StudioBannerProps) {
   const arch: Archetype = pattern.archetype ?? "scene";
-  const ratio = w / h;
   const minSide = Math.min(w, h);
   const compact = minSide < 360; // 300×250・336×280
   const small = !compact && minSide < 480; // 600×400
   const col = palette(brand.accent || "#8B7355");
-  const subject = pattern.subject ?? "left";
+  const L = resolveLayout(pattern, w, h, imageAspect, layout);
 
-  const mode: "type" | "side" | "stack" = arch === "type" ? "type" : ratio < 0.9 || subject === "center" ? "stack" : "side";
-  const textSide = subject === "right" ? "left" : "right";
+  // 写真の枠と文字の面（重ねない）
+  let img: Box = { left: 0, top: 0, width: w, height: h };
+  let panel: Box;
+  let card = false;
+  if (L === "split-left" || L === "split-right") {
+    const iw = Math.min(h * imageAspect, w * 0.58);
+    img = { left: L === "split-left" ? 0 : w - iw, top: 0, width: iw, height: h };
+    panel = { left: L === "split-left" ? iw : 0, top: 0, width: w - iw, height: h };
+  } else if (L === "band-bottom" || L === "band-top") {
+    const ih = Math.min(w / imageAspect, h * (h / w > 1.4 ? 0.58 : 0.6));
+    img = { left: 0, top: L === "band-bottom" ? 0 : h - ih, width: w, height: ih };
+    panel = { left: 0, top: L === "band-bottom" ? ih : 0, width: w, height: h - ih };
+  } else if (L === "card") {
+    card = true;
+    const m = minSide * 0.045;
+    const cw = w * (w / h < 0.9 ? 0.84 : 0.6);
+    const ch = h * (w / h < 0.9 ? 0.32 : 0.42);
+    panel = { left: m, top: h - ch - m, width: cw, height: ch };
+  } else {
+    panel = { left: w * 0.07, top: h * 0.1, width: w * 0.86, height: h * 0.8 };
+  }
 
-  // 文字の面
-  const panelW = mode === "side" ? w * (ratio > 1.5 ? 0.5 : 0.5) : mode === "type" ? w * 0.86 : w;
-  const panelH = mode === "stack" ? h * (ratio < 0.7 ? 0.42 : ratio < 0.9 ? 0.46 : 0.42) : mode === "type" ? h * 0.8 : h;
-  const pad = Math.max(10, Math.min(panelW, panelH) * (compact ? 0.07 : 0.085));
-  const innerW = panelW - pad * 2;
-  const innerH = panelH - pad * 2;
+  const pad = card ? Math.max(10, Math.min(panel.width, panel.height) * 0.1) : Math.max(10, Math.min(panel.width, panel.height) * (compact ? 0.07 : 0.085));
+  const innerW = panel.width - pad * 2;
+  const innerH = panel.height - pad * 2;
+  const center = L === "type" || ((L === "band-bottom" || L === "band-top") && panel.width / panel.height <= 1.8);
 
-  const showTarget = !compact && !small && !!copy.target;
-  const showSub = !compact && !small && !!copy.sub;
+  const tight = compact || card;
+  // 横に広い帯（正方形・4:5 の上下分割）は2列にする：左に対象・見出し、右に強調・CTA（小さい文字だらけにしない）
+  const twoCol = (L === "band-bottom" || L === "band-top") && !compact && panel.width / panel.height > 1.8;
+  const colA = twoCol ? innerW * 0.6 : innerW;
+  const colB = twoCol ? innerW * 0.36 : innerW;
+  const showTarget = !compact && !small && !!copy.target && !(card && minSide < 700);
+  const showSub = !tight && !small && !twoCol && !!copy.sub;
   const showEmph = !!copy.emphasis && (arch === "number" || arch === "offer" || arch === "proof" || !compact);
   const showBrand = !compact;
-  const onDark = mode === "type";
+  const onDark = L === "type";
   const ink = onDark ? "#ffffff" : col.ink;
   const muted = onDark ? "rgba(255,255,255,.86)" : col.muted;
   const emphColor = onDark ? "#ffffff" : col.brand;
 
   const headLines = copy.headline.filter(Boolean);
   const longest = headLines.reduce((a, b) => (b.length > a.length ? b : a), "");
-  const headMax = innerH * (arch === "number" && showEmph ? 0.11 : compact ? 0.2 : arch === "question" || arch === "type" ? 0.15 : 0.13);
-  let headSize = lineSize(longest, innerW, headMax);
+  const headMax = innerH * (twoCol ? 0.26 : arch === "number" && showEmph ? 0.14 : compact ? 0.24 : arch === "question" || arch === "type" ? 0.18 : 0.16);
+  let headSize = lineSize(longest, colA, headMax);
   let emphSize =
-    arch === "number" ? lineSize(copy.emphasis, innerW, innerH * (compact ? 0.3 : 0.26)) : lineSize(copy.emphasis, innerW * 0.85, innerH * (compact ? 0.14 : 0.1));
-  let ctaSize = lineSize(copy.cta, innerW * 0.7, Math.max(10, innerH * (compact ? 0.11 : 0.065)));
-  let smallSize = Math.max(9, Math.min(innerH * 0.045, lineSize(copy.target || copy.sub, innerW, innerH * 0.05)));
-  let gap = innerH * (compact ? 0.04 : 0.035);
-  // 面の高さに収まるよう、全体を同じ比で縮める（縦長・小さいサイズで CTA が切れないように）
+    arch === "number"
+      ? lineSize(copy.emphasis, colB, innerH * (compact ? 0.32 : twoCol ? 0.4 : 0.3))
+      : lineSize(copy.emphasis, colB * 0.85, innerH * (compact ? 0.16 : twoCol ? 0.22 : 0.13));
+  let ctaSize = lineSize(copy.cta, colB * (twoCol ? 0.8 : 0.7), Math.max(10, innerH * (compact ? 0.13 : twoCol ? 0.13 : 0.085)));
+  let smallSize = Math.max(9, Math.min(innerH * (twoCol ? 0.085 : 0.055), lineSize(copy.target || copy.sub, colA, innerH * (twoCol ? 0.09 : 0.06))));
+  let gap = innerH * (compact ? 0.045 : 0.04);
+  // 面の高さに収まるよう、全体を同じ比で縮める（CTA が切れないように）
   {
-    const parts: number[] = [];
-    if (!compact) parts.push(logo ? minSide * 0.06 : smallSize * 1.3);
-    if (showTarget) parts.push(smallSize * 1.4);
-    if (showEmph) parts.push(arch === "offer" ? emphSize * 1.8 : emphSize * 1.05 + (copy.emphasisLabel && !compact ? emphSize * 0.5 : 0));
-    parts.push(headLines.length * headSize * 1.28);
-    if (showSub) parts.push(smallSize * 1.5 * Math.ceil(([...copy.sub].length * smallSize) / Math.max(1, innerW)));
-    parts.push(ctaSize * 2.3);
-    const total = parts.reduce((a, b) => a + b, 0) + gap * (parts.length - 1);
-    const k = Math.min(1, innerH / total);
-    headSize *= k;
-    emphSize *= k;
-    ctaSize *= k;
-    smallSize = Math.max(8, smallSize * k);
-    gap *= k;
+    const a: number[] = [];
+    const b: number[] = [];
+    if (showBrand) a.push(logo ? minSide * 0.06 : smallSize * 1.3);
+    if (showTarget) a.push(smallSize * 1.4);
+    a.push(headLines.length * headSize * 1.28);
+    if (showSub) a.push(smallSize * 1.5 * Math.ceil(([...copy.sub].length * smallSize) / Math.max(1, colA)));
+    if (showEmph) b.push(arch === "offer" ? emphSize * 1.8 : emphSize * 1.05 + (copy.emphasisLabel && !compact ? emphSize * 0.5 : 0));
+    b.push(ctaSize * 2.3);
+    const sum = (x: number[]) => x.reduce((p, q) => p + q, 0) + gap * Math.max(0, x.length - 1);
+    const ka = Math.min(1, innerH / (twoCol ? sum(a) : sum([...a, ...b])));
+    const kb = twoCol ? Math.min(1, innerH / sum(b)) : ka;
+    headSize *= ka;
+    smallSize = Math.max(8, smallSize * ka);
+    emphSize *= kb;
+    ctaSize *= kb;
+    gap *= Math.min(ka, kb);
   }
 
   const root: CSSProperties = {
@@ -165,55 +240,27 @@ export function StudioBanner({ id, pattern, copy, brand, w, h, image, logo }: St
     width: w,
     height: h,
     overflow: "hidden",
-    background: "#f3f1ec",
+    background: "#ffffff",
     fontFamily: '"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic","Meiryo",sans-serif',
-    boxShadow: "inset 0 0 0 1px rgba(0,0,0,.14)",
   };
 
-  const imgPos = mode === "side" ? (subject === "right" ? "right center" : "left center") : mode === "stack" ? "center top" : "center";
+  const panelStyle: CSSProperties = {
+    position: "absolute",
+    ...panel,
+    padding: pad,
+    boxSizing: "border-box",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: center ? "center" : "flex-start",
+    textAlign: center ? "center" : "left",
+    gap,
+    background: L === "type" ? "transparent" : "#ffffff",
+    ...(card ? { borderRadius: minSide * 0.02, boxShadow: "0 6px 24px rgba(0,0,0,.18)" } : {}),
+  };
 
-  let panel: CSSProperties;
-  if (mode === "side") {
-    const fade = Math.round(panelW * 0.16);
-    panel = {
-      position: "absolute",
-      top: 0,
-      bottom: 0,
-      [textSide]: 0,
-      width: panelW + fade,
-      paddingLeft: textSide === "right" ? fade + pad : pad,
-      paddingRight: textSide === "right" ? pad : fade + pad,
-      background: `linear-gradient(to ${textSide}, rgba(255,255,255,0) 0, rgba(255,255,255,.92) ${fade}px, rgba(255,255,255,.96) 100%)`,
-    };
-  } else if (mode === "stack") {
-    const fade = Math.round(panelH * 0.18);
-    panel = {
-      position: "absolute",
-      left: 0,
-      right: 0,
-      bottom: 0,
-      height: panelH + fade,
-      paddingTop: fade + pad,
-      paddingLeft: pad,
-      paddingRight: pad,
-      paddingBottom: pad,
-      background: `linear-gradient(to bottom, rgba(255,255,255,0) 0, rgba(255,255,255,.92) ${fade}px, rgba(255,255,255,.96) 100%)`,
-    };
-  } else {
-    panel = {
-      position: "absolute",
-      inset: 0,
-      padding: `${(h - panelH) / 2}px ${(w - panelW) / 2}px`,
-      background: "linear-gradient(rgba(0,0,0,.30), rgba(0,0,0,.42))",
-      textAlign: "center",
-      alignItems: "center",
-    };
-  }
-
-  const center = mode === "type";
   const pill: CSSProperties = {
     display: "inline-block",
-    alignSelf: center ? "center" : "flex-start",
     background: col.cta,
     color: "#fff",
     fontWeight: 800,
@@ -235,7 +282,6 @@ export function StudioBanner({ id, pattern, copy, brand, w, h, image, logo }: St
           height: Math.max(14, minSide * 0.06),
           maxWidth: innerW * 0.5,
           objectFit: "contain",
-          alignSelf: center ? "center" : "flex-start",
           ...(onDark ? { background: "rgba(255,255,255,.9)", padding: 4, borderRadius: 4 } : {}),
         }}
       />
@@ -248,7 +294,6 @@ export function StudioBanner({ id, pattern, copy, brand, w, h, image, logo }: St
     arch === "offer" ? (
       <div
         style={{
-          alignSelf: center ? "center" : "flex-start",
           background: onDark ? "#fff" : col.brand,
           color: onDark ? col.brand : "#fff",
           fontWeight: 800,
@@ -282,22 +327,23 @@ export function StudioBanner({ id, pattern, copy, brand, w, h, image, logo }: St
     </div>
   );
 
-  // 型ごとの並び（上から）。数字の型は数字が先、それ以外は見出しが先
-  const body = (
-    <div
-      style={{
-        ...panel,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        gap,
-        boxSizing: "border-box",
-      }}
-    >
+  // 型ごとの並び（上から）。数字・実績の型は数字が先、それ以外は見出しが先
+  const body = twoCol ? (
+    <div style={{ ...panelStyle, flexDirection: "row", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>
+      <div style={{ width: colA, display: "flex", flexDirection: "column", gap, alignItems: "flex-start" }}>
+        {brandMark}
+        {showTarget && <div style={{ color: emphColor, fontWeight: 800, fontSize: smallSize, letterSpacing: "0.03em" }}>{copy.target}</div>}
+        {headline}
+      </div>
+      <div style={{ width: colB, display: "flex", flexDirection: "column", gap: gap * 1.4, alignItems: "center", textAlign: "center" }}>
+        {emph}
+        <div style={pill}>{copy.cta}</div>
+      </div>
+    </div>
+  ) : (
+    <div style={panelStyle}>
       {brandMark}
-      {showTarget && (
-        <div style={{ color: emphColor, fontWeight: 800, fontSize: smallSize, letterSpacing: "0.03em" }}>{copy.target}</div>
-      )}
+      {showTarget && <div style={{ color: emphColor, fontWeight: 800, fontSize: smallSize, letterSpacing: "0.03em" }}>{copy.target}</div>}
       {arch === "number" || arch === "proof" ? (
         <>
           {emph}
@@ -314,15 +360,21 @@ export function StudioBanner({ id, pattern, copy, brand, w, h, image, logo }: St
     </div>
   );
 
+  // 写真は主役が中央・やや上にある前提で、切るときは上寄りを残す
+  const imgStyle: CSSProperties = { position: "absolute", ...img, objectFit: "cover", objectPosition: "center 40%" };
+
   return (
     <div id={id} style={root}>
       {image ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={image} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: imgPos }} />
+        <img src={image} alt="" style={imgStyle} />
       ) : (
-        <div style={{ position: "absolute", inset: 0, background: mode === "type" ? col.brand : "#ece8e0" }} />
+        <div style={{ position: "absolute", ...img, background: L === "type" ? col.brand : "#ece8e0" }} />
       )}
+      {L === "type" && <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,.30), rgba(0,0,0,.45))" }} />}
       {body}
+      {/* 外枠の細線（掲載面との境目） */}
+      <div style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 0 1px rgba(0,0,0,.14)", pointerEvents: "none" }} />
     </div>
   );
 }

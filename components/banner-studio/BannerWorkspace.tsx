@@ -6,7 +6,7 @@ import Link from "next/link";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
 import { Spinner } from "@/components/Loading";
-import { StudioBanner } from "./StudioBanner";
+import { LAYOUT_LABEL, StudioBanner, resolveLayout, type BannerLayout } from "./StudioBanner";
 import type { BannerCopy } from "@/lib/types";
 import {
   deleteBannerProjectAction,
@@ -38,6 +38,7 @@ import {
   VIDEO_ASPECTS,
   assetUrl,
   nearestAspect,
+  aspectValue,
   type BannerProject,
   type BannerSize,
   type BannerVisual,
@@ -149,28 +150,37 @@ export function BannerWorkspace({
   const doneBases = bases.filter((v) => v.status === "done");
   const [picked, setPicked] = useState<string[]>([]);
   const [sizes, setSizes] = useState<string[]>(["meta-1x1", "meta-4x5", "meta-9x16", "google-1200x628", "google-300x250"]);
-  const [cropOnly, setCropOnly] = useState(false);
+  /** 絵ごとのレイアウトの指定（既定は自動。画面の中だけで覚える） */
+  const [layouts, setLayouts] = useState<Record<string, BannerLayout | "auto">>({});
   const chosenBases = doneBases.filter((b) => picked.includes(b.id));
   const chosenSizes = BANNER_SIZES.filter((s) => sizes.includes(s.id));
 
-  /** そのサイズに使う絵（同じ縦横比の作り直しがあればそれ、無ければ元の絵を切り抜く） */
-  function visualFor(base: BannerVisual, s: BannerSize): { v: BannerVisual | null; waiting: boolean } {
+  /**
+   * そのサイズに使う絵とレイアウト（2026-11-12 改善）。
+   * 左右分割・上下分割・文字が主役は、正方形の元の絵をそのまま（余白だけ切って）使う。
+   * 写真の上に文字カードを置くレイアウトだけ、写真を全面に敷くので、バナーと同じ縦横比の絵があればそれを使う（無ければ上下・左右分割に切り替わる）
+   */
+  function visualFor(base: BannerVisual, s: BannerSize): { v: BannerVisual | null; aspect: number; layout: BannerLayout; wantsReframe: boolean; waiting: boolean } {
+    const pt = patternOf(base.pattern);
+    const want = layouts[base.id] ?? "auto";
+    const baseAspect = aspectValue(base.aspect);
     const a = nearestAspect(s.w, s.h);
-    if (cropOnly || a === base.aspect) return { v: base, waiting: false };
-    const r = visuals.find((x) => x.kind === "resize" && x.parentId === base.id && x.aspect === a);
-    if (r?.status === "done") return { v: r, waiting: false };
-    return { v: null, waiting: r?.status === "queued" };
+    const wantsCard = !!pt && resolveLayout(pt, s.w, s.h, s.w / s.h, want) === "card" && a !== base.aspect;
+    if (wantsCard) {
+      const r = visuals.find((x) => x.kind === "resize" && x.parentId === base.id && x.aspect === a);
+      if (r?.status === "done") return { v: r, aspect: aspectValue(a), layout: "card", wantsReframe: false, waiting: false };
+      return { v: base, aspect: baseAspect, layout: pt ? resolveLayout(pt, s.w, s.h, baseAspect, want) : "band-bottom", wantsReframe: !r || r.status === "error", waiting: r?.status === "queued" };
+    }
+    return { v: base, aspect: baseAspect, layout: pt ? resolveLayout(pt, s.w, s.h, baseAspect, want) : "band-bottom", wantsReframe: false, waiting: false };
   }
 
-  const neededResizes = (() => {
-    if (cropOnly) return 0;
-    let n = 0;
-    for (const b of chosenBases) {
-      const aspects = new Set(chosenSizes.map((s) => nearestAspect(s.w, s.h)).filter((a) => a !== b.aspect));
-      for (const a of aspects) if (!visuals.some((x) => x.kind === "resize" && x.parentId === b.id && x.aspect === a && x.status !== "error")) n++;
-    }
-    return n;
+  /** 文字カードにするために、作り直しが要る（縦横比 → 元の絵） */
+  const reframeTodo = (() => {
+    const todo = new Map<string, Set<string>>();
+    for (const b of chosenBases) for (const s of chosenSizes) if (visualFor(b, s).wantsReframe) todo.set(b.id, (todo.get(b.id) ?? new Set()).add(nearestAspect(s.w, s.h)));
+    return todo;
   })();
+  const neededResizes = [...reframeTodo.values()].reduce((n, x) => n + x.size, 0);
 
   async function downloadOne(nodeId: string, name: string) {
     const node = document.getElementById(nodeId);
@@ -329,7 +339,7 @@ export function BannerWorkspace({
                     {b.status === "done" && b.path ? (
                       <Scaled w={1080} h={1080} box={250}>
                         {p && copyFor(p) ? (
-                          <StudioBanner id={`base-${b.id}`} pattern={p} copy={copyFor(p)!} brand={d.brand} w={1080} h={1080} image={assetUrl(b.path)} logo={logo} />
+                          <StudioBanner id={`base-${b.id}`} pattern={p} copy={copyFor(p)!} brand={d.brand} w={1080} h={1080} image={assetUrl(b.path)} logo={logo} layout={layouts[b.id] ?? "auto"} />
                         ) : (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={assetUrl(b.path)} alt="" style={{ width: 1080, height: 1080, objectFit: "cover" }} />
@@ -380,7 +390,7 @@ export function BannerWorkspace({
       {d && copy && doneBases.length > 0 && (
         <section className="panel">
           <h2>4. 媒体のサイズに展開</h2>
-          <p>使う絵を上で選び、媒体のサイズを選んでください。縦横比が違うサイズは、fal で元の絵を保ったまま作り直してから、文字を組み直します（「切り抜きだけ」にすると fal を使わず、正方形の絵を切り抜きます）。</p>
+          <p>使う絵を上で選び、媒体のサイズを選んでください。写真と文字は面を分けて置き（左右・上下）、正方形の絵をそのまま使うので、fal の追加の費用はかかりません。「写真の上に文字カード」を縦長・横長で使うときだけ、その縦横比の絵を作り直せます。</p>
           <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
             {[...new Set(BANNER_SIZES.map((s) => s.media))].map((m) => (
               <div key={m} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
@@ -394,25 +404,18 @@ export function BannerWorkspace({
               </div>
             ))}
           </div>
-          <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10, fontSize: 13 }}>
-            <input type="checkbox" checked={cropOnly} onChange={(e) => setCropOnly(e.target.checked)} />
-            切り抜きだけで作る（fal を使わない。縦長・横長では絵の端が切れます）
-          </label>
           <p style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            {!cropOnly && neededResizes > 0 && (
+            {neededResizes > 0 && (
               <button
                 className="btn"
                 disabled={!!busy || !usage.falReady || !chosenBases.length}
                 onClick={() =>
                   run("fal に依頼しています", async () => {
-                    for (const b of chosenBases) {
-                      const aspects = [...new Set(chosenSizes.map((s) => nearestAspect(s.w, s.h)))];
-                      await resizeVisualAction(project.id, b.id, aspects);
-                    }
+                    for (const [baseId, aspects] of reframeTodo) await resizeVisualAction(project.id, baseId, [...aspects]);
                   })
                 }
               >
-                縦横比の違う絵を作る（{neededResizes}枚・約${(FAL_PRICE.image * neededResizes).toFixed(2)}）
+                文字カード用に縦横比の違う絵を作る（{neededResizes}枚・約${(FAL_PRICE.image * neededResizes).toFixed(2)}）
               </button>
             )}
             {chosenBases.length > 0 && chosenSizes.length > 0 && (
@@ -430,10 +433,28 @@ export function BannerWorkspace({
           <div style={{ display: "grid", gap: 18, marginTop: 14 }}>
             {chosenBases.map((b) => (
               <div key={b.id}>
-                <p className="eyebrow">{patternOf(b.pattern)?.label ?? b.pattern}</p>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <p className="eyebrow" style={{ margin: 0 }}>
+                    {patternOf(b.pattern)?.label ?? b.pattern}
+                  </p>
+                  <select
+                    className="input"
+                    style={{ width: "auto", fontSize: 13 }}
+                    value={layouts[b.id] ?? "auto"}
+                    onChange={(e) => setLayouts((v) => ({ ...v, [b.id]: e.target.value as BannerLayout | "auto" }))}
+                    aria-label="レイアウト"
+                  >
+                    <option value="auto">レイアウト：自動（型とサイズに合わせる）</option>
+                    {(Object.keys(LAYOUT_LABEL) as BannerLayout[]).map((k) => (
+                      <option key={k} value={k}>
+                        {LAYOUT_LABEL[k]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 8 }}>
                   {chosenSizes.map((s) => {
-                    const { v, waiting } = visualFor(b, s);
+                    const { v, waiting, aspect, layout, wantsReframe } = visualFor(b, s);
                     const pt = patternOf(b.pattern);
                     const pc = copyFor(pt);
                     const key = `${b.id}:${s.id}`;
@@ -442,7 +463,7 @@ export function BannerWorkspace({
                       <div key={s.id} style={{ display: "grid", gap: 4 }}>
                         {v?.path && pt && pc ? (
                           <Scaled w={s.w} h={s.h} box={220}>
-                            <StudioBanner id={`bs-${b.id}-${s.id}`} pattern={pt} copy={pc} brand={d.brand} w={s.w} h={s.h} image={assetUrl(v.path)} logo={logo} />
+                            <StudioBanner id={`bs-${b.id}-${s.id}`} pattern={pt} copy={pc} brand={d.brand} w={s.w} h={s.h} image={assetUrl(v.path)} imageAspect={aspect} logo={logo} layout={layout} />
                           </Scaled>
                         ) : (
                           <div style={{ width: 160, height: 120, display: "grid", placeItems: "center", background: "#f4f3f0", borderRadius: 6, fontSize: 12, color: "var(--muted)", textAlign: "center", padding: 8 }}>
@@ -450,8 +471,9 @@ export function BannerWorkspace({
                           </div>
                         )}
                         <small>
-                          {s.media} {s.w}×{s.h}
+                          {s.media} {s.w}×{s.h}・{LAYOUT_LABEL[layout]}
                         </small>
+                        {(wantsReframe || waiting) && <small style={{ color: "var(--muted)" }}>{waiting ? "文字カード用の絵を作成中" : "文字カードにするには、上のボタンで絵を作ります"}</small>}
                         {v?.path && (
                           <div style={{ display: "flex", gap: 10 }}>
                             <button className="link" onClick={() => downloadOne(`bs-${b.id}-${s.id}`, `${s.media}_${s.w}x${s.h}_${b.pattern}.png`)}>
