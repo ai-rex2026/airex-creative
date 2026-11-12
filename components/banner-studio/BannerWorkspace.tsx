@@ -6,13 +6,14 @@ import Link from "next/link";
 import { toPng } from "html-to-image";
 import JSZip from "jszip";
 import { Spinner } from "@/components/Loading";
-import { Banner, pickFacts } from "@/components/Banner";
-import type { SizePreset } from "@/lib/sizes";
+import { StudioBanner } from "./StudioBanner";
 import type { BannerCopy } from "@/lib/types";
 import {
   deleteBannerProjectAction,
   deleteMaterialAction,
   deleteVisualAction,
+  editPatternCopyAction,
+  reviewBannerAction,
   editCopyAction,
   generateBasesAction,
   makeVideoAction,
@@ -25,7 +26,13 @@ import {
   uploadMaterialAction,
 } from "@/app/banner-actions";
 import {
+  ARCHETYPES,
   BANNER_SIZES,
+  toPatternCopy,
+  fromPatternCopy,
+  type BannerPattern,
+  type BannerReview,
+  type PatternCopy,
   FAL_PRICE,
   PATTERN_COUNT,
   VIDEO_ASPECTS,
@@ -120,8 +127,24 @@ export function BannerWorkspace({
     };
   }, [pending, project.id, router]);
 
-  const [copyIdx, setCopyIdx] = useState(() => Math.max(0, project.copies.findIndex((c) => c.guard?.level !== "red")));
-  const copy: BannerCopy | null = project.copies[copyIdx] ?? null;
+  // -1 = パターンごとの専用コピー（2026-11-12〜の既定）。0 以上 = 候補コピーを全パターンに使う
+  const hasPatternCopy = project.patterns.some((p) => p.copy);
+  const firstOk = Math.max(0, project.copies.findIndex((c) => c.guard?.level !== "red"));
+  const [copyIdx, setCopyIdx] = useState(() => (hasPatternCopy ? -1 : firstOk));
+  const fallback: BannerCopy | null = project.copies[copyIdx >= 0 ? copyIdx : firstOk] ?? null;
+  /** そのパターンで使うコピー（法令チェックで NG のコピーは使わない） */
+  const copyFor = (p: BannerPattern | undefined): PatternCopy | null => {
+    if (copyIdx < 0 && p?.copy && p.copy.guard?.level !== "red") return p.copy;
+    return fallback ? toPatternCopy(fallback) : null;
+  };
+  const copy = !!fallback || hasPatternCopy;
+  const logo = (() => {
+    const l = project.materials.find((m) => m.kind === "logo");
+    return l ? assetUrl(l.path) : null;
+  })();
+  const patternOf = (key: string) => project.patterns.find((x) => x.key === key);
+  const [reviews, setReviews] = useState<Record<string, BannerReview>>(project.reviews);
+  const [checking, setChecking] = useState<string | null>(null);
   const bases = visuals.filter((v) => v.kind === "base");
   const doneBases = bases.filter((v) => v.status === "done");
   const [picked, setPicked] = useState<string[]>([]);
@@ -129,8 +152,6 @@ export function BannerWorkspace({
   const [cropOnly, setCropOnly] = useState(false);
   const chosenBases = doneBases.filter((b) => picked.includes(b.id));
   const chosenSizes = BANNER_SIZES.filter((s) => sizes.includes(s.id));
-  const service = d ? (d.product.split(/[。、（(]/)[0] ?? "").trim().slice(0, 14) : "";
-  const facts = d ? pickFacts(d.strengths) : [];
 
   /** そのサイズに使う絵（同じ縦横比の作り直しがあればそれ、無ければ元の絵を切り抜く） */
   function visualFor(base: BannerVisual, s: BannerSize): { v: BannerVisual | null; waiting: boolean } {
@@ -176,6 +197,26 @@ export function BannerWorkspace({
     a.href = URL.createObjectURL(blob);
     a.download = `${project.name || "banners"}.zip`;
     a.click();
+  }
+
+  /** AI チェック：表示中のバナーを縮小 PNG にして AI に見せる（1枚 AI 1回） */
+  async function check(b: BannerVisual, s: BannerSize) {
+    const node = document.getElementById(`bs-${b.id}-${s.id}`);
+    if (!node) return;
+    const key = `${b.id}:${s.id}`;
+    setChecking(key);
+    try {
+      const scale = Math.min(1, 1000 / Math.max(s.w, s.h));
+      const dataUrl = await toPng(node, { pixelRatio: scale, cacheBust: true });
+      const r = await reviewBannerAction(project.id, { key, dataUrl, size: `${s.media} ${s.label}`, w: s.w, h: s.h, pattern: b.pattern });
+      setReviews((v) => ({ ...v, [key]: r }));
+    } finally {
+      setChecking(null);
+    }
+  }
+
+  async function checkAll() {
+    for (const b of chosenBases) for (const s of chosenSizes) if (visualFor(b, s).v?.path) await check(b, s);
   }
 
   return (
@@ -228,6 +269,15 @@ export function BannerWorkspace({
               </button>
             </div>
             <div className="rows" style={{ marginTop: 8 }}>
+              {hasPatternCopy && (
+                <div className="r" style={{ alignItems: "flex-start" }}>
+                  <input type="radio" checked={copyIdx < 0} onChange={() => setCopyIdx(-1)} style={{ marginTop: 4 }} aria-label="パターンごとの専用コピーを使う" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <b>パターンごとの専用コピー（おすすめ）</b>
+                    <small>訴求の型に合わせて、対象・見出し・強調（数字や特典）・CTA を書き分けたもの。下の「絵の基本パターン」で直せます</small>
+                  </div>
+                </div>
+              )}
               {project.copies.map((c, i) => (
                 <CopyRow key={i} index={i} c={c} selected={i === copyIdx} onSelect={() => setCopyIdx(i)} projectId={project.id} busy={busy} run={run} />
               ))}
@@ -244,15 +294,9 @@ export function BannerWorkspace({
                 パターンを作り直す
               </button>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10, marginTop: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10, marginTop: 8 }}>
               {project.patterns.map((p) => (
-                <div className="tactic" key={p.key}>
-                  <div className="top">
-                    <b>{p.label}</b>
-                    {p.useMaterials && <span className="tag" style={{ marginLeft: 6 }}>素材を使う</span>}
-                  </div>
-                  <small style={{ display: "block", color: "var(--muted)" }}>{p.concept}</small>
-                </div>
+                <PatternCard key={p.key} p={p} projectId={project.id} busy={busy} run={run} />
               ))}
             </div>
           </>
@@ -278,10 +322,18 @@ export function BannerWorkspace({
                 const p = project.patterns.find((x) => x.key === b.pattern);
                 return (
                   <div key={b.id} style={{ display: "grid", gap: 6 }}>
-                    <b style={{ fontSize: 13 }}>{p?.label ?? b.pattern}</b>
+                    <b style={{ fontSize: 13 }}>
+                      {p?.label ?? b.pattern}
+                      {p?.archetype && <span className="tag" style={{ marginLeft: 6 }}>{ARCHETYPES[p.archetype].label}</span>}
+                    </b>
                     {b.status === "done" && b.path ? (
                       <Scaled w={1080} h={1080} box={250}>
-                        <Banner id={`base-${b.id}`} copy={copy} brand={d.brand} size={{ id: "p", label: "", media: "Meta", w: 1080, h: 1080 }} image={assetUrl(b.path)} layout="overlay" textZone="bottom" service={service} facts={facts} />
+                        {p && copyFor(p) ? (
+                          <StudioBanner id={`base-${b.id}`} pattern={p} copy={copyFor(p)!} brand={d.brand} w={1080} h={1080} image={assetUrl(b.path)} logo={logo} />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={assetUrl(b.path)} alt="" style={{ width: 1080, height: 1080, objectFit: "cover" }} />
+                        )}
                       </Scaled>
                     ) : b.status === "queued" ? (
                       <div style={{ width: 250, height: 250, display: "grid", placeItems: "center", background: "#f4f3f0", borderRadius: 6 }}>
@@ -368,20 +420,29 @@ export function BannerWorkspace({
                 できたものをまとめて保存（ZIP）
               </button>
             )}
+            {chosenBases.length > 0 && chosenSizes.length > 0 && (
+              <button className="btn ghost" disabled={!!busy || !!checking} onClick={() => run("AI がチェックしています", checkAll)}>
+                {busy === "AI がチェックしています" ? <Spinner label={busy} /> : "表示中を AI でチェック"}
+              </button>
+            )}
           </p>
           {!chosenBases.length && <small style={{ color: "var(--muted)" }}>「3. 基本パターンの絵」で「サイズ展開に使う」に印を付けてください。</small>}
           <div style={{ display: "grid", gap: 18, marginTop: 14 }}>
             {chosenBases.map((b) => (
               <div key={b.id}>
-                <p className="eyebrow">{project.patterns.find((x) => x.key === b.pattern)?.label ?? b.pattern}</p>
+                <p className="eyebrow">{patternOf(b.pattern)?.label ?? b.pattern}</p>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 8 }}>
                   {chosenSizes.map((s) => {
                     const { v, waiting } = visualFor(b, s);
+                    const pt = patternOf(b.pattern);
+                    const pc = copyFor(pt);
+                    const key = `${b.id}:${s.id}`;
+                    const rv = reviews[key];
                     return (
                       <div key={s.id} style={{ display: "grid", gap: 4 }}>
-                        {v?.path ? (
+                        {v?.path && pt && pc ? (
                           <Scaled w={s.w} h={s.h} box={220}>
-                            <Banner id={`bs-${b.id}-${s.id}`} copy={copy} brand={d.brand} size={s as unknown as SizePreset} image={assetUrl(v.path)} layout="overlay" textZone="bottom" service={service} facts={facts} />
+                            <StudioBanner id={`bs-${b.id}-${s.id}`} pattern={pt} copy={pc} brand={d.brand} w={s.w} h={s.h} image={assetUrl(v.path)} logo={logo} />
                           </Scaled>
                         ) : (
                           <div style={{ width: 160, height: 120, display: "grid", placeItems: "center", background: "#f4f3f0", borderRadius: 6, fontSize: 12, color: "var(--muted)", textAlign: "center", padding: 8 }}>
@@ -392,10 +453,16 @@ export function BannerWorkspace({
                           {s.media} {s.w}×{s.h}
                         </small>
                         {v?.path && (
-                          <button className="link" onClick={() => downloadOne(`bs-${b.id}-${s.id}`, `${s.media}_${s.w}x${s.h}_${b.pattern}.png`)}>
-                            保存
-                          </button>
+                          <div style={{ display: "flex", gap: 10 }}>
+                            <button className="link" onClick={() => downloadOne(`bs-${b.id}-${s.id}`, `${s.media}_${s.w}x${s.h}_${b.pattern}.png`)}>
+                              保存
+                            </button>
+                            <button className="link" disabled={!!checking || !!busy} onClick={() => check(b, s).catch((e) => setErr(errText(e)))}>
+                              {checking === key ? "チェック中…" : rv ? "もう一度チェック" : "AI チェック"}
+                            </button>
+                          </div>
                         )}
+                        {rv && <ReviewView r={rv} />}
                       </div>
                     );
                   })}
@@ -407,7 +474,20 @@ export function BannerWorkspace({
       )}
 
       {/* 5. 動画 */}
-      {d && copy && doneBases.length > 0 && <VideoPanel project={project} visuals={visuals} copy={copy} usageReady={usage.falReady} busy={busy} run={run} setErr={setErr} />}
+      {d && copy && doneBases.length > 0 && (
+        <VideoPanel
+          project={project}
+          visuals={visuals}
+          copyFor={(key) => {
+            const c = copyFor(patternOf(key));
+            return c ? fromPatternCopy(c) : null;
+          }}
+          usageReady={usage.falReady}
+          busy={busy}
+          run={run}
+          setErr={setErr}
+        />
+      )}
     </div>
   );
 }
@@ -583,7 +663,7 @@ function CopyRow({
 function VideoPanel({
   project,
   visuals,
-  copy,
+  copyFor,
   usageReady,
   busy,
   run,
@@ -591,7 +671,7 @@ function VideoPanel({
 }: {
   project: BannerProject;
   visuals: BannerVisual[];
-  copy: BannerCopy;
+  copyFor: (patternKey: string) => BannerCopy | null;
   usageReady: boolean;
   busy: string | null;
   run: (l: string, f: () => Promise<unknown>) => Promise<void>;
@@ -609,6 +689,8 @@ function VideoPanel({
     const a = VIDEO_ASPECTS.find((x) => x.aspect === v.aspect) ?? VIDEO_ASPECTS[0];
     setProgress((p) => ({ ...p, [v.id]: 0 }));
     try {
+      const copy = copyFor(v.pattern);
+      if (!copy) throw new Error("使えるコピーがありません");
       const blob = await renderBannerVideo({ src: assetUrl(v.path!), width: a.w, height: a.h, copy, brand: d.brand }, (r) => setProgress((p) => ({ ...p, [v.id]: r })));
       const el = document.createElement("a");
       el.href = URL.createObjectURL(blob);
@@ -685,5 +767,116 @@ function VideoPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function ReviewView({ r }: { r: BannerReview }) {
+  const [open, setOpen] = useState(false);
+  const ng = r.checks.filter((c) => !c.ok);
+  const tone = r.score >= 75 ? "ok" : r.score >= 60 ? "" : " warn";
+  return (
+    <div style={{ maxWidth: 240, fontSize: 12 }}>
+      <button className="link" onClick={() => setOpen((v) => !v)} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <span className={`tag${tone ? ` ${tone.trim()}` : ""}`}>AI チェック {r.score}点</span>
+        {ng.length > 0 && <span style={{ color: "#a0472f" }}>要改善 {ng.length}</span>}
+      </button>
+      {open && (
+        <div style={{ marginTop: 4, display: "grid", gap: 3 }}>
+          {r.checks.map((c, i) => (
+            <div key={i} style={{ color: c.ok ? "var(--muted)" : "#a0472f" }}>
+              {c.ok ? "○" : "×"} {c.item}
+              {!c.ok && c.note ? `：${c.note}` : ""}
+            </div>
+          ))}
+          {r.fixes.length > 0 && (
+            <div style={{ marginTop: 4 }}>
+              <b>直し方</b>
+              {r.fixes.map((f, i) => (
+                <div key={i}>・{f}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PatternCard({ p, projectId, busy, run }: { p: BannerPattern; projectId: string; busy: string | null; run: (l: string, f: () => Promise<unknown>) => Promise<void> }) {
+  const [edit, setEdit] = useState(false);
+  const c = p.copy;
+  const [f, setF] = useState<Omit<PatternCopy, "guard">>(() => ({
+    target: c?.target ?? "",
+    headline: c?.headline ?? ["", ""],
+    emphasis: c?.emphasis ?? "",
+    emphasisLabel: c?.emphasisLabel ?? "",
+    sub: c?.sub ?? "",
+    cta: c?.cta ?? "",
+  }));
+  const level = c?.guard?.level ?? "green";
+  const field = (k: "target" | "emphasis" | "emphasisLabel" | "sub" | "cta", ph: string) => (
+    <input className="input" value={f[k]} placeholder={ph} onChange={(e) => setF((v) => ({ ...v, [k]: e.target.value }))} />
+  );
+  return (
+    <div className="tactic">
+      <div className="top" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <b>{p.label}</b>
+        {p.archetype && <span className="tag">{ARCHETYPES[p.archetype].label}</span>}
+        {p.useMaterials && <span className="tag">素材を使う</span>}
+      </div>
+      <small style={{ display: "block", color: "var(--muted)" }}>{p.concept}</small>
+      {c && !edit && (
+        <div style={{ marginTop: 6, fontSize: 13 }}>
+          {c.target && <div style={{ color: "var(--muted)" }}>{c.target}</div>}
+          <b>{c.headline.join(" ")}</b>
+          {c.emphasis && (
+            <div>
+              強調：{c.emphasis}
+              {c.emphasisLabel ? `（${c.emphasisLabel}）` : ""}
+            </div>
+          )}
+          {c.sub && <div style={{ color: "var(--muted)" }}>{c.sub}</div>}
+          <div>ボタン：{c.cta}</div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
+            <span className={`tag${level === "green" ? " ok" : " warn"}`}>{GUARD_LABEL[level]}</span>
+            <button className="btn ghost sm" onClick={() => setEdit(true)}>
+              直す
+            </button>
+          </div>
+          {c.guard && c.guard.hits.length > 0 && (
+            <small style={{ display: "block", color: "#a0472f" }}>{c.guard.hits.map((h) => `「${h.text}」${h.reason ?? ""}`).join("　")}</small>
+          )}
+          {level === "red" && <small style={{ display: "block", color: "#a0472f" }}>NG のため、このパターンには候補コピーを使います。直すと使えるようになります。</small>}
+        </div>
+      )}
+      {c && edit && (
+        <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
+          {field("target", "対象（例：40代の乾燥肌の方へ）")}
+          <input className="input" value={f.headline[0]} placeholder="見出し1行目" onChange={(e) => setF((v) => ({ ...v, headline: [e.target.value, v.headline[1]] }))} />
+          <input className="input" value={f.headline[1]} placeholder="見出し2行目" onChange={(e) => setF((v) => ({ ...v, headline: [v.headline[0], e.target.value] }))} />
+          {field("emphasis", "強調（数字・特典。事実だけ）")}
+          {field("emphasisLabel", "強調の説明")}
+          {field("sub", "補足")}
+          {field("cta", "ボタンの文言")}
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              className="btn sm"
+              disabled={!!busy}
+              onClick={() =>
+                run("法令チェックをかけて保存しています", async () => {
+                  await editPatternCopyAction(projectId, p.key, f);
+                  setEdit(false);
+                })
+              }
+            >
+              保存（法令チェック）
+            </button>
+            <button className="btn ghost sm" onClick={() => setEdit(false)}>
+              やめる
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

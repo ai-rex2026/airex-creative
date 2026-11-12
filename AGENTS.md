@@ -178,3 +178,6 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - サイズは `BANNER_SIZES`（Meta・Google・Yahoo!・LINE・TikTok・X）。各サイズに近い fal の縦横比（`nearestAspect`）の絵を使い、無ければ作り直す（「切り抜きだけ」なら fal を使わない）
 - `FAL_KEY`（Vercel の環境変数）が無いと絵と動画は作れない（コピーとパターンは作れる）。検証は `FalDeps`・`PatternDeps` を差し替えて行う
 - 自動入稿はしない（書き出したファイルを人が各媒体に入稿する）
+- 2026-11-12 品質改善：成果の出るバナーの共通点（Google・LINEヤフーの公式ガイド、事例分析）を反映。`planPatterns` は訴求の型（`ARCHETYPES`：商品主役＋特典／問いかけ／数字を大きく／実績・信頼／利用シーン／文字が主役）・主役の位置（`subject`）・パターン専用のコピー（`PatternCopy`：対象・見出し・強調・補足・CTA）まで AI 1回で決め、`guardPatterns` で作ったその場で法令チェックする。強調の数字は説明・強みに書かれていない数字なら消し、数字・実績の型は利用シーンに落とす。絵の指示には構図（主役を左右に寄せ反対側45%を空ける／縦長は上に主役・下45%を空ける）をコードで足す（`imagePrompt`・`reframePrompt(p, aspect)`）
+- バナーは `components/banner-studio/StudioBanner.tsx`（型ごとのレイアウト。主役と反対側に白い面を置いて文字を組む・小さいサイズは見出しと CTA だけ・面の高さに収まるよう全体を縮める・ロゴ素材は左上・外枠に細線・CTA だけブランド色の反対色で白文字のコントラスト 4.5 以上 `palette`）。コピーは既定がパターン専用（法令チェック NG のパターンは候補コピーに切り替わる）
+- AI チェック（`lib/banner-studio/review.ts`・`reviewBannerAction`）：表示中のバナーを縮小 PNG（長辺 1000px）にして Sonnet に見せ、9観点の ok/NG・点数・直し方を `banner_projects.reviews`（key は `${絵のID}:${サイズのID}`）に保存。1枚 AI 1回、月 `REVIEW_MONTHLY_LIMIT` 回まで。検証は `ReviewDeps` を差し替えて行う。SQL は `Docs/sql/2026-11-12-banner-reviews.sql`

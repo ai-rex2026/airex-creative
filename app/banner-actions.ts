@@ -9,7 +9,8 @@ import { checkGuard } from "@/lib/guardrail";
 import { detectText } from "@/lib/aio/images";
 import type { BannerCopy, Diagnosis } from "@/lib/types";
 import { falDownload, falPoll, falSubmit, hasFal, outputUrl } from "@/lib/banner-studio/fal";
-import { imagePrompt, planPatterns, reframePrompt, videoPrompt } from "@/lib/banner-studio/patterns";
+import { guardPatterns, imagePrompt, planPatterns, reframePrompt, videoPrompt } from "@/lib/banner-studio/patterns";
+import { reviewBanner } from "@/lib/banner-studio/review";
 import {
   BANNER_BUCKET,
   FAL_ASPECTS,
@@ -18,8 +19,12 @@ import {
   FAL_PRICE,
   FAL_VIDEO_MODEL,
   MONTHLY_LIMIT,
+  REVIEW_MONTHLY_LIMIT,
+  ARCHETYPES,
   type BannerMaterial,
   type BannerPattern,
+  type BannerReview,
+  type PatternCopy,
 } from "@/lib/banner-studio/types";
 
 /**
@@ -155,7 +160,8 @@ export async function prepareBannerAction(id: string): Promise<{ ok: boolean; er
       await sb.from("banner_projects").update({ copies, updated_at: now() }).eq("id", id);
     }
     if (!(p.patterns ?? []).length) {
-      const patterns = await planPatterns(d, p.description, p.materials ?? []);
+      // パターン専用のコピーは、作ったその場で法令チェックに通してから保存する
+      const patterns = await guardPatterns(await planPatterns(d, p.description, p.materials ?? []), d.industry);
       await sb.from("banner_projects").update({ patterns, updated_at: now() }).eq("id", id);
     }
     refresh(id);
@@ -180,9 +186,32 @@ export async function regenerateCopiesAction(id: string): Promise<void> {
 export async function regeneratePatternsAction(id: string): Promise<void> {
   const { sb, p } = await ownProject(id);
   if (!p.diagnosis) throw new Error("先に「コピーと絵のパターンを作る」を押してください");
-  const patterns = await planPatterns(p.diagnosis, p.description, p.materials ?? []);
+  const patterns = await guardPatterns(await planPatterns(p.diagnosis, p.description, p.materials ?? []), p.diagnosis.industry);
   await sb.from("banner_projects").update({ patterns, updated_at: now() }).eq("id", id);
   refresh(id);
+}
+
+/** パターン専用のコピーを直す。直した文言はその場で法令チェックに通す */
+export async function editPatternCopyAction(id: string, key: string, patch: Omit<PatternCopy, "guard">): Promise<PatternCopy> {
+  const { sb, p } = await ownProject(id);
+  if (!p.diagnosis) throw new Error("先に「コピーと絵のパターンを作る」を押してください");
+  const patterns = [...(p.patterns ?? [])];
+  const i = patterns.findIndex((x) => x.key === key);
+  if (i < 0) throw new Error("パターンが見つかりません");
+  const s = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
+  const copy: PatternCopy = {
+    target: s(patch.target, 24),
+    headline: [s(patch.headline?.[0], 20), s(patch.headline?.[1], 20)],
+    emphasis: s(patch.emphasis, 14),
+    emphasisLabel: s(patch.emphasisLabel, 14),
+    sub: s(patch.sub, 40),
+    cta: s(patch.cta, 12) || "詳しく見る",
+  };
+  const [guarded] = await guardPatterns([{ ...patterns[i], copy }], p.diagnosis.industry);
+  patterns[i] = guarded;
+  await sb.from("banner_projects").update({ patterns, updated_at: now() }).eq("id", id);
+  refresh(id);
+  return guarded.copy!;
 }
 
 /** コピーを直す。直した文言はその場で法令チェックに通す */
@@ -266,8 +295,8 @@ export async function generateBasesAction(id: string, keys?: string[]): Promise<
       { project_id: id, owner_id: user.id, kind: "base", pattern: pt.key, parent_id: null, aspect: "1:1" },
       useMat ? FAL_EDIT_MODEL : FAL_IMAGE_MODEL,
       useMat
-        ? { prompt: imagePrompt(pt), image_urls: matUrls, num_images: 1, aspect_ratio: "1:1", output_format: "png" }
-        : { prompt: imagePrompt(pt), num_images: 1, aspect_ratio: "1:1", output_format: "png" },
+        ? { prompt: imagePrompt(pt, "1:1"), image_urls: matUrls, num_images: 1, aspect_ratio: "1:1", output_format: "png" }
+        : { prompt: imagePrompt(pt, "1:1"), num_images: 1, aspect_ratio: "1:1", output_format: "png" },
       FAL_PRICE.image
     );
   }
@@ -295,7 +324,7 @@ export async function resizeVisualAction(id: string, baseId: string, aspects: st
       sb,
       { project_id: id, owner_id: user.id, kind: "resize", pattern: String(base.pattern), parent_id: baseId, aspect: a },
       FAL_EDIT_MODEL,
-      { prompt: reframePrompt(pt), image_urls: [src], num_images: 1, aspect_ratio: a, output_format: "png" },
+      { prompt: reframePrompt(pt, a), image_urls: [src], num_images: 1, aspect_ratio: a, output_format: "png" },
       FAL_PRICE.image
     );
   }
@@ -402,4 +431,43 @@ export async function deleteBannerProjectAction(id: string): Promise<void> {
   if (paths.length) await createAdminClient().storage.from(BANNER_BUCKET).remove(paths).catch(() => undefined);
   await sb.from("banner_projects").delete().eq("id", id).eq("owner_id", user.id);
   refresh();
+}
+
+// ── AI チェック（F・2026-11-12） ─────────────────────
+
+/**
+ * 出来上がったバナー（画面で PNG にしたもの）を AI に見せて、点数と直し方を返す。1枚につき AI 1回。
+ * 結果は banner_projects.reviews に `${絵のID}:${サイズのID}` で保存する（同じものは上書き）。
+ */
+export async function reviewBannerAction(
+  id: string,
+  input: { key: string; dataUrl: string; size: string; w: number; h: number; pattern: string }
+): Promise<BannerReview> {
+  const { sb, user, p } = await ownProject(id);
+  const m = input.dataUrl.match(/^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) throw new Error("画像を読めませんでした");
+  if (m[2].length > 2_000_000) throw new Error("画像が大きすぎます");
+  if (!/^[0-9a-f-]{36}:[a-z0-9-]{1,40}$/i.test(input.key)) throw new Error("対象が不正です");
+  // 月の上限（全制作の合計）
+  const jst = new Date(Date.now() + 9 * 3600_000);
+  const monthStart = Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), 1) - 9 * 3600_000;
+  const { data: all } = await sb.from("banner_projects").select("reviews").eq("owner_id", user.id);
+  const used = (all ?? []).reduce((n, r) => n + Object.values((r.reviews ?? {}) as Record<string, BannerReview>).filter((v) => Date.parse(v.at) >= monthStart).length, 0);
+  if (used >= REVIEW_MONTHLY_LIMIT) throw new Error(`今月の AI チェックの上限（${REVIEW_MONTHLY_LIMIT}回）に達しています`);
+  const pt = (p.patterns ?? []).find((x) => x.key === input.pattern);
+  const review = await reviewBanner(
+    { media: m[1], base64: m[2] },
+    {
+      size: String(input.size).slice(0, 60),
+      w: Math.round(Number(input.w) || 0),
+      h: Math.round(Number(input.h) || 0),
+      archetype: pt?.archetype ? ARCHETYPES[pt.archetype].label : "指定なし",
+      brand: p.diagnosis?.brand.name ?? p.name,
+    }
+  );
+  // 保存は最新の reviews に足す（同時に別のチェックが走っても消さない）
+  const { data: cur } = await sb.from("banner_projects").select("reviews").eq("id", id).maybeSingle();
+  const reviews = { ...((cur?.reviews ?? {}) as Record<string, BannerReview>), [input.key]: review };
+  await sb.from("banner_projects").update({ reviews, updated_at: now() }).eq("id", id);
+  return review;
 }

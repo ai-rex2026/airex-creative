@@ -1,4 +1,4 @@
-import type { BannerCopy, Diagnosis } from "../types";
+import type { BannerCopy, Diagnosis, GuardVerdict } from "../types";
 
 /**
  * 広告運用 ＞ バナー制作（2026-11-11）。画面（client）からも読むので、サーバー専用のものは import しない。
@@ -81,6 +81,70 @@ export const VIDEO_ASPECTS: { aspect: FalAspect; label: string; w: number; h: nu
 
 export type BannerMaterial = { path: string; kind: "product" | "logo" | "photo"; name: string };
 
+/**
+ * 訴求の型（2026-11-12）。成果の出るバナーの型（Google・LINEヤフーの公式ガイド、各社の事例分析）から6つ。
+ * 型ごとに、絵の構図・文字の置き方・コピーの役割を変える（どれも同じ見た目になるのを防ぐ）。
+ */
+export const ARCHETYPES = {
+  offer: { label: "商品主役＋特典", hint: "商品を大きく見せ、特典・条件を目立たせる" },
+  question: { label: "問いかけ（悩み）", hint: "ターゲットの悩みを問いかけ、解決をにおわせる" },
+  number: { label: "数字を大きく", hint: "実績・価格などの数字をいちばん大きく見せる" },
+  proof: { label: "実績・信頼", hint: "実績・導入数・受賞などの事実で信頼を見せる" },
+  scene: { label: "利用シーン", hint: "使っている場面・人で、手に入れた後を想像させる" },
+  type: { label: "文字が主役", hint: "ブランド色の背景に、一言を大きく置く" },
+} as const;
+export type Archetype = keyof typeof ARCHETYPES;
+export const isArchetype = (x: unknown): x is Archetype => typeof x === "string" && x in ARCHETYPES;
+
+/** 主役（商品・人）を絵のどこに置くか。文字はその反対側に置く */
+export type SubjectSide = "left" | "right" | "center";
+
+/** パターン専用のコピー。役割ごとに分けて、サイズに応じて出す要素を間引く */
+export type PatternCopy = {
+  /** 対象の明示（例：40代の乾燥肌の方へ）。全角16字以内 */
+  target: string;
+  /** 見出し（フック）。2行、各全角12字以内 */
+  headline: [string, string];
+  /** いちばん目立たせる短い要素（数字・特典・実績）。全角10字以内。無ければ空 */
+  emphasis: string;
+  /** emphasis の説明（例：導入社数）。全角10字以内 */
+  emphasisLabel: string;
+  /** 補足の一文。全角24字以内 */
+  sub: string;
+  /** 行動喚起。全角8字以内 */
+  cta: string;
+  guard?: GuardVerdict;
+};
+
+/** AI チェックの結果（F・2026-11-12） */
+export type BannerReview = {
+  score: number;
+  checks: { item: string; ok: boolean; note: string }[];
+  fixes: string[];
+  at: string;
+};
+
+/** 1人1か月の AI チェックの上限 */
+export const REVIEW_MONTHLY_LIMIT = 300;
+
+/** 候補コピー（angle ごとの BannerCopy）をパターン用の形に読み替える */
+export function toPatternCopy(c: BannerCopy): PatternCopy {
+  return {
+    target: c.ribbonTop ?? "",
+    headline: [c.headline[0] ?? "", c.headline[1] ?? ""],
+    emphasis: c.ribbonBottom ?? "",
+    emphasisLabel: "",
+    sub: (c.body ?? "").split(/(?<=。)/)[0]?.slice(0, 40) ?? "",
+    cta: c.cta,
+    guard: c.guard,
+  };
+}
+
+/** 動画の書き出し（BannerCopy を受け取る）用に戻す */
+export function fromPatternCopy(c: PatternCopy): BannerCopy {
+  return { angleId: "pattern", headline: c.headline, ribbonTop: c.target, ribbonBottom: c.emphasis, body: c.sub, cta: c.cta, guard: c.guard };
+}
+
 export type BannerPattern = {
   key: string;
   /** 日本語の名前（例：商品を主役にした写真） */
@@ -93,6 +157,12 @@ export type BannerPattern = {
   motion: string;
   /** 取り込んだ素材（商品写真など）を使うか */
   useMaterials: boolean;
+  /** 訴求の型（2026-11-12〜。古いパターンには無い） */
+  archetype?: Archetype;
+  /** 主役の位置 */
+  subject?: SubjectSide;
+  /** パターン専用のコピー（法令チェック済み） */
+  copy?: PatternCopy;
 };
 
 export type VisualKind = "base" | "resize" | "video";
@@ -121,11 +191,13 @@ export type BannerProject = {
   copies: BannerCopy[];
   materials: BannerMaterial[];
   patterns: BannerPattern[];
+  /** AI チェックの結果。key は `${絵のID}:${サイズのID}` */
+  reviews: Record<string, BannerReview>;
   error: string | null;
   createdAt: string;
 };
 
-export const BANNER_PROJECT_COLUMNS = "id, name, url, description, diagnosis, copies, materials, patterns, error, created_at";
+export const BANNER_PROJECT_COLUMNS = "id, name, url, description, diagnosis, copies, materials, patterns, reviews, error, created_at";
 export const BANNER_VISUAL_COLUMNS = "id, kind, pattern, parent_id, aspect, status, path, error, text_warning, created_at";
 
 export function rowToBannerProject(r: Record<string, unknown>): BannerProject {
@@ -138,6 +210,7 @@ export function rowToBannerProject(r: Record<string, unknown>): BannerProject {
     copies: Array.isArray(r.copies) ? (r.copies as BannerCopy[]) : [],
     materials: Array.isArray(r.materials) ? (r.materials as BannerMaterial[]) : [],
     patterns: Array.isArray(r.patterns) ? (r.patterns as BannerPattern[]) : [],
+    reviews: r.reviews && typeof r.reviews === "object" && !Array.isArray(r.reviews) ? (r.reviews as Record<string, BannerReview>) : {},
     error: (r.error as string | null) ?? null,
     createdAt: String(r.created_at ?? ""),
   };

@@ -1,37 +1,97 @@
 import { askJson } from "../anthropic";
+import { checkGuard } from "../guardrail";
 import { normalizeJapanese } from "../meo-ops/japanese";
-import type { Diagnosis } from "../types";
-import { PATTERN_COUNT, type BannerMaterial, type BannerPattern } from "./types";
+import type { Diagnosis, GuardVerdict, Industry } from "../types";
+import {
+  ARCHETYPES,
+  PATTERN_COUNT,
+  aspectValue,
+  isArchetype,
+  type Archetype,
+  type BannerMaterial,
+  type BannerPattern,
+  type PatternCopy,
+  type SubjectSide,
+} from "./types";
 
 /**
- * バナーの絵の基本パターンを決める（AI 1回）。絵の指示は英語で、文字を描かせない。
- * 文字は後から DOM・canvas で重ねるので、下3分の1に余白を残す構図にする。
+ * バナーの基本パターンを決める（AI 1回）。2026-11-12 に「訴求の型」ごとの構図とコピーまで決める形にした。
+ *
+ * 成果の出るバナーの共通点（Google・LINEヤフーの公式ガイド、事例分析）を反映:
+ * - メッセージは1つ・主役は1つで大きく（画面の6割）・コラージュにしない・実際の場面と自然な光
+ * - 主役は左右どちらかに寄せ、反対側を文字のために空ける（文字と主役を重ねない）
+ * - 型ごとにコピーの役割を変える（対象の明示・フック・いちばん目立たせる数字や特典・CTA）
+ * 絵には文字を描かせない（AGENTS.md）。文字は DOM・canvas で組む。
  */
 
 const NO_TEXT =
-  "Absolutely no text, letters, numbers, captions, logos, watermarks or UI elements anywhere in the image. Leave clean, uncluttered negative space in the lower third for a text overlay. High quality advertising photography, sharp focus.";
+  "Absolutely no text, letters, numbers, captions, logos, watermarks, signs, labels with writing or UI elements anywhere in the image. High quality advertising photography, sharp focus, natural light and real shadows, single clear subject, no collage, no borders.";
 
-const SYSTEM = `あなたは日本の広告代理店のアートディレクターです。ディスプレイ広告・SNS広告のバナーの「絵（背景・場面）」を${PATTERN_COUNT}パターン考えます。
-文字（コピー）は後から別に重ねるので、絵には文字を一切入れません。
+const ARCHETYPE_LINES = (Object.keys(ARCHETYPES) as Archetype[]).map((k) => `- ${k}: ${ARCHETYPES[k].label}（${ARCHETYPES[k].hint}）`).join("\n");
 
-パターンは互いに違う切り口にする（当てはまるものから選ぶ）:
-- 商品・サービスを主役にした写真（素材の商品写真があればそれを使う）
-- 使っている人・使っている場面（顔は正面を避けてもよい）
-- 悩み・ビフォーの気持ちに寄り添う場面
-- 得られる結果・理想の状態（アフター）を感じさせる場面
-- ブランド色を活かしたシンプルな背景・質感（文字を大きく載せる用）
+const SYSTEM = `あなたは日本の広告代理店のアートディレクター兼コピーライターです。ディスプレイ広告・SNS広告のバナーを${PATTERN_COUNT}パターン設計します。
+絵（写真）と文字は別に作ります。絵には文字を一切入れず、文字は後から絵の空いた側に重ねます。
 
-ルール:
-- prompt は英語で 40〜80語。被写体・場面・光・色（ブランド色を取り入れる）・構図（下3分の1を空ける）を具体的に
-- 実在の人物・有名人・他社ブランド・キャラクターを描かない。医療・美容・健康の効果を示す変化（ビフォーアフターの体の比較）を描かない
-- 素材（商品写真など）があるパターンは useMaterials を true にし、prompt で「the product from the reference image」として場面に置く
-- motion は英語 10〜25語。5秒の動画にするときの、ゆっくりしたカメラの動き・被写体の小さな動き
+訴求の型（パターンごとに違う型を選ぶ。商材に合うものだけ）:
+${ARCHETYPE_LINES}
+
+成果の出るバナーの原則:
+- メッセージは1つに絞る。要素を詰め込まない
+- 主役（商品・人）は1つで大きく。主役は左か右に寄せ、反対側の約45%を文字のために空ける（type だけは主役なしの背景）
+- 実際の場面・自然な光。商品が主役。コラージュ・白一色の背景にしない
+- 人物を使うときは、視線が文字の側（空けた側）を向くようにする
+
+絵の指示（prompt）:
+- 英語で 40〜80語。被写体・場面・光・色（ブランド色を取り入れる）を具体的に。構図の指示は後から足すので書かなくてよい
+- type は主役なし：ブランド色を基調にした、文字を大きく載せられる抽象的な背景（質感・光・グラデーション）
+- 実在の人物・有名人・他社ブランド・キャラクターを描かない。医療・美容・健康の効果を示す体の変化（ビフォーアフター）を描かない
+- 素材（商品写真など）があり、その型で商品を見せるなら useMaterials を true にし、「the product from the reference image」として場面に置く
+- motion は英語 10〜25語。5秒の動画にするときの、ゆっくりしたカメラの動き・小さな動き
+
+コピー（copy。型ごとの役割で書く）:
+- target: 対象の明示（例：「40代の乾燥肌の方へ」）全角16字以内。question・scene では必ず書く
+- headline: 2行で1つの言い切り（question は問いかけ）。各行 全角12字以内
+- emphasis: いちばん目立たせる短い要素（number は数字、offer は特典・条件、proof は実績）全角10字以内。emphasisLabel はその説明 全角10字以内。商材情報・説明に書かれた事実だけ。無ければ空にし、その型は選ばない
+- sub: 補足 全角24字以内。cta: 全角8字以内の具体的な行動（例：「無料で試す」）
+- 根拠のない数値・最上級（No.1・最安など）・効果の断定・誇大な表現は使わない
+
+その他:
+- subject: 主役の位置 left / right / center（type は center）。パターン間で left と right を混ぜる
 - label は日本語 16字以内、concept は日本語 50字以内
 
-出力: {"patterns":[{"key":"p1","label":"","concept":"","prompt":"","motion":"","useMaterials":false}]}`;
+出力: {"patterns":[{"archetype":"offer","subject":"left","label":"","concept":"","prompt":"","motion":"","useMaterials":false,"copy":{"target":"","headline":["",""],"emphasis":"","emphasisLabel":"","sub":"","cta":""}}]}`;
 
 export type PatternDeps = { ask: (system: string, user: string) => Promise<unknown> };
-export const defaultPatternDeps = (): PatternDeps => ({ ask: (s, u) => askJson(s, u, { maxTokens: 3000, timeoutMs: 90_000 }) });
+export const defaultPatternDeps = (): PatternDeps => ({ ask: (s, u) => askJson(s, u, { maxTokens: 4500, timeoutMs: 120_000 }) });
+
+const clip = (v: unknown, n: number) => normalizeJapanese(String(v ?? "")).trim().slice(0, n);
+
+/** 数字・特典が、与えた事実（説明・強み）に書かれているか。書かれていない数字は出さない */
+function grounded(emphasis: string, facts: string): boolean {
+  const nums = emphasis.match(/[0-9０-９][0-9０-９,.，．]*/g);
+  if (!nums) return true;
+  const flat = normalizeJapanese(facts).replace(/[,，]/g, "");
+  return nums.every((n) => flat.includes(normalizeJapanese(n).replace(/[,，]/g, "")));
+}
+
+function readCopy(raw: unknown, facts: string): PatternCopy {
+  const c = (raw ?? {}) as Record<string, unknown>;
+  const h = Array.isArray(c.headline) ? c.headline : [];
+  let emphasis = clip(c.emphasis, 12);
+  let emphasisLabel = clip(c.emphasisLabel, 12);
+  if (emphasis && !grounded(emphasis, facts)) {
+    emphasis = "";
+    emphasisLabel = "";
+  }
+  return {
+    target: clip(c.target, 18),
+    headline: [clip(h[0], 14), clip(h[1], 14)],
+    emphasis,
+    emphasisLabel,
+    sub: clip(c.sub, 30),
+    cta: clip(c.cta, 10) || "詳しく見る",
+  };
+}
 
 export async function planPatterns(
   d: Diagnosis,
@@ -40,14 +100,16 @@ export async function planPatterns(
   deps: PatternDeps = defaultPatternDeps()
 ): Promise<BannerPattern[]> {
   const kinds = { product: "商品写真", logo: "ロゴ", photo: "写真" } as const;
+  const facts = [d.product, ...d.strengths, description].join(" / ");
   const user = [
     `商材: ${d.product}`,
     `ターゲット: ${d.audience}`,
-    `強み: ${d.strengths.slice(0, 5).join(" / ")}`,
+    `強み（事実）: ${d.strengths.slice(0, 6).join(" / ")}`,
     `買わない理由: ${d.objections.slice(0, 4).join(" / ")}`,
     `ブランド: ${d.brand.name}（トーン：${d.brand.tone}／ブランド色：${d.brand.accent}）`,
-    description ? `担当者からの説明: ${description.slice(0, 1200)}` : "",
+    description ? `担当者からの説明（事実）: ${description.slice(0, 1200)}` : "",
     `素材: ${materials.length ? materials.map((m) => `${kinds[m.kind]}（${m.name}）`).join("、") : "なし"}`,
+    d.brand.ngWords?.length ? `使用禁止語: ${d.brand.ngWords.join("、")}` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -57,14 +119,23 @@ export async function planPatterns(
   for (const [i, p] of (Array.isArray(raw?.patterns) ? raw.patterns : []).entries()) {
     const prompt = String(p?.prompt ?? "").trim();
     if (prompt.length < 20) continue;
+    let archetype: Archetype = isArchetype(p?.archetype) ? p.archetype : "scene";
+    const copy = readCopy(p?.copy, facts);
+    // 数字・実績の型なのに、事実で裏づけられる数字が無いときは「利用シーン」に落とす
+    if ((archetype === "number" || archetype === "proof") && !copy.emphasis) archetype = "scene";
+    const side = String(p?.subject ?? "");
+    const subject: SubjectSide = archetype === "type" ? "center" : side === "right" ? "right" : side === "center" ? "center" : "left";
     out.push({
       key: `p${out.length + 1}`,
-      label: normalizeJapanese(String(p?.label ?? `パターン${i + 1}`)).slice(0, 24),
-      concept: normalizeJapanese(String(p?.concept ?? "")).slice(0, 80),
+      label: clip(p?.label ?? `パターン${i + 1}`, 24) || ARCHETYPES[archetype].label,
+      concept: clip(p?.concept, 80),
       prompt: prompt.slice(0, 900),
       motion: String(p?.motion ?? "slow cinematic push-in, soft natural light movement").trim().slice(0, 300),
-      // 素材が無いのに素材を使う指定は外す
-      useMaterials: hasProduct && p?.useMaterials === true,
+      // 素材が無いのに素材を使う指定は外す。文字が主役の型は素材を使わない
+      useMaterials: hasProduct && archetype !== "type" && p?.useMaterials === true,
+      archetype,
+      subject,
+      copy,
     });
     if (out.length >= PATTERN_COUNT) break;
   }
@@ -72,19 +143,60 @@ export async function planPatterns(
   return out;
 }
 
+export type GuardFn = (texts: string[], industry: Industry) => Promise<GuardVerdict>;
+
+/** パターン専用のコピーに法令チェックをかける（生成と同時に通す。1本の失敗で他を落とさない） */
+export async function guardPatterns(patterns: BannerPattern[], industry: Industry, guard: GuardFn = checkGuard): Promise<BannerPattern[]> {
+  const res = await Promise.allSettled(
+    patterns.map((p) => {
+      const c = p.copy;
+      if (!c) return Promise.resolve(undefined);
+      const texts = [c.target, c.headline.join(""), c.emphasis, c.emphasisLabel, c.sub, c.cta].filter(Boolean);
+      return guard(texts, industry);
+    })
+  );
+  return patterns.map((p, i) => {
+    const r = res[i];
+    if (!p.copy) return p;
+    const verdict: GuardVerdict =
+      r.status === "fulfilled" && r.value
+        ? r.value
+        : { level: "yellow", hits: [{ text: "", reason: "法令チェックを実行できませんでした。人が確認してください", law: "", suggestion: "", severity: "medium" }] };
+    return { ...p, copy: { ...p.copy, guard: verdict } };
+  });
+}
+
+/** 構図の指示（主役の位置と、文字のために空ける側） */
+function composition(p: BannerPattern | null, aspect: string): string {
+  const a = aspectValue(aspect);
+  if (p?.archetype === "type") {
+    return "Composition: an abstract, uncluttered background with gentle texture and soft light; keep the center calm and evenly lit so large text can sit on top. No objects.";
+  }
+  if (a < 0.9) {
+    // 縦長：主役を上に、下 45% を文字用に空ける
+    return "Composition: vertical frame. Place the main subject in the upper half, large and fully visible; keep the lower 45% of the frame calm, uncluttered and evenly toned (soft background, floor or table surface) for a text overlay.";
+  }
+  const side = p?.subject === "right" ? "right" : p?.subject === "center" ? "center" : "left";
+  if (side === "center") {
+    return "Composition: main subject centered in the upper two thirds, large; keep the lower third calm and uncluttered for a text overlay.";
+  }
+  const other = side === "left" ? "right" : "left";
+  return `Composition: place the main subject on the ${side} side of the frame (${side} 55%), large and fully visible; keep the ${other} 45% of the frame calm, uncluttered and softly out of focus for a text overlay. If a person appears, they look toward the ${other} side.`;
+}
+
 /** 画像モデルに渡す最終の指示 */
-export function imagePrompt(p: BannerPattern): string {
+export function imagePrompt(p: BannerPattern, aspect = "1:1"): string {
   const lead = p.useMaterials
     ? "Use the product shown in the reference image(s) exactly as it is — do not change its shape, color, label or packaging design. Place it naturally in this scene: "
     : "";
-  return `${lead}${p.prompt}\n\n${NO_TEXT}`;
+  return `${lead}${p.prompt}\n\n${composition(p, aspect)}\n\n${NO_TEXT}`;
 }
 
-/** 縦横比を変えて作り直すときの指示（元の絵を保つ） */
-export function reframePrompt(p: BannerPattern | null): string {
-  return `Recompose this exact image for a new aspect ratio. Keep the same subject, product, style, colors and lighting; extend the background naturally and keep the main subject fully visible. ${p ? `Scene: ${p.prompt.slice(0, 300)}` : ""}\n\n${NO_TEXT}`;
+/** 縦横比を変えて作り直すときの指示（元の絵を保つ。構図は新しい縦横比に合わせる） */
+export function reframePrompt(p: BannerPattern | null, aspect = "1:1"): string {
+  return `Recompose this exact image for a new aspect ratio. Keep the same subject, product, style, colors and lighting; extend the background naturally and keep the main subject fully visible and large. ${composition(p, aspect)} ${p ? `Scene: ${p.prompt.slice(0, 300)}` : ""}\n\n${NO_TEXT}`;
 }
 
 export function videoPrompt(p: BannerPattern | null): string {
-  return `${p?.motion || "slow cinematic push-in, subtle natural movement"}. Keep the product and subject unchanged. No text, no captions, no logos appear.`;
+  return `${p?.motion || "slow cinematic push-in, subtle natural movement"}. Keep the product and subject unchanged and in the same position. No text, no captions, no logos appear.`;
 }
