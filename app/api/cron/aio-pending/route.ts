@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { expireStuckChecks, pendingCheckIds, runCheck } from "@/lib/aio/run";
+import { expireStuckOverviews, pendingOverviewIds, runOverview } from "@/lib/aio/overview";
 import { AIO_PROJECT_COLUMNS, rowToProject } from "@/lib/aio/store";
 
 export const maxDuration = 300;
@@ -16,9 +17,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const admin = createAdminClient();
+  const started = Date.now();
   const done: { id: string; ok: boolean }[] = [];
+  const overviews: { id: string; ok: boolean }[] = [];
   try {
     await expireStuckChecks(admin);
+    await expireStuckOverviews(admin);
     for (const c of await pendingCheckIds(admin, 3)) {
       const { data } = await admin.from("aio_projects").select(AIO_PROJECT_COLUMNS).eq("id", c.project_id).maybeSingle();
       if (!data) continue;
@@ -26,7 +30,15 @@ export async function GET(req: Request) {
       const ok = await runCheck(admin, c.id, { name: p.name, aliases: p.aliases }).catch(() => false);
       done.push({ id: c.id, ok });
     }
-    return NextResponse.json({ done });
+    // Google の「AI による概要」（1件 数秒〜60秒）。関数の時間内に終わる分だけ
+    for (const c of await pendingOverviewIds(admin, 4)) {
+      if (Date.now() - started > 220_000) break;
+      const { data } = await admin.from("aio_projects").select(AIO_PROJECT_COLUMNS).eq("id", c.project_id).maybeSingle();
+      if (!data) continue;
+      const ok = await runOverview(admin, c.id, rowToProject(data as Record<string, unknown>)).catch(() => false);
+      overviews.push({ id: c.id, ok });
+    }
+    return NextResponse.json({ done, overviews });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e), done }, { status: 500 });
   }

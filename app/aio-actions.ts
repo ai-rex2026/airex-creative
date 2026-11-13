@@ -5,7 +5,8 @@ import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AIO_PROJECT_COLUMNS, rowToCheck, rowToProject, AIO_CHECK_COLUMNS } from "@/lib/aio/store";
-import { buildAioPrompt, createCheck, runCheck } from "@/lib/aio/run";
+import { buildAioPrompt, buildAioQuery, createCheck, runCheck } from "@/lib/aio/run";
+import { cleanQuery, ensureSearchQueries, runOverview } from "@/lib/aio/overview";
 import { suggestPrompts } from "@/lib/aio/prompts";
 import { analyzeGap, planMonth } from "@/lib/aio/gap";
 import { jstPeriodKey } from "@/lib/meo-ops/daily";
@@ -121,9 +122,11 @@ export async function runAioCheckAction(id: string) {
   const { project } = await owned(id);
   if (!project.category) throw new Error("AIに聞くときの探し方を設定してください");
   const admin = createAdminClient();
-  const created = await createCheck(admin, id, buildAioPrompt(project.area, project.category));
+  const created = await createCheck(admin, id, buildAioPrompt(project.area, project.category), { overviewQuery: buildAioQuery(project.area, project.category) });
   after(async () => {
-    await runCheck(createAdminClient(), created.checkId, { name: project.name, aliases: project.aliases }).catch(() => undefined);
+    const sb2 = createAdminClient();
+    // Gemini の測定と Google の概要は別々に保存する（片方の失敗でもう片方を捨てない）
+    await Promise.allSettled([runCheck(sb2, created.checkId, { name: project.name, aliases: project.aliases }), runOverview(sb2, created.checkId, project)]);
   });
   refresh(id);
   return created;
@@ -138,14 +141,14 @@ export async function suggestAioPromptsAction(id: string) {
   return suggestPrompts(project, (data ?? []).map((r) => String(r.text)));
 }
 
-export async function addAioPromptsAction(id: string, items: { text: string; category: string }[]) {
+export async function addAioPromptsAction(id: string, items: { text: string; category: string; query?: string }[]) {
   const { sb } = await owned(id);
   const { count } = await sb.from("aio_prompts").select("id", { count: "exact", head: true }).eq("project_id", id).eq("active", true);
   const room = MAX_ACTIVE_PROMPTS - (count ?? 0);
   if (room <= 0) throw new Error(`対策プロンプトは ${MAX_ACTIVE_PROMPTS} 本までです。使わないものを外してください`);
   const cats = Object.keys(AIO_PROMPT_CATEGORY_LABEL);
   const rows = items
-    .map((i) => ({ project_id: id, text: String(i.text ?? "").trim().slice(0, 120), category: cats.includes(i.category) ? i.category : "recommend", active: true }))
+    .map((i) => ({ project_id: id, text: String(i.text ?? "").trim().slice(0, 120), search_query: cleanQuery(i.query), category: cats.includes(i.category) ? i.category : "recommend", active: true }))
     .filter((r) => r.text)
     .slice(0, room);
   if (!rows.length) throw new Error("追加するプロンプトがありません");
@@ -155,12 +158,13 @@ export async function addAioPromptsAction(id: string, items: { text: string; cat
   return rows.length;
 }
 
-export async function updateAioPromptAction(id: string, promptId: string, patch: { text?: string; category?: AioPromptCategory; active?: boolean }) {
+export async function updateAioPromptAction(id: string, promptId: string, patch: { text?: string; category?: AioPromptCategory; active?: boolean; searchQuery?: string }) {
   const { sb } = await owned(id);
   const upd: Record<string, unknown> = {};
   if (patch.text !== undefined) upd.text = patch.text.trim().slice(0, 120);
   if (patch.category !== undefined) upd.category = patch.category;
   if (patch.active !== undefined) upd.active = patch.active;
+  if (patch.searchQuery !== undefined) upd.search_query = cleanQuery(patch.searchQuery);
   const { error } = await sb.from("aio_prompts").update(upd).eq("id", promptId).eq("project_id", id);
   if (error) throw new Error(`保存できませんでした：${error.message}`);
   refresh(id);
@@ -189,12 +193,14 @@ export async function runAioPromptsNowAction(id: string): Promise<{ accepted: nu
   const prompts = ((data ?? []) as Record<string, unknown>[]).map(rowToPrompt);
   if (!prompts.length) throw new Error("対策プロンプトを先に登録してください");
   const admin = createAdminClient();
+  // Google の「AI による概要」用の検索語が無いものにだけ付ける（AI 1回）。失敗しても Gemini の測定は進める
+  const queries = await ensureSearchQueries(admin, id, prompts).catch(() => new Map<string, string>());
   const ids: string[] = [];
   let remaining = 0;
   let skipped = 0;
   for (const p of prompts) {
     try {
-      const c = await createCheck(admin, id, p.text, { promptId: p.id, source: "manual" });
+      const c = await createCheck(admin, id, p.text, { promptId: p.id, source: "manual", overviewQuery: queries.get(p.id) ?? "" });
       ids.push(c.checkId);
       remaining = c.remaining;
     } catch {
@@ -203,8 +209,9 @@ export async function runAioPromptsNowAction(id: string): Promise<{ accepted: nu
   }
   if (!ids.length) throw new Error("今月の実測の上限に達しています。翌月まではお待ちください");
   after(async () => {
+    const sb2 = createAdminClient();
     for (const cid of ids.slice(0, 2)) {
-      await runCheck(createAdminClient(), cid, { name: project.name, aliases: project.aliases }).catch(() => undefined);
+      await Promise.allSettled([runCheck(sb2, cid, { name: project.name, aliases: project.aliases }), runOverview(sb2, cid, project)]);
     }
   });
   refresh(id);

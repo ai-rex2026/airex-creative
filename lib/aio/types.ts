@@ -41,6 +41,31 @@ export type AioCheck = {
   errorMessage: string | null;
   createdAt: string;
   completedAt: string | null;
+  /** Google 検索の「AI による概要」の取得状態。none＝取らない（検索語なし・DataForSEO 未設定・導入前の測定） */
+  overviewStatus: AioOverviewStatus;
+  /** Google で検索した語 */
+  overviewQuery: string;
+  overview: AioOverview | null;
+};
+
+export type AioOverviewStatus = "none" | "pending" | "running" | "done" | "failed";
+
+/** Google 検索結果の「AI による概要」（DataForSEO の SERP から。2026-11-13） */
+export type AioOverview = {
+  /** 概要が表示されたか（出ない検索語・回も多い） */
+  shown: boolean;
+  /** ページを開いた後に生成されるタイプだったか */
+  async: boolean;
+  /** 本文（markdown。長いものは切る） */
+  text: string;
+  /** 概要が引用した出典 */
+  references: { url: string; domain: string; title: string }[];
+  /** 本文に自社名（名前・別名）が出たか */
+  mentioned: boolean;
+  /** 出典に自社サイトが入ったか */
+  ownCited: boolean;
+  fetchedAt: string;
+  error?: string;
 };
 
 export type AioDraftKind = "site_article" | "note_article" | "press_release" | "survey_article" | "faq_schema" | "wantedly_story" | "job_posting_schema" | "listing_memo";
@@ -115,6 +140,8 @@ export const MAX_ACTIVE_PROMPTS = 20;
 export type AioPrompt = {
   id: string;
   text: string;
+  /** Google 検索で「AI による概要」を測るときの検索語（空なら測る前に AI が作る） */
+  searchQuery: string;
   category: AioPromptCategory;
   active: boolean;
   createdAt: string;

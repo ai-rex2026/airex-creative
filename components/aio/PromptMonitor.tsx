@@ -25,7 +25,7 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
   // ── AI 候補 ──
   const [picking, setPicking] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
-  const [cands, setCands] = useState<{ text: string; category: AioPromptCategory; on: boolean }[]>([]);
+  const [cands, setCands] = useState<{ text: string; category: AioPromptCategory; query: string; on: boolean }[]>([]);
   const suggest = async () => {
     setSuggesting(true);
     setError(null);
@@ -44,7 +44,7 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
     setAdding(true);
     setError(null);
     try {
-      const n = await addAioPromptsAction(project.id, cands.filter((c) => c.on).map(({ text, category }) => ({ text, category })));
+      const n = await addAioPromptsAction(project.id, cands.filter((c) => c.on).map(({ text, category, query }) => ({ text, category, query })));
       setNotice(`${n}本を対策プロンプトに追加しました`);
       setPicking(false);
       router.refresh();
@@ -139,6 +139,16 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
           <Kpi label="SoV（言及シェア）" value={summary.latest.sov} prev={summary.previous?.sov ?? null} unit="%" hint="AI が挙げた事業者の延べ数に占める自社" />
         </div>
       )}
+      {summary.latest && summary.latest.ovChecks > 0 && (
+        <div className="mt-2">
+          <p className="text-[11px] font-semibold text-[#6B6862]">Google 検索の「AI による概要」（{summary.latest.ovChecks}本の検索語で測定）</p>
+          <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <Kpi label="概要の表示率" value={summary.latest.ovShownRate} prev={summary.previous?.ovShownRate ?? null} unit="%" hint={`${summary.latest.ovShown} / ${summary.latest.ovChecks} 本で概要が出た`} />
+            <Kpi label="概要での言及率" value={summary.latest.ovMentionRate} prev={summary.previous?.ovMentionRate ?? null} unit="%" hint="概要が出た回のうち、本文に自社名が出た割合" />
+            <Kpi label="概要での引用率" value={summary.latest.ovCitationRate} prev={summary.previous?.ovCitationRate ?? null} unit="%" hint="概要が出た回のうち、出典に自社サイトが入った割合" />
+          </div>
+        </div>
+      )}
       {summary.history.length > 1 && <Trend history={summary.history} />}
 
       {notice && <p className="mt-3 text-sm text-[#2F6B4A]">{notice}</p>}
@@ -172,6 +182,7 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
                   <th className="py-2 pr-3 font-medium">プロンプト</th>
                   <th className="py-2 pr-3 font-medium">種類</th>
                   <th className="py-2 pr-3 font-medium">最新の結果</th>
+                  <th className="py-2 pr-3 font-medium">Google の AI による概要</th>
                   <th className="py-2 pr-3 font-medium">AI</th>
                   <th className="py-2 pr-3 font-medium">測定日</th>
                   <th className="py-2 pr-3 font-medium"></th>
@@ -223,6 +234,12 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
                 {summary.ownSourceDomains.map((d) => `${d.domain}${d.isOwn ? "（自社）" : ""} ${d.count}本`).join("、")}
               </p>
             )}
+            {summary.ovDomains.length > 0 && (
+              <p className="mt-2 text-[11px] text-[#6B6862]">
+                Google の AI による概要の出典：
+                {summary.ovDomains.map((d) => `${d.domain}${d.isOwn ? "（自社）" : ""} ${d.count}本`).join("、")}
+              </p>
+            )}
             {summary.byEngine.length > 0 && (
               <p className="mt-2 text-[11px] text-[#A5A198]">測定AI: {summary.byEngine.map((e) => `${e.engine}（${e.mentioned}/${e.checks}本で言及）`).join("、")}</p>
             )}
@@ -236,7 +253,10 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
             <li key={i} className="flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-[#FAF9F7]">
               <Checkbox checked={c.on} onChange={(v) => setCands((cs) => cs.map((x, j) => (j === i ? { ...x, on: v } : x)))} />
               <span className="shrink-0 rounded-full bg-[#F4F3F0] px-2 py-0.5 text-[10px] text-[#6B6862]">{AIO_PROMPT_CATEGORY_LABEL[c.category]}</span>
-              <span className="text-sm text-[#2E2D29]">{c.text}</span>
+              <span className="text-sm text-[#2E2D29]">
+                {c.text}
+                {c.query && <span className="ml-2 text-[11px] text-[#8B877F]">Google：{c.query}</span>}
+              </span>
             </li>
           ))}
         </ul>
@@ -268,6 +288,32 @@ function PromptRow({ project, prompt, check, onChanged, onError }: { project: Ai
       setBusy(false);
     }
   };
+  const [editing, setEditing] = useState(false);
+  const [query, setQuery] = useState(prompt.searchQuery);
+  const [open, setOpen] = useState(false);
+  const saveQuery = () =>
+    act(async () => {
+      await updateAioPromptAction(project.id, prompt.id, { searchQuery: query });
+      setEditing(false);
+    });
+  const ov = check?.overview ?? null;
+  const ovCell = !check || check.overviewStatus === "none" ? (
+    <span className="text-xs text-[#A5A198]">–</span>
+  ) : check.overviewStatus === "pending" || check.overviewStatus === "running" ? (
+    <span className="flex items-center gap-1 text-xs text-[#6B6862]"><Icon name="loader" className="h-3 w-3" />取得中</span>
+  ) : check.overviewStatus === "failed" ? (
+    <span className="text-xs text-[#A8705A]" title={ov?.error ?? ""}>取得失敗</span>
+  ) : !ov?.shown ? (
+    <span className="text-xs text-[#8B877F]">表示なし</span>
+  ) : (
+    <button type="button" onClick={() => setOpen((v) => !v)} className="flex flex-wrap items-center gap-1 text-left">
+      <span className="rounded-full bg-[#F4F3F0] px-2 py-0.5 text-[10px] text-[#2E2D29]">表示あり</span>
+      {ov.mentioned && <span className="rounded-full bg-[#EAF3EE] px-2 py-0.5 text-[10px] font-bold text-[#2F6B4A]">自社名あり</span>}
+      {ov.ownCited && <span className="rounded-full bg-[#EAF3EE] px-2 py-0.5 text-[10px] font-bold text-[#2F6B4A]">自社サイト引用</span>}
+      {!ov.mentioned && !ov.ownCited && <span className="rounded-full bg-[#FBEDE9] px-2 py-0.5 text-[10px] text-[#A8705A]">自社なし</span>}
+      <span className="text-[10px] text-[#8B877F] underline">{open ? "閉じる" : "中身"}</span>
+    </button>
+  );
   const result = !check ? (
     <span className="text-xs text-[#A5A198]">未測定</span>
   ) : check.status === "completed" ? (
@@ -282,10 +328,27 @@ function PromptRow({ project, prompt, check, onChanged, onError }: { project: Ai
     <span className="flex items-center gap-1 text-xs text-[#6B6862]"><Icon name="loader" className="h-3 w-3" />確認中</span>
   );
   return (
+    <>
     <tr className={cn("border-t border-[#F0EDE8]", !prompt.active && "opacity-50")}>
-      <td className="py-2 pr-3 text-[#2E2D29]">{prompt.text}</td>
+      <td className="py-2 pr-3 text-[#2E2D29]">
+        {prompt.text}
+        <div className="mt-0.5 flex items-center gap-1 text-[11px] text-[#8B877F]">
+          {editing ? (
+            <>
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveQuery()} className="h-7 text-xs" placeholder="例：渋谷 美容室 おすすめ" />
+              <button type="button" className="shrink-0 underline" disabled={busy} onClick={saveQuery}>保存</button>
+              <button type="button" className="shrink-0 underline" disabled={busy} onClick={() => { setQuery(prompt.searchQuery); setEditing(false); }}>やめる</button>
+            </>
+          ) : (
+            <button type="button" className="text-left hover:underline" onClick={() => setEditing(true)} title="Google で「AI による概要」を測るときの検索語">
+              Google：{prompt.searchQuery || "（次の測定で自動で付けます）"} ✎
+            </button>
+          )}
+        </div>
+      </td>
       <td className="py-2 pr-3"><span className="rounded-full bg-[#F4F3F0] px-2 py-0.5 text-[10px] text-[#6B6862]">{AIO_PROMPT_CATEGORY_LABEL[prompt.category]}</span></td>
       <td className="py-2 pr-3">{result}</td>
+      <td className="py-2 pr-3">{ovCell}</td>
       <td className="py-2 pr-3 text-xs text-[#8B877F]">{check?.engine ?? "–"}</td>
       <td className="py-2 pr-3 text-xs text-[#8B877F]">{check?.completedAt ? new Date(check.completedAt).toLocaleDateString("ja-JP") : "–"}</td>
       <td className="py-2 pr-0 text-right whitespace-nowrap">
@@ -297,6 +360,30 @@ function PromptRow({ project, prompt, check, onChanged, onError }: { project: Ai
         </button>
       </td>
     </tr>
+    {open && ov?.shown && (
+      <tr>
+        <td colSpan={7} className="pb-3 pr-3">
+          <div className="rounded-xl bg-[#FAF9F7] p-3 text-xs leading-relaxed text-[#2E2D29]">
+            <p className="text-[11px] text-[#8B877F]">
+              検索語「{check?.overviewQuery}」・{new Date(ov.fetchedAt).toLocaleString("ja-JP")}
+              {ov.async && "・後から生成された概要"}
+            </p>
+            <p className="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap">{ov.text || "（本文なし）"}</p>
+            {ov.references.length > 0 && (
+              <ul className="mt-2 space-y-0.5">
+                {ov.references.map((r) => (
+                  <li key={r.url} className="truncate">
+                    <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-[#2F6B4A] underline">{r.title || r.url}</a>
+                    <span className="ml-1 text-[#A5A198]">{r.domain}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </td>
+      </tr>
+    )}
+    </>
   );
 }
 

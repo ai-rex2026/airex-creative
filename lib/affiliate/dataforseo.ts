@@ -13,8 +13,8 @@
 const BASE = "https://api.dataforseo.com/v3";
 
 /** 日本（location_code）／日本語。SERP・ボリュームとも日本固定で取る */
-const LOCATION_JP = 2392;
-const LANGUAGE_JA = "ja";
+export const LOCATION_JP = 2392;
+export const LANGUAGE_JA = "ja";
 
 export function hasDataForSeo(): boolean {
   return !!(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD);
@@ -41,7 +41,7 @@ type TaskEnvelope<R> = {
  * DataForSEO の live エンドポイントを叩いて最初のタスクの result を返す。
  * 失敗は例外にせず null を返す（収集がまるごと落ちるより、広告なし・ボリュームなしで続行させたい）。
  */
-async function postLive<R>(
+export async function postLive<R>(
   path: string,
   body: unknown[],
   timeoutMs = 60_000

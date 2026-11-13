@@ -3,6 +3,7 @@ import { askJson, MODEL_FAST } from "../anthropic";
 import { GEMINI_MODEL } from "../gemini";
 import { ask, domainOf, findOwnRank, preferredEngine } from "../meo-ops/ai-search";
 import { jstPeriodKey } from "../meo-ops/daily";
+import { canFetchOverview } from "./overview";
 import { AIO_MONTHLY_LIMIT, type AioProject } from "./types";
 
 /**
@@ -17,6 +18,11 @@ const MEASURE_BUDGET_MS = 200_000;
 const MAX_CITED = 30;
 
 /** AI への質問。店舗と違い、エリアが無い（全国・オンライン）事業も多いので、エリアは任意にする */
+/** 定型文の測定で Google に検索する語 */
+export function buildAioQuery(area: string, category: string): string {
+  return [area.trim(), category.trim(), "おすすめ"].filter(Boolean).join(" ");
+}
+
 export function buildAioPrompt(area: string, category: string): string {
   const where = area.trim() ? `${area.trim()}で` : "";
   return `${where}${category.trim()}を探しています。\nおすすめの会社・サービスを5〜8件、それぞれ選んだ理由と情報源（URL）つきで教えてください。`;
@@ -34,20 +40,23 @@ export async function quota(sb: SupabaseClient, projectId: string) {
  * 実測を1件受け付ける（sb は service role。aio_checks への書き込みはサーバーだけ）。
  * promptText は AI に投げる文そのもの。promptId は対策プロンプト（aio_prompts）の id（無ければ null＝探し方からの定型文）。
  * source = monthly（月次の自動計測）は手動の上限を消費しない
+ * overviewQuery を渡すと、同じ測定で Google 検索の「AI による概要」も取る（DataForSEO が設定済みのときだけ。lib/aio/overview.ts）
  */
 export async function createCheck(
   sb: SupabaseClient,
   projectId: string,
   promptText: string,
-  opts: { promptId?: string | null; source?: "manual" | "monthly" } = {}
+  opts: { promptId?: string | null; source?: "manual" | "monthly"; overviewQuery?: string } = {}
 ) {
   const source = opts.source ?? "manual";
   const q = await quota(sb, projectId);
   if (source === "manual" && q.remaining <= 0) throw new Error(`実測は 1 か月に ${q.limit} 回までです。翌月まではお待ちください。`);
   const engine = preferredEngine();
+  const overviewQuery = (opts.overviewQuery ?? "").trim().slice(0, 60);
+  const overview = overviewQuery && canFetchOverview() ? { overview_status: "pending", overview_query: overviewQuery } : {};
   const { data, error } = await sb
     .from("aio_checks")
-    .insert({ project_id: projectId, prompt_id: opts.promptId ?? null, source, status: "pending", engine, model: engine === "gemini" ? GEMINI_MODEL : ANSWER_MODEL, prompt: promptText, period: q.period })
+    .insert({ project_id: projectId, prompt_id: opts.promptId ?? null, source, status: "pending", engine, model: engine === "gemini" ? GEMINI_MODEL : ANSWER_MODEL, prompt: promptText, period: q.period, ...overview })
     .select("id")
     .single();
   if (error || !data) throw new Error("実測を開始できませんでした");

@@ -5,8 +5,8 @@ import type { AioCheck, AioContentPlan, AioDraft, AioDraftKind, AioGapReport, Ai
 /** aio_projects / aio_checks / aio_drafts の行 → 画面の型 */
 
 export const AIO_PROJECT_COLUMNS = "id, name, aliases, url, industry, area, category, notes, site_summary, monitoring_enabled, created_at";
-export const AIO_PROMPT_COLUMNS = "id, text, category, active, created_at";
-export const AIO_CHECK_COLUMNS = "id, prompt_id, source, status, engine, model, prompt, mentioned, rank, listed, cited_sources, own_source_domains, raw_answer, search_queries, error_message, created_at, completed_at";
+export const AIO_PROMPT_COLUMNS = "id, text, search_query, category, active, created_at";
+export const AIO_CHECK_COLUMNS = "id, prompt_id, source, status, engine, model, prompt, mentioned, rank, listed, cited_sources, own_source_domains, raw_answer, search_queries, error_message, created_at, completed_at, overview_status, overview_query, overview";
 export const AIO_DRAFT_COLUMNS = "id, kind, title, body, guard, status, created_at";
 
 const strs = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
@@ -32,6 +32,7 @@ export function rowToPrompt(r: Record<string, unknown>): AioPrompt {
   return {
     id: String(r.id),
     text: String(r.text ?? ""),
+    searchQuery: String(r.search_query ?? ""),
     category: (cats.includes(String(r.category)) ? String(r.category) : "recommend") as AioPrompt["category"],
     active: r.active !== false,
     createdAt: String(r.created_at),
@@ -57,6 +58,9 @@ export function rowToCheck(r: Record<string, unknown>): AioCheck {
     errorMessage: (r.error_message as string | null) ?? null,
     createdAt: String(r.created_at),
     completedAt: (r.completed_at as string | null) ?? null,
+    overviewStatus: (["pending", "running", "done", "failed"].includes(String(r.overview_status)) ? r.overview_status : "none") as AioCheck["overviewStatus"],
+    overviewQuery: String(r.overview_query ?? ""),
+    overview: r.overview && typeof r.overview === "object" ? (r.overview as AioCheck["overview"]) : null,
   };
 }
 

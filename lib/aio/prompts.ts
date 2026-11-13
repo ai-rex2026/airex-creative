@@ -1,5 +1,6 @@
 import { askJson } from "../anthropic";
 import { normalizeJapanese } from "../meo-ops/japanese";
+import { cleanQuery } from "./query";
 import { AIO_PROMPT_CATEGORY_LABEL, type AioCheck, type AioPrompt, type AioPromptCategory, type AioProject } from "./types";
 
 /**
@@ -28,10 +29,11 @@ AI に推薦されるかは「どんな問いに答えられるか」で決ま�
 - 実際に人が打ちそうな、自然な日本語の一文にする（20〜50字）
 - 似た問いを並べない。切り口（用途・予算・規模・職種・比較相手）を変える
 - 日本語の文章で通常使う漢字だけで書く
+- query: 同じ人が Google で検索するときの検索語。2〜4語をスペースで区切る（例：「渋谷で口コミの良い美容室を教えて」→「渋谷 美容室 おすすめ」）。問いにない語を足さない
 
-出力: {"prompts":[{"category":"issue|recommend|compare|track_record|select|trust|recruit","text":"問い"}]}`;
+出力: {"prompts":[{"category":"issue|recommend|compare|track_record|select|trust|recruit","text":"問い","query":"検索語"}]}`;
 
-export async function suggestPrompts(project: AioProject, existing: string[]): Promise<{ category: AioPromptCategory; text: string }[]> {
+export async function suggestPrompts(project: AioProject, existing: string[]): Promise<{ category: AioPromptCategory; text: string; query: string }[]> {
   const lines = [
     "# 事業の前提",
     `事業者名: ${project.name}`,
@@ -41,16 +43,16 @@ export async function suggestPrompts(project: AioProject, existing: string[]): P
     project.siteSummary ? `Webサイトの見出し: ${project.siteSummary}` : "",
     existing.length ? `\n# 登録済み（これと重ならないもの）\n${existing.map((e) => `- ${e}`).join("\n")}` : "",
   ].filter((l) => l !== "");
-  const res = await askJson<{ prompts?: { category?: string; text?: string }[] }>(SUGGEST_SYSTEM, lines.join("\n"), { maxTokens: 2500, timeoutMs: 90_000 });
+  const res = await askJson<{ prompts?: { category?: string; text?: string; query?: string }[] }>(SUGGEST_SYSTEM, lines.join("\n"), { maxTokens: 2500, timeoutMs: 90_000 });
   const seen = new Set(existing.map((e) => e.replace(/\s+/g, "")));
-  const out: { category: AioPromptCategory; text: string }[] = [];
+  const out: { category: AioPromptCategory; text: string; query: string }[] = [];
   for (const p of res.prompts ?? []) {
     const text = normalizeJapanese(String(p.text ?? "").trim()).slice(0, 120);
     const key = text.replace(/\s+/g, "");
     if (!text || seen.has(key)) continue;
     seen.add(key);
     const category = CATEGORIES.includes(p.category as AioPromptCategory) ? (p.category as AioPromptCategory) : "recommend";
-    out.push({ category, text });
+    out.push({ category, text, query: cleanQuery(p.query) });
     if (out.length >= 20) break;
   }
   return out;
@@ -75,6 +77,16 @@ export type AioPeriodStats = {
   sourcedRate: number | null;
   /** Share of Voice（AI が挙げた事業者の延べ数に占める自社の割合、%） */
   sov: number | null;
+  /** Google の「AI による概要」を取れた回数（表示なしも含む） */
+  ovChecks: number;
+  /** 概要が表示された回数 */
+  ovShown: number;
+  /** 概要の表示率（%）＝ ovShown / ovChecks */
+  ovShownRate: number | null;
+  /** 概要が表示された回のうち、本文に自社名が出た割合（%） */
+  ovMentionRate: number | null;
+  /** 概要が表示された回のうち、出典に自社サイトが入った割合（%） */
+  ovCitationRate: number | null;
 };
 
 export type AioCompetitorRow = { name: string; mentions: number; share: number; isOwn: boolean };
@@ -97,6 +109,8 @@ export type AioSummary = {
   /** 直近期に、自社の紹介の根拠になった媒体（自社サイト以外も含む） */
   ownSourceDomains: AioDomainRow[];
   byEngine: { engine: string; checks: number; mentioned: number }[];
+  /** 直近期に Google の「AI による概要」が出典にした媒体 */
+  ovDomains: AioDomainRow[];
 };
 
 const NOISE = /[\s\-‐‑–—ー・\/／|｜()（）[\]「」『』"'’、。．,.!！?？&＆]/g;
@@ -133,6 +147,8 @@ function statsFor(period: string, checks: AioCheck[], own: string[], ownD: Set<s
     }
   }
   const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
+  const ov = checks.filter((c) => c.overviewStatus === "done" && c.overview);
+  const ovShown = ov.filter((c) => c.overview!.shown);
   return {
     period,
     checks: done.length,
@@ -142,6 +158,11 @@ function statsFor(period: string, checks: AioCheck[], own: string[], ownD: Set<s
     citationRate: pct(cited, done.length),
     sourcedRate: pct(sourced, done.length),
     sov: pct(ownCount, total),
+    ovChecks: ov.length,
+    ovShown: ovShown.length,
+    ovShownRate: pct(ovShown.length, ov.length),
+    ovMentionRate: pct(ovShown.filter((c) => c.overview!.mentioned).length, ovShown.length),
+    ovCitationRate: pct(ovShown.filter((c) => c.overview!.ownCited).length, ovShown.length),
   };
 }
 
@@ -155,7 +176,7 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
     byPeriod.set(p, [...(byPeriod.get(p) ?? []), c]);
   }
   const periods = [...byPeriod.keys()].sort();
-  const history = periods.map((p) => statsFor(p, byPeriod.get(p)!, own, ownD)).filter((s) => s.checks > 0);
+  const history = periods.map((p) => statsFor(p, byPeriod.get(p)!, own, ownD)).filter((s) => s.checks > 0 || s.ovChecks > 0);
   const latest = history.at(-1) ?? null;
   const previous = history.at(-2) ?? null;
 
@@ -219,7 +240,17 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
   }
   const byEngine = [...emap.entries()].map(([engine, v]) => ({ engine, ...v }));
 
-  return { latest, previous, history, byPrompt, competitors, domains, ownSourceDomains, byEngine };
+  // Google の「AI による概要」の出典（直近期）
+  const ocount = new Map<string, number>();
+  for (const c of latest ? (byPeriod.get(latest.period) ?? []) : []) {
+    if (c.overviewStatus !== "done" || !c.overview?.shown) continue;
+    for (const d of new Set(c.overview.references.map((r) => cleanDomain(r.domain)).filter(Boolean))) ocount.set(d, (ocount.get(d) ?? 0) + 1);
+  }
+  const ovRanked = [...ocount.entries()].sort((a, b) => b[1] - a[1]).map(([domain, count]) => ({ domain, count, isOwn: isOwnDomain(domain, ownD) }));
+  const ovDomains = ovRanked.slice(0, 12);
+  for (const d of ovRanked.slice(12)) if (d.isOwn) ovDomains.push(d);
+
+  return { latest, previous, history, byPrompt, competitors, domains, ownSourceDomains, byEngine, ovDomains };
 }
 
 /** 自社ドメイン（URL から） */

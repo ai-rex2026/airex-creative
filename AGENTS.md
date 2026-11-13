@@ -182,3 +182,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - バナーは `components/banner-studio/StudioBanner.tsx`（2026-11-12 夜：写真と文字の面を分ける6レイアウト `BannerLayout`＝左右分割（横長だけ。正方形の絵を丸ごと見せる）・上下分割（正方形・縦長。横に広い帯は2列）・写真に文字カード（バナーと同じ縦横比の絵があるときだけ。無ければ分割に切り替え）・文字が主役。`resolveLayout` が型とサイズから自動で選び、画面で絵ごとに指定もできる。絵は主役を中央やや上・周りに余白で作るので、どのレイアウトでも余白だけが切れる。fal の作り直しは文字カードを縦長・横長で使うときだけ。旧：主役と反対側に白い面を置いて文字を組む・小さいサイズは見出しと CTA だけ・面の高さに収まるよう全体を縮める・ロゴ素材は左上・外枠に細線・CTA だけブランド色の反対色で白文字のコントラスト 4.5 以上 `palette`）。コピーは既定がパターン専用（法令チェック NG のパターンは候補コピーに切り替わる）
 - 文字の背景（2026-11-12 夜・`TextStyle`）：白い面／ブランド色を薄く／半透明の白（写真を透かす）／ブランド色の面／ブランド色のグラデーション／濃い墨の面／写真をぼかして暗く／写真に直接（下を暗く。カード・文字が主役のときだけ、ほかは写真ぼかし）の8種類。`resolveStyle` が型から自動で選び、画面で絵ごとに指定もできる。半透明・ぼかしは写真を拡大してぼかした背景（CSS `filter: blur`）の上に敷く。ブランド色の面では CTA を白地にブランド色の文字に反転する。対象（target）は帯（座布団）にして見せる。根拠：Google・LINEヤフー公式、NN/g の文字と写真の重ね方（暗幕・ぼかし・半透明の箱・色と配置）、広告の A/B 比較（文字入りが CPC 20〜32%低い・デザイン加工した素材が ROAS 26%高い等。商材で勝ちパターンが逆転する例もあり、型と背景を変えて比べる前提）
 - AI チェック（`lib/banner-studio/review.ts`・`reviewBannerAction`）：表示中のバナーを縮小 PNG（長辺 1000px）にして Sonnet に見せ、9観点の ok/NG・点数・直し方を `banner_projects.reviews`（key は `${絵のID}:${サイズのID}`）に保存。1枚 AI 1回、月 `REVIEW_MONTHLY_LIMIT` 回まで。検証は `ReviewDeps` を差し替えて行う。SQL は `Docs/sql/2026-11-12-banner-reviews.sql`
+
+## AIO：Google 検索の「AI による概要」（2026-11-13 追記）
+
+- Gemini の測定と同じタイミング（手動・月次）で、プロンプトごとの検索語（`aio_prompts.search_query`）を Google で検索し、「AI による概要」を `aio_checks.overview`（`overview_status` = none|pending|running|done|failed）に保存する（`lib/aio/overview.ts`）。Google に公式 API は無いので DataForSEO の SERP（Google Organic Live Advanced・日本／ja・desktop・`load_async_ai_overview: true`）。単価は $0.002＋後読み込みの概要があった回だけ $0.002（無ければ返金）
+- 1測定につき DataForSEO は1回だけ：呼ぶ前に overview_status を pending→running に条件つきで更新し、取れた処理だけが呼ぶ。失敗・途中で止まったもの（15分）は failed にして自動では呼び直さない（課金があるため）。Gemini の測定とは別カラムにその場で保存し、片方の失敗でもう片方を捨てない
+- 取りこぼしは `/api/cron/aio-pending` が拾う（1回4件まで・関数の時間内に収まる分だけ）
+- 検索語は、AI の候補（`suggestPrompts`）と同じ呼び出しで作る。既存の空のものは測定の直前に `ensureSearchQueries`（AI 1回。全部あれば呼ばない）。画面で直せる。定型文の測定は `buildAioQuery`（エリア＋探し方＋おすすめ）
+- 自社の言及は本文に名前・別名が出たか（`mentionsOwn`）、引用は出典に自社ドメインが入ったか。集計（`summarize`）は概要の表示率・概要が出た回のうちの言及率／引用率・出典の媒体。AI は呼ばない
+- DataForSEO（`DATAFORSEO_LOGIN`/`DATAFORSEO_PASSWORD`）が無いときは overview_status=none で Gemini だけ測る。検証は `OverviewDeps`・`QueryAsk` を差し替えて行う。SQL は `Docs/sql/2026-11-13-aio-overview.sql`

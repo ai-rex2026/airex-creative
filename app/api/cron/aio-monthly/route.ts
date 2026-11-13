@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createCheck } from "@/lib/aio/run";
+import { ensureSearchQueries } from "@/lib/aio/overview";
 import { AIO_PROMPT_COLUMNS, rowToPrompt } from "@/lib/aio/store";
 import { jstPeriodKey } from "@/lib/meo-ops/daily";
 
@@ -11,6 +12,7 @@ export const maxDuration = 120;
  * 有効な対策プロンプトを全部 pending で積む（source = monthly。手動の上限は消費しない）。
  * 実際の問い合わせは /api/cron/aio-pending が10分おきに拾って順に行う（1回2件＝20本で約100分）。
  * 同じ月に同じプロンプトを二重に積まない（再実行しても壊れない）。
+ * 検索語のあるプロンプトは Google 検索の「AI による概要」も同じ測定で取る（aio-pending が拾う）。
  */
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
@@ -28,11 +30,12 @@ export async function GET(req: Request) {
       const { data: done } = await admin.from("aio_checks").select("prompt_id").eq("project_id", pid).eq("period", period).eq("source", "monthly");
       const already = new Set((done ?? []).map((d) => String(d.prompt_id)));
       let queued = 0;
-      for (const r of (prompts ?? []) as Record<string, unknown>[]) {
-        const pr = rowToPrompt(r);
-        if (already.has(pr.id)) continue;
+      const todo = ((prompts ?? []) as Record<string, unknown>[]).map(rowToPrompt).filter((pr) => !already.has(pr.id));
+      // Google の「AI による概要」用の検索語が無いものにだけ付ける（AI 1回。全部あれば呼ばない）
+      const queries = await ensureSearchQueries(admin, pid, todo).catch(() => new Map<string, string>());
+      for (const pr of todo) {
         try {
-          await createCheck(admin, pid, pr.text, { promptId: pr.id, source: "monthly" });
+          await createCheck(admin, pid, pr.text, { promptId: pr.id, source: "monthly", overviewQuery: queries.get(pr.id) ?? "" });
           queued++;
         } catch (e) {
           console.error("[aio-monthly]", pid, pr.id, e instanceof Error ? e.message : e);
