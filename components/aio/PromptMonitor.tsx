@@ -6,6 +6,7 @@ import { addAioPromptsAction, deleteAioPromptAction, runAioPromptsNowAction, set
 import { SectionTitle } from "@/components/meo/Workspace";
 import { Btn, Card, Checkbox, Dialog, ErrorNote, Icon, Input, Select, Switch, cn } from "@/components/meo/ui";
 import { ownDomainsOf, summarize, type AioCompetitorRow, type AioDomainRow, type AioPeriodStats } from "@/lib/aio/prompts";
+import { ovOwnCited, ovRefIsOwn, ovRefKind, ovRefLabel } from "@/lib/aio/query";
 import { AIO_PROMPT_CATEGORY_LABEL, MAX_ACTIVE_PROMPTS, type AioCheck, type AioProject, type AioPrompt, type AioPromptCategory } from "@/lib/aio/types";
 
 /**
@@ -193,7 +194,7 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
             <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
               <Kpi label="概要の表示率" value={summary.latest.ovShownRate} prev={summary.previous?.ovShownRate ?? null} unit="%" hint={`${summary.latest.ovShown} / ${summary.latest.ovChecks} 本で概要が出た`} />
               <Kpi label="概要での言及率" value={summary.latest.ovMentionRate} prev={summary.previous?.ovMentionRate ?? null} unit="%" hint="概要が出た回のうち、本文に自社名が出た割合" />
-              <Kpi label="概要での引用率" value={summary.latest.ovCitationRate} prev={summary.previous?.ovCitationRate ?? null} unit="%" hint="概要が出た回のうち、出典に自社サイトが入った割合" />
+              <Kpi label="概要での引用率" value={summary.latest.ovCitationRate} prev={summary.previous?.ovCitationRate ?? null} unit="%" hint="概要が出た回のうち、出典に自社（サイト・ビジネスプロフィール）が入った割合" />
             </div>
           ) : (
             <p className="mt-2 rounded-xl border border-dashed border-[#D8D4CC] p-3 text-center text-xs text-[#8B877F]">まだ取得できていません。次の実測（手動・月次）で、Gemini と同時に取ります。</p>
@@ -263,6 +264,7 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
             <div>
               <p className="text-sm font-semibold text-[#2E2D29]">概要が出典にした媒体（{summary.latest?.period}）</p>
               <DomainList rows={summary.ovDomains} />
+              <p className="mt-1 text-[10px] text-[#A5A198]">google.com の出典は、店舗・場所の情報（Google ビジネスプロフィール）と、転送先が分からない Google の転送リンクに分けています。転送リンクは同じ検索結果に同じタイトルのページがあれば、そのサイトに置き換えて数えます。自社かどうかはタイトルの自社名で照合します。</p>
             </div>
           </div>
         )
@@ -318,6 +320,9 @@ function PromptRow({ view, project, prompt, check, onChanged, onError }: { view:
       setEditing(false);
     });
   const ov = check?.overview ?? null;
+  const ownNames = [project.name, ...project.aliases].filter((n) => n.trim());
+  const ownD = ownDomainsOf(project);
+  const ownCited = !!ov && (ov.ownCited || ovOwnCited(ov, ownNames, ownD));
   const ovCell = !check || check.overviewStatus === "none" ? (
     <span className="text-xs text-[#A5A198]">–</span>
   ) : check.overviewStatus === "pending" || check.overviewStatus === "running" ? (
@@ -330,8 +335,8 @@ function PromptRow({ view, project, prompt, check, onChanged, onError }: { view:
     <button type="button" onClick={() => setOpen((v) => !v)} className="flex flex-wrap items-center gap-1 text-left">
       <span className="rounded-full bg-[#F4F3F0] px-2 py-0.5 text-[10px] text-[#2E2D29]">表示あり</span>
       {ov.mentioned && <span className="rounded-full bg-[#EAF3EE] px-2 py-0.5 text-[10px] font-bold text-[#2F6B4A]">自社名あり</span>}
-      {ov.ownCited && <span className="rounded-full bg-[#EAF3EE] px-2 py-0.5 text-[10px] font-bold text-[#2F6B4A]">自社サイト引用</span>}
-      {!ov.mentioned && !ov.ownCited && <span className="rounded-full bg-[#FBEDE9] px-2 py-0.5 text-[10px] text-[#A8705A]">自社なし</span>}
+      {ownCited && <span className="rounded-full bg-[#EAF3EE] px-2 py-0.5 text-[10px] font-bold text-[#2F6B4A]">自社が出典</span>}
+      {!ov.mentioned && !ownCited && <span className="rounded-full bg-[#FBEDE9] px-2 py-0.5 text-[10px] text-[#A8705A]">自社なし</span>}
       <span className="text-[10px] text-[#8B877F] underline">{open ? "閉じる" : "中身"}</span>
     </button>
   );
@@ -405,7 +410,8 @@ function PromptRow({ view, project, prompt, check, onChanged, onError }: { view:
                 {ov.references.map((r) => (
                   <li key={r.url} className="truncate">
                     <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-[#2F6B4A] underline">{r.title || r.url}</a>
-                    <span className="ml-1 text-[#A5A198]">{r.domain}</span>
+                    <span className="ml-1 text-[#A5A198]">{ovRefKind(r) === "site" ? r.domain : ovRefLabel(r)}</span>
+                    {ovRefIsOwn(r, ownNames, ownD) && <span className="ml-1 rounded-full bg-[#EAF3EE] px-1.5 py-0.5 text-[10px] text-[#2F6B4A]">自社</span>}
                   </li>
                 ))}
               </ul>

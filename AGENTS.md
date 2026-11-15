@@ -193,3 +193,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - DataForSEO（`DATAFORSEO_LOGIN`/`DATAFORSEO_PASSWORD`）が無いときは overview_status=none で Gemini だけ測る。検証は `OverviewDeps`・`QueryAsk` を差し替えて行う。SQL は `Docs/sql/2026-11-13-aio-overview.sql`
 - 2026-11-15：画面（`components/aio/PromptMonitor.tsx`）は「Gemini の回答」「Google の AI による概要」のタブで分け、数字・推移・プロンプト一覧・挙がった事業者・根拠の媒体をタブごとの集計で出す（検索語の編集は Google タブ）。概要は事業者の一覧を返さないので、`summarize` の `ovCompetitors` は Gemini で挙がった事業者名（全期間）と自社名を本文に照合して数える（AI なし）
 - 左メニュー（`.side-nav`）は画面の高さに入りきらないとき、メニューだけ縦にスクロールする（2026-11-15）
+- 概要の出典の google.com（2026-11-15・`lib/aio/query.ts`）：実測では `/goto?url=…`（Google の転送リンク。転送先は暗号化されて URL から分からない）と `/searchviewer/…`（ビジネスプロフィール＝店舗・場所）。`ovRefKind` で分け、媒体の集計は種類ごとの名前で数える。転送リンクは取得時に同じ SERP の通常の結果とタイトルで照合して実際のサイトに置き換える（`parseOverview`）。自社かどうかはサイトはドメイン、Google のものはタイトルの自社名（`ovRefIsOwn`）。集計は過去の保存分にも同じ判定をかける

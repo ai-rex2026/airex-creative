@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { askJson, MODEL_FAST } from "../anthropic";
 import { hasDataForSeo, LANGUAGE_JA, LOCATION_JP, postLive } from "../affiliate/dataforseo";
-import { cleanQuery } from "./query";
+import { cleanQuery, normName, ovOwnCited, ovRefKind } from "./query";
 import type { AioOverview, AioProject } from "./types";
 
 /**
@@ -101,9 +101,24 @@ export function parseOverview(items: unknown[], own: { names: string[]; domains:
   }
   const refs = new Map<string, { url: string; domain: string; title: string }>();
   collectRefs(ai, refs);
-  const references = [...refs.values()];
-  const ownD = own.domains.map(cleanDomain).filter(Boolean);
-  const ownCited = references.some((r) => !!r.domain && ownD.some((o) => r.domain === o || r.domain.endsWith(`.${o}`)));
+  // Google の転送リンク（google.com/goto）は転送先が URL から分からない。同じ検索結果の通常の結果にタイトルが同じページがあれば、そのページに置き換える
+  const organic = new Map<string, { url: string; domain: string }>();
+  for (const i of items) {
+    if (!isObj(i) || i.type === "ai_overview") continue;
+    const url = String(i.url ?? "");
+    const title = normName(String(i.title ?? ""));
+    if (!url || title.length < 8) continue;
+    const domain = domainFrom(url, i.domain);
+    if (domain && !/^google\./.test(domain) && !organic.has(title)) organic.set(title, { url, domain });
+  }
+  const references = [...refs.values()].map((r) => {
+    if (ovRefKind(r) !== "redirect") return r;
+    const t = normName(r.title);
+    if (t.length < 8) return r;
+    for (const [ot, o] of organic) if (ot === t || ot.startsWith(t) || t.startsWith(ot)) return { ...r, url: o.url.slice(0, 500), domain: o.domain };
+    return r;
+  });
+  const ownCited = ovOwnCited({ references }, own.names, own.domains.map(cleanDomain).filter(Boolean));
   return {
     shown: !!text.trim() || references.length > 0,
     async: ai.asynchronous_ai_overview === true,

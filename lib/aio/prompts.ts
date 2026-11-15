@@ -1,6 +1,6 @@
 import { askJson } from "../anthropic";
 import { normalizeJapanese } from "../meo-ops/japanese";
-import { cleanQuery } from "./query";
+import { cleanQuery, ovOwnCited, ovRefIsOwn, ovRefLabel } from "./query";
 import { AIO_PROMPT_CATEGORY_LABEL, type AioCheck, type AioPrompt, type AioPromptCategory, type AioProject } from "./types";
 
 /**
@@ -131,6 +131,8 @@ function isOwnName(name: string, own: string[]): boolean {
   });
 }
 
+const OWN_VIA_GOOGLE = "自社（Google のビジネスプロフィール・転送リンク）";
+
 function periodOf(c: AioCheck): string {
   const d = new Date(c.completedAt ?? c.createdAt);
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(d).slice(0, 7);
@@ -167,7 +169,8 @@ function statsFor(period: string, checks: AioCheck[], own: string[], ownD: Set<s
     ovShown: ovShown.length,
     ovShownRate: pct(ovShown.length, ov.length),
     ovMentionRate: pct(ovShown.filter((c) => c.overview!.mentioned).length, ovShown.length),
-    ovCitationRate: pct(ovShown.filter((c) => c.overview!.ownCited).length, ovShown.length),
+    // 保存時の判定（ownCited）に加え、ビジネスプロフィール・転送リンクのタイトルの自社名も数える（過去の測定にも効く）
+    ovCitationRate: pct(ovShown.filter((c) => c.overview!.ownCited || ovOwnCited(c.overview!, own, [...ownD])).length, ovShown.length),
   };
 }
 
@@ -249,9 +252,11 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
   const ocount = new Map<string, number>();
   for (const c of latest ? (byPeriod.get(latest.period) ?? []) : []) {
     if (c.overviewStatus !== "done" || !c.overview?.shown) continue;
-    for (const d of new Set(c.overview.references.map((r) => cleanDomain(r.domain)).filter(Boolean))) ocount.set(d, (ocount.get(d) ?? 0) + 1);
+    for (const d of new Set(c.overview.references.map((r) => ovRefLabel(r)).filter(Boolean))) ocount.set(d, (ocount.get(d) ?? 0) + 1);
+    // ビジネスプロフィール・転送リンクで自社のものは「自社（タイトルで照合）」として別に数える
+    if (c.overview.references.some((r) => !isOwnDomain(r.domain, ownD) && ovRefIsOwn(r, own, [...ownD]))) ocount.set(OWN_VIA_GOOGLE, (ocount.get(OWN_VIA_GOOGLE) ?? 0) + 1);
   }
-  const ovRanked = [...ocount.entries()].sort((a, b) => b[1] - a[1]).map(([domain, count]) => ({ domain, count, isOwn: isOwnDomain(domain, ownD) }));
+  const ovRanked = [...ocount.entries()].sort((a, b) => b[1] - a[1]).map(([domain, count]) => ({ domain, count, isOwn: domain === OWN_VIA_GOOGLE || isOwnDomain(domain, ownD) }));
   const ovDomains = ovRanked.slice(0, 12);
   for (const d of ovRanked.slice(12)) if (d.isOwn) ovDomains.push(d);
   const ovShownLatest = (latest ? (byPeriod.get(latest.period) ?? []) : []).filter((c) => c.overviewStatus === "done" && c.overview?.shown);
