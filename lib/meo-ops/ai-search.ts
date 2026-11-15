@@ -285,13 +285,17 @@ function groundedDomain(uri: string, title: string): string {
  * URLレポートのAIO（lib/report-aio.ts）は Claude に切り替えず、これだけを使う */
 const GEMINI_SYSTEM = "あなたは日本のローカル検索に答えるアシスタントです。Google検索の結果に基づいて、実在する事業者だけを挙げ、情報源のURLを添えて答えてください。";
 
+/** Gemini が2回とも Google 検索を使わずに答えた（ask() はこのとき Claude の Web 検索で測り直す） */
+export class GeminiUngroundedError extends Error {}
+
 export async function askGemini(question: string, deadline: number, generate: typeof geminiGenerate = geminiGenerate) {
   const once = async (force: boolean) => {
     const left = deadline - Date.now();
     if (left < 10_000) throw new Error("AI検索が時間内に終わりませんでした");
     return generate({
       system: force ? `${GEMINI_SYSTEM}\n\n必ず Google 検索を使って調べてから答えてください。検索せずに知識だけで答えてはいけません。` : GEMINI_SYSTEM,
-      parts: [{ text: question }],
+      // やり直しは質問文の側にも「検索して実在の名前と出典を」と添える（system だけより効きやすい）
+      parts: [{ text: force ? `${question}\n\n（Google 検索で調べて、実在する事業者名と情報源の URL を挙げて答えてください）` : question }],
       maxTokens: 6000,
       search: true,
       timeoutMs: Math.min(left, 150_000),
@@ -307,7 +311,7 @@ export async function askGemini(question: string, deadline: number, generate: ty
   const text = r.text.trim();
   if (!text) throw new Error("AI応答に本文が含まれていません");
   const g = r.grounding ?? { queries: [], sources: [] };
-  if (!g.sources.length && !g.queries.length) throw new Error("Google検索を使った回答になりませんでした（検索結果の根拠がありません。「必ず検索」の指示でやり直しても同じでした）");
+  if (!g.sources.length && !g.queries.length) throw new GeminiUngroundedError("Google検索を使った回答になりませんでした（検索結果の根拠がありません。「必ず検索」の指示でやり直しても同じでした）");
   const cited: { url: string; title: string; domain: string }[] = [];
   const seen = new Set<string>();
   for (const s of g.sources) {
@@ -338,12 +342,22 @@ export function preferredEngine(): "gemini" | "claude" {
   return hasGemini() ? "gemini" : "claude";
 }
 
-export async function ask(question: string, deadline: number): Promise<(Awaited<ReturnType<typeof askClaude>> | Awaited<ReturnType<typeof askGemini>>) & { note: string | null }> {
+export async function ask(
+  question: string,
+  deadline: number,
+  deps: { gemini?: typeof askGemini; claude?: typeof askClaude } = {}
+): Promise<(Awaited<ReturnType<typeof askClaude>> | Awaited<ReturnType<typeof askGemini>>) & { note: string | null }> {
   let note: string | null = null;
   if (preferredEngine() === "gemini") {
     try {
-      return { ...(await askGemini(question, deadline)), note: null };
+      return { ...(await (deps.gemini ?? askGemini)(question, deadline)), note: null };
     } catch (e) {
+      // 2回とも検索を使わなかった回は、Claude の Web 検索（必ず出典が付く）で測り直す。2026-11-16：地域を細かく絞った問い
+      // （例「御影で〜」）は「必ず検索」でやり直しても検索しないことがあった。その回だけ費用が Gemini の約10倍になる
+      if (e instanceof GeminiUngroundedError) {
+        note = "Geminiが2回ともGoogle検索を使わずに答えたため、ClaudeのWeb検索で測定しました";
+        return { ...(await (deps.claude ?? askClaude)(question, deadline)), note };
+      }
       // 残高切れ・上限など Gemini 側の事情のときだけ Claude に切り替える（どちらで測ったかは結果に残る）
       if (!(e instanceof GeminiUnavailableError)) throw e;
       console.error("[ai-search] gemini unavailable, fallback to claude:", e.message);
@@ -351,7 +365,7 @@ export async function ask(question: string, deadline: number): Promise<(Awaited<
       note = `Geminiが使えなかったためClaudeで測定しました: ${e.message.slice(0, 2000)}`;
     }
   }
-  return { ...(await askClaude(question, deadline)), note };
+  return { ...(await (deps.claude ?? askClaude)(question, deadline)), note };
 }
 
 /** 回答テキストから、挙がった店舗と根拠URLを機械的に取り出す（自店舗名は渡さない） */
