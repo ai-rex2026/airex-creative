@@ -131,6 +131,15 @@ export function parseOverview(items: unknown[], own: { names: string[]; domains:
 
 // ── 実行 ──────────────────────────────
 
+/** 1件の測定で DataForSEO を呼ぶ回数の上限（返金されるエラーのときだけ呼び直す） */
+const MAX_ATTEMPTS = 3;
+
+/**
+ * DataForSEO が返金するエラーか。40101（Internal SE Server Error）は Google 側のエラーで、DataForSEO が自動で数回やり直したうえで全額返金される
+ * （https://dataforseo.com/help-center/what-does-the-40101-error-mean）。返金がはっきりしないエラー・こちらのタイムアウトは呼び直さない
+ */
+export const isRefundedError = (message: string) => /40101/.test(message);
+
 /**
  * 1件の測定について概要を取って保存する（sb は service role）。
  * pending のものだけを running に切り替えてから呼ぶので、同時に走っても DataForSEO は1回しか呼ばれない
@@ -146,14 +155,17 @@ export async function runOverview(
     .update({ overview_status: "running" })
     .eq("id", checkId)
     .eq("overview_status", "pending")
-    .select("id, overview_query")
+    .select("id, overview_query, overview")
     .maybeSingle();
   if (!claimed) return false;
   const query = String(claimed.overview_query ?? "").trim();
   const fetchedAt = new Date().toISOString();
+  const attempts = Number((claimed.overview as { attempts?: unknown } | null)?.attempts ?? 0) + 1;
   const failWith = async (error: string) => {
-    const overview: AioOverview = { shown: false, async: false, text: "", references: [], mentioned: false, ownCited: false, fetchedAt, error: error.slice(0, 300) };
-    await sb.from("aio_checks").update({ overview_status: "failed", overview }).eq("id", checkId);
+    // Google 側の一時的なエラー（40101 など）は DataForSEO が全額返金する。課金されないので、cron で時間を置いて呼び直す（合計 MAX_ATTEMPTS 回まで）
+    const retry = isRefundedError(error) && attempts < MAX_ATTEMPTS;
+    const overview: AioOverview = { shown: false, async: false, text: "", references: [], mentioned: false, ownCited: false, fetchedAt, error: error.slice(0, 300), attempts };
+    await sb.from("aio_checks").update({ overview_status: retry ? "pending" : "failed", overview }).eq("id", checkId);
     return false;
   };
   if (!query) return failWith("検索語がありません");
@@ -171,7 +183,7 @@ export async function runOverview(
     domains = [];
   }
   const parsed = parseOverview(res.items, { names: [project.name, ...project.aliases].filter((n) => n.trim()), domains });
-  const { error } = await sb.from("aio_checks").update({ overview_status: "done", overview: { ...parsed, fetchedAt } }).eq("id", checkId);
+  const { error } = await sb.from("aio_checks").update({ overview_status: "done", overview: { ...parsed, fetchedAt, attempts } }).eq("id", checkId);
   return !error;
 }
 
@@ -184,7 +196,8 @@ export async function pendingOverviewIds(sb: SupabaseClient, limit = 4): Promise
 
 /** running のまま残ったもの（関数が途中で切られた）は失敗にする。課金済みかもしれないので呼び直さない */
 export async function expireStuckOverviews(sb: SupabaseClient) {
-  const stale = new Date(Date.now() - 15 * 60_000).toISOString();
+  // 呼び直しは作成から20〜30分後にもありうるので、作成から60分で判断する
+  const stale = new Date(Date.now() - 60 * 60_000).toISOString();
   const { data } = await sb.from("aio_checks").select("id").eq("overview_status", "running").lt("created_at", stale).limit(50);
   for (const r of data ?? []) {
     const overview: AioOverview = { shown: false, async: false, text: "", references: [], mentioned: false, ownCited: false, fetchedAt: new Date().toISOString(), error: "取得が途中で止まりました" };

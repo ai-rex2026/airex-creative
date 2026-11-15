@@ -283,20 +283,31 @@ function groundedDomain(uri: string, title: string): string {
 
 /** Gemini（Google 検索つき）に定型の質問を投げる。費用は Claude の約10分の1。
  * URLレポートのAIO（lib/report-aio.ts）は Claude に切り替えず、これだけを使う */
-export async function askGemini(question: string, deadline: number) {
-  const left = deadline - Date.now();
-  if (left < 10_000) throw new Error("AI検索が時間内に終わりませんでした");
-  const r = await geminiGenerate({
-    system: "あなたは日本のローカル検索に答えるアシスタントです。Google検索の結果に基づいて、実在する事業者だけを挙げ、情報源のURLを添えて答えてください。",
-    parts: [{ text: question }],
-    maxTokens: 6000,
-    search: true,
-    timeoutMs: Math.min(left, 150_000),
-  });
+const GEMINI_SYSTEM = "あなたは日本のローカル検索に答えるアシスタントです。Google検索の結果に基づいて、実在する事業者だけを挙げ、情報源のURLを添えて答えてください。";
+
+export async function askGemini(question: string, deadline: number, generate: typeof geminiGenerate = geminiGenerate) {
+  const once = async (force: boolean) => {
+    const left = deadline - Date.now();
+    if (left < 10_000) throw new Error("AI検索が時間内に終わりませんでした");
+    return generate({
+      system: force ? `${GEMINI_SYSTEM}\n\n必ず Google 検索を使って調べてから答えてください。検索せずに知識だけで答えてはいけません。` : GEMINI_SYSTEM,
+      parts: [{ text: question }],
+      maxTokens: 6000,
+      search: true,
+      timeoutMs: Math.min(left, 150_000),
+    });
+  };
+  let r = await once(false);
+  const grounded = (x: typeof r) => {
+    const g = x.grounding ?? { queries: [], sources: [] };
+    return g.sources.length > 0 || g.queries.length > 0;
+  };
+  // 検索を使うかはモデルが決めるため、使わずに答える回がある（2026-11-15 実測で約1割）。「必ず検索」と指示して1回だけやり直す
+  if (!grounded(r)) r = await once(true);
   const text = r.text.trim();
   if (!text) throw new Error("AI応答に本文が含まれていません");
   const g = r.grounding ?? { queries: [], sources: [] };
-  if (!g.sources.length && !g.queries.length) throw new Error("Google検索を使った回答になりませんでした（検索結果の根拠がありません）");
+  if (!g.sources.length && !g.queries.length) throw new Error("Google検索を使った回答になりませんでした（検索結果の根拠がありません。「必ず検索」の指示でやり直しても同じでした）");
   const cited: { url: string; title: string; domain: string }[] = [];
   const seen = new Set<string>();
   for (const s of g.sources) {

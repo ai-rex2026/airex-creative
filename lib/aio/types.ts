@@ -66,6 +66,8 @@ export type AioOverview = {
   ownCited: boolean;
   fetchedAt: string;
   error?: string;
+  /** DataForSEO を呼んだ回数（返金されるエラーのときだけ呼び直す） */
+  attempts?: number;
 };
 
 export type AioDraftKind = "site_article" | "note_article" | "press_release" | "survey_article" | "faq_schema" | "wantedly_story" | "job_posting_schema" | "listing_memo";
