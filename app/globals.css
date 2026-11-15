@@ -199,7 +199,10 @@ table.spec th{background:var(--sunk);width:210px;font-family:var(--font-body),sa
 /* ── 管理画面のシェル（本番 /ja/analysis/* に合わせた） ── */
 .app{display:flex;min-height:100dvh}
 .side-nav{flex:0 0 280px;width:280px;background:var(--sunk);display:flex;flex-direction:column;
-  padding:18px 14px;position:sticky;top:0;height:100dvh}
+  padding:18px 14px;position:sticky;top:0;height:100dvh;
+  /* 2026-11-15: 画面の高さに入りきらないときは左メニューだけスクロールする */
+  overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.side-nav>*{flex-shrink:0}
 .side-nav .brand{display:flex;align-items:center;gap:9px;padding:4px 8px 18px;
   font-family:var(--font-display),sans-serif;font-weight:700;font-size:17px;color:var(--head);text-decoration:none}
 .side-nav .brand img{width:20px;height:20px}

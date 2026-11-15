@@ -191,3 +191,5 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 検索語は、AI の候補（`suggestPrompts`）と同じ呼び出しで作る。既存の空のものは測定の直前に `ensureSearchQueries`（AI 1回。全部あれば呼ばない）。画面で直せる。定型文の測定は `buildAioQuery`（エリア＋探し方＋おすすめ）
 - 自社の言及は本文に名前・別名が出たか（`mentionsOwn`）、引用は出典に自社ドメインが入ったか。集計（`summarize`）は概要の表示率・概要が出た回のうちの言及率／引用率・出典の媒体。AI は呼ばない
 - DataForSEO（`DATAFORSEO_LOGIN`/`DATAFORSEO_PASSWORD`）が無いときは overview_status=none で Gemini だけ測る。検証は `OverviewDeps`・`QueryAsk` を差し替えて行う。SQL は `Docs/sql/2026-11-13-aio-overview.sql`
+- 2026-11-15：画面（`components/aio/PromptMonitor.tsx`）は「Gemini の回答」「Google の AI による概要」のタブで分け、数字・推移・プロンプト一覧・挙がった事業者・根拠の媒体をタブごとの集計で出す（検索語の編集は Google タブ）。概要は事業者の一覧を返さないので、`summarize` の `ovCompetitors` は Gemini で挙がった事業者名（全期間）と自社名を本文に照合して数える（AI なし）
+- 左メニュー（`.side-nav`）は画面の高さに入りきらないとき、メニューだけ縦にスクロールする（2026-11-15）

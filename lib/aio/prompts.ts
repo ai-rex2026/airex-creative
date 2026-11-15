@@ -111,6 +111,11 @@ export type AioSummary = {
   byEngine: { engine: string; checks: number; mentioned: number }[];
   /** 直近期に Google の「AI による概要」が出典にした媒体 */
   ovDomains: AioDomainRow[];
+  /**
+   * 直近期に Google の「AI による概要」の本文に名前が出た事業者。
+   * 概要は事業者の一覧を返さないので、Gemini の測定で挙がった事業者名（全期間）と自社名を本文に照合して数える（AI なし）
+   */
+  ovCompetitors: AioCompetitorRow[];
 };
 
 const NOISE = /[\s\-‐‑–—ー・\/／|｜()（）[\]「」『』"'’、。．,.!！?？&＆]/g;
@@ -249,8 +254,39 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
   const ovRanked = [...ocount.entries()].sort((a, b) => b[1] - a[1]).map(([domain, count]) => ({ domain, count, isOwn: isOwnDomain(domain, ownD) }));
   const ovDomains = ovRanked.slice(0, 12);
   for (const d of ovRanked.slice(12)) if (d.isOwn) ovDomains.push(d);
+  const ovShownLatest = (latest ? (byPeriod.get(latest.period) ?? []) : []).filter((c) => c.overviewStatus === "done" && c.overview?.shown);
+  if (ovShownLatest.length && ownD.size && !ovDomains.some((d) => d.isOwn)) ovDomains.push({ domain: [...ownD][0], count: 0, isOwn: true });
 
-  return { latest, previous, history, byPrompt, competitors, domains, ownSourceDomains, byEngine, ovDomains };
+  // Google の「AI による概要」の本文に名前が出た事業者（直近期）
+  const names = new Map<string, string>();
+  for (const c of checks) for (const n of c.listed) if (!isOwnName(n, own)) {
+    const k = norm(n);
+    if (k.length >= 2 && !names.has(k)) names.set(k, n);
+  }
+  const ocomp = new Map<string, { name: string; mentions: number; isOwn: boolean }>();
+  let ototal = 0;
+  for (const c of ovShownLatest) {
+    const t = norm(c.overview!.text);
+    if (c.overview!.mentioned) {
+      ototal++;
+      const cur = ocomp.get("__own__") ?? { name: project.name, mentions: 0, isOwn: true };
+      cur.mentions++;
+      ocomp.set("__own__", cur);
+    }
+    for (const [k, n] of names) {
+      if (!t.includes(k)) continue;
+      ototal++;
+      const cur = ocomp.get(k) ?? { name: n, mentions: 0, isOwn: false };
+      cur.mentions++;
+      ocomp.set(k, cur);
+    }
+  }
+  const ovCompetitors = [...ocomp.values()]
+    .sort((a, b) => b.mentions - a.mentions)
+    .slice(0, 10)
+    .map((c) => ({ ...c, share: ototal ? Math.round((c.mentions / ototal) * 1000) / 10 : 0 }));
+
+  return { latest, previous, history, byPrompt, competitors, domains, ownSourceDomains, byEngine, ovDomains, ovCompetitors };
 }
 
 /** 自社ドメイン（URL から） */

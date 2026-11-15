@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { addAioPromptsAction, deleteAioPromptAction, runAioPromptsNowAction, setAioMonitoringAction, suggestAioPromptsAction, updateAioPromptAction } from "@/app/aio-actions";
 import { SectionTitle } from "@/components/meo/Workspace";
 import { Btn, Card, Checkbox, Dialog, ErrorNote, Icon, Input, Select, Switch, cn } from "@/components/meo/ui";
-import { ownDomainsOf, summarize, type AioPeriodStats } from "@/lib/aio/prompts";
+import { ownDomainsOf, summarize, type AioCompetitorRow, type AioDomainRow, type AioPeriodStats } from "@/lib/aio/prompts";
 import { AIO_PROMPT_CATEGORY_LABEL, MAX_ACTIVE_PROMPTS, type AioCheck, type AioProject, type AioPrompt, type AioPromptCategory } from "@/lib/aio/types";
 
 /**
@@ -88,6 +88,7 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
     }
   };
   const [savingMon, setSavingMon] = useState(false);
+  const [view, setView] = useState<"gemini" | "google">("gemini");
   const toggleMonitoring = async (v: boolean) => {
     setSavingMon(true);
     try {
@@ -123,38 +124,10 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
         </div>
       </div>
 
-      {/* 数字 */}
-      {summary.latest && (
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
-          <Kpi label="言及率" value={summary.latest.mentionRate} prev={summary.previous?.mentionRate ?? null} unit="%" hint={`${summary.latest.mentioned} / ${summary.latest.checks} 本で自社が挙がった`} />
-          <Kpi label="平均言及順位" value={summary.latest.avgRank} prev={summary.previous?.avgRank ?? null} unit="位" lowerIsBetter hint="挙がったときの平均の順番" />
-          <Kpi label="引用率" value={summary.latest.citationRate} prev={summary.previous?.citationRate ?? null} unit="%" hint="AI が回答の根拠に自社サイトを参照した割合" />
-          <Kpi
-            label="紹介の根拠あり"
-            value={summary.latest.sourcedRate}
-            prev={summary.previous?.sourcedRate ?? null}
-            unit="%"
-            hint="自社の紹介に根拠 URL が付いた割合（他社の媒体も含む）"
-          />
-          <Kpi label="SoV（言及シェア）" value={summary.latest.sov} prev={summary.previous?.sov ?? null} unit="%" hint="AI が挙げた事業者の延べ数に占める自社" />
-        </div>
-      )}
-      {summary.latest && summary.latest.ovChecks > 0 && (
-        <div className="mt-2">
-          <p className="text-[11px] font-semibold text-[#6B6862]">Google 検索の「AI による概要」（{summary.latest.ovChecks}本の検索語で測定）</p>
-          <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <Kpi label="概要の表示率" value={summary.latest.ovShownRate} prev={summary.previous?.ovShownRate ?? null} unit="%" hint={`${summary.latest.ovShown} / ${summary.latest.ovChecks} 本で概要が出た`} />
-            <Kpi label="概要での言及率" value={summary.latest.ovMentionRate} prev={summary.previous?.ovMentionRate ?? null} unit="%" hint="概要が出た回のうち、本文に自社名が出た割合" />
-            <Kpi label="概要での引用率" value={summary.latest.ovCitationRate} prev={summary.previous?.ovCitationRate ?? null} unit="%" hint="概要が出た回のうち、出典に自社サイトが入った割合" />
-          </div>
-        </div>
-      )}
-      {summary.history.length > 1 && <Trend history={summary.history} />}
-
       {notice && <p className="mt-3 text-sm text-[#2F6B4A]">{notice}</p>}
       {error && <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>}
 
-      {/* プロンプト一覧 */}
+      {/* プロンプトの登録（Gemini・Google 共通） */}
       <div className="mt-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-semibold text-[#2E2D29]">対策プロンプト（{active.length} / {MAX_ACTIVE_PROMPTS}）</p>
@@ -171,80 +144,128 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
             追加
           </Btn>
         </div>
-
-        {prompts.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-dashed border-[#D8D4CC] p-4 text-center text-sm text-[#8B877F]">まだありません。「AIに20本考えさせる」から選ぶか、手で入力してください</p>
-        ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-[#8B877F]">
-                  <th className="py-2 pr-3 font-medium">プロンプト</th>
-                  <th className="py-2 pr-3 font-medium">種類</th>
-                  <th className="py-2 pr-3 font-medium">最新の結果</th>
-                  <th className="py-2 pr-3 font-medium">Google の AI による概要</th>
-                  <th className="py-2 pr-3 font-medium">AI</th>
-                  <th className="py-2 pr-3 font-medium">測定日</th>
-                  <th className="py-2 pr-3 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {prompts.map((p) => (
-                  <PromptRow key={p.id} project={project} prompt={p} check={summary.byPrompt.find((b) => b.prompt.id === p.id)?.check ?? checks.find((c) => c.promptId === p.id) ?? null} onChanged={() => router.refresh()} onError={setError} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
 
-      {/* 競合と引用元 */}
-      {(summary.competitors.length > 0 || summary.domains.length > 0) && (
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          <div>
-            <p className="text-sm font-semibold text-[#2E2D29]">AI が挙げた事業者（{summary.latest?.period}・言及シェア）</p>
-            <ul className="mt-2 space-y-1">
-              {summary.competitors.map((c) => (
-                <li key={c.name} className="flex items-center gap-2 text-sm">
-                  <span className={cn("w-28 shrink-0 truncate", c.isOwn ? "font-semibold text-[#2F6B4A]" : "text-[#2E2D29]")}>{c.name}</span>
-                  <span className="h-2 flex-1 overflow-hidden rounded-full bg-[#F4F3F0]">
-                    <span className={cn("block h-full rounded-full", c.isOwn ? "bg-[#2F6B4A]" : "bg-[#C9A84C]")} style={{ width: `${Math.min(100, c.share * 2)}%` }} />
-                  </span>
-                  <span className="w-20 shrink-0 text-right text-xs text-[#6B6862]">{c.mentions}回・{c.share}%</span>
-                </li>
+      {/* Gemini の回答と Google の AI による概要は、挙がる事業者も根拠の媒体も別物なので、タブで分けて見せる */}
+      <div className="mt-5 flex gap-1 border-b border-[#ECE9E3]" role="tablist">
+        {(
+          [
+            ["gemini", "Gemini の回答"],
+            ["google", "Google の AI による概要"],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            aria-selected={view === k}
+            onClick={() => setView(k)}
+            className={cn(
+              "-mb-px border-b-2 px-3 py-2 text-sm",
+              view === k ? "border-[#2E2D29] font-semibold text-[#2E2D29]" : "border-transparent text-[#8B877F] hover:text-[#2E2D29]"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === "gemini" ? (
+        <>
+          <p className="mt-3 text-[11px] text-[#8B877F]">プロンプト（質問文）をそのまま AI（{summary.byEngine.map((e) => e.engine).join("・") || "Gemini"}）に聞いた回答です。</p>
+          {summary.latest && summary.latest.checks > 0 && (
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <Kpi label="言及率" value={summary.latest.mentionRate} prev={summary.previous?.mentionRate ?? null} unit="%" hint={`${summary.latest.mentioned} / ${summary.latest.checks} 本で自社が挙がった`} />
+              <Kpi label="平均言及順位" value={summary.latest.avgRank} prev={summary.previous?.avgRank ?? null} unit="位" lowerIsBetter hint="挙がったときの平均の順番" />
+              <Kpi label="引用率" value={summary.latest.citationRate} prev={summary.previous?.citationRate ?? null} unit="%" hint="AI が回答の根拠に自社サイトを参照した割合" />
+              <Kpi label="紹介の根拠あり" value={summary.latest.sourcedRate} prev={summary.previous?.sourcedRate ?? null} unit="%" hint="自社の紹介に根拠 URL が付いた割合（他社の媒体も含む）" />
+              <Kpi label="SoV（言及シェア）" value={summary.latest.sov} prev={summary.previous?.sov ?? null} unit="%" hint="AI が挙げた事業者の延べ数に占める自社" />
+            </div>
+          )}
+          {summary.history.filter((h) => h.checks > 0).length > 1 && (
+            <Trend history={summary.history.filter((h) => h.checks > 0)} keys={["mentionRate", "sov"]} legend="― 言及率　- - SoV（月ごと）" />
+          )}
+        </>
+      ) : (
+        <>
+          <p className="mt-3 text-[11px] text-[#8B877F]">各プロンプトの検索語で Google 検索したときの「AI による概要」です（日本・PC。出ない検索語・回もあります）。</p>
+          {summary.latest && summary.latest.ovChecks > 0 ? (
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <Kpi label="概要の表示率" value={summary.latest.ovShownRate} prev={summary.previous?.ovShownRate ?? null} unit="%" hint={`${summary.latest.ovShown} / ${summary.latest.ovChecks} 本で概要が出た`} />
+              <Kpi label="概要での言及率" value={summary.latest.ovMentionRate} prev={summary.previous?.ovMentionRate ?? null} unit="%" hint="概要が出た回のうち、本文に自社名が出た割合" />
+              <Kpi label="概要での引用率" value={summary.latest.ovCitationRate} prev={summary.previous?.ovCitationRate ?? null} unit="%" hint="概要が出た回のうち、出典に自社サイトが入った割合" />
+            </div>
+          ) : (
+            <p className="mt-2 rounded-xl border border-dashed border-[#D8D4CC] p-3 text-center text-xs text-[#8B877F]">まだ取得できていません。次の実測（手動・月次）で、Gemini と同時に取ります。</p>
+          )}
+          {summary.history.filter((h) => h.ovChecks > 0).length > 1 && (
+            <Trend history={summary.history.filter((h) => h.ovChecks > 0)} keys={["ovShownRate", "ovMentionRate"]} legend="― 概要の表示率　- - 概要での言及率（月ごと）" />
+          )}
+        </>
+      )}
+
+      {/* プロンプト一覧 */}
+      {prompts.length === 0 ? (
+        <p className="mt-3 rounded-xl border border-dashed border-[#D8D4CC] p-4 text-center text-sm text-[#8B877F]">まだありません。「AIに20本考えさせる」から選ぶか、手で入力してください</p>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-[#8B877F]">
+                <th className="py-2 pr-3 font-medium">{view === "gemini" ? "プロンプト" : "プロンプト／Google の検索語"}</th>
+                <th className="py-2 pr-3 font-medium">種類</th>
+                <th className="py-2 pr-3 font-medium">{view === "gemini" ? "最新の結果" : "AI による概要"}</th>
+                {view === "gemini" && <th className="py-2 pr-3 font-medium">AI</th>}
+                <th className="py-2 pr-3 font-medium">{view === "gemini" ? "測定日" : "取得日"}</th>
+                <th className="py-2 pr-3 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {prompts.map((p) => (
+                <PromptRow key={p.id} view={view} project={project} prompt={p} check={summary.byPrompt.find((b) => b.prompt.id === p.id)?.check ?? checks.find((c) => c.promptId === p.id) ?? null} onChanged={() => router.refresh()} onError={setError} />
               ))}
-            </ul>
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-[#2E2D29]">AI が根拠にした媒体（{summary.latest?.period}）</p>
-            <ul className="mt-2 space-y-1">
-              {summary.domains.map((d) => (
-                <li key={d.domain} className="flex items-center justify-between gap-2 text-sm">
-                  <span className={cn("truncate", d.isOwn ? "font-semibold text-[#2F6B4A]" : "text-[#2E2D29]")}>
-                    {d.domain}
-                    {d.isOwn && <span className="ml-1 rounded-full bg-[#EAF3EE] px-1.5 py-0.5 text-[10px]">自社</span>}
-                  </span>
-                  <span className="shrink-0 text-xs text-[#6B6862]">{d.count > 0 ? `${d.count}本で引用` : "引用なし"}</span>
-                </li>
-              ))}
-            </ul>
-            {summary.ownSourceDomains.length > 0 && (
-              <p className="mt-2 text-[11px] text-[#6B6862]">
-                自社の紹介の根拠になった媒体：
-                {summary.ownSourceDomains.map((d) => `${d.domain}${d.isOwn ? "（自社）" : ""} ${d.count}本`).join("、")}
-              </p>
-            )}
-            {summary.ovDomains.length > 0 && (
-              <p className="mt-2 text-[11px] text-[#6B6862]">
-                Google の AI による概要の出典：
-                {summary.ovDomains.map((d) => `${d.domain}${d.isOwn ? "（自社）" : ""} ${d.count}本`).join("、")}
-              </p>
-            )}
-            {summary.byEngine.length > 0 && (
-              <p className="mt-2 text-[11px] text-[#A5A198]">測定AI: {summary.byEngine.map((e) => `${e.engine}（${e.mentioned}/${e.checks}本で言及）`).join("、")}</p>
-            )}
-          </div>
+            </tbody>
+          </table>
         </div>
+      )}
+
+      {/* 挙がった事業者と根拠の媒体（タブごとに別の集計） */}
+      {view === "gemini" ? (
+        (summary.competitors.length > 0 || summary.domains.length > 0) && (
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <div>
+              <p className="text-sm font-semibold text-[#2E2D29]">AI が挙げた事業者（{summary.latest?.period}・言及シェア）</p>
+              <CompetitorList rows={summary.competitors} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#2E2D29]">AI が根拠にした媒体（{summary.latest?.period}）</p>
+              <DomainList rows={summary.domains} />
+              {summary.ownSourceDomains.length > 0 && (
+                <p className="mt-2 text-[11px] text-[#6B6862]">
+                  自社の紹介の根拠になった媒体：
+                  {summary.ownSourceDomains.map((d) => `${d.domain}${d.isOwn ? "（自社）" : ""} ${d.count}本`).join("、")}
+                </p>
+              )}
+              {summary.byEngine.length > 0 && (
+                <p className="mt-2 text-[11px] text-[#A5A198]">測定AI: {summary.byEngine.map((e) => `${e.engine}（${e.mentioned}/${e.checks}本で言及）`).join("、")}</p>
+              )}
+            </div>
+          </div>
+        )
+      ) : (
+        (summary.ovCompetitors.length > 0 || summary.ovDomains.length > 0) && (
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <div>
+              <p className="text-sm font-semibold text-[#2E2D29]">概要に名前が出た事業者（{summary.latest?.period}・言及シェア）</p>
+              <p className="text-[10px] text-[#A5A198]">概要は事業者の一覧を返さないため、Gemini の回答に挙がった事業者名と自社名を本文に照合して数えています。それ以外の事業者は各概要の「中身」で確認してください。</p>
+              {summary.ovCompetitors.length > 0 ? <CompetitorList rows={summary.ovCompetitors} /> : <p className="mt-2 text-xs text-[#8B877F]">照合できた事業者はありません</p>}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#2E2D29]">概要が出典にした媒体（{summary.latest?.period}）</p>
+              <DomainList rows={summary.ovDomains} />
+            </div>
+          </div>
+        )
       )}
 
       <Dialog open={picking} onOpenChange={setPicking} title="AI が考えた対策プロンプト" description="見込み客が実際に AI に投げそうな問いです。測りたいものにチェックして追加してください（登録は最大20本）" className="max-w-2xl">
@@ -275,7 +296,7 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
   );
 }
 
-function PromptRow({ project, prompt, check, onChanged, onError }: { project: AioProject; prompt: AioPrompt; check: AioCheck | null; onChanged: () => void; onError: (m: string) => void }) {
+function PromptRow({ view, project, prompt, check, onChanged, onError }: { view: "gemini" | "google"; project: AioProject; prompt: AioPrompt; check: AioCheck | null; onChanged: () => void; onError: (m: string) => void }) {
   const [busy, setBusy] = useState(false);
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -332,25 +353,35 @@ function PromptRow({ project, prompt, check, onChanged, onError }: { project: Ai
     <tr className={cn("border-t border-[#F0EDE8]", !prompt.active && "opacity-50")}>
       <td className="py-2 pr-3 text-[#2E2D29]">
         {prompt.text}
-        <div className="mt-0.5 flex items-center gap-1 text-[11px] text-[#8B877F]">
-          {editing ? (
-            <>
-              <Input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveQuery()} className="h-7 text-xs" placeholder="例：渋谷 美容室 おすすめ" />
-              <button type="button" className="shrink-0 underline" disabled={busy} onClick={saveQuery}>保存</button>
-              <button type="button" className="shrink-0 underline" disabled={busy} onClick={() => { setQuery(prompt.searchQuery); setEditing(false); }}>やめる</button>
-            </>
-          ) : (
-            <button type="button" className="text-left hover:underline" onClick={() => setEditing(true)} title="Google で「AI による概要」を測るときの検索語">
-              Google：{prompt.searchQuery || "（次の測定で自動で付けます）"} ✎
-            </button>
-          )}
-        </div>
+        {view === "google" && (
+          <div className="mt-0.5 flex items-center gap-1 text-[11px] text-[#8B877F]">
+            {editing ? (
+              <>
+                <Input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveQuery()} className="h-7 text-xs" placeholder="例：渋谷 美容室 おすすめ" />
+                <button type="button" className="shrink-0 underline" disabled={busy} onClick={saveQuery}>保存</button>
+                <button type="button" className="shrink-0 underline" disabled={busy} onClick={() => { setQuery(prompt.searchQuery); setEditing(false); }}>やめる</button>
+              </>
+            ) : (
+              <button type="button" className="text-left hover:underline" onClick={() => setEditing(true)} title="Google で「AI による概要」を測るときの検索語">
+                検索語：{prompt.searchQuery || "（次の測定で自動で付けます）"} ✎
+              </button>
+            )}
+          </div>
+        )}
       </td>
       <td className="py-2 pr-3"><span className="rounded-full bg-[#F4F3F0] px-2 py-0.5 text-[10px] text-[#6B6862]">{AIO_PROMPT_CATEGORY_LABEL[prompt.category]}</span></td>
-      <td className="py-2 pr-3">{result}</td>
-      <td className="py-2 pr-3">{ovCell}</td>
-      <td className="py-2 pr-3 text-xs text-[#8B877F]">{check?.engine ?? "–"}</td>
-      <td className="py-2 pr-3 text-xs text-[#8B877F]">{check?.completedAt ? new Date(check.completedAt).toLocaleDateString("ja-JP") : "–"}</td>
+      {view === "gemini" ? (
+        <>
+          <td className="py-2 pr-3">{result}</td>
+          <td className="py-2 pr-3 text-xs text-[#8B877F]">{check?.engine ?? "–"}</td>
+          <td className="py-2 pr-3 text-xs text-[#8B877F]">{check?.completedAt ? new Date(check.completedAt).toLocaleDateString("ja-JP") : "–"}</td>
+        </>
+      ) : (
+        <>
+          <td className="py-2 pr-3">{ovCell}</td>
+          <td className="py-2 pr-3 text-xs text-[#8B877F]">{ov?.fetchedAt && check?.overviewStatus === "done" ? new Date(ov.fetchedAt).toLocaleDateString("ja-JP") : "–"}</td>
+        </>
+      )}
       <td className="py-2 pr-0 text-right whitespace-nowrap">
         <button type="button" className="text-xs text-[#6B6862] underline" disabled={busy} onClick={() => act(() => updateAioPromptAction(project.id, prompt.id, { active: !prompt.active }))}>
           {prompt.active ? "外す" : "戻す"}
@@ -360,9 +391,9 @@ function PromptRow({ project, prompt, check, onChanged, onError }: { project: Ai
         </button>
       </td>
     </tr>
-    {open && ov?.shown && (
+    {view === "google" && open && ov?.shown && (
       <tr>
-        <td colSpan={7} className="pb-3 pr-3">
+        <td colSpan={5} className="pb-3 pr-3">
           <div className="rounded-xl bg-[#FAF9F7] p-3 text-xs leading-relaxed text-[#2E2D29]">
             <p className="text-[11px] text-[#8B877F]">
               検索語「{check?.overviewQuery}」・{new Date(ov.fetchedAt).toLocaleString("ja-JP")}
@@ -403,23 +434,57 @@ function Kpi({ label, value, prev, unit, hint, lowerIsBetter }: { label: string;
   );
 }
 
-function Trend({ history }: { history: AioPeriodStats[] }) {
+type TrendKey = "mentionRate" | "sov" | "ovShownRate" | "ovMentionRate";
+
+function Trend({ history, keys, legend }: { history: AioPeriodStats[]; keys: [TrendKey, TrendKey]; legend: string }) {
   const pts = history.slice(-12);
   const w = 420;
   const h = 60;
   const x = (i: number) => 8 + (i / Math.max(1, pts.length - 1)) * (w - 16);
   const y = (v: number | null) => (v == null ? h - 6 : 6 + (1 - v / 100) * (h - 12));
-  const line = (key: "mentionRate" | "sov") => pts.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join(" ");
+  const line = (key: TrendKey) => pts.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join(" ");
   return (
     <div className="mt-3 overflow-x-auto">
       <svg width={w} height={h + 16} viewBox={`0 0 ${w} ${h + 16}`} aria-label="月次の推移">
-        <path d={line("mentionRate")} fill="none" stroke="#2E2D29" strokeWidth="1.5" />
-        <path d={line("sov")} fill="none" stroke="#C9A84C" strokeWidth="1.5" strokeDasharray="3 3" />
+        <path d={line(keys[0])} fill="none" stroke="#2E2D29" strokeWidth="1.5" />
+        <path d={line(keys[1])} fill="none" stroke="#C9A84C" strokeWidth="1.5" strokeDasharray="3 3" />
         {pts.map((p, i) => (
           <text key={p.period} x={x(i)} y={h + 12} fontSize="9" textAnchor="middle" fill="#A5A198">{p.period.slice(2)}</text>
         ))}
       </svg>
-      <p className="text-[10px] text-[#A5A198]">― 言及率　- - SoV（月ごと）</p>
+      <p className="text-[10px] text-[#A5A198]">{legend}</p>
     </div>
+  );
+}
+
+function CompetitorList({ rows }: { rows: AioCompetitorRow[] }) {
+  return (
+    <ul className="mt-2 space-y-1">
+      {rows.map((c) => (
+        <li key={c.name} className="flex items-center gap-2 text-sm">
+          <span className={cn("w-28 shrink-0 truncate", c.isOwn ? "font-semibold text-[#2F6B4A]" : "text-[#2E2D29]")}>{c.name}</span>
+          <span className="h-2 flex-1 overflow-hidden rounded-full bg-[#F4F3F0]">
+            <span className={cn("block h-full rounded-full", c.isOwn ? "bg-[#2F6B4A]" : "bg-[#C9A84C]")} style={{ width: `${Math.min(100, c.share * 2)}%` }} />
+          </span>
+          <span className="w-20 shrink-0 text-right text-xs text-[#6B6862]">{c.mentions}回・{c.share}%</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function DomainList({ rows }: { rows: AioDomainRow[] }) {
+  return (
+    <ul className="mt-2 space-y-1">
+      {rows.map((d) => (
+        <li key={d.domain} className="flex items-center justify-between gap-2 text-sm">
+          <span className={cn("truncate", d.isOwn ? "font-semibold text-[#2F6B4A]" : "text-[#2E2D29]")}>
+            {d.domain}
+            {d.isOwn && <span className="ml-1 rounded-full bg-[#EAF3EE] px-1.5 py-0.5 text-[10px]">自社</span>}
+          </span>
+          <span className="shrink-0 text-xs text-[#6B6862]">{d.count > 0 ? `${d.count}本で引用` : "引用なし"}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
