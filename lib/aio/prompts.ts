@@ -138,8 +138,26 @@ function periodOf(c: AioCheck): string {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(d).slice(0, 7);
 }
 
+/**
+ * 同じ期間（月）に同じプロンプトを何度も測ったときは、プロンプトごとに最後の1回だけを数える（2026-11-16）。
+ * 以前は月内の全回を合計していたため、測り直すほど本数・言及回数が増えていた。プロンプトに紐づかない測定は問いの文で見分ける
+ */
+function latestPerPrompt(checks: AioCheck[], ok: (c: AioCheck) => boolean, at: (c: AioCheck) => string): AioCheck[] {
+  const best = new Map<string, AioCheck>();
+  for (const c of checks) {
+    if (!ok(c)) continue;
+    const key = c.promptId ?? `text:${c.prompt}`;
+    const cur = best.get(key);
+    if (!cur || at(c) > at(cur)) best.set(key, c);
+  }
+  return [...best.values()];
+}
+const geminiDone = (checks: AioCheck[]) => latestPerPrompt(checks, (c) => c.status === "completed", (c) => c.completedAt ?? c.createdAt);
+const overviewDone = (checks: AioCheck[]) =>
+  latestPerPrompt(checks, (c) => c.overviewStatus === "done" && !!c.overview, (c) => c.overview?.fetchedAt || c.createdAt);
+
 function statsFor(period: string, checks: AioCheck[], own: string[], ownD: Set<string>): AioPeriodStats {
-  const done = checks.filter((c) => c.status === "completed");
+  const done = geminiDone(checks);
   const mentioned = done.filter((c) => c.mentioned);
   const ranks = mentioned.map((c) => c.rank).filter((r): r is number => r != null);
   // 媒体一覧と同じ基準：その回の AI が参照した媒体に自社サイトがあるか
@@ -154,7 +172,7 @@ function statsFor(period: string, checks: AioCheck[], own: string[], ownD: Set<s
     }
   }
   const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
-  const ov = checks.filter((c) => c.overviewStatus === "done" && c.overview);
+  const ov = overviewDone(checks);
   const ovShown = ov.filter((c) => c.overview!.shown);
   return {
     period,
@@ -197,7 +215,7 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
     });
 
   // 競合（直近期に AI が挙げた事業者の延べ数）
-  const latestChecks = latest ? (byPeriod.get(latest.period) ?? []).filter((c) => c.status === "completed") : [];
+  const latestChecks = latest ? geminiDone(byPeriod.get(latest.period) ?? []) : [];
   const counts = new Map<string, { name: string; mentions: number; isOwn: boolean }>();
   let total = 0;
   for (const c of latestChecks) {
@@ -250,7 +268,8 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
 
   // Google の「AI による概要」の出典（直近期）
   const ocount = new Map<string, number>();
-  for (const c of latest ? (byPeriod.get(latest.period) ?? []) : []) {
+  const ovLatest = latest ? overviewDone(byPeriod.get(latest.period) ?? []) : [];
+  for (const c of ovLatest) {
     if (c.overviewStatus !== "done" || !c.overview?.shown) continue;
     for (const d of new Set(c.overview.references.map((r) => ovRefLabel(r)).filter(Boolean))) ocount.set(d, (ocount.get(d) ?? 0) + 1);
     // ビジネスプロフィール・転送リンクで自社のものは「自社（タイトルで照合）」として別に数える
@@ -259,7 +278,7 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
   const ovRanked = [...ocount.entries()].sort((a, b) => b[1] - a[1]).map(([domain, count]) => ({ domain, count, isOwn: domain === OWN_VIA_GOOGLE || isOwnDomain(domain, ownD) }));
   const ovDomains = ovRanked.slice(0, 12);
   for (const d of ovRanked.slice(12)) if (d.isOwn) ovDomains.push(d);
-  const ovShownLatest = (latest ? (byPeriod.get(latest.period) ?? []) : []).filter((c) => c.overviewStatus === "done" && c.overview?.shown);
+  const ovShownLatest = ovLatest.filter((c) => c.overview?.shown);
   if (ovShownLatest.length && ownD.size && !ovDomains.some((d) => d.isOwn)) ovDomains.push({ domain: [...ownD][0], count: 0, isOwn: true });
 
   // Google の「AI による概要」の本文に名前が出た事業者（直近期）
