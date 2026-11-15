@@ -26,7 +26,7 @@
     },
     {
       "path": "/api/cron/aio-pending",
-      "schedule": "*/10 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/meo-keyword-monthly",

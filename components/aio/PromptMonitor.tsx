@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { addAioPromptsAction, deleteAioPromptAction, runAioPromptsNowAction, setAioMonitoringAction, suggestAioPromptsAction, updateAioPromptAction } from "@/app/aio-actions";
 import { SectionTitle } from "@/components/meo/Workspace";
 import { Btn, Card, Checkbox, Dialog, ErrorNote, Icon, Input, Select, Switch, cn } from "@/components/meo/ui";
@@ -22,6 +22,13 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
   const summary = useMemo(() => summarize(project, prompts, checks, ownDomainsOf(project)), [project, prompts, checks]);
   const active = prompts.filter((p) => p.active);
   const pendingCount = checks.filter((c) => c.status === "pending" || c.status === "running").length;
+  const ovPending = checks.some((c) => c.overviewStatus === "pending" || c.overviewStatus === "running");
+  // 実測・概要の取得中は20秒おきに画面を読み直す（読み直さないと、終わってもクルクルのまま残る）
+  useEffect(() => {
+    if (!pendingCount && !ovPending) return;
+    const t = setInterval(() => router.refresh(), 20_000);
+    return () => clearInterval(t);
+  }, [pendingCount, ovPending, router]);
 
   // ── AI 候補 ──
   const [picking, setPicking] = useState(false);
@@ -325,7 +332,9 @@ function PromptRow({ view, project, prompt, check, onChanged, onError }: { view:
   const ownCited = !!ov && (ov.ownCited || ovOwnCited(ov, ownNames, ownD));
   const ovCell = !check || check.overviewStatus === "none" ? (
     <span className="text-xs text-[#A5A198]">–</span>
-  ) : check.overviewStatus === "pending" || check.overviewStatus === "running" ? (
+  ) : check.overviewStatus === "pending" ? (
+    <span className="flex items-center gap-1 text-xs text-[#8B877F]" title="順番に取得します（5分おき）"><Icon name="loader" className="h-3 w-3" />{(ov?.attempts ?? 0) > 0 ? "取り直し待ち" : "順番待ち"}</span>
+  ) : check.overviewStatus === "running" ? (
     <span className="flex items-center gap-1 text-xs text-[#6B6862]"><Icon name="loader" className="h-3 w-3" />取得中</span>
   ) : check.overviewStatus === "failed" ? (
     <span className="text-xs text-[#A8705A]" title={ov?.error ?? ""}>取得失敗</span>
@@ -350,6 +359,8 @@ function PromptRow({ view, project, prompt, check, onChanged, onError }: { view:
     )
   ) : check.status === "failed" ? (
     <span className="text-xs text-[#A8705A]" title={check.errorMessage ?? ""}>失敗</span>
+  ) : check.status === "pending" ? (
+    <span className="flex items-center gap-1 text-xs text-[#8B877F]" title="順番に実測します（5分おきに数本ずつ）"><Icon name="loader" className="h-3 w-3" />順番待ち</span>
   ) : (
     <span className="flex items-center gap-1 text-xs text-[#6B6862]"><Icon name="loader" className="h-3 w-3" />確認中</span>
   );

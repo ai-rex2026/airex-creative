@@ -97,7 +97,15 @@ export async function runCheck(sb: SupabaseClient, checkId: string, project: Pic
     await fail(sb, checkId, "AI検索の設定が未構成です");
     return false;
   }
-  await sb.from("aio_checks").update({ status: "running" }).eq("id", checkId);
+  // pending のものだけを running にできた処理だけが AI を呼ぶ（cron と画面からの処理が同時に拾っても1回だけ）
+  const { data: claimed } = await sb
+    .from("aio_checks")
+    .update({ status: "running", started_at: new Date().toISOString() })
+    .eq("id", checkId)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle();
+  if (!claimed) return false;
 
   try {
     const answer = await ask(check.prompt as string, deadline);
@@ -140,8 +148,14 @@ export async function pendingCheckIds(sb: SupabaseClient, limit = 2): Promise<{ 
   return (data ?? []) as { id: string; project_id: string }[];
 }
 
-/** running のまま長時間残ったもの（関数が途中で切られた）を失敗にして、画面の「確認中」を解く */
+/**
+ * running のまま残ったもの（関数が途中で切られた）を失敗にして、画面の「確認中」を解く。
+ * 1件の実測は MEASURE_BUDGET_MS（200秒）以内、関数は最長300秒なので、始めてから6分たって running なら止まっている
+ */
 export async function expireStuckChecks(sb: SupabaseClient) {
-  const stale = new Date(Date.now() - 10 * 60_000).toISOString();
-  await sb.from("aio_checks").update({ status: "failed", error_message: "実測が途中で止まりました。もう一度お試しください", completed_at: new Date().toISOString() }).eq("status", "running").lt("created_at", stale);
+  const now = Date.now();
+  const patch = { status: "failed", error_message: "実測が途中で止まりました。もう一度お試しください", completed_at: new Date(now).toISOString() };
+  await sb.from("aio_checks").update(patch).eq("status", "running").lt("started_at", new Date(now - 6 * 60_000).toISOString());
+  // started_at を入れる前に始まったもの
+  await sb.from("aio_checks").update(patch).eq("status", "running").is("started_at", null).lt("created_at", new Date(now - 15 * 60_000).toISOString());
 }

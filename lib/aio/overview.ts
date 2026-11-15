@@ -152,7 +152,7 @@ export async function runOverview(
 ): Promise<boolean> {
   const { data: claimed } = await sb
     .from("aio_checks")
-    .update({ overview_status: "running" })
+    .update({ overview_status: "running", overview_started_at: new Date().toISOString() })
     .eq("id", checkId)
     .eq("overview_status", "pending")
     .select("id, overview_query, overview")
@@ -196,9 +196,9 @@ export async function pendingOverviewIds(sb: SupabaseClient, limit = 4): Promise
 
 /** running のまま残ったもの（関数が途中で切られた）は失敗にする。課金済みかもしれないので呼び直さない */
 export async function expireStuckOverviews(sb: SupabaseClient) {
-  // 呼び直しは作成から20〜30分後にもありうるので、作成から60分で判断する
-  const stale = new Date(Date.now() - 60 * 60_000).toISOString();
-  const { data } = await sb.from("aio_checks").select("id").eq("overview_status", "running").lt("created_at", stale).limit(50);
+  // 1件は最長60秒（FETCH_TIMEOUT_MS）、関数は最長300秒なので、始めてから6分たって running なら止まっている
+  const stale = new Date(Date.now() - 6 * 60_000).toISOString();
+  const { data } = await sb.from("aio_checks").select("id").eq("overview_status", "running").lt("overview_started_at", stale).limit(50);
   for (const r of data ?? []) {
     const overview: AioOverview = { shown: false, async: false, text: "", references: [], mentioned: false, ownCited: false, fetchedAt: new Date().toISOString(), error: "取得が途中で止まりました" };
     await sb.from("aio_checks").update({ overview_status: "failed", overview }).eq("id", r.id).eq("overview_status", "running");

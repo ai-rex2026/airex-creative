@@ -210,9 +210,11 @@ export async function runAioPromptsNowAction(id: string): Promise<{ accepted: nu
   if (!ids.length) throw new Error("今月の実測の上限に達しています。翌月まではお待ちください");
   after(async () => {
     const sb2 = createAdminClient();
-    for (const cid of ids.slice(0, 2)) {
-      await Promise.allSettled([runCheck(sb2, cid, { name: project.name, aliases: project.aliases }), runOverview(sb2, cid, project)]);
-    }
+    // 2026-11-16：その場で実測は先頭の6本、Google の概要は全部を同時に回す（残りは /api/cron/aio-pending が5分おきに拾う）
+    await Promise.allSettled([
+      ...ids.slice(0, 6).map((cid) => runCheck(sb2, cid, { name: project.name, aliases: project.aliases })),
+      ...ids.map((cid) => runOverview(sb2, cid, project)),
+    ]);
   });
   refresh(id);
   return { accepted: ids.length, skipped, remaining };
