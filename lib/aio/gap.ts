@@ -52,22 +52,40 @@ const GAP_SYSTEM = `あなたは日本の企業の AI検索対策（AIO/GEO）�
 - evidence には、どの問いで・どの競合が・どの媒体を根拠に挙がったかを、与えられた結果からそのまま書く（推測で書かない）
 - media は、そのギャップを埋める掲載先（自社サイト／note／PR TIMES／Wantedly／口コミサイト／業界メディア 等）
 - idea は、作るべきコンテンツを1行で（タイトル案）
-- mediaTargets は、AI が根拠にしていて自社が載っていない媒体を3〜6件。action は「登録する／プレスリリースを配信する／取材を打診する」のように具体的に
+- mediaTargets は、AI が根拠にしていて自社が載っていない「第三者の媒体」を3〜6件。action は「登録する／プレスリリースを配信する／取材を打診する」のように具体的に
+- mediaTargets に競合事業者の公式サイト（他の会社・店舗・医院などが自分で運営しているサイト）は入れない。自社が掲載・登録・寄稿・取材を通じて載れる媒体（ポータル・比較サイト・口コミサイト・業界メディア・ニュースサイト・プレス配信・SNS 等）だけにする。type には、第三者の媒体なら "media"、競合や他社の公式サイトなら "competitor" と書く（迷うものは "competitor"）
 - 「必ず上がる」「確実に」など効果の断定はしない
 ${JA_ONLY_RULE}
 
-出力: {"summary":"全体の所見（200字以内）","gaps":[{"topic":"","evidence":"","media":"","idea":""}],"mediaTargets":[{"domain":"","reason":"","action":""}]}`;
+出力: {"summary":"全体の所見（200字以内）","gaps":[{"topic":"","evidence":"","media":"","idea":""}],"mediaTargets":[{"domain":"","type":"media","reason":"","action":""}]}`;
 
-export async function analyzeGap(project: AioProject, prompts: AioPrompt[], checks: AioCheck[]): Promise<Omit<AioGapReport, "id" | "createdAt" | "period">> {
+export async function analyzeGap(project: AioProject, prompts: AioPrompt[], checks: AioCheck[], ask: typeof askJson = askJson): Promise<Omit<AioGapReport, "id" | "createdAt" | "period">> {
   const done = checks.filter((c) => c.status === "completed");
   if (!done.length) throw new Error("実測の結果がまだありません。先に対策プロンプトを実測してください");
-  const lines = [...facts(project), "", "# 実測の結果", ...evidenceLines(project, prompts, checks)];
-  const res = await askJson<{ summary?: string; gaps?: Record<string, unknown>[]; mediaTargets?: Record<string, unknown>[] }>(GAP_SYSTEM, lines.join("\n"), { maxTokens: 3000, timeoutMs: 120_000 });
+  const s = summarize(project, prompts, checks, ownDomainsOf(project));
+  const rivals = s.competitors.filter((c) => !c.isOwn).map((c) => c.name);
+  const lines = [
+    ...facts(project),
+    rivals.length ? `競合（AI が挙げた事業者。これらの公式サイトはアプローチする媒体に入れない）: ${rivals.join("、")}` : "",
+    "",
+    "# 実測の結果",
+    ...evidenceLines(project, prompts, checks),
+  ];
+  const ownD = ownDomainsOf(project).map((d) => d.toLowerCase().replace(/^www\./, ""));
+  const res = await ask<{ summary?: string; gaps?: Record<string, unknown>[]; mediaTargets?: Record<string, unknown>[] }>(GAP_SYSTEM, lines.join("\n"), { maxTokens: 3000, timeoutMs: 120_000 });
   const str = (v: unknown, n: number) => normalizeJapanese(String(v ?? "").trim()).slice(0, n);
   return {
     summary: str(res.summary, 400),
     gaps: (res.gaps ?? []).slice(0, 6).map((g) => ({ topic: str(g.topic, 120), evidence: str(g.evidence, 400), media: str(g.media, 80), idea: str(g.idea, 120) })).filter((g) => g.topic),
-    mediaTargets: (res.mediaTargets ?? []).slice(0, 6).map((m) => ({ domain: str(m.domain, 100), reason: str(m.reason, 200), action: str(m.action, 160) })).filter((m) => m.domain),
+    // 2026-11-16：競合の公式サイトが入ることがあったので、AI に種類を付けさせて第三者の媒体だけ残す（自社サイトも除く）
+    mediaTargets: (res.mediaTargets ?? [])
+      .filter((m) => String(m.type ?? "").trim() === "media")
+      .map((m) => ({ domain: str(m.domain, 100), reason: str(m.reason, 200), action: str(m.action, 160) }))
+      .filter((m) => {
+        const d = m.domain.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+        return !!d && !ownD.some((o) => !!o && (d === o || d.endsWith(`.${o}`)));
+      })
+      .slice(0, 6),
   };
 }
 

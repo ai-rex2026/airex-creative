@@ -80,7 +80,7 @@ export function GapPlan({ project, gap, plans, hasResults }: { project: AioProje
     <Card>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <SectionTitle>④ ギャップ分析と月次コンテンツ計画</SectionTitle>
+          <SectionTitle>ギャップ分析と月次コンテンツ計画</SectionTitle>
           <p className="mt-1 text-xs leading-relaxed text-[#8B877F]">実測の結果から「競合にはあって自社にはない情報」を特定し、来月に作るコンテンツ（PR／自社サイト記事／note／アンケート記事 など）を計画します。公開は人が行います</p>
         </div>
         <div className="flex shrink-0 gap-2">

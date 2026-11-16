@@ -113,7 +113,7 @@ export function PromptMonitor({ project, prompts, checks, remaining, limit, onRe
     <Card>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <SectionTitle>① 対策プロンプトと月次モニタリング</SectionTitle>
+          <SectionTitle>対策プロンプトと月次モニタリング</SectionTitle>
           <p className="mt-1 text-xs leading-relaxed text-[#8B877F]">見込み客が AI に投げる「問い」を決め（最大{MAX_ACTIVE_PROMPTS}本）、毎月まとめて実測します。AI が推薦するかは「どんな問いに答えられるか」で決まるので、問いごとに結果を追います</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">

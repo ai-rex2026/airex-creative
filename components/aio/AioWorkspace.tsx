@@ -182,7 +182,7 @@ export function AioWorkspace({
       <Card>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <SectionTitle>② 今どうか（「探し方」1本での簡易実測）</SectionTitle>
+            <SectionTitle>今どうか（「探し方」1本での簡易実測）</SectionTitle>
             <p className="mt-1 text-xs text-[#8B877F]">実際に AI に聞いて、挙がった事業者と根拠にした媒体をそのまま記録します。どの AI で測ったかは結果に出ます</p>
           </div>
           <div className="flex items-center gap-3">
@@ -271,7 +271,7 @@ export function AioWorkspace({
 
       {/* ── 何をすべきか ── */}
       <Card>
-        <SectionTitle>⑤ 下書きを作る（AIに拾われるための文章）</SectionTitle>
+        <SectionTitle>下書きを作る（AIに拾われるための文章）</SectionTitle>
         <p className="mt-1 text-xs text-[#6B6862]">note の記事は上のタブ「note」で、自社サイトの記事は SEO運用の「自社サイト記事」で、画像つき・公開まで作れます。</p>
         <p className="mt-1 text-xs text-[#8B877F]">他社の AIO サービスが施策として売っているものを、ここで AI が下書きします。内容を確認して、コピーして各媒体に載せてください（自動では公開しません）。作成と同時に表現チェックを通します</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
