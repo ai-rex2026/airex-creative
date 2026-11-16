@@ -131,6 +131,31 @@ function isOwnName(name: string, own: string[]): boolean {
   });
 }
 
+/**
+ * 事業者の言及シェアの上位10件。自社は上位10件に入らなくても必ず出す（2026-11-16：自社が2回挙がっていたのに、
+ * 同じ回数の競合が多く11番目以降に落ちて一覧に出なかった）。同じ回数なら自社を先に並べる
+ */
+/**
+ * 表記ゆれ（「山之内矯正歯科」と「山之内矯正歯科クリニック」、「三宮そう矯正歯科」と「神戸三宮そう矯正歯科」など）を1社にまとめる。
+ * 5文字以上で片方がもう片方を含むなら、すでにあるほうのキーを使う（findOwnRank の部分一致と同じ基準）
+ */
+function sameNameKey(map: Map<string, unknown>, key: string): string {
+  if (map.has(key) || key.length < 5) return key;
+  for (const k of map.keys()) {
+    if (k.startsWith("__")) continue;
+    if (Math.min(k.length, key.length) >= 5 && (k.includes(key) || key.includes(k))) return k;
+  }
+  return key;
+}
+
+function topWithOwn(rows: { name: string; mentions: number; isOwn: boolean }[], total: number): AioCompetitorRow[] {
+  const sorted = [...rows].sort((a, b) => b.mentions - a.mentions || Number(b.isOwn) - Number(a.isOwn));
+  const top = sorted.slice(0, 10);
+  const own = sorted.slice(10).find((c) => c.isOwn);
+  if (own) top.push(own);
+  return top.map((c) => ({ ...c, share: total ? Math.round((c.mentions / total) * 1000) / 10 : 0 }));
+}
+
 const OWN_VIA_GOOGLE = "自社（Google のビジネスプロフィール・転送リンク）";
 
 function periodOf(c: AioCheck): string {
@@ -222,16 +247,13 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
     for (const n of c.listed) {
       total++;
       const isOwn = isOwnName(n, own);
-      const key = isOwn ? "__own__" : norm(n);
+      const key = isOwn ? "__own__" : sameNameKey(counts, norm(n));
       const cur = counts.get(key) ?? { name: isOwn ? project.name : n, mentions: 0, isOwn };
       cur.mentions++;
       counts.set(key, cur);
     }
   }
-  const competitors = [...counts.values()]
-    .sort((a, b) => b.mentions - a.mentions)
-    .slice(0, 10)
-    .map((c) => ({ ...c, share: total ? Math.round((c.mentions / total) * 1000) / 10 : 0 }));
+  const competitors = topWithOwn([...counts.values()], total);
 
   // 引用元ドメイン（直近期）
   const dcount = new Map<string, number>();
@@ -285,7 +307,7 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
   const names = new Map<string, string>();
   for (const c of checks) for (const n of c.listed) if (!isOwnName(n, own)) {
     const k = norm(n);
-    if (k.length >= 2 && !names.has(k)) names.set(k, n);
+    if (k.length >= 2 && sameNameKey(names, k) === k) names.set(k, n);
   }
   const ocomp = new Map<string, { name: string; mentions: number; isOwn: boolean }>();
   let ototal = 0;
@@ -305,10 +327,7 @@ export function summarize(project: AioProject, prompts: AioPrompt[], checks: Aio
       ocomp.set(k, cur);
     }
   }
-  const ovCompetitors = [...ocomp.values()]
-    .sort((a, b) => b.mentions - a.mentions)
-    .slice(0, 10)
-    .map((c) => ({ ...c, share: ototal ? Math.round((c.mentions / ototal) * 1000) / 10 : 0 }));
+  const ovCompetitors = topWithOwn([...ocomp.values()], ototal);
 
   return { latest, previous, history, byPrompt, competitors, domains, ownSourceDomains, byEngine, ovDomains, ovCompetitors };
 }
