@@ -98,7 +98,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
         </p>
         {overdue.length > 0 && (
           <p style={{ marginTop: 10, fontSize: 13, color: "var(--ng)", lineHeight: 1.8 }}>
-            点検の期限が切れているページが {overdue.length} 件あります：{overdue.map((x) => `${x.m.title}（${x.st.label}）`).join("、")}。
+            点検が必要なページが {overdue.length} 件あります：{overdue.map((x) => `${x.m.title}（${x.st.label}）`).join("、")}。
             <Link href="/admin/knowhow/sources" style={{ textDecoration: "underline", marginLeft: 6 }}>点検する</Link>
           </p>
         )}
