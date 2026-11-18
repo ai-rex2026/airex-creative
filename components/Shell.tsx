@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getTier } from "@/lib/tier";
 import { IconArrowRight } from "./Chrome";
 import { MobileNav } from "./MobileNav";
 
@@ -22,7 +23,7 @@ export async function Shell({
   sub,
   children,
 }: {
-  active: "new" | "summary" | "analysis" | "stores" | "seo" | "aio" | "lpo" | "ads" | "affiliate" | "sns" | "settings";
+  active: "new" | "summary" | "analysis" | "stores" | "seo" | "aio" | "lpo" | "ads" | "affiliate" | "sns" | "settings" | "admin";
   /** SNS運用の中で開いている媒体／アフィリエイト運用の中で開いているページ（media = メディア台帳） */
   sub?: string;
   children: React.ReactNode;
@@ -31,6 +32,8 @@ export async function Shell({
   const {
     data: { user },
   } = await sb.auth.getUser();
+  // 管理者だけ、左メニューの下に「更新案の確認」を出す（2026-11-18）
+  const isAdmin = user && !user.is_anonymous ? (await getTier()).tier === "admin" : false;
 
   return (
     <div className="app">
@@ -44,6 +47,7 @@ export async function Shell({
         <MobileNav
           active={active}
           account={user?.is_anonymous ? "ゲスト" : user?.email ?? "ユーザー"}
+          admin={isAdmin}
         />
 
         {/* 2026-10-21: URLから作るレポートの2項目を「全体レポート」の下にまとめ、店舗以下とは1行あける */}
@@ -67,7 +71,12 @@ export async function Shell({
 
         {/* 2026-10-21: 「最近の分析」は分析レポート作成履歴と重なるため出さない */}
 
-        <Link href="/settings" className={`user${active === "settings" ? " on" : ""}`} style={{ textDecoration: "none" }}>
+        {isAdmin && (
+          <Link href="/admin/knowhow" className={`item${active === "admin" ? " on" : ""}`} style={{ marginTop: "auto", fontSize: 13 }}>
+            更新案の確認
+          </Link>
+        )}
+        <Link href="/settings" className={`user${active === "settings" ? " on" : ""}`} style={{ textDecoration: "none", ...(isAdmin ? { marginTop: 6 } : {}) }}>
           <span className="av">{user?.is_anonymous ? "ゲ" : "ユー"}</span>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {user?.is_anonymous ? "ゲスト" : user?.email ?? "ユーザー"}
