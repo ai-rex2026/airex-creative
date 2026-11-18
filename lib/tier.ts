@@ -34,3 +34,15 @@ export const getTier = cache(async (): Promise<TierInfo> => {
   const tier: Tier = t === "admin" || t === "paid" || t === "free" ? t : "free";
   return { userId: user.id, email: user.email ?? null, tier, features: (data?.features as string[] | null) ?? [] };
 });
+
+/**
+ * 運用メニュー（店舗・SEO・AIO・LPO・広告・アフィリエイト・SNS）は、いまは有料（と管理者）だけ（2026-11-18）。
+ * 無料は全体レポートの作成だけ。ゲストは各ページの登録案内に任せるので、ここで止めるのは「登録済みの無料」だけ。
+ * メニューごとに分ける設計は後で決める（user_profiles.features）。そのときは、ここの判定だけ差し替える
+ */
+export const OPS_LOCKED_MESSAGE = "この機能は有料プランでご利用いただけます。ご希望の場合はお問い合わせください";
+
+export async function opsBlocked(): Promise<boolean> {
+  const { tier } = await getTier();
+  return tier === "free";
+}

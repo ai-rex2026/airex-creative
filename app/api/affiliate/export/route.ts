@@ -11,6 +11,7 @@ import {
 } from "@/lib/affiliate/board";
 import { buildXlsx, buildCsv, colName, XS, type XlsxCell, type XlsxSheet } from "@/lib/affiliate/xlsx";
 import { isGuest } from "@/lib/tier-core";
+import { opsBlocked } from "@/lib/tier";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +119,7 @@ export async function GET(req: NextRequest) {
     data: { user },
   } = await sb.auth.getUser();
   if (isGuest(user)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (await opsBlocked()) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const campaignId = req.nextUrl.searchParams.get("campaignId") ?? "";
   if (!campaignId) return NextResponse.json({ error: "campaign is required" }, { status: 400 });

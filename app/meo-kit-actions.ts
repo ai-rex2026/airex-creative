@@ -24,6 +24,7 @@ import {
   type KitCtx,
 } from "@/lib/meo-ops/kit/steps";
 import type { AutoLogEntry, AutoSettings, KitData, KitInput, KitStepId, PlanState } from "@/lib/meo-ops/kit/types";
+import { OPS_LOCKED_MESSAGE, opsBlocked } from "@/lib/tier";
 
 /**
  * MEO の「やること」キット（オルコネレックスの作り）の Server Action。
@@ -39,6 +40,7 @@ async function owned(id: string) {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
+  if (await opsBlocked()) throw new Error(OPS_LOCKED_MESSAGE);
   const { data } = await sb.from("stores").select(KIT_COLUMNS).eq("id", id).eq("owner_id", user.id).maybeSingle();
   if (!data) throw new Error("この店舗を操作する権限がありません");
   const row = data as unknown as KitRow;

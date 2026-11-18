@@ -12,6 +12,7 @@ import { defaultTarget, gscCandidates, kindOf, mergeGsc, normKeyword, rowToKeywo
 import type { KeywordPlan } from "@/lib/deep";
 import type { SeoArticleSet } from "@/lib/seoArticles";
 import { isGuest } from "@/lib/tier-core";
+import { OPS_LOCKED_MESSAGE, opsBlocked } from "@/lib/tier";
 
 /**
  * SEO運用の対策キーワード（seo_keywords）の Server Action（2026-10-21 新設）。
@@ -30,6 +31,7 @@ async function owned(projectId: string) {
     data: { user },
   } = await sb.auth.getUser();
   if (isGuest(user)) throw new Error("ログイン（無料登録）が必要です");
+  if (await opsBlocked()) throw new Error(OPS_LOCKED_MESSAGE);
   const { data } = await sb.from("aio_projects").select(AIO_PROJECT_COLUMNS).eq("id", projectId).eq("owner_id", user.id).maybeSingle();
   if (!data) throw new Error("この対象を操作する権限がありません");
   return { sb, userId: user.id, project: rowToProject(data as Record<string, unknown>) };

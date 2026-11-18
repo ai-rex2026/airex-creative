@@ -33,7 +33,10 @@ export async function Shell({
     data: { user },
   } = await sb.auth.getUser();
   // 管理者だけ、左メニューの下に「更新案の確認」を出す（2026-11-18）
-  const isAdmin = user && !user.is_anonymous ? (await getTier()).tier === "admin" : false;
+  const tier = user && !user.is_anonymous ? (await getTier()).tier : "guest";
+  const isAdmin = tier === "admin";
+  // 運用メニューは有料だけ。無料の人にはメニュー自体を出さない
+  const hideOps = tier === "free";
 
   return (
     <div className="app">
@@ -48,6 +51,7 @@ export async function Shell({
           active={active}
           account={user?.is_anonymous ? "ゲスト" : user?.email ?? "ユーザー"}
           admin={isAdmin}
+          hideOps={hideOps}
         />
 
         {/* 2026-10-21: URLから作るレポートの2項目を「全体レポート」の下にまとめ、店舗以下とは1行あける */}
@@ -55,6 +59,8 @@ export async function Shell({
         <Link href="/analysis/new" className={`item${active === "new" ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>新規分析</Link>
         <Link href="/analysis" className={`item${active === "summary" ? " on" : ""}`} style={{ paddingLeft: 30, fontSize: 13 }}>分析レポート作成履歴</Link>
         <div className="gap" />
+        {!hideOps && (
+          <>
         <Link href="/stores" className={`item${active === "stores" ? " on" : ""}`}>店舗（MEO運用）</Link>
         <Link href="/seo" className={`item${active === "seo" ? " on" : ""}`}>SEO運用</Link>
         <Link href="/aio" className={`item${active === "aio" ? " on" : ""}`}>AIO（AI検索対策）</Link>
@@ -68,6 +74,8 @@ export async function Shell({
             {s.label}
           </Link>
         ))}
+          </>
+        )}
 
         {/* 2026-10-21: 「最近の分析」は分析レポート作成履歴と重なるため出さない */}
 

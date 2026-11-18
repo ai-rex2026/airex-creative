@@ -13,6 +13,7 @@ import { VIDEO_COLUMNS, createVideoDraft, defaultPrepareDeps, defaultVideoPublis
 import { VOICES } from "@/lib/sns-ops/video-types";
 import type { VideoFormat, VideoPlatform, VideoScene } from "@/lib/sns-ops/video-types";
 import { isGuest } from "@/lib/tier-core";
+import { OPS_LOCKED_MESSAGE, opsBlocked } from "@/lib/tier";
 
 /**
  * Instagram・TikTok・YouTube の運用と、動画づくりの Server Action。
@@ -27,6 +28,7 @@ async function me() {
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
   if (isGuest(user)) throw new Error("SNS運用を使うには、先に無料登録してください");
+  if (await opsBlocked()) throw new Error(OPS_LOCKED_MESSAGE);
   return { sb, userId: user.id };
 }
 
