@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/Shell";
 import { AioProjectForm } from "@/components/aio/AioProjectForm";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "対象を登録｜AIO｜AI-REX Studio" };
 
@@ -14,7 +15,7 @@ export default async function AioNewPage() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect("/login?callbackUrl=%2Faio%2Fnew");
-  if (user.is_anonymous) redirect("/login?mode=signup&callbackUrl=%2Faio%2Fnew");
+  if (isGuest(user)) redirect("/login?mode=signup&callbackUrl=%2Faio%2Fnew");
 
   return (
     <Shell active="aio">

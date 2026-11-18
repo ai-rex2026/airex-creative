@@ -206,3 +206,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - ランクは `lib/tier.ts` の `getTier()` だけで判定する（guest < free < paid < admin）。保存は `user_profiles.tier`（本人は読み取りのみ。付け替えは管理者がサービス側で行う）。行が無い登録ユーザーは free、新規登録の既定も free。既存ユーザーは移行時に管理者2名（suzuki@ad-rex.com・yuzukinishi@ai-osi-uri.com）、ほかは paid
 - 運用メニューごとの許可は `user_profiles.features`（キーは `MENU_KEYS`）。枠だけで、いまは判定に使っていない。既存ページの `is_anonymous` チェックは順に `getTier()` へ寄せる予定。決済との接続は別
 - 管理者専用：`/admin/knowhow`（ノウハウ更新案の判断。非管理者は 404）。表は `knowhow_items`・`knowhow_log`（RLS 方針なし＝サービス側だけ）。Server Action（`app/knowhow-actions.ts`）でも毎回ランクを確認する。法令に関わる案は、公式の出典があり原文確認のチェックを入れたものだけ承認できる。承認してもプロンプト・チェックには自動反映しない
+- 2026-11-18：「ゲスト（未登録・匿名）」の判定は `lib/tier-core.ts` の `isGuest(user)` に一本化した（ページ・Server Action・API とも `user.is_anonymous` を直接書かない）。型ガードで、false の側は user が非 null になる。free／paid／admin の区別が要る所は `getTier()`（リクエスト内で結果を使い回す）。`user?.is_anonymous` のまま残している所（Shell・MetaConnect・AuthForm・actions.ts の一部）は、ユーザーが無い場合の扱いが `isGuest` と違うため

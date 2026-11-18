@@ -9,6 +9,7 @@ import { fetchYoutubeChannel } from "@/lib/social-connect/youtube";
 import { fetchXProfile } from "@/lib/social-connect/x";
 import { fetchTikTokProfile } from "@/lib/social-connect/tiktok";
 import { fetchMetaProfileAndToken } from "@/lib/social-connect/meta";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * 各SNSの認可画面から戻ってくる先。コードをトークンに換えてプロフィールを取得・保存し、
@@ -54,7 +55,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ platform: strin
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return fail("ログインが切れました。ログインし直してから連携してください");
+  if (isGuest(user)) return fail("ログインが切れました。ログインし直してから連携してください");
 
   try {
     const creds = await credsForClient(user.id, platform, saved.clientId ?? null);

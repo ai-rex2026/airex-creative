@@ -5,6 +5,7 @@ import { Shell } from "@/components/Shell";
 import { loadCostTotals } from "@/lib/affiliate/cost";
 import { fmtYen } from "@/lib/affiliate/usage";
 import { hasDataForSeo } from "@/lib/affiliate/dataforseo";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "アフィリエイト運用｜AI-REX Studio" };
 
@@ -14,7 +15,7 @@ export default async function AffiliatePage() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect("/login?callbackUrl=%2Faffiliate");
-  if (user.is_anonymous) redirect("/login?mode=signup&callbackUrl=%2Faffiliate");
+  if (isGuest(user)) redirect("/login?mode=signup&callbackUrl=%2Faffiliate");
 
   const [{ data: camps }, costs, { data: kws }] = await Promise.all([
     sb.from("aff_campaigns").select("id, name, client_name, product_name, created_at").order("created_at", { ascending: false }),

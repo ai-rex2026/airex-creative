@@ -1,4 +1,6 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * ユーザーのランク（2026-11-18）。guest（未登録・匿名）< free < paid < admin。
@@ -18,14 +20,17 @@ export function atLeast(tier: Tier, min: Tier): boolean {
 export const MENU_KEYS = ["meo", "seo", "aio", "lpo", "ads", "affiliate", "sns"] as const;
 export type MenuKey = (typeof MENU_KEYS)[number];
 
-export async function getTier(): Promise<{ userId: string | null; email: string | null; tier: Tier; features: string[] }> {
+export type TierInfo = { userId: string | null; email: string | null; tier: Tier; features: string[] };
+
+/** 1回のリクエストの中では結果を使い回す（Shell・ページ・Action から何度呼んでもDBは1回） */
+export const getTier = cache(async (): Promise<TierInfo> => {
   const sb = await createClient();
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return { userId: user?.id ?? null, email: null, tier: "guest", features: [] };
+  if (isGuest(user)) return { userId: null, email: null, tier: "guest", features: [] };
   const { data } = await sb.from("user_profiles").select("tier, features").eq("user_id", user.id).maybeSingle();
   const t = data?.tier;
   const tier: Tier = t === "admin" || t === "paid" || t === "free" ? t : "free";
   return { userId: user.id, email: user.email ?? null, tier, features: (data?.features as string[] | null) ?? [] };
-}
+});

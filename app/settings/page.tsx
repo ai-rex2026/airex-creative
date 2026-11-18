@@ -9,6 +9,7 @@ import { googleConnection } from "@/app/actions";
 import { adConnections } from "@/app/ad-actions";
 import { snsConnections } from "@/app/social-actions";
 import { hasGoogleApp } from "@/lib/google";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "設定｜AI-REX Studio" };
 
@@ -31,7 +32,7 @@ export default async function SettingsPage({
   // Googleの店舗を紐付け済みの店舗が1つだけなら、その店舗へ直接。それ以外は店舗一覧へ。どの店舗かを文言に出して取り違えを防ぐ
   let meoHref: string | null = null;
   let meoStore: string | null = null;
-  if (!user.is_anonymous) {
+  if (!isGuest(user)) {
     meoHref = "/stores";
     const { data: rows } = await sb
       .from("stores")
@@ -58,14 +59,14 @@ export default async function SettingsPage({
           <div className="rh">アカウント</div>
           <div className="r">
             <div style={{ flex: 1, minWidth: 0 }}>
-              <b>{user.is_anonymous ? "一時アカウント（ゲスト）" : user.email}</b>
+              <b>{isGuest(user) ? "一時アカウント（ゲスト）" : user.email}</b>
               <small>
-                {user.is_anonymous
+                {isGuest(user)
                   ? "このブラウザからのみ分析を見られます。無料登録すると他の端末からも見られます。"
                   : "このメールアドレスでログインしています"}
               </small>
             </div>
-            {user.is_anonymous && (
+            {isGuest(user) && (
               <a className="btn ghost sm" href="/login?mode=signup">無料登録する</a>
             )}
           </div>
@@ -90,7 +91,7 @@ export default async function SettingsPage({
               </small>
             </div>
             {hasGoogleApp() ? (
-              <GoogleConnect connected={!!conn} isGuest={!!user.is_anonymous} />
+              <GoogleConnect connected={!!conn} isGuest={isGuest(user)} />
             ) : (
               <span className="tag warn">未設定</span>
             )}
@@ -110,19 +111,19 @@ export default async function SettingsPage({
 
         <AdConnections
           connections={adConns}
-          canConnect={!user.is_anonymous}
+          canConnect={!isGuest(user)}
           ok={first(sp.ad_ok)}
           error={first(sp.ad_error)}
         />
 
         <SnsConnections
           connections={snsConns}
-          canConnect={!user.is_anonymous}
+          canConnect={!isGuest(user)}
           ok={first(sp.sns_ok)}
           error={first(sp.sns_error)}
         />
 
-        {user.is_anonymous && (
+        {isGuest(user) && (
           <p className="note">
             <i className="i">i</i>
             <span>

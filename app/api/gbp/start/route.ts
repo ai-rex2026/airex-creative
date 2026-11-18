@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { gbpAuthUrl, gbpRedirectUri, gscAuthUrl, hasGbpApp } from "@/lib/gbp/oauth";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * Googleビジネスプロフィールの連携を始める（MEO運用の「設定」タブ、または設定画面から）。
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) return NextResponse.redirect(new URL(`/login?callbackUrl=${encodeURIComponent(dest)}`, url.origin));
-  if (user.is_anonymous) return back(gsc ? "Google と連携するには、先に無料登録してください" : "店舗を連携するには、先に無料登録してください");
+  if (isGuest(user)) return back(gsc ? "Google と連携するには、先に無料登録してください" : "店舗を連携するには、先に無料登録してください");
 
   const state = randomBytes(16).toString("hex");
   const res = NextResponse.redirect(gsc ? gscAuthUrl(gbpRedirectUri(req.url), state) : gbpAuthUrl(gbpRedirectUri(req.url), state));

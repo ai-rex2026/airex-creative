@@ -18,6 +18,7 @@ import { loadSettings } from "@/lib/sns-ops/store";
 import { OBSERVED_COLUMNS, OPS_POST_COLUMNS, loadXConfig, rowToInbox, rowToObserved, rowToOpsPost, rowToPatternReport } from "@/lib/sns-ops/ops-store";
 import { OPS_LABEL, OPS_PLATFORMS, OPS_TO_CONN, type OpsPlatform } from "@/lib/sns-ops/ops-types";
 import { SNS_MEDIA_BUCKET } from "@/lib/sns-ops/x-run";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "SNS運用｜AI-REX Studio" };
 
@@ -45,7 +46,7 @@ export default async function SnsPlatformPage({ params, searchParams }: { params
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect(`/login?callbackUrl=${encodeURIComponent(`/sns/${platform}`)}`);
-  if (user.is_anonymous) redirect(`/login?mode=signup&callbackUrl=${encodeURIComponent(`/sns/${platform}`)}`);
+  if (isGuest(user)) redirect(`/login?mode=signup&callbackUrl=${encodeURIComponent(`/sns/${platform}`)}`);
 
   const admin = createAdminClient();
   const conn = OPS_TO_CONN[platform];

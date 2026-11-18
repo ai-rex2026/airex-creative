@@ -26,6 +26,7 @@ import {
   type BannerReview,
   type PatternCopy,
 } from "@/lib/banner-studio/types";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * 広告運用 ＞ バナー制作（2026-11-11）。
@@ -42,7 +43,7 @@ async function owner() {
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) throw new Error("ログインしてください");
+  if (isGuest(user)) throw new Error("ログインしてください");
   return { sb, user };
 }
 

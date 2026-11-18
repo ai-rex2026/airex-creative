@@ -15,6 +15,7 @@ import { AIO_DRAFT_KINDS, AIO_PROMPT_CATEGORY_LABEL, MAX_ACTIVE_PROMPTS, type Ai
 import { AIO_PROMPT_COLUMNS, rowToGap, rowToPrompt } from "@/lib/aio/store";
 import { fetchSiteSummary } from "@/lib/meo-ops/writer";
 import type { Industry } from "@/lib/types";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * AIO（AI検索対策）の Server Action。
@@ -28,7 +29,7 @@ async function me() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
-  if (user.is_anonymous) throw new Error("AIO を使うには、先に無料登録してください");
+  if (isGuest(user)) throw new Error("AIO を使うには、先に無料登録してください");
   return { sb, user };
 }
 

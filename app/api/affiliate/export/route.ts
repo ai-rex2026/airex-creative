@@ -10,6 +10,7 @@ import {
   type CampaignBrief,
 } from "@/lib/affiliate/board";
 import { buildXlsx, buildCsv, colName, XS, type XlsxCell, type XlsxSheet } from "@/lib/affiliate/xlsx";
+import { isGuest } from "@/lib/tier-core";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +117,7 @@ export async function GET(req: NextRequest) {
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (isGuest(user)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const campaignId = req.nextUrl.searchParams.get("campaignId") ?? "";
   if (!campaignId) return NextResponse.json({ error: "campaign is required" }, { status: 400 });

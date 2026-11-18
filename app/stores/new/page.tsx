@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/Shell";
 import type { Industry } from "@/lib/types";
 import { NewStoreForm } from "./NewStoreForm";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "店舗の登録｜AI-REX Studio" };
 
@@ -15,7 +16,7 @@ export default async function NewStorePage({ searchParams }: { searchParams: Pro
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect("/login?callbackUrl=%2Fstores%2Fnew");
-  if (user.is_anonymous) redirect("/login?mode=signup&callbackUrl=%2Fstores%2Fnew");
+  if (isGuest(user)) redirect("/login?mode=signup&callbackUrl=%2Fstores%2Fnew");
 
   const sp = await searchParams;
   const fromRaw = Array.isArray(sp.from) ? sp.from[0] : sp.from;

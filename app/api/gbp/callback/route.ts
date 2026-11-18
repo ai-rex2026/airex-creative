@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { exchangeGbpCode, exchangeGscCode, gbpRedirectUri, saveGbpConnection, saveGscConnection } from "@/lib/gbp/oauth";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * Google の許可画面から戻ってくる先。コードを更新トークンに換えて保存し、元の画面へ返す。
@@ -40,7 +41,7 @@ export async function GET(req: Request) {
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return fail("ログインが切れました。ログインし直してから連携してください");
+  if (isGuest(user)) return fail("ログインが切れました。ログインし直してから連携してください");
 
   try {
     if (gsc) {

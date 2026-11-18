@@ -6,6 +6,7 @@ import { AnalysisList } from "@/components/AnalysisList";
 import type { Analysis } from "@/lib/analysis";
 import { adConnections } from "@/app/ad-actions";
 import { AD_PLATFORMS } from "@/lib/ads/platforms";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "分析レポート作成履歴｜AI-REX Studio" };
 
@@ -26,7 +27,7 @@ export default async function AnalysisListPage() {
   const { data } = await sb.from("analyses").select("*").order("created_at", { ascending: false });
   const rows = (data ?? []) as Analysis[];
   // 「広告」の評価（広告アカウントの連携の有無）。レポートのサマリータブと同じものを一覧にも出す
-  const adNames = (user.is_anonymous ? [] : await adConnections()).map(
+  const adNames = (isGuest(user) ? [] : await adConnections()).map(
     (c) => AD_PLATFORMS.find((p) => p.id === c.platform)?.name ?? c.platform
   );
 
@@ -47,7 +48,7 @@ export default async function AnalysisListPage() {
             </p>
           </div>
         ) : (
-          <AnalysisList rows={rows} adNames={adNames} isGuest={!!user.is_anonymous} />
+          <AnalysisList rows={rows} adNames={adNames} isGuest={isGuest(user)} />
         )}
       </div>
     </Shell>

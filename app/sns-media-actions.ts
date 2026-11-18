@@ -12,6 +12,7 @@ import type { MediaPlatform } from "@/lib/sns-ops/media-brain";
 import { VIDEO_COLUMNS, createVideoDraft, defaultPrepareDeps, defaultVideoPublishDeps, prepareVideo, publishVideo, rowToVideo, type PrepareProgress } from "@/lib/sns-ops/video-run";
 import { VOICES } from "@/lib/sns-ops/video-types";
 import type { VideoFormat, VideoPlatform, VideoScene } from "@/lib/sns-ops/video-types";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * Instagram・TikTok・YouTube の運用と、動画づくりの Server Action。
@@ -25,7 +26,7 @@ async function me() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
-  if (user.is_anonymous) throw new Error("SNS運用を使うには、先に無料登録してください");
+  if (isGuest(user)) throw new Error("SNS運用を使うには、先に無料登録してください");
   return { sb, userId: user.id };
 }
 

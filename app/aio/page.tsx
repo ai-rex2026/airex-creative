@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/Shell";
 import { listProjects } from "@/lib/aio/store";
 import { INDUSTRY_LABEL } from "@/lib/types";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "AIO（AI検索対策）｜AI-REX Studio" };
 
@@ -17,7 +18,7 @@ export default async function AioPage() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect("/login?callbackUrl=%2Faio");
-  if (user.is_anonymous) redirect("/login?mode=signup&callbackUrl=%2Faio");
+  if (isGuest(user)) redirect("/login?mode=signup&callbackUrl=%2Faio");
 
   const rows = await listProjects(sb, user.id);
 

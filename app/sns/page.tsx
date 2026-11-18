@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { SnsWorkspace } from "@/components/sns/SnsWorkspace";
 import { snsAccountsAction, snsPostsAction, snsSettingsAction } from "@/app/sns-actions";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "SNS運用｜AI-REX Studio" };
 
@@ -21,7 +22,7 @@ export default async function SnsPage() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect("/login?callbackUrl=%2Fsns");
-  if (user.is_anonymous) redirect("/login?mode=signup&callbackUrl=%2Fsns");
+  if (isGuest(user)) redirect("/login?mode=signup&callbackUrl=%2Fsns");
 
   const [accounts, posts, settings] = await Promise.all([snsAccountsAction(), snsPostsAction(), snsSettingsAction()]);
 

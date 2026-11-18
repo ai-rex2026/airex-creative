@@ -23,6 +23,7 @@ import { generateLp } from "@/lib/lp";
 import { buildLedger } from "@/lib/measure-sources";
 import { hasAnthropic } from "@/lib/anthropic";
 import type { BannerCopy, Diagnosis, GuardHit } from "@/lib/types";
+import { isGuest } from "@/lib/tier-core";
 
 function assertKey() {
   if (!hasAnthropic()) throw new Error("ANTHROPIC_API_KEY が未設定です");
@@ -136,7 +137,7 @@ export async function startAnalysis(input: {
   // 2026-10-06: 未登録（ゲスト）は1端末につき1回まで。一時アカウントはセッションが切れると
   // 作り直されて別人扱いになるので、アカウントの分析件数に加えて、端末に残す印（クッキー・
   // ブラウザの保存領域）でも判定する
-  const guest = !user || user.is_anonymous;
+  const guest = isGuest(user);
   const jar = await cookies();
   if (guest) {
     if (jar.get(GUEST_USED_COOKIE)?.value || input.guestUsed) return { error: GUEST_LIMIT_MESSAGE, needSignup: true };
@@ -642,7 +643,7 @@ export async function regenerateSummaryTab(id: string) {
   if (!user) throw new Error("ログインが必要です");
 
   // 未登録（ゲスト）は作り直せない（画面では登録画面へ進めているが、念のためサーバー側でも止める）
-  if (user.is_anonymous) throw new Error("施策の作り直しは無料の会員登録でご利用いただけます");
+  if (isGuest(user)) throw new Error("施策の作り直しは無料の会員登録でご利用いただけます");
 
   const { data } = await sb.from("analyses").select("*").eq("id", id).eq("owner_id", user.id).single();
   if (!data) throw new Error("分析が見つかりません");

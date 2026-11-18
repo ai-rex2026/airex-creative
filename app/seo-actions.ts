@@ -7,6 +7,7 @@ import { fromReport, sweep, type InternalDraft, type InternalPriority, type Inte
 import { collectSweepInput } from "@/lib/seo/internal-collect";
 import type { ReportAio } from "@/lib/report-aio-types";
 import type { KeywordPlan } from "@/lib/deep";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * 内部対策（seo_internal_tasks）の Server Action（2026-10-21 新設）。
@@ -26,7 +27,7 @@ async function owned(projectId: string) {
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) throw new Error("ログイン（無料登録）が必要です");
+  if (isGuest(user)) throw new Error("ログイン（無料登録）が必要です");
   const { data } = await sb.from("aio_projects").select(AIO_PROJECT_COLUMNS).eq("id", projectId).eq("owner_id", user.id).maybeSingle();
   if (!data) throw new Error("この対象を操作する権限がありません");
   return { sb, userId: user.id, project: rowToProject(data as Record<string, unknown>) };

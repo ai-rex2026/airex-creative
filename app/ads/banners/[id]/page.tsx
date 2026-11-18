@@ -4,6 +4,7 @@ import { Shell } from "@/components/Shell";
 import { BannerWorkspace } from "@/components/banner-studio/BannerWorkspace";
 import { bannerUsageAction } from "@/app/banner-actions";
 import { BANNER_PROJECT_COLUMNS, BANNER_VISUAL_COLUMNS, rowToBannerProject, rowToVisual } from "@/lib/banner-studio/types";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "バナー制作｜AI-REX Studio" };
 // 読み取り・コピー・パターン作り（AI）と、出来上がった絵・動画の取り込みを Action で行う
@@ -16,7 +17,7 @@ export default async function BannerProjectPage({ params }: { params: Promise<{ 
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect(`/login?callbackUrl=${encodeURIComponent(`/ads/banners/${id}`)}`);
-  if (user.is_anonymous) redirect("/login?mode=signup");
+  if (isGuest(user)) redirect("/login?mode=signup");
 
   const { data } = await sb.from("banner_projects").select(BANNER_PROJECT_COLUMNS).eq("id", id).eq("owner_id", user.id).maybeSingle();
   if (!data) notFound();

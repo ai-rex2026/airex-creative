@@ -14,6 +14,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { InternalPanel } from "@/components/seo/InternalPanel";
 import { loadInternalTasks } from "@/lib/seo/internal-store";
 import { forTab } from "@/lib/seo/internal";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "AIO｜AI-REX Studio" };
 
@@ -34,7 +35,7 @@ export default async function AioProjectPage({ params, searchParams }: { params:
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect(`/login?callbackUrl=${encodeURIComponent(`/aio/${id}`)}`);
-  if (user.is_anonymous) redirect(`/login?mode=signup&callbackUrl=${encodeURIComponent(`/aio/${id}`)}`);
+  if (isGuest(user)) redirect(`/login?mode=signup&callbackUrl=${encodeURIComponent(`/aio/${id}`)}`);
 
   const data = await loadProject(sb, id);
   if (!data) notFound();

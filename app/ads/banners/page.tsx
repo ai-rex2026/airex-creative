@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/Shell";
 import { BannerCreate } from "@/components/banner-studio/BannerCreate";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "バナー制作｜AI-REX Studio" };
 
@@ -13,7 +14,7 @@ export default async function BannersPage() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect("/login?callbackUrl=%2Fads%2Fbanners");
-  if (user.is_anonymous) redirect("/login?mode=signup&callbackUrl=%2Fads%2Fbanners");
+  if (isGuest(user)) redirect("/login?mode=signup&callbackUrl=%2Fads%2Fbanners");
   const { data: rows } = await sb.from("banner_projects").select("id, name, url, description, created_at").eq("owner_id", user.id).order("created_at", { ascending: false });
 
   return (

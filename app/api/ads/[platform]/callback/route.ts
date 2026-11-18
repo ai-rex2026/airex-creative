@@ -5,6 +5,7 @@ import { isAdPlatform } from "@/lib/ads/platforms";
 import { exchangeCode, redirectUriFor, xAccessToken } from "@/lib/ads/oauth";
 import { discoverAccounts } from "@/lib/ads/accounts";
 import { saveConnection } from "@/lib/ads/tokens";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * 媒体の認可画面から戻ってくる先。コードをトークンに換えて保存し、設定画面へ返す。
@@ -39,7 +40,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ platform: strin
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return fail("ログインが切れました。ログインし直してから連携してください");
+  if (isGuest(user)) return fail("ログインが切れました。ログインし直してから連携してください");
 
   try {
     let tokens;
