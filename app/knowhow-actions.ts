@@ -66,5 +66,6 @@ export async function decideKnowhowAction(fd: FormData): Promise<void> {
   if (error) return fail("保存に失敗しました");
   await sb.from("knowhow_log").insert({ item_id: id, action: decision, by_user: userId, note });
   revalidatePath("/admin/knowhow");
-  redirect(`/admin/knowhow?s=${encodeURIComponent(back)}`);
+  // 同じ URL への redirect は画面が更新されないことがあるので、結果つきの別の URL へ送る（結果は画面の上に出す）
+  redirect(`/admin/knowhow?s=${encodeURIComponent(back)}&done=${decision}&t=${Date.now()}`);
 }

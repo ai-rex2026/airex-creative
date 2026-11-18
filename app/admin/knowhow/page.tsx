@@ -33,10 +33,11 @@ type Item = {
 const AREA: Record<string, string> = { meo: "MEO", seo: "SEO", aio: "AIO", lpo: "LPO", image: "画像生成", legal: "法令" };
 const KIND: Record<string, string> = { add: "追加", change: "変更", nochange: "変更なし" };
 const EVIDENCE: Record<string, string> = { official: "公式の根拠", vendor: "事業者・解説の報告", opinion: "意見・分析" };
+const DONE: Record<string, string> = { approve: "承認しました。反映中です", hold: "保留にしました", reject: "却下しました", reset: "判断待ちに戻しました" };
 const TABS: [string, string][] = [["pending", "判断待ち"], ["approved", "承認"], ["held", "保留"], ["rejected", "却下"]];
 
 /** ノウハウ更新案の受信箱。管理者だけ（ほかの人には存在も見せない）。スマホで1件ずつ 承認／保留／却下 を選ぶ */
-export default async function KnowhowInbox({ searchParams }: { searchParams: Promise<{ s?: string; err?: string }> }) {
+export default async function KnowhowInbox({ searchParams }: { searchParams: Promise<{ s?: string; err?: string; done?: string }> }) {
   const { tier } = await getTier();
   if (tier !== "admin") notFound();
   const sp = await searchParams;
@@ -59,6 +60,11 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
           調査で見つけた更新案を、1件ずつ判断します。承認すると、領域ごとのAIへの指示と法令チェックに反映されます（「反映される文」が、そのまま追加されます）。「判断待ちに戻す」か「却下」にすると、すぐ外れます。
         </p>
         {sp.err && <p style={{ marginTop: 12, fontSize: 13, color: "var(--ng)" }}>{sp.err}</p>}
+        {sp.done && DONE[sp.done] && (
+          <p className="tag ok" style={{ marginTop: 12 }}>
+            {DONE[sp.done]}
+          </p>
+        )}
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18 }}>
           {TABS.map(([k, label]) => (
