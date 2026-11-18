@@ -123,3 +123,39 @@ export async function runKnowhowSourcesAction(): Promise<void> {
   revalidatePath("/admin/knowhow");
   back(`ran=${r.checked}&changed=${r.changed}&base=${r.baseline}&err_n=${r.errors}&created=${r.created}`);
 }
+
+/** 手動点検：点検しました（日付と結果を記録）。管理者だけ */
+export async function markManualCheckedAction(fd: FormData): Promise<void> {
+  const sb = await adminOnly();
+  const key = String(fd.get("key") ?? "");
+  const result = String(fd.get("result") ?? "");
+  const memo = String(fd.get("memo") ?? "").trim().slice(0, 300);
+  if (!["changed", "none"].includes(result)) return back("err=" + encodeURIComponent("結果（変更あり／変更なし）を選んでください"));
+  const { error } = await sb
+    .from("knowhow_manual_checks")
+    .update({ last_checked_at: new Date().toISOString(), last_result: result, last_memo: memo })
+    .eq("key", key);
+  if (error) return back("err=" + encodeURIComponent("保存に失敗しました"));
+  revalidatePath("/admin/knowhow/sources");
+  revalidatePath("/admin/knowhow");
+  back("done=checked");
+}
+
+/** 手動点検の対象を追加 */
+export async function addManualCheckAction(fd: FormData): Promise<void> {
+  const sb = await adminOnly();
+  const title = String(fd.get("title") ?? "").trim().slice(0, 80);
+  const area = String(fd.get("area") ?? "");
+  const days = Math.min(90, Math.max(1, Number(fd.get("days") ?? 14) || 14));
+  let url = "";
+  try {
+    url = assertPublicUrl(String(fd.get("url") ?? "").trim(), { httpsOnly: true }).toString();
+  } catch {
+    return back("err=" + encodeURIComponent("URL が正しくありません（https の公開ページだけ）"));
+  }
+  if (!title || !AREAS.includes(area)) return back("err=" + encodeURIComponent("名前とカテゴリを入れてください"));
+  const { error } = await sb.from("knowhow_manual_checks").insert({ key: `m-${Date.now().toString(36)}`, area, title, url, interval_days: days });
+  if (error) return back("err=" + encodeURIComponent("保存に失敗しました"));
+  revalidatePath("/admin/knowhow/sources");
+  back("done=madded");
+}

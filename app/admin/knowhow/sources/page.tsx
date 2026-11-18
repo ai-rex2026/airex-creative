@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/tier";
-import { addKnowhowSourceAction, runKnowhowSourcesAction, toggleKnowhowSourceAction } from "@/app/knowhow-actions";
+import { addKnowhowSourceAction, addManualCheckAction, markManualCheckedAction, runKnowhowSourcesAction, toggleKnowhowSourceAction } from "@/app/knowhow-actions";
+import { manualStatus, type ManualRow } from "@/lib/knowhow-manual";
 
 export const metadata = { title: "確認している公式ページ｜AI-REX Studio" };
 export const dynamic = "force-dynamic";
@@ -35,6 +36,8 @@ export default async function KnowhowSources({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const { data } = await createAdminClient().from("knowhow_sources").select("*").order("created_at", { ascending: true }).limit(100);
   const rows = (data ?? []) as Row[];
+  const { data: mdata } = await createAdminClient().from("knowhow_manual_checks").select("*").order("created_at", { ascending: true }).limit(100);
+  const manual = ((mdata ?? []) as ManualRow[]).map((m) => ({ m, st: manualStatus(m) }));
 
   return (
     <Shell active="admin">
@@ -53,6 +56,41 @@ export default async function KnowhowSources({ searchParams }: { searchParams: P
           </p>
         )}
         {sp.done === "added" && <p className="tag ok" style={{ marginTop: 12 }}>追加しました</p>}
+        {sp.done === "madded" && <p className="tag ok" style={{ marginTop: 12 }}>手動点検の対象を追加しました</p>}
+        {sp.done === "checked" && <p className="tag ok" style={{ marginTop: 12 }}>点検を記録しました</p>}
+
+        <h3 style={{ fontSize: 16, marginTop: 22 }}>手動で点検するページ</h3>
+        <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.9 }}>
+          サーバーから自動で取れないページです。ブラウザで開いて確認し、「点検しました」で日付を残します。前回から期限（既定14日）を過ぎると赤く表示します。変更を見つけたら、更新案として受信箱に入れます。
+        </p>
+        {manual.map(({ m, st }) => (
+          <section key={m.key} style={{ marginTop: 12, background: "#fff", border: `1px solid ${st.overdue ? "var(--ng)" : "var(--line)"}`, borderRadius: 6, padding: "16px 18px" }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <span className="tag score">{AREA[m.area] ?? m.area}</span>
+              <span className={`tag ${st.overdue ? "ng" : "ok"}`}>{st.label}</span>
+            </div>
+            <h3 style={{ fontSize: 15, marginTop: 8 }}>{m.title}</h3>
+            <p style={{ fontSize: 12.5, marginTop: 4, wordBreak: "break-all" }}>
+              <a href={m.url} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>{m.url}</a>
+            </p>
+            <p style={{ fontSize: 12, marginTop: 6, color: "var(--muted)", lineHeight: 1.8 }}>
+              前回の点検：{fmt(m.last_checked_at)}{m.last_checked_at ? `（${m.last_result === "changed" ? "変更あり" : "変更なし"}）` : ""}　／　期限：{m.interval_days}日ごと
+            </p>
+            {m.note && <p style={{ fontSize: 12, color: "var(--muted)" }}>{m.note}</p>}
+            {m.last_memo && <p style={{ fontSize: 12, color: "var(--muted)" }}>メモ：{m.last_memo}</p>}
+            <form action={markManualCheckedAction} style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <input type="hidden" name="key" value={m.key} />
+              <select className="box" name="result" defaultValue="none" style={{ padding: "6px 8px", fontSize: 13 }}>
+                <option value="none">変更なし</option>
+                <option value="changed">変更あり（案にする）</option>
+              </select>
+              <input className="box" name="memo" placeholder="メモ（任意）" maxLength={300} style={{ padding: "6px 8px", fontSize: 13, flex: "1 1 180px" }} />
+              <button className="btn sm" type="submit">点検しました</button>
+            </form>
+          </section>
+        ))}
+
+        <h3 style={{ fontSize: 16, marginTop: 28 }}>自動で取得するページ</h3>
 
         <form action={runKnowhowSourcesAction} style={{ marginTop: 16 }}>
           <button className="btn sm" type="submit">今すぐ確認する</button>
@@ -82,6 +120,23 @@ export default async function KnowhowSources({ searchParams }: { searchParams: P
             </form>
           </section>
         ))}
+
+        <form action={addManualCheckAction} style={{ marginTop: 22, display: "grid", gap: 10, background: "#fff", border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px" }}>
+          <b style={{ fontSize: 14 }}>手動で点検するページを追加</b>
+          <input className="box" name="title" placeholder="名前（例：Yahoo!広告 掲載基準）" maxLength={80} required style={{ padding: "8px 10px" }} />
+          <input className="box" name="url" placeholder="https://…（公開ページ）" required style={{ padding: "8px 10px" }} />
+          <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
+            <select className="box" name="area" defaultValue="ads" style={{ padding: "6px 8px" }}>
+              {Object.entries(AREA).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+            <label>
+              期限 <input className="box" name="days" type="number" min={1} max={90} defaultValue={14} style={{ width: 64, padding: "6px 8px" }} /> 日
+            </label>
+            <button className="btn sm" type="submit">追加</button>
+          </div>
+        </form>
 
         <form action={addKnowhowSourceAction} style={{ marginTop: 22, display: "grid", gap: 10, background: "#fff", border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px" }}>
           <b style={{ fontSize: 14 }}>公式ページを追加</b>
