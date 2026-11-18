@@ -1,4 +1,7 @@
-import { askJson } from "./anthropic";
+import { askJson as rawAskJson } from "./anthropic";
+import { withKnowhow } from "./knowhow";
+
+const askJson = withKnowhow(rawAskJson, ["lpo"]);
 import { checkGuard } from "./guardrail";
 import type { BannerCopy, Diagnosis, GuardVerdict } from "./types";
 
