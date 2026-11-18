@@ -1,4 +1,5 @@
 import { askJson } from "./anthropic";
+import { withKnowhow } from "./knowhow";
 import type { Diagnosis } from "./types";
 import type { SiteScan } from "./site-scan";
 import type { GscData } from "./google";
@@ -42,7 +43,9 @@ export async function generateLpo(d: Diagnosis, site: SiteScan | null, priorityN
   // 表示速度は PageSpeed Insights の実測を、専用の章で数字ごと出す。
   // 測定は返らないことがあるので工程の最後に回しており、ここでは持っていない。
 
-  const res = await askJson<LpoPlan>(
+  // LP改善の指摘にも、承認済みの LPO ノウハウ（法令・表示ルール）を足す。同じファイルの他の生成（キーワード・LINE）には足さない
+  const askLpo = withKnowhow(askJson, ["lpo"]);
+  const res = await askLpo<LpoPlan>(
     `あなたはランディングページ改善（LPO）の実務者です。広告の受け皿としてサイトを直す指摘を出します。
 
 守ること:
