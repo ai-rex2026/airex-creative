@@ -15,6 +15,7 @@ import type { OpsMedia, XOpsConfig } from "@/lib/sns-ops/ops-types";
 import { sendApprovedMedia } from "@/lib/sns-ops/media-run";
 import { SNS_MEDIA_BUCKET, sendApproved, stripAspect, stepBench, stepDms, stepDrafts, stepEngage, stepImages, stepOwn, stepPatterns, stepSearch } from "@/lib/sns-ops/x-run";
 import { isGuest } from "@/lib/tier-core";
+import { OPS_LOCKED_MESSAGE, opsBlocked } from "@/lib/tier";
 
 /**
  * SNS運用（媒体ごと）の Server Action。1回目は X 運用と、各社のアプリの鍵の登録。
@@ -29,6 +30,7 @@ async function me() {
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
   if (isGuest(user)) throw new Error("SNS運用を使うには、先に無料登録してください");
+  if (await opsBlocked()) throw new Error(OPS_LOCKED_MESSAGE);
   return { sb, userId: user.id };
 }
 

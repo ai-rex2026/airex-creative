@@ -11,6 +11,7 @@ import { checkGuard } from "@/lib/guardrail";
 import type { SnsAccount, SnsPost, SnsSettings } from "@/lib/sns-ops/types";
 import type { Industry } from "@/lib/types";
 import { isGuest } from "@/lib/tier-core";
+import { OPS_LOCKED_MESSAGE, opsBlocked } from "@/lib/tier";
 
 /**
  * SNS運用（/sns）の Server Action。
@@ -26,6 +27,7 @@ async function me() {
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
   if (isGuest(user)) throw new Error("SNS運用を使うには、先に無料登録してください");
+  if (await opsBlocked()) throw new Error(OPS_LOCKED_MESSAGE);
   return { sb, user };
 }
 

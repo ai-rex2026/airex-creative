@@ -27,6 +27,7 @@ import {
   type PatternCopy,
 } from "@/lib/banner-studio/types";
 import { isGuest } from "@/lib/tier-core";
+import { OPS_LOCKED_MESSAGE, opsBlocked } from "@/lib/tier";
 
 /**
  * 広告運用 ＞ バナー制作（2026-11-11）。
@@ -44,6 +45,7 @@ async function owner() {
     data: { user },
   } = await sb.auth.getUser();
   if (isGuest(user)) throw new Error("ログインしてください");
+  if (await opsBlocked()) throw new Error(OPS_LOCKED_MESSAGE);
   return { sb, user };
 }
 

@@ -49,12 +49,15 @@ export function MobileNav({
   active,
   account,
   admin = false,
+  hideOps = false,
 }: {
   active: "new" | "summary" | "analysis" | "stores" | "seo" | "aio" | "lpo" | "ads" | "affiliate" | "sns" | "settings" | "admin";
   /** メールアドレス。ゲストなら「ゲスト」 */
   account: string;
   /** 管理者だけ「更新案の確認」を出す */
   admin?: boolean;
+  /** 無料ユーザーには運用メニューを出さない */
+  hideOps?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -104,6 +107,8 @@ export function MobileNav({
               分析レポート作成履歴
             </Link>
             <div style={{ height: 14 }} />
+            {!hideOps && (
+              <>
             <Link href="/stores" className={`mnav-link${active === "stores" ? " on" : ""}`} onClick={close}>
               店舗（MEO運用）
             </Link>
@@ -138,6 +143,8 @@ export function MobileNav({
                 {label}
               </Link>
             ))}
+              </>
+            )}
 
             <div className="mnav-foot">
               {admin && (

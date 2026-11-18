@@ -12,6 +12,7 @@ import { PRESS_KINDS, PRESS_MONTHLY_LIMIT, type PressBrief, type PressContent, t
 import { h2List } from "@/lib/aio/md";
 import type { AioProject } from "@/lib/aio/types";
 import { isGuest } from "@/lib/tier-core";
+import { OPS_LOCKED_MESSAGE, opsBlocked } from "@/lib/tier";
 
 /**
  * AIO「PR TIMES」の Server Action。入稿内容を作る・直す・画像を作る／アップロードする・消す。
@@ -32,6 +33,7 @@ async function ownedProject(projectId: string): Promise<{ sb: Sb; project: AioPr
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
   if (isGuest(user)) throw new Error("AIO を使うには、先に無料登録してください");
+  if (await opsBlocked()) throw new Error(OPS_LOCKED_MESSAGE);
   const { data } = await sb.from("aio_projects").select(AIO_PROJECT_COLUMNS).eq("id", projectId).eq("owner_id", user.id).maybeSingle();
   if (!data) throw new Error("この対象を操作する権限がありません");
   return { sb, project: rowToProject(data as Record<string, unknown>) };

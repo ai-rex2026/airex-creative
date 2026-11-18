@@ -9,6 +9,7 @@ import { htmlToText, normalizeDomain, safeUrl } from "@/lib/affiliate/domain";
 import { isFreshRunning, listEnrichable, runCollectJob, runEnrichEntry, type CollectAutoResult, type EnrichResult, type EnrichableEntry } from "@/lib/affiliate/collect";
 import { meterTo } from "@/lib/affiliate/usage";
 import { isGuest } from "@/lib/tier-core";
+import { OPS_LOCKED_MESSAGE, opsBlocked } from "@/lib/tier";
 
 /**
  * アフィリエイト運用の Server Action（airex-recruiting の調査フェーズを移植）。
@@ -25,6 +26,7 @@ async function ctx(): Promise<{ sb: SupabaseClient; userId: string }> {
     data: { user },
   } = await sb.auth.getUser();
   if (isGuest(user)) throw new Error("ログインが必要です");
+  if (await opsBlocked()) throw new Error(OPS_LOCKED_MESSAGE);
   return { sb, userId: user.id };
 }
 

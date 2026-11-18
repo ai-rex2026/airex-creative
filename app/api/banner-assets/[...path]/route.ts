@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { BANNER_BUCKET } from "@/lib/banner-studio/types";
+import { opsBlocked } from "@/lib/tier";
 
 /**
  * バナー制作の素材・絵・動画を、同じオリジンで返す（2026-11-11）。
@@ -15,6 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ path: s
     data: { user },
   } = await sb.auth.getUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
+  if (await opsBlocked()) return new Response("Forbidden", { status: 403 });
   if (!p.startsWith(`${user.id}/`) || p.includes("..")) return new Response("Not found", { status: 404 });
   const { data, error } = await createAdminClient().storage.from(BANNER_BUCKET).download(p);
   if (error || !data) return new Response("Not found", { status: 404 });

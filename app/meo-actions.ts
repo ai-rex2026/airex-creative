@@ -41,6 +41,7 @@ import type {
   MeoProfileDraft,
   StoreCandidate,
 } from "@/lib/meo-ops/types";
+import { OPS_LOCKED_MESSAGE, opsBlocked } from "@/lib/tier";
 
 /**
  * MEO運用ワークスペースの Server Action。
@@ -55,6 +56,7 @@ async function owned(id: string) {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
+  if (await opsBlocked()) throw new Error(OPS_LOCKED_MESSAGE);
   const { data } = await sb.from("stores").select(MEO_STORE_COLUMNS).eq("id", id).eq("owner_id", user.id).maybeSingle();
   if (!data) throw new Error("この店舗を操作する権限がありません");
   const row = data as unknown as MeoStoreRow;
@@ -77,6 +79,7 @@ export async function searchStoresForNewAction(query: string): Promise<StoreCand
     data: { user },
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
+  if (await opsBlocked()) throw new Error(OPS_LOCKED_MESSAGE);
   const q = (query ?? "").trim().slice(0, 200);
   if (!q) throw new Error("検索する店舗名または住所を入力してください");
   if (!hasPlacesKey()) throw new Error("店舗検索を利用できません。設定を確認してください");
@@ -90,6 +93,7 @@ export async function createStoreAction(placeId: string, industry: Industry): Pr
     data: { user },
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
+  if (await opsBlocked()) throw new Error(OPS_LOCKED_MESSAGE);
   if (!placeId || placeId.length > 500) throw new Error("店舗の指定が不正です");
   if (!INDUSTRIES.includes(industry)) throw new Error("業種の指定が不正です");
   const snapshot = await buildStoreSnapshot(placeId);
