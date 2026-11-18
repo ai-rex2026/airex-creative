@@ -10,7 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export type KnowhowArea = "meo" | "seo" | "aio" | "lpo" | "image" | "legal" | "ads";
 
 /** 1回の呼び出しに足す量の上限（指示が長くなりすぎて、本来の指示が薄まらないように） */
-export const MAX_NOTES = 8;
+export const MAX_NOTES = 20;
 export const MAX_NOTE_CHARS = 1500;
 export const MAX_APPLIED_TEXT = 200;
 
