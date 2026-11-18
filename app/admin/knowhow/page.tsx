@@ -25,6 +25,7 @@ type Item = {
   decision_note: string;
   decided_at: string | null;
   fetched_on: string | null;
+  created_at: string;
   form: string;
   applied_text: string;
   rule: { pattern?: string; reason?: string; law?: string; suggestion?: string } | null;
@@ -34,23 +35,49 @@ const AREA: Record<string, string> = { meo: "MEO", seo: "SEO", aio: "AIO", lpo: 
 const KIND: Record<string, string> = { add: "追加", change: "変更", nochange: "変更なし" };
 const EVIDENCE: Record<string, string> = { official: "公式の根拠", vendor: "事業者・解説の報告", opinion: "意見・分析" };
 const DONE: Record<string, string> = { approve: "承認しました。反映中です", hold: "保留にしました", reject: "却下しました", reset: "判断待ちに戻しました" };
+const STATUS_LABEL: Record<string, string> = { approved: "承認", held: "保留", rejected: "却下" };
+/** 日本時間で「2026/11/18 19:59」の形に */
+const fmt = (iso: string) =>
+  new Date(iso).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 const TABS: [string, string][] = [["pending", "判断待ち"], ["approved", "承認"], ["held", "保留"], ["rejected", "却下"]];
 
 /** ノウハウ更新案の受信箱。管理者だけ（ほかの人には存在も見せない）。スマホで1件ずつ 承認／保留／却下 を選ぶ */
-export default async function KnowhowInbox({ searchParams }: { searchParams: Promise<{ s?: string; err?: string; done?: string }> }) {
+export default async function KnowhowInbox({ searchParams }: { searchParams: Promise<{ s?: string; a?: string; by?: string; from?: string; to?: string; err?: string; done?: string }> }) {
   const { tier } = await getTier();
   if (tier !== "admin") notFound();
   const sp = await searchParams;
   const status = TABS.some(([k]) => k === sp.s) ? (sp.s as string) : "pending";
+  // 絞り込み：カテゴリ（領域）と日付（追加日／判断日）。日付は日本時間の日付で指定する
+  const area = sp.a && sp.a in AREA ? sp.a : "";
+  const by = sp.by === "decided" ? "decided" : "created";
+  const dateOk = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "");
+  const from = dateOk(sp.from);
+  const to = dateOk(sp.to);
+  const dateCol = by === "decided" ? "decided_at" : "created_at";
+  const filtered = <T extends { eq: (c: string, v: string) => T; gte: (c: string, v: string) => T; lte: (c: string, v: string) => T }>(q: T): T => {
+    let r = q;
+    if (area) r = r.eq("area", area);
+    if (from) r = r.gte(dateCol, `${from}T00:00:00+09:00`);
+    if (to) r = r.lte(dateCol, `${to}T23:59:59.999+09:00`);
+    return r;
+  };
+  const qs = (over: Record<string, string>) => {
+    const p = new URLSearchParams();
+    const cur: Record<string, string> = { s: status, a: area, by: by === "decided" ? "decided" : "", from, to, ...over };
+    for (const [k, v] of Object.entries(cur)) if (v) p.set(k, v);
+    return p.toString();
+  };
+  const back = qs({});
 
   const sb = createAdminClient();
   const [{ data }, counts] = await Promise.all([
-    sb.from("knowhow_items").select("*").eq("status", status).order("created_at", { ascending: false }).limit(100),
-    sb.from("knowhow_items").select("status").limit(2000),
+    filtered(sb.from("knowhow_items").select("*").eq("status", status)).order(by === "decided" ? "decided_at" : "created_at", { ascending: false }).limit(100),
+    filtered(sb.from("knowhow_items").select("status")).limit(2000),
   ]);
   const items = (data ?? []) as Item[];
   const n = new Map<string, number>();
   for (const r of counts.data ?? []) n.set(String(r.status), (n.get(String(r.status)) ?? 0) + 1);
+  const filterOn = !!(area || from || to);
 
   return (
     <Shell active="admin">
@@ -68,11 +95,46 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18 }}>
           {TABS.map(([k, label]) => (
-            <Link key={k} href={`/admin/knowhow?s=${k}`} className={`tag${status === k ? " on" : ""}`} style={{ textDecoration: "none" }}>
+            <Link key={k} href={`/admin/knowhow?${qs({ s: k })}`} className={`tag${status === k ? " on" : ""}`} style={{ textDecoration: "none" }}>
               {label} {n.get(k) ?? 0}
             </Link>
           ))}
         </div>
+
+        <form method="get" style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", fontSize: 12.5 }}>
+          <input type="hidden" name="s" value={status} />
+          <label style={{ display: "grid", gap: 3 }}>
+            カテゴリ
+            <select className="box" name="a" defaultValue={area} style={{ padding: "6px 8px" }}>
+              <option value="">すべて</option>
+              {Object.entries(AREA).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "grid", gap: 3 }}>
+            日付の基準
+            <select className="box" name="by" defaultValue={by} style={{ padding: "6px 8px" }}>
+              <option value="created">追加日</option>
+              <option value="decided">判断日</option>
+            </select>
+          </label>
+          <label style={{ display: "grid", gap: 3 }}>
+            から
+            <input className="box" type="date" name="from" defaultValue={from} style={{ padding: "5px 8px" }} />
+          </label>
+          <label style={{ display: "grid", gap: 3 }}>
+            まで
+            <input className="box" type="date" name="to" defaultValue={to} style={{ padding: "5px 8px" }} />
+          </label>
+          <button className="btn sm" type="submit">絞り込む</button>
+          {filterOn && (
+            <Link className="btn sm ghost" href={`/admin/knowhow?s=${status}`}>解除</Link>
+          )}
+        </form>
+        <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 8 }}>
+          {filterOn ? "絞り込み中：" : ""}該当 {items.length}件（新しい順）
+        </p>
 
         {items.length === 0 && (
           <div className="panel" style={{ marginTop: 18 }}>
@@ -110,6 +172,10 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
               {it.fetched_on && <span style={{ color: "var(--muted)" }}>（{it.fetched_on} 取得）</span>}
             </p>
 
+            <p style={{ fontSize: 12, marginTop: 6, color: "var(--muted)" }}>
+              追加：{fmt(it.created_at)}
+              {it.decided_at && `　／　${STATUS_LABEL[it.status] ?? "判断"}：${fmt(it.decided_at)}`}
+            </p>
             {it.status === "approved" && it.kind !== "nochange" && (
               <p style={{ fontSize: 12.5, marginTop: 8 }}>
                 <span className="tag ok">反映中</span>
@@ -118,7 +184,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
 
             <form action={decideKnowhowAction} style={{ marginTop: 14, display: "grid", gap: 10 }}>
               <input type="hidden" name="id" value={it.id} />
-              <input type="hidden" name="back" value={status} />
+              <input type="hidden" name="back" value={back} />
               {it.form === "legal_rule" && it.rule ? (
                 <div style={{ fontSize: 12.5, background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 6, padding: "10px 12px", lineHeight: 1.8 }}>
                   <b>法令チェックの辞書に追加されるルール</b>

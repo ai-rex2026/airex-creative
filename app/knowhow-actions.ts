@@ -21,8 +21,14 @@ export async function decideKnowhowAction(fd: FormData): Promise<void> {
   const id = String(fd.get("id") ?? "");
   const decision = String(fd.get("decision") ?? "") as Decision;
   const note = String(fd.get("note") ?? "").slice(0, 500);
-  const back = String(fd.get("back") ?? "pending");
-  const fail = (m: string) => redirect(`/admin/knowhow?s=${encodeURIComponent(back)}&err=${encodeURIComponent(m)}`);
+  // 絞り込み（状態・カテゴリ・日付）は、操作のあとも保つ。許可したキーだけ受け取る
+  const keep = new URLSearchParams();
+  const src = new URLSearchParams(String(fd.get("back") ?? ""));
+  for (const k of ["s", "a", "by", "from", "to"]) {
+    const v = src.get(k);
+    if (v && /^[A-Za-z0-9_-]{1,12}$/.test(v)) keep.set(k, v);
+  }
+  const fail = (m: string) => redirect(`/admin/knowhow?${keep.toString()}${keep.size ? "&" : ""}err=${encodeURIComponent(m)}`);
   if (!id || !(decision in DECISIONS)) return fail("操作が不正です");
 
   const sb = createAdminClient();
@@ -67,5 +73,5 @@ export async function decideKnowhowAction(fd: FormData): Promise<void> {
   await sb.from("knowhow_log").insert({ item_id: id, action: decision, by_user: userId, note });
   revalidatePath("/admin/knowhow");
   // 同じ URL への redirect は画面が更新されないことがあるので、結果つきの別の URL へ送る（結果は画面の上に出す）
-  redirect(`/admin/knowhow?s=${encodeURIComponent(back)}&done=${decision}&t=${Date.now()}`);
+  redirect(`/admin/knowhow?${keep.toString()}${keep.size ? "&" : ""}done=${decision}&t=${Date.now()}`);
 }
