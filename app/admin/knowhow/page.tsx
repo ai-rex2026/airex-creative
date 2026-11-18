@@ -54,7 +54,9 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
   const from = dateOk(sp.from);
   const to = dateOk(sp.to);
   const dateCol = by === "decided" ? "decided_at" : "created_at";
-  const filtered = <T extends { eq: (c: string, v: string) => T; gte: (c: string, v: string) => T; lte: (c: string, v: string) => T }>(q: T): T => {
+  // Supabase のクエリ型は深く、ジェネリクスで包むと型の展開が終わらないので、ここだけ any で受ける
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const filtered = (q: any) => {
     let r = q;
     if (area) r = r.eq("area", area);
     if (from) r = r.gte(dateCol, `${from}T00:00:00+09:00`);
@@ -70,7 +72,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
   const back = qs({});
 
   const sb = createAdminClient();
-  const [{ data }, counts] = await Promise.all([
+  const [{ data }, counts]: [{ data: unknown }, { data: { status: string }[] | null }] = await Promise.all([
     filtered(sb.from("knowhow_items").select("*").eq("status", status)).order(by === "decided" ? "decided_at" : "created_at", { ascending: false }).limit(100),
     filtered(sb.from("knowhow_items").select("status")).limit(2000),
   ]);
