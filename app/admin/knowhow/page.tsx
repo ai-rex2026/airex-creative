@@ -49,7 +49,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
   for (const r of counts.data ?? []) n.set(String(r.status), (n.get(String(r.status)) ?? 0) + 1);
 
   return (
-    <Shell active="settings">
+    <Shell active="admin">
       <div style={{ maxWidth: 760, margin: "0 auto" }}>
         <h2 style={{ fontSize: 20 }}>ノウハウ更新案</h2>
         <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 6, lineHeight: 1.9 }}>

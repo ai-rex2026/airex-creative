@@ -48,10 +48,13 @@ const CSS = `
 export function MobileNav({
   active,
   account,
+  admin = false,
 }: {
-  active: "new" | "summary" | "analysis" | "stores" | "seo" | "aio" | "lpo" | "ads" | "affiliate" | "sns" | "settings";
+  active: "new" | "summary" | "analysis" | "stores" | "seo" | "aio" | "lpo" | "ads" | "affiliate" | "sns" | "settings" | "admin";
   /** メールアドレス。ゲストなら「ゲスト」 */
   account: string;
+  /** 管理者だけ「更新案の確認」を出す */
+  admin?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -137,6 +140,11 @@ export function MobileNav({
             ))}
 
             <div className="mnav-foot">
+              {admin && (
+                <Link href="/admin/knowhow" className={`mnav-link${active === "admin" ? " on" : ""}`} onClick={close}>
+                  更新案の確認
+                </Link>
+              )}
               <Link href="/settings" className={`mnav-link${active === "settings" ? " on" : ""}`} onClick={close}>
                 ⚙ 設定
               </Link>
