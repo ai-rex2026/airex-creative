@@ -1674,6 +1674,12 @@ export function Report({
                                   {x.severity}
                                 </span>
                               )}
+                              {typeof x !== "string" && x.caution && (
+                                <div className="note warn" style={{ marginTop: 4 }}>
+                                  <i className="i">!</i>
+                                  <span>{x.caution}</span>
+                                </div>
+                              )}
                             </li>
                           ))}
                         </ul>

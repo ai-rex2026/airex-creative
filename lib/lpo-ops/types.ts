@@ -73,10 +73,10 @@ export function planItemKey(area: string, text: string): string {
   return `i${(h >>> 0).toString(36)}`;
 }
 
-export function planItems(g: LpoGroup): { key: string; text: string; severity: string | null }[] {
+export function planItems(g: LpoGroup): { key: string; text: string; severity: string | null; caution: string | null }[] {
   return (g.items ?? []).map((x) => {
     const text = typeof x === "string" ? x : x.text;
-    return { key: planItemKey(g.area, text), text, severity: typeof x === "string" ? null : x.severity };
+    return { key: planItemKey(g.area, text), text, severity: typeof x === "string" ? null : x.severity, caution: typeof x === "string" ? null : (x.caution ?? null) };
   });
 }
 

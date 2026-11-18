@@ -168,6 +168,12 @@ export function PlanPanel({ project }: { project: LpoProject }) {
                         {x.severity}
                       </span>
                     )}
+                    {x.caution && (
+                      <span className="note warn" style={{ display: "block", marginTop: 4 }}>
+                        <i className="i">!</i>
+                        <span>{x.caution}</span>
+                      </span>
+                    )}
                   </span>
                 </li>
               ))}
