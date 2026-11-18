@@ -4,6 +4,7 @@ import { Shell } from "@/components/Shell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/tier";
 import { decideKnowhowAction } from "@/app/knowhow-actions";
+import { manualStatus, type ManualRow } from "@/lib/knowhow-manual";
 
 export const metadata = { title: "ノウハウ更新案｜AI-REX Studio" };
 export const dynamic = "force-dynamic";
@@ -72,6 +73,10 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
   const back = qs({});
 
   const sb = createAdminClient();
+  const { data: mrows } = await sb.from("knowhow_manual_checks").select("key,title,interval_days,last_checked_at").limit(100);
+  const overdue = ((mrows ?? []) as Pick<ManualRow, "key" | "title" | "interval_days" | "last_checked_at">[])
+    .map((m) => ({ m, st: manualStatus(m) }))
+    .filter((x) => x.st.overdue);
   const [{ data }, counts]: [{ data: unknown }, { data: { status: string }[] | null }] = await Promise.all([
     filtered(sb.from("knowhow_items").select("*").eq("status", status)).order(by === "decided" ? "decided_at" : "created_at", { ascending: false }).limit(100),
     filtered(sb.from("knowhow_items").select("status")).limit(2000),
@@ -91,6 +96,12 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
         <p style={{ fontSize: 12.5, marginTop: 6 }}>
           <Link href="/admin/knowhow/sources" style={{ textDecoration: "underline" }}>確認している公式ページ（週1回・変わったときだけ案を作成）</Link>
         </p>
+        {overdue.length > 0 && (
+          <p style={{ marginTop: 10, fontSize: 13, color: "var(--ng)", lineHeight: 1.8 }}>
+            点検の期限が切れているページが {overdue.length} 件あります：{overdue.map((x) => `${x.m.title}（${x.st.label}）`).join("、")}。
+            <Link href="/admin/knowhow/sources" style={{ textDecoration: "underline", marginLeft: 6 }}>点検する</Link>
+          </p>
+        )}
         {sp.err && <p style={{ marginTop: 12, fontSize: 13, color: "var(--ng)" }}>{sp.err}</p>}
         {sp.done && DONE[sp.done] && (
           <p className="tag ok" style={{ marginTop: 12 }}>
