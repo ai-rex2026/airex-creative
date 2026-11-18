@@ -61,7 +61,7 @@ export default async function KnowhowSources({ searchParams }: { searchParams: P
 
         <h3 style={{ fontSize: 16, marginTop: 22 }}>手動で点検するページ</h3>
         <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.9 }}>
-          サーバーから自動で取れないページです。ブラウザで開いて確認し、「点検しました」で日付を残します。前回から期限（既定14日）を過ぎると赤く表示します。変更を見つけたら、更新案として受信箱に入れます。
+          サーバーから自動で取れないページです。ブラウザで開いて確認し、「点検しました」で日付を残します。前回の点検から14日（ページごとに変更可）たつと、経過日数を赤く表示します。変更を見つけたら、更新案として受信箱に入れます。
         </p>
         {manual.map(({ m, st }) => (
           <section key={m.key} style={{ marginTop: 12, background: "#fff", border: `1px solid ${st.overdue ? "var(--ng)" : "var(--line)"}`, borderRadius: 6, padding: "16px 18px" }}>
@@ -74,7 +74,7 @@ export default async function KnowhowSources({ searchParams }: { searchParams: P
               <a href={m.url} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>{m.url}</a>
             </p>
             <p style={{ fontSize: 12, marginTop: 6, color: "var(--muted)", lineHeight: 1.8 }}>
-              前回の点検：{fmt(m.last_checked_at)}{m.last_checked_at ? `（${m.last_result === "changed" ? "変更あり" : "変更なし"}）` : ""}　／　期限：{m.interval_days}日ごと
+              前回の点検：{fmt(m.last_checked_at)}{m.last_checked_at ? `（${m.last_result === "changed" ? "変更あり" : "変更なし"}）` : ""}　／　{m.interval_days}日経過で警告
             </p>
             {m.note && <p style={{ fontSize: 12, color: "var(--muted)" }}>{m.note}</p>}
             {m.last_memo && <p style={{ fontSize: 12, color: "var(--muted)" }}>メモ：{m.last_memo}</p>}
@@ -132,7 +132,7 @@ export default async function KnowhowSources({ searchParams }: { searchParams: P
               ))}
             </select>
             <label>
-              期限 <input className="box" name="days" type="number" min={1} max={90} defaultValue={14} style={{ width: 64, padding: "6px 8px" }} /> 日
+              警告までの日数 <input className="box" name="days" type="number" min={1} max={90} defaultValue={14} style={{ width: 64, padding: "6px 8px" }} /> 日
             </label>
             <button className="btn sm" type="submit">追加</button>
           </div>
