@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkGuardDict } from "@/lib/guardrail";
 import { MAX_APPLIED_TEXT, toRule } from "@/lib/knowhow";
+import { assertPublicUrl } from "@/lib/aio/net";
+import { runKnowhowSources } from "@/lib/knowhow-run";
 import { getTier } from "@/lib/tier";
 
 /**
@@ -74,4 +76,50 @@ export async function decideKnowhowAction(fd: FormData): Promise<void> {
   revalidatePath("/admin/knowhow");
   // 同じ URL への redirect は画面が更新されないことがあるので、結果つきの別の URL へ送る（結果は画面の上に出す）
   redirect(`/admin/knowhow?${keep.toString()}${keep.size ? "&" : ""}done=${decision}&t=${Date.now()}`);
+}
+
+// ---- 確認する公式ページの管理（管理者だけ） ----
+const AREAS = ["meo", "seo", "aio", "lpo", "image", "legal", "ads"];
+async function adminOnly() {
+  const { tier } = await getTier();
+  if (tier !== "admin") throw new Error("権限がありません");
+  return createAdminClient();
+}
+const back = (q: string) => redirect(`/admin/knowhow/sources?${q}&t=${Date.now()}`);
+
+export async function addKnowhowSourceAction(fd: FormData): Promise<void> {
+  const sb = await adminOnly();
+  const title = String(fd.get("title") ?? "").trim().slice(0, 80);
+  const area = String(fd.get("area") ?? "");
+  const official = fd.get("official") === "on";
+  let url = "";
+  try {
+    url = assertPublicUrl(String(fd.get("url") ?? "").trim(), { httpsOnly: true }).toString();
+  } catch {
+    return back("err=" + encodeURIComponent("URL が正しくありません（https の公開ページだけ）"));
+  }
+  if (!title || !AREAS.includes(area)) return back("err=" + encodeURIComponent("名前とカテゴリを入れてください"));
+  const key = `u-${Date.now().toString(36)}`;
+  const { error } = await sb.from("knowhow_sources").insert({ key, area, title, url, official });
+  if (error) return back("err=" + encodeURIComponent("保存に失敗しました"));
+  revalidatePath("/admin/knowhow/sources");
+  back("done=added");
+}
+
+export async function toggleKnowhowSourceAction(fd: FormData): Promise<void> {
+  const sb = await adminOnly();
+  const key = String(fd.get("key") ?? "");
+  const enabled = fd.get("enabled") === "1";
+  await sb.from("knowhow_sources").update({ enabled, fail_count: 0 }).eq("key", key);
+  revalidatePath("/admin/knowhow/sources");
+  back("done=toggled");
+}
+
+/** 今すぐ確認（直近に確認したページも対象。AI を呼ぶのは変わったページだけで、1回6件まで） */
+export async function runKnowhowSourcesAction(): Promise<void> {
+  await adminOnly();
+  const r = await runKnowhowSources({ force: true, deadlineMs: 100_000 });
+  revalidatePath("/admin/knowhow/sources");
+  revalidatePath("/admin/knowhow");
+  back(`ran=${r.checked}&changed=${r.changed}&base=${r.baseline}&err_n=${r.errors}&created=${r.created}`);
 }

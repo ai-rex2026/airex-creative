@@ -47,6 +47,10 @@
     {
       "path": "/api/cron/aio-note-refs",
       "schedule": "20 18 * * *"
+    },
+    {
+      "path": "/api/cron/knowhow-sources",
+      "schedule": "40 18 * * 0"
     }
   ]
 }

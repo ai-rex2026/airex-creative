@@ -31,7 +31,7 @@ type Item = {
   rule: { pattern?: string; reason?: string; law?: string; suggestion?: string } | null;
 };
 
-const AREA: Record<string, string> = { meo: "MEO", seo: "SEO", aio: "AIO", lpo: "LPO", image: "画像生成", legal: "法令" };
+const AREA: Record<string, string> = { meo: "MEO", seo: "SEO", aio: "AIO", lpo: "LPO", image: "画像生成", legal: "法令", ads: "広告" };
 const KIND: Record<string, string> = { add: "追加", change: "変更", nochange: "変更なし" };
 const EVIDENCE: Record<string, string> = { official: "公式の根拠", vendor: "事業者・解説の報告", opinion: "意見・分析" };
 const DONE: Record<string, string> = { approve: "承認しました。反映中です", hold: "保留にしました", reject: "却下しました", reset: "判断待ちに戻しました" };
@@ -87,6 +87,9 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
         <h2 style={{ fontSize: 20 }}>ノウハウ更新案</h2>
         <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 6, lineHeight: 1.9 }}>
           調査で見つけた更新案を、1件ずつ判断します。承認すると、領域ごとのAIへの指示と法令チェックに反映されます（「反映される文」が、そのまま追加されます）。「判断待ちに戻す」か「却下」にすると、すぐ外れます。
+        </p>
+        <p style={{ fontSize: 12.5, marginTop: 6 }}>
+          <Link href="/admin/knowhow/sources" style={{ textDecoration: "underline" }}>確認している公式ページ（週1回・変わったときだけ案を作成）</Link>
         </p>
         {sp.err && <p style={{ marginTop: 12, fontSize: 13, color: "var(--ng)" }}>{sp.err}</p>}
         {sp.done && DONE[sp.done] && (

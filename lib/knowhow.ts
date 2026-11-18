@@ -6,7 +6,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
  *  - form=note … 領域ごとの AI への指示の末尾に、短い文を足す（knowhowBlock / withKnowhow）
  *  - form=legal_rule … 法令チェックの辞書に足す（loadLegalRules。lib/guardrail.ts が使う）
  */
-export type KnowhowArea = "meo" | "seo" | "aio" | "lpo" | "image" | "legal";
+/** ads は広告運用（画面ができたら、承認した案の反映先をつなぐ。いまは案を溜めるだけ） */
+export type KnowhowArea = "meo" | "seo" | "aio" | "lpo" | "image" | "legal" | "ads";
 
 /** 1回の呼び出しに足す量の上限（指示が長くなりすぎて、本来の指示が薄まらないように） */
 export const MAX_NOTES = 8;
