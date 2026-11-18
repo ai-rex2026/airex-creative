@@ -167,6 +167,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - 左メニュー「LPO運用」（`/lpo`・`/lpo/[id]?tab=lp|speed|heatmap|results`）。表は `lpo_projects`（LP ごと。`plan`＝LP改善・`plan_done`＝済みの key・`speed`／`speed_history`＝表示速度と推移）、`lpo_heatmaps`、`lpo_clarity`（本人のセッションから読めない表・`sealToken`）。SQL は `Docs/sql/2026-11-11-lpo-ops.sql`、画像は非公開バケット `lpo-heatmaps`
 - 登録：分析レポートから取り込む（`createLpoFromAnalysisAction`。そのレポートの LP改善・表示速度を引き継ぎ、AI・計測なし。レポートの LP改善の章にも入口のボタン）か、URL から（`buildLpoAction`：サイトの読み取り → 何を売っているか → LP改善を工程ごとに保存し、済んだ工程は飛ばす。速度は `measureSpeedAction`＝PageSpeed Insights）
+- LP改善の指摘への辞書チェック（2026-11-18・`lib/lpo-guard.ts`）：`generateLpo` が出した指摘を、生成と同時に法令チェックの辞書（`checkGuardDict`。承認済みの法令ルール込み）に通し、引っかかった指摘には `LpoItem.caution`（注意文）を付ける。指摘は消さない（「症例写真を載せる」は助言として自然でも、医療広告の制限がある語のため注意を出す）。AI は呼ばない。実測のグループ（セキュリティ・表示速度）は対象外。辞書の読み込みに失敗しても指摘は返す。画面は LPO運用の「LP改善」と、レポートの LP改善の章の両方に出す。以前に保存した計画には注意は付かない（作り直すと付く）
 - ヒートマップ（`lib/lpo-ops/`）：Microsoft Clarity の Data Export API（直近3日・1プロジェクト1日10回・URL ごとの指標だけで画像や座標は取れない）を URL で絞って保存 → AI が改善案（`analyzeClarity`）。同じ対象の取得は20時間に1回まで。数字を先に保存してから AI。ほかのツール（Hotjar・Ptengine 等）は画面キャプチャを取り込み、ブラウザで上から順に分割（幅1200px・高さ1800px・最大8枚・合計3.8MB 以下に収まるまで画質と幅を下げる）して Sonnet に読ませる（`analyzeHeatmapImages`）。画像を先に保存し、AI が失敗しても「改善案を作り直す」でやり直せる。検証は `HeatmapDeps`・`fetchClarity` の fetcher を差し替えて行う
 
 ## 広告運用 ＞ バナー制作（2026-11-11 追記）

@@ -1,5 +1,6 @@
 import { askJson } from "./anthropic";
 import { withKnowhow } from "./knowhow";
+import { annotateLpoGuard } from "./lpo-guard";
 import type { Diagnosis } from "./types";
 import type { SiteScan } from "./site-scan";
 import type { GscData } from "./google";
@@ -18,7 +19,12 @@ import type { MeoScan } from "./meo";
  * 生成時に判定させる）を受けて追加。lib/summary-tab.ts の LP スコア算出が使う。
  */
 export type LpoSeverity = "軽" | "中" | "重";
-export type LpoItem = { text: string; severity: LpoSeverity };
+export type LpoItem = {
+  text: string;
+  severity: LpoSeverity;
+  /** 法令チェックの辞書に引っかかったときの注意（lib/lpo-guard.ts）。無ければ付かない */
+  caution?: string;
+};
 export type LpoGroup = {
   area: "ファーストビュー" | "CTA・フォーム" | "コンテンツの信頼性" | "表示速度" | "セキュリティ" | string;
   /** 旧形式の分析（items が string[] だった時代）もそのまま読めるよう、両方を許容する */
@@ -73,7 +79,14 @@ ${site ? `サイトのタイトル: ${site.title}\n説明: ${site.description}` 
     { maxTokens: 3500 }
   );
 
-  return { groups: [...(res.groups ?? []), ...measured] };
+  // 生成と同時に辞書を通す（事後検知にしない）。辞書の読み込みに失敗しても指摘は返す
+  let groups = res.groups ?? [];
+  try {
+    groups = await annotateLpoGuard(groups, d.industry);
+  } catch {
+    // 注意が付かないだけで、指摘そのものは落とさない
+  }
+  return { groups: [...groups, ...measured] };
 }
 
 // ── SEO/MEO キーワードプラン ──────────────────────
