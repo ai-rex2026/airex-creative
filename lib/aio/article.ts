@@ -1,4 +1,8 @@
-import { askJson } from "../anthropic";
+import { askJson as rawAskJson } from "../anthropic";
+import { withKnowhow } from "../knowhow";
+
+/** 承認済みの SEO・AIO のノウハウを、記事づくりの指示に足す（lib/knowhow.ts） */
+const askJson = withKnowhow(rawAskJson, ["seo", "aio"]);
 import { checkGuard } from "../guardrail";
 import { normalizeJapanese } from "../meo-ops/japanese";
 import type { GuardVerdict } from "../types";

@@ -25,6 +25,9 @@ type Item = {
   decision_note: string;
   decided_at: string | null;
   fetched_on: string | null;
+  form: string;
+  applied_text: string;
+  rule: { pattern?: string; reason?: string; law?: string; suggestion?: string } | null;
 };
 
 const AREA: Record<string, string> = { meo: "MEO", seo: "SEO", aio: "AIO", lpo: "LPO", image: "画像生成", legal: "法令" };
@@ -53,7 +56,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
       <div style={{ maxWidth: 760, margin: "0 auto" }}>
         <h2 style={{ fontSize: 20 }}>ノウハウ更新案</h2>
         <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 6, lineHeight: 1.9 }}>
-          調査で見つけた更新案を、1件ずつ判断します。承認しても、いまはプロンプトやチェックに自動では反映しません（反映は内容を確認して実装します）。
+          調査で見つけた更新案を、1件ずつ判断します。承認すると、領域ごとのAIへの指示と法令チェックに反映されます（「反映される文」が、そのまま追加されます）。「判断待ちに戻す」か「却下」にすると、すぐ外れます。
         </p>
         {sp.err && <p style={{ marginTop: 12, fontSize: 13, color: "var(--ng)" }}>{sp.err}</p>}
 
@@ -101,9 +104,34 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
               {it.fetched_on && <span style={{ color: "var(--muted)" }}>（{it.fetched_on} 取得）</span>}
             </p>
 
+            {it.status === "approved" && it.kind !== "nochange" && (
+              <p style={{ fontSize: 12.5, marginTop: 8 }}>
+                <span className="tag ok">反映中</span>
+              </p>
+            )}
+
             <form action={decideKnowhowAction} style={{ marginTop: 14, display: "grid", gap: 10 }}>
               <input type="hidden" name="id" value={it.id} />
               <input type="hidden" name="back" value={status} />
+              {it.form === "legal_rule" && it.rule ? (
+                <div style={{ fontSize: 12.5, background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 6, padding: "10px 12px", lineHeight: 1.8 }}>
+                  <b>法令チェックの辞書に追加されるルール</b>
+                  <div style={{ marginTop: 4 }}>
+                    検出する表現：<code>{it.rule.pattern}</code>
+                    <br />
+                    理由：{it.rule.reason}（{it.rule.law}）
+                    <br />
+                    言い換え：{it.rule.suggestion}
+                  </div>
+                </div>
+              ) : it.kind === "nochange" ? (
+                <p style={{ fontSize: 12.5, color: "var(--muted)" }}>「変更なし」の案なので、承認してもルールには何も追加されません（判断の記録のみ）。</p>
+              ) : (
+                <label style={{ fontSize: 12.5, display: "grid", gap: 4 }}>
+                  <b>反映される文（承認すると、{AREA[it.area] ?? it.area}のAIへの指示に追加されます。直せます・200文字まで）</b>
+                  <textarea className="box" name="applied_text" rows={3} maxLength={200} defaultValue={it.applied_text} />
+                </label>
+              )}
               <textarea className="box" name="note" rows={2} placeholder="メモ（任意）" defaultValue={it.decision_note} />
               {it.risk === "legal" && it.status !== "approved" && (
                 <label style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "flex-start" }}>

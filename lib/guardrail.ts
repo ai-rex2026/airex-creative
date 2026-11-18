@@ -1,4 +1,5 @@
 import { askJson, MODEL_FAST } from "./anthropic";
+import { cachedLegalRules, loadLegalRules } from "./knowhow";
 import type { GuardHit, GuardVerdict, Industry } from "./types";
 
 /**
@@ -51,7 +52,9 @@ const BY_INDUSTRY: Record<Industry, Rule[]> = {
 };
 
 function dictScan(texts: string[], industry: Industry): GuardHit[] {
-  const rules = [...COMMON, ...BY_INDUSTRY[industry]];
+  // 管理者が承認した法令ルール（lib/knowhow.ts）も辞書に加える
+  const extra = cachedLegalRules().filter((r) => !r.industries?.length || r.industries.includes(industry));
+  const rules: Rule[] = [...COMMON, ...BY_INDUSTRY[industry], ...extra];
   const hits: GuardHit[] = [];
   for (const t of texts) {
     for (const r of rules) {
@@ -83,6 +86,7 @@ export function checkGuardDict(texts: string[], industry: Industry): GuardHit[] 
 }
 
 export async function checkGuard(texts: string[], industry: Industry): Promise<GuardVerdict> {
+  await loadLegalRules();
   const dictHits = dedupe(dictScan(texts, industry));
   let aiHits: GuardHit[] = [];
   try {
