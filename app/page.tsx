@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Home } from "@/components/Home";
+import { isGuest } from "@/lib/tier-core";
 
 // startAnalysis の after() で分析を走らせるため、実行時間を確保する
 export const maxDuration = 300;
@@ -13,7 +14,7 @@ export default async function Page() {
 
   // ログイン済みの人にトップの「ログイン」ボタンを見せると、
   // ログインに失敗したように見える。一覧へ送る
-  if (user && !user.is_anonymous) redirect("/analysis");
+  if (!isGuest(user)) redirect("/analysis");
 
   return <Home />;
 }

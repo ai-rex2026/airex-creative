@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { isAdPlatform, missingEnv, platformDef } from "@/lib/ads/platforms";
 import { buildAuthUrl, redirectUriFor, xAuthorizeUrl, xRequestToken } from "@/lib/ads/oauth";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * 広告媒体の連携を始める。設定画面の「連携する」から来て、媒体の認可画面へ送る。
@@ -24,7 +25,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ platform: strin
   } = await sb.auth.getUser();
   if (!user) return NextResponse.redirect(new URL("/login?callbackUrl=%2Fsettings", url.origin));
   // 広告アカウントのトークンは、ゲスト（ログアウトすると開けなくなる一時アカウント）には預からない
-  if (user.is_anonymous) return back("広告アカウントを連携するには、先に無料登録してください");
+  if (isGuest(user)) return back("広告アカウントを連携するには、先に無料登録してください");
 
   const redirectUri = redirectUriFor(platform, req.url);
   let authUrl: string;

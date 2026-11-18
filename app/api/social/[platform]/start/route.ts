@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isSnsPlatform, snsPlatformDef } from "@/lib/social-connect/platforms";
 import { credsFor } from "@/lib/social-connect/app-creds";
 import { buildAuthUrl, pkcePair, redirectUriFor } from "@/lib/social-connect/oauth";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * 公式SNSアカウントの連携を始める。設定画面の「連携する」から来て、各SNSの認可画面へ送る。
@@ -25,7 +26,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ platform: strin
   } = await sb.auth.getUser();
   if (!user) return NextResponse.redirect(new URL("/login?callbackUrl=%2Fsettings", url.origin));
   // SNSアカウントのトークンは、ゲスト（ログアウトすると開けなくなる一時アカウント）には預からない
-  if (user.is_anonymous) return back("SNSアカウントを連携するには、先に無料登録してください");
+  if (isGuest(user)) return back("SNSアカウントを連携するには、先に無料登録してください");
 
   // 自社のアプリの鍵があればそれで、無ければ共通のアプリで連携する
   const creds = await credsFor(user.id, platform);

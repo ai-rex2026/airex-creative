@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/Shell";
 import { INDUSTRY_LABEL, type Industry } from "@/lib/types";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "店舗｜AI-REX Studio" };
 
@@ -21,7 +22,7 @@ export default async function StoresPage() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect("/login?callbackUrl=%2Fstores");
-  if (user.is_anonymous) redirect("/login?mode=signup&callbackUrl=%2Fstores");
+  if (isGuest(user)) redirect("/login?mode=signup&callbackUrl=%2Fstores");
 
   const { data } = await sb
     .from("stores")

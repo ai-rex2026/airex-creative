@@ -34,6 +34,7 @@ import {
   type TiktokCampaignMetric,
   type TiktokDailyMetric,
 } from "@/lib/ads/tiktok";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * Google 広告：選んだアカウントのキャンペーン別実績（読み取りのみ）。
@@ -62,7 +63,7 @@ export async function googlePerformance(
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return { results: [], error: "ログインしてください" };
+  if (isGuest(user)) return { results: [], error: "ログインしてください" };
   const creds = await getAdCredentials(user.id, "google");
   if (!creds) return { results: [], error: "Google 広告と連携してください" };
 
@@ -117,7 +118,7 @@ export async function yahooPerformance(
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return { results: [], error: "ログインしてください" };
+  if (isGuest(user)) return { results: [], error: "ログインしてください" };
   const creds = await getAdCredentials(user.id, "yahoo");
   if (!creds) return { results: [], error: "ヤフーLINE広告と連携してください" };
 
@@ -169,7 +170,7 @@ export async function microsoftPerformance(
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return { results: [], error: "ログインしてください" };
+  if (isGuest(user)) return { results: [], error: "ログインしてください" };
   const creds = await getAdCredentials(user.id, "microsoft");
   if (!creds) return { results: [], error: "Microsoft 広告と連携してください" };
 
@@ -221,7 +222,7 @@ export async function metaPerformance(
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return { results: [], error: "ログインしてください" };
+  if (isGuest(user)) return { results: [], error: "ログインしてください" };
   const creds = await getAdCredentials(user.id, "meta");
   if (!creds) return { results: [], error: "Meta 広告と連携してください" };
 
@@ -272,7 +273,7 @@ export async function xPerformance(
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return { results: [], error: "ログインしてください" };
+  if (isGuest(user)) return { results: [], error: "ログインしてください" };
   const creds = await getAdCredentials(user.id, "x");
   if (!creds) return { results: [], error: "X 広告と連携してください" };
   if (!creds.tokenSecret) return { results: [], error: "連携情報が壊れています。お手数ですが、もう一度連携し直してください" };
@@ -326,7 +327,7 @@ export async function tiktokPerformance(
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return { results: [], error: "ログインしてください" };
+  if (isGuest(user)) return { results: [], error: "ログインしてください" };
   const creds = await getAdCredentials(user.id, "tiktok");
   if (!creds) return { results: [], error: "TikTok 広告と連携してください" };
 

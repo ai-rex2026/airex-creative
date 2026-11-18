@@ -7,6 +7,7 @@ import { fetchHtml, publicFetch } from "@/lib/aio/net";
 import type { LinkCollectDeps } from "@/lib/seo/links/collect";
 import { buildCandidates, collectBatch, judgeBatch, retryFailedPages, startCollect } from "@/lib/seo/links/run";
 import { claudeJudge } from "@/lib/seo/links/claude-judge";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * 内部リンク分析の Server Action（2026-10-27）。1回の呼び出しは数件だけ処理して返し、画面が繰り返し呼ぶ
@@ -22,7 +23,7 @@ async function owned(projectId: string) {
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) throw new Error("ログイン（無料登録）が必要です");
+  if (isGuest(user)) throw new Error("ログイン（無料登録）が必要です");
   const { data } = await sb.from("aio_projects").select(AIO_PROJECT_COLUMNS).eq("id", projectId).eq("owner_id", user.id).maybeSingle();
   if (!data) throw new Error("この対象を操作する権限がありません");
   return { sb, project: rowToProject(data as Record<string, unknown>) };

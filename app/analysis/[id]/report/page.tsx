@@ -8,6 +8,7 @@ import { evaluateCategories, supplementFromLedger, withAdAccounts, withAio } fro
 import { adConnections } from "@/app/ad-actions";
 import { AD_PLATFORMS } from "@/lib/ads/platforms";
 import { buildLedger } from "@/lib/measure-sources";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "レポート｜AI-REX Studio" };
 
@@ -55,10 +56,10 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
     : null;
 
   // 「広告」の評価（広告アカウントの連携の有無）。連携は利用者ごとなので、開くたびに作る
-  const adNames = (user.is_anonymous ? [] : await adConnections()).map(
+  const adNames = (isGuest(user) ? [] : await adConnections()).map(
     (c) => AD_PLATFORMS.find((p) => p.id === c.platform)?.name ?? c.platform
   );
-  const evaluationsShown = withAio(withAdAccounts(categoryEvaluations, adNames, !!user.is_anonymous, a.ad_review, a.public_ads), a.aio, !!user.is_anonymous);
+  const evaluationsShown = withAio(withAdAccounts(categoryEvaluations, adNames, isGuest(user), a.ad_review, a.public_ads), a.aio, isGuest(user));
 
   // 分析データの打ち手のうち施策に使われていないものを、効果中の施策として足す（AIは使わない）。
   // 作成済みの分析は、開いたときに1回だけ足して保存する（以後は足すものが無いので何もしない）
@@ -77,7 +78,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
 
   return (
     <Shell active="analysis">
-      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={!!user.is_anonymous} site={a.site} seo={a.seo} plan={a.media_plan} summary={a.summary} competitors={a.competitors} tactics={a.tactics} adOps={a.ad_ops} meo={a.meo} lpo={a.lpo} keywords={a.keywords} seoArticles={a.seo_articles} industryVertical={a.industry_vertical} linePlan={a.line_plan} suggests={a.suggests} outreach={a.outreach} pricing={a.pricing} speed={a.speed} social={a.social} socialInsights={a.social_insights} imageScan={a.image_scan} customImages={a.custom_images} margin={a.margin} kpi={a.kpi} measures={measures} categoryEvaluations={evaluationsShown} measuresDone={a.measures_done} extraInputs={a.extra_inputs} measureLog={a.measure_log} budget={a.budget} id={a.id} gsc={a.gsc} ga4={a.ga4} snsPlan={a.sns_plan} adReview={a.ad_review} publicAds={a.public_ads} aio={a.aio ?? null} hiddenSections={a.report_prefs?.hidden ?? []} />
+      <Report d={a.diagnosis} copies={a.copies} url={a.url} isGuest={isGuest(user)} site={a.site} seo={a.seo} plan={a.media_plan} summary={a.summary} competitors={a.competitors} tactics={a.tactics} adOps={a.ad_ops} meo={a.meo} lpo={a.lpo} keywords={a.keywords} seoArticles={a.seo_articles} industryVertical={a.industry_vertical} linePlan={a.line_plan} suggests={a.suggests} outreach={a.outreach} pricing={a.pricing} speed={a.speed} social={a.social} socialInsights={a.social_insights} imageScan={a.image_scan} customImages={a.custom_images} margin={a.margin} kpi={a.kpi} measures={measures} categoryEvaluations={evaluationsShown} measuresDone={a.measures_done} extraInputs={a.extra_inputs} measureLog={a.measure_log} budget={a.budget} id={a.id} gsc={a.gsc} ga4={a.ga4} snsPlan={a.sns_plan} adReview={a.ad_review} publicAds={a.public_ads} aio={a.aio ?? null} hiddenSections={a.report_prefs?.hidden ?? []} />
     </Shell>
   );
 }

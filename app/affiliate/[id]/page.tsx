@@ -11,6 +11,7 @@ import { BoardView } from "@/components/affiliate/BoardView";
 import { InfoForm } from "@/components/affiliate/InfoForm";
 import { MediaLedger } from "@/components/affiliate/MediaLedger";
 import { SuggestPanel, type SuggestRow } from "@/components/affiliate/SuggestPanel";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "アフィリエイト運用｜AI-REX Studio" };
 // 収集は1キーワードずつ Server Action で実行する（検索→AI判定。長引くことがある）
@@ -34,7 +35,7 @@ export default async function CampaignPage({ params, searchParams }: { params: P
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect(`/login?callbackUrl=%2Faffiliate%2F${id}`);
-  if (user.is_anonymous) redirect(`/login?mode=signup&callbackUrl=%2Faffiliate%2F${id}`);
+  if (isGuest(user)) redirect(`/login?mode=signup&callbackUrl=%2Faffiliate%2F${id}`);
 
   const brief = await loadCampaignBrief(sb, id);
   if (!brief) notFound();

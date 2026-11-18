@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { Shell } from "@/components/Shell";
 import { HEATMAP_BUCKET, LPO_HEATMAP_COLUMNS, LPO_PROJECT_COLUMNS, rowToHeatmap, rowToLpoProject } from "@/lib/lpo-ops/types";
 import { PlanPanel, SpeedPanel, HeatmapPanel, ResultsPanel, LpoHeader } from "@/components/lpo/LpoPanels";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "LPO運用｜AI-REX Studio" };
 // 表示速度の計測（最大3分ほど）・ヒートマップ画像の読み取り（AI）を1回の Action で行う
@@ -28,7 +29,7 @@ export default async function LpoProjectPage({ params, searchParams }: { params:
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect(`/login?callbackUrl=${encodeURIComponent(`/lpo/${id}`)}`);
-  if (user.is_anonymous) redirect("/login?mode=signup");
+  if (isGuest(user)) redirect("/login?mode=signup");
 
   const { data } = await sb.from("lpo_projects").select(LPO_PROJECT_COLUMNS).eq("id", id).eq("owner_id", user.id).maybeSingle();
   if (!data) notFound();

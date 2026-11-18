@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/Shell";
 import { listProjects } from "@/lib/aio/store";
 import { INDUSTRY_LABEL } from "@/lib/types";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "SEO運用｜AI-REX Studio" };
 
@@ -17,7 +18,7 @@ export default async function SeoPage() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect("/login?callbackUrl=%2Fseo");
-  if (user.is_anonymous) redirect("/login?mode=signup&callbackUrl=%2Fseo");
+  if (isGuest(user)) redirect("/login?mode=signup&callbackUrl=%2Fseo");
 
   const rows = await listProjects(sb, user.id);
 

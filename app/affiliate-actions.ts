@@ -8,6 +8,7 @@ import { fetchKeywordIdeas, fetchSearchVolume, hasDataForSeo } from "@/lib/affil
 import { htmlToText, normalizeDomain, safeUrl } from "@/lib/affiliate/domain";
 import { isFreshRunning, listEnrichable, runCollectJob, runEnrichEntry, type CollectAutoResult, type EnrichResult, type EnrichableEntry } from "@/lib/affiliate/collect";
 import { meterTo } from "@/lib/affiliate/usage";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * アフィリエイト運用の Server Action（airex-recruiting の調査フェーズを移植）。
@@ -23,7 +24,7 @@ async function ctx(): Promise<{ sb: SupabaseClient; userId: string }> {
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) throw new Error("ログインが必要です");
+  if (isGuest(user)) throw new Error("ログインが必要です");
   return { sb, userId: user.id };
 }
 

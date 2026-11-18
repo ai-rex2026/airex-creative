@@ -21,6 +21,7 @@ import { collectItemFacts } from "@/lib/aio/satellite-facts";
 import { comparisonTable, defaultComparisonDeps, extractCells, planColumns, readSite, searchMissing, type CmpCells, type SitePage } from "@/lib/aio/comparison";
 import { ARTICLE_MONTHLY_LIMIT, isWpKind, type AioArticleImage, type AioChannelKind, type AioSatellite } from "@/lib/aio/content-types";
 import type { AioPlanItem, AioProject } from "@/lib/aio/types";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * AIO の「運用」（記事づくり・WordPress 公開・note・効果と改善）の Server Action。
@@ -38,7 +39,7 @@ async function me() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
-  if (user.is_anonymous) throw new Error("AIO を使うには、先に無料登録してください");
+  if (isGuest(user)) throw new Error("AIO を使うには、先に無料登録してください");
   return { sb, user };
 }
 

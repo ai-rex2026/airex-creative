@@ -13,6 +13,7 @@ import type { SiteScan } from "@/lib/site-scan";
 import { CLARITY_MIN_INTERVAL_MS, fetchClarity } from "@/lib/lpo-ops/clarity";
 import { analyzeClarity, analyzeHeatmapImages, type HeatmapContext } from "@/lib/lpo-ops/heatmap";
 import { HEATMAP_BUCKET, speedPoint, type ClarityMetric, type LpoSpeedPoint } from "@/lib/lpo-ops/types";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * LPO運用（2026-11-11）。工程ごとに保存し、済んだ工程はやり直さない（AGENTS.md の必須ルール）。
@@ -28,7 +29,7 @@ async function owner() {
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) throw new Error("ログインしてください");
+  if (isGuest(user)) throw new Error("ログインしてください");
   return { sb, user };
 }
 

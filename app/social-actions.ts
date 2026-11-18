@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { isSnsPlatform, type SnsPlatform } from "@/lib/social-connect/platforms";
 import { disconnectSns, snsConnectionsFor } from "@/lib/social-connect/tokens";
+import { isGuest } from "@/lib/tier-core";
 
 /** 画面に出してよい形。トークンは含めない */
 export type SnsConnectionView = {
@@ -26,7 +27,7 @@ async function currentUser() {
  */
 export async function snsConnections(): Promise<SnsConnectionView[]> {
   const user = await currentUser();
-  if (!user || user.is_anonymous) return [];
+  if (isGuest(user)) return [];
   try {
     const rows = await snsConnectionsFor(user.id);
     return rows

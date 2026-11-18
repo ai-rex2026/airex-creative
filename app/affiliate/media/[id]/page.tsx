@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/Shell";
 import { MediaEditor } from "@/components/affiliate/MediaEditor";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "メディア｜アフィリエイト運用" };
 
@@ -15,7 +16,7 @@ export default async function MediaPage({ params, searchParams }: { params: Prom
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect(`/login?callbackUrl=%2Faffiliate%2Fmedia%2F${id}`);
-  if (user.is_anonymous) redirect(`/login?mode=signup&callbackUrl=%2Faffiliate%2Fmedia%2F${id}`);
+  if (isGuest(user)) redirect(`/login?mode=signup&callbackUrl=%2Faffiliate%2Fmedia%2F${id}`);
 
   const { data: m } = await sb.from("aff_media").select("*").eq("id", id).maybeSingle();
   if (!m) notFound();

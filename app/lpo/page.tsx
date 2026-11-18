@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/Shell";
 import { LpoCreate } from "@/components/lpo/LpoCreate";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "LPO運用｜AI-REX Studio" };
 // URL から作るときは、サイトの読み取り・何を売っているかの判定・LP改善の作成・表示速度の計測を Action で行う
@@ -15,7 +16,7 @@ export default async function LpoPage() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect("/login?callbackUrl=%2Flpo");
-  if (user.is_anonymous) redirect("/login?mode=signup&callbackUrl=%2Flpo");
+  if (isGuest(user)) redirect("/login?mode=signup&callbackUrl=%2Flpo");
 
   const [{ data: rows }, { data: analyses }] = await Promise.all([
     sb.from("lpo_projects").select("id, name, url, plan, plan_done, speed, created_at").eq("owner_id", user.id).order("created_at", { ascending: false }),

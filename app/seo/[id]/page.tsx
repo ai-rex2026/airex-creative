@@ -16,6 +16,7 @@ import { loadLinkData } from "@/lib/seo/links/store";
 import { KeywordsPanel } from "@/components/seo/KeywordsPanel";
 import { sortKeywords, TARGET_LABEL } from "@/lib/seo/keywords";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isGuest } from "@/lib/tier-core";
 
 export const metadata = { title: "SEO運用｜AI-REX Studio" };
 
@@ -34,7 +35,7 @@ export default async function SeoProjectPage({ params, searchParams }: { params:
     data: { user },
   } = await sb.auth.getUser();
   if (!user) redirect(`/login?callbackUrl=${encodeURIComponent(`/seo/${id}`)}`);
-  if (user.is_anonymous) redirect(`/login?mode=signup&callbackUrl=${encodeURIComponent(`/seo/${id}`)}`);
+  if (isGuest(user)) redirect(`/login?mode=signup&callbackUrl=${encodeURIComponent(`/seo/${id}`)}`);
 
   const data = await loadProject(sb, id);
   if (!data) notFound();

@@ -10,6 +10,7 @@ import { draftSnsPosts } from "@/lib/sns-ops/writer";
 import { checkGuard } from "@/lib/guardrail";
 import type { SnsAccount, SnsPost, SnsSettings } from "@/lib/sns-ops/types";
 import type { Industry } from "@/lib/types";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * SNS運用（/sns）の Server Action。
@@ -24,7 +25,7 @@ async function me() {
     data: { user },
   } = await sb.auth.getUser();
   if (!user) throw new Error("ログインが必要です");
-  if (user.is_anonymous) throw new Error("SNS運用を使うには、先に無料登録してください");
+  if (isGuest(user)) throw new Error("SNS運用を使うには、先に無料登録してください");
   return { sb, user };
 }
 
@@ -36,7 +37,7 @@ export async function snsAccountsAction(): Promise<SnsAccount[]> {
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous) return [];
+  if (isGuest(user)) return [];
   try {
     const rows = await snsConnectionsFor(user.id);
     return rows

@@ -35,6 +35,7 @@ import { AD_PLATFORMS } from "./ads/platforms";
 import { fetchPublicAds, publicAdsNote, readCreatives, reviewPublicAds, type PublicAds } from "./public-ads";
 import { createAdminClient } from "./supabase/admin";
 import { aioDeadline, aioSkipped, analyzeAio, buildAioPrompts, measureAioPrompt, type ReportAio } from "./report-aio";
+import { isGuest } from "@/lib/tier-core";
 
 /** 本番と同じ見た目の短いID（英数20文字） */
 export function newAnalysisId() {
@@ -440,7 +441,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
     // （1回あたり約20円かかり、レポートの該当欄も会員登録で見られる範囲のため）
     if (a.url && !a.public_ads) {
       const { data: owner } = await createAdminClient().auth.admin.getUserById(a.owner_id).catch(() => ({ data: { user: null } }));
-      if (!owner?.user || owner.user.is_anonymous) {
+      if (isGuest(owner?.user)) {
         const skipped: PublicAds = {
           stage: "done",
           fetchedAt: new Date().toISOString(),
@@ -796,7 +797,7 @@ async function tickStep(sb: SupabaseClient, id: string, deadline: number = Date.
       if (!diagnosis) throw new Error("診断結果が見つかりません");
       const { data: owner } = await createAdminClient().auth.admin.getUserById(a.owner_id).catch(() => ({ data: { user: null } }));
       const aio =
-        !owner?.user || owner.user.is_anonymous
+        isGuest(owner?.user)
           ? aioSkipped("会員登録すると、AI検索（Gemini）での見え方を実測します")
           : await buildAioPrompts(diagnosis, a.site, a.meo).catch((e) =>
               aioSkipped(`AIに投げる問いを作れませんでした（${e instanceof Error ? e.message.slice(0, 120) : String(e).slice(0, 120)}）`)

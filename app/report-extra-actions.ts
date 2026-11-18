@@ -25,6 +25,7 @@ import { isB2c } from "@/lib/biz-model";
 import { hasGemini } from "@/lib/gemini";
 import type { MeoScan } from "@/lib/meo";
 import { analyzeAio, buildAioPrompts, measureAioPrompt, type ReportAio } from "@/lib/report-aio";
+import { isGuest } from "@/lib/tier-core";
 
 /**
  * 以前に作ったレポートへ、後から増えた項目を足す（作り直さずに、無い部分だけ作る）。
@@ -70,7 +71,7 @@ async function ownedAio(id: string): Promise<{ addable: boolean; current?: Repor
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user || user.is_anonymous || !hasGemini()) return { addable: false };
+  if (isGuest(user) || !hasGemini()) return { addable: false };
   const { data, error } = await sb.from("analyses").select("aio").eq("id", id).eq("owner_id", user.id).maybeSingle();
   if (error || !data) return { addable: false };
   const aio = (data as { aio: ReportAio | null }).aio;

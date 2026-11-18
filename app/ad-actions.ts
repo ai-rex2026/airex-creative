@@ -15,6 +15,7 @@ import { microsoftUserId, microsoftSearchAccounts } from "@/lib/ads/microsoft";
 import { metaAdAccounts } from "@/lib/ads/meta";
 import { xAdAccounts } from "@/lib/ads/x";
 import { tiktokAdAccounts } from "@/lib/ads/tiktok";
+import { isGuest } from "@/lib/tier-core";
 
 /** 画面に出してよい形。トークンは含めない */
 export type AdConnectionView = {
@@ -38,7 +39,7 @@ async function currentUser() {
  */
 export async function adConnections(): Promise<AdConnectionView[]> {
   const user = await currentUser();
-  if (!user || user.is_anonymous) return [];
+  if (isGuest(user)) return [];
   try {
     const admin = createAdminClient();
     const { data } = await admin
@@ -81,7 +82,7 @@ const MAX_SELECTED = 50;
 
 async function googleCreds() {
   const user = await currentUser();
-  if (!user || user.is_anonymous) return null;
+  if (isGuest(user)) return null;
   const creds = await getAdCredentials(user.id, "google");
   return creds ? { user, creds } : null;
 }
@@ -211,7 +212,7 @@ const MAX_SELECTED_YAHOO = 50;
 
 async function yahooCreds() {
   const user = await currentUser();
-  if (!user || user.is_anonymous) return null;
+  if (isGuest(user)) return null;
   const creds = await getAdCredentials(user.id, "yahoo");
   return creds ? { user, creds } : null;
 }
@@ -332,7 +333,7 @@ const MAX_SELECTED_MICROSOFT = 50;
 
 async function microsoftCreds() {
   const user = await currentUser();
-  if (!user || user.is_anonymous) return null;
+  if (isGuest(user)) return null;
   const creds = await getAdCredentials(user.id, "microsoft");
   return creds ? { user, creds } : null;
 }
@@ -418,7 +419,7 @@ const MAX_SELECTED_META = 50;
 
 async function metaCreds() {
   const user = await currentUser();
-  if (!user || user.is_anonymous) return null;
+  if (isGuest(user)) return null;
   const creds = await getAdCredentials(user.id, "meta");
   return creds ? { user, creds } : null;
 }
@@ -501,7 +502,7 @@ const MAX_SELECTED_X = 50;
 
 async function xCreds() {
   const user = await currentUser();
-  if (!user || user.is_anonymous) return null;
+  if (isGuest(user)) return null;
   const creds = await getAdCredentials(user.id, "x");
   return creds ? { user, creds } : null;
 }
@@ -586,7 +587,7 @@ const MAX_SELECTED_TIKTOK = 50;
 
 async function tiktokCreds() {
   const user = await currentUser();
-  if (!user || user.is_anonymous) return null;
+  if (isGuest(user)) return null;
   const creds = await getAdCredentials(user.id, "tiktok");
   return creds ? { user, creds } : null;
 }
