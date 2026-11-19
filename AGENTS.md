@@ -219,3 +219,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - ルールの JSON に `scopes`（`GUARD_SCOPES`：reply／description／review_ask／post／lp／banner／article）を足せる。`scopes` の無いルールは今までどおり全検査に当たる。`scopes` つきのルールは、`checkGuardDict`／`checkGuard` の第3引数 `scope` が一致する検査にだけ当たる（`scope` を渡さない呼び出しには当たらない）
 - いま `scope` を渡している所：`meo-ops/writer.ts`（返信 reply・説明文 description）、`kit/auto.ts`（自動返信 reply）、`kit/steps.ts` の言葉のチェック（説明文 description・POP／依頼トーク／LINE依頼文 review_ask）。用途つきで当たった分は、まとめての判定に入らないため `stepGuard` で赤に上げる。ほかの用途（post・lp・banner・article）は、そのチェックを通す所に `scope` を足してから使う
 - 管理画面 `/admin/knowhow` の辞書ルールの表示に、適用する用途と業種を出す。`rule` に `scopes` を入れるのは今のところ SQL／AI の案で、画面での編集は未対応
+
+## ノウハウ案の「実装の形」と実装待ち（2026-11-19 追記）
+
+- `knowhow_items.form` は `note`（領域の AI への指示）／`legal_rule`（法令チェックの辞書）／`code`（コード＝ロジックで実装するもの）。優先順位は コード ＞ 辞書 ＞ AI 指示（コードで確実に守れるものを AI に頼まない）。SQL は `Docs/sql/2026-11-19-knowhow-impl-form.sql`（`impl_status` = none|todo|done、`impl_note`）
+- `form=code` の案は承認しても AI の指示・辞書には何も足さない（`lib/knowhow.ts` は note と legal_rule だけを読む）。承認＝「実装する」という判断で、`impl_status` が todo（実装待ち）になる。画面 `/admin/knowhow` のタブ「実装待ち」に出て、実装したら「実装済みにする」（`markKnowhowImplAction`）。保留・却下・判断待ちに戻すと none に戻る。実装済みのまま承認し直しても done は戻さない
+- AI が公式ページから作る案は、いまは note だけ。コードの案は SQL で入れる（form='code'・applied_text=''）か、今後 AI の案づくりに足す
+- 実装したら、AGENTS.md への追記と合わせて「実装済みにする」を押す

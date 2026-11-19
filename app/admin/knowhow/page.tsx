@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/tier";
-import { decideKnowhowAction } from "@/app/knowhow-actions";
+import { decideKnowhowAction, markKnowhowImplAction } from "@/app/knowhow-actions";
 import { manualStatus, type ManualRow } from "@/lib/knowhow-manual";
 
 export const metadata = { title: "ノウハウ更新案｜AI-REX Studio" };
@@ -29,25 +29,30 @@ type Item = {
   created_at: string;
   form: string;
   applied_text: string;
+  impl_status?: string;
+  impl_note?: string;
   rule: { pattern?: string; reason?: string; law?: string; suggestion?: string; scopes?: string[]; industries?: string[] } | null;
 };
 
 const AREA: Record<string, string> = { meo: "MEO", seo: "SEO", aio: "AIO", lpo: "LPO", image: "画像生成", legal: "法令", ads: "広告" };
 const KIND: Record<string, string> = { add: "追加", change: "変更", nochange: "変更なし" };
 const EVIDENCE: Record<string, string> = { official: "公式の根拠", vendor: "事業者・解説の報告", opinion: "意見・分析" };
-const DONE: Record<string, string> = { approve: "承認しました。反映中です", hold: "保留にしました", reject: "却下しました", reset: "判断待ちに戻しました" };
+const DONE: Record<string, string> = { approve: "承認しました。反映中です", hold: "保留にしました", reject: "却下しました", reset: "判断待ちに戻しました", impl_done: "実装済みにしました", impl_todo: "実装待ちに戻しました" };
+const FORM: Record<string, string> = { note: "AIへの指示", legal_rule: "法令の辞書", code: "コード" };
 const STATUS_LABEL: Record<string, string> = { approved: "承認", held: "保留", rejected: "却下" };
 /** 日本時間で「2026/11/18 19:59」の形に */
 const fmt = (iso: string) =>
   new Date(iso).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
-const TABS: [string, string][] = [["pending", "判断待ち"], ["approved", "承認"], ["held", "保留"], ["rejected", "却下"]];
+const TABS: [string, string][] = [["pending", "判断待ち"], ["approved", "承認"], ["held", "保留"], ["rejected", "却下"], ["impl", "実装待ち"]];
 
 /** ノウハウ更新案の受信箱。管理者だけ（ほかの人には存在も見せない）。スマホで1件ずつ 承認／保留／却下 を選ぶ */
 export default async function KnowhowInbox({ searchParams }: { searchParams: Promise<{ s?: string; a?: string; by?: string; from?: string; to?: string; err?: string; done?: string }> }) {
   const { tier } = await getTier();
   if (tier !== "admin") notFound();
   const sp = await searchParams;
-  const status = TABS.some(([k]) => k === sp.s) ? (sp.s as string) : "pending";
+  const tab = TABS.some(([k]) => k === sp.s) ? (sp.s as string) : "pending";
+  // 「実装待ち」は、承認済みのコードの案のうち、まだ実装していないもの
+  const status = tab === "impl" ? "approved" : tab;
   // 絞り込み：カテゴリ（領域）と日付（追加日／判断日）。日付は日本時間の日付で指定する
   const area = sp.a && sp.a in AREA ? sp.a : "";
   const by = sp.by === "decided" ? "decided" : "created";
@@ -66,7 +71,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
   };
   const qs = (over: Record<string, string>) => {
     const p = new URLSearchParams();
-    const cur: Record<string, string> = { s: status, a: area, by: by === "decided" ? "decided" : "", from, to, ...over };
+    const cur: Record<string, string> = { s: tab, a: area, by: by === "decided" ? "decided" : "", from, to, ...over };
     for (const [k, v] of Object.entries(cur)) if (v) p.set(k, v);
     return p.toString();
   };
@@ -77,13 +82,16 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
   const overdue = ((mrows ?? []) as Pick<ManualRow, "key" | "title" | "interval_days" | "last_checked_at">[])
     .map((m) => ({ m, st: manualStatus(m) }))
     .filter((x) => x.st.overdue);
-  const [{ data }, counts]: [{ data: unknown }, { data: { status: string }[] | null }] = await Promise.all([
-    filtered(sb.from("knowhow_items").select("*").eq("status", status)).order(by === "decided" ? "decided_at" : "created_at", { ascending: false }).limit(100),
-    filtered(sb.from("knowhow_items").select("status")).limit(2000),
+  const [{ data }, counts]: [{ data: unknown }, { data: { status: string; form: string; impl_status: string }[] | null }] = await Promise.all([
+    filtered((tab === "impl" ? sb.from("knowhow_items").select("*").eq("form", "code").eq("impl_status", "todo") : sb.from("knowhow_items").select("*")).eq("status", status)).order(by === "decided" ? "decided_at" : "created_at", { ascending: false }).limit(100),
+    filtered(sb.from("knowhow_items").select("status, form, impl_status")).limit(2000),
   ]);
   const items = (data ?? []) as Item[];
   const n = new Map<string, number>();
-  for (const r of counts.data ?? []) n.set(String(r.status), (n.get(String(r.status)) ?? 0) + 1);
+  for (const r of counts.data ?? []) {
+    n.set(String(r.status), (n.get(String(r.status)) ?? 0) + 1);
+    if (r.status === "approved" && r.form === "code" && r.impl_status === "todo") n.set("impl", (n.get("impl") ?? 0) + 1);
+  }
   const filterOn = !!(area || from || to);
 
   return (
@@ -111,14 +119,14 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18 }}>
           {TABS.map(([k, label]) => (
-            <Link key={k} href={`/admin/knowhow?${qs({ s: k })}`} className={`tag${status === k ? " on" : ""}`} style={{ textDecoration: "none" }}>
+            <Link key={k} href={`/admin/knowhow?${qs({ s: k })}`} className={`tag${tab === k ? " on" : ""}`} style={{ textDecoration: "none" }}>
               {label} {n.get(k) ?? 0}
             </Link>
           ))}
         </div>
 
         <form method="get" style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", fontSize: 12.5 }}>
-          <input type="hidden" name="s" value={status} />
+          <input type="hidden" name="s" value={tab} />
           <label style={{ display: "grid", gap: 3 }}>
             カテゴリ
             <select className="box" name="a" defaultValue={area} style={{ padding: "6px 8px" }}>
@@ -145,7 +153,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
           </label>
           <button className="btn sm" type="submit">絞り込む</button>
           {filterOn && (
-            <Link className="btn sm ghost" href={`/admin/knowhow?s=${status}`}>解除</Link>
+            <Link className="btn sm ghost" href={`/admin/knowhow?s=${tab}`}>解除</Link>
           )}
         </form>
         <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 8 }}>
@@ -163,6 +171,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <span className="tag score">{AREA[it.area] ?? it.area}</span>
               <span className="tag warn">{KIND[it.kind] ?? it.kind}</span>
+              <span className="tag score">実装の形：{FORM[it.form] ?? it.form}</span>
               <span className="tag warn">{EVIDENCE[it.evidence] ?? it.evidence}</span>
               {it.is_guess && <span className="tag ng">推測を含む</span>}
               {it.risk === "legal" && <span className="tag ng">法令に関わる</span>}
@@ -192,10 +201,26 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
               追加：{fmt(it.created_at)}
               {it.decided_at && `　／　${STATUS_LABEL[it.status] ?? "判断"}：${fmt(it.decided_at)}`}
             </p>
-            {it.status === "approved" && it.kind !== "nochange" && (
+            {it.status === "approved" && it.kind !== "nochange" && it.form !== "code" && (
               <p style={{ fontSize: 12.5, marginTop: 8 }}>
                 <span className="tag ok">反映中</span>
               </p>
+            )}
+            {it.status === "approved" && it.form === "code" && (
+              <form action={markKnowhowImplAction} style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12.5 }}>
+                <input type="hidden" name="id" value={it.id} />
+                {it.impl_status === "done" ? (
+                  <>
+                    <span className="tag ok">実装済み</span>
+                    <button className="btn sm ghost" name="to" value="todo" type="submit">実装待ちに戻す</button>
+                  </>
+                ) : (
+                  <>
+                    <span className="tag warn">実装待ち（承認しただけでは何も変わりません）</span>
+                    <button className="btn sm" name="to" value="done" type="submit">実装済みにする</button>
+                  </>
+                )}
+              </form>
             )}
 
             <form action={decideKnowhowAction} style={{ marginTop: 14, display: "grid", gap: 10 }}>
@@ -215,6 +240,11 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
                     {it.rule.industries?.length ? `／業種：${it.rule.industries.join("・")}` : ""}
                   </div>
                 </div>
+              ) : it.form === "code" ? (
+                <label style={{ fontSize: 12.5, display: "grid", gap: 4 }}>
+                  <b>コードで実装する案です。承認すると「実装待ち」に入ります（AIへの指示・辞書には何も足されません）。何をどう実装するかをメモできます</b>
+                  <textarea className="box" name="impl_note" rows={3} maxLength={1000} defaultValue={it.impl_note ?? ""} />
+                </label>
               ) : it.kind === "nochange" ? (
                 <p style={{ fontSize: 12.5, color: "var(--muted)" }}>「変更なし」の案なので、承認してもルールには何も追加されません（判断の記録のみ）。</p>
               ) : (
