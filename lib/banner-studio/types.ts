@@ -1,4 +1,4 @@
-import type { BannerCopy, Diagnosis, GuardVerdict } from "../types";
+import type { BannerCopy, Diagnosis, GuardHit, GuardVerdict } from "../types";
 
 /**
  * 広告運用 ＞ バナー制作（2026-11-11）。画面（client）からも読むので、サーバー専用のものは import しない。
@@ -114,6 +114,8 @@ export type PatternCopy = {
   /** 行動喚起。全角8字以内 */
   cta: string;
   guard?: GuardVerdict;
+  /** 事実との照合（patterns.ts の factChecks）で見つかった問題。guardPatterns が法令チェックの結果に足し、あれば赤にする */
+  factHits?: GuardHit[];
 };
 
 /** AI チェックの結果（F・2026-11-12） */

@@ -5,7 +5,7 @@ import { withKnowhow } from "../knowhow";
 const askJson = withKnowhow(rawAskJson, ["image"]);
 import { checkGuard } from "../guardrail";
 import { normalizeJapanese } from "../meo-ops/japanese";
-import type { Diagnosis, GuardVerdict, Industry } from "../types";
+import type { Diagnosis, GuardHit, GuardVerdict, Industry } from "../types";
 import {
   ARCHETYPES,
   PATTERN_COUNT,
@@ -78,6 +78,40 @@ function grounded(emphasis: string, facts: string): boolean {
   return nums.every((n) => flat.includes(normalizeJapanese(n).replace(/[,，]/g, "")));
 }
 
+/**
+ * 事実との照合（2026-11-19・承認済みのノウハウをコードにしたもの。AI への指示だけに頼らず、コピーを事実で確かめる）。
+ *  - 「今だけ」「いまなら」「限定」「先着」… 説明に期間（日付）か数量（個数・人数）が無ければ、そのコピーは通さない
+ *  - 「通常価格」「定価」… 説明に販売実績の記載が無ければ、価格比較として通さない
+ *  - 料金（「◯円〜」）… 説明に別にかかる費用の記載があれば、「別途費用あり」を補足に足す
+ * 通さないコピーは factHits に残し、guardPatterns が赤にして、候補コピーへ切り替えさせる。
+ */
+const LIMITED = /今だけ|いまなら|今なら|期間限定|数量限定|数量に限りがあ|先着|限定/;
+const HAS_PERIOD = /[0-9０-９]{1,2}\s*[月\/／]\s*[0-9０-９]{1,2}|[0-9０-９]{1,2}\s*日\s*(まで|〜|～|から)|期間|[0-9０-９]+\s*(日間|週間|か月|ヶ月|カ月)/;
+const HAS_QTY = /[0-9０-９]+\s*(個|名|人|点|本|台|セット|枠|組|件|食|着)/;
+const PRICE_COMPARE = /通常価格|定価|通常料金|元値|レギュラー価格/;
+const HAS_RESULT = /販売実績|販売していた|販売してきた|通常価格で販売|定価で販売|[0-9０-９]+\s*(週間|日間|か月|ヶ月)\s*(以上)?\s*(販売|提供)/;
+const FEE_FACT = /別途|別にかかる|初診料|再診料|検査料|管理料|装置代|税別|税抜|諸費用|別料金/;
+
+export function factChecks(copy: PatternCopy, facts: string): { copy: PatternCopy; hits: GuardHit[] } {
+  const flat = normalizeJapanese(facts);
+  const hits: GuardHit[] = [];
+  const fields = [copy.target, copy.headline.join(""), copy.emphasis, copy.emphasisLabel, copy.sub, copy.cta].filter(Boolean).join("\n");
+  const lim = fields.match(LIMITED);
+  if (lim && !(HAS_PERIOD.test(flat) || HAS_QTY.test(flat))) {
+    hits.push({ text: lim[0], reason: "期間・数量が説明に書かれていない限定の訴求です（おとり広告・有利誤認になるおそれ）", law: "景品表示法（有利誤認・おとり広告）", suggestion: "説明に実際の期間か数量を書くか、限定の言葉を外してください", severity: "high" });
+  }
+  const pc = fields.match(PRICE_COMPARE);
+  if (pc && !HAS_RESULT.test(flat)) {
+    hits.push({ text: pc[0], reason: "「通常価格」を使った比較は、販売実績が説明に書かれているときだけにします（二重価格表示）", law: "景品表示法（有利誤認・二重価格）", suggestion: "販売実績（いつからいつまで、その価格で売っていたか）を説明に書くか、価格の比較表示をやめてください", severity: "high" });
+  }
+  let next = copy;
+  const priceLike = /[0-9０-９,，]+\s*円\s*[〜～~]?/.test(fields) && /[〜～~]/.test(fields);
+  if (priceLike && FEE_FACT.test(flat) && !/別途|別料金|税別|税抜/.test(fields)) {
+    next = { ...copy, sub: `${copy.sub}${copy.sub ? "／" : ""}別途費用あり`.slice(0, 40) };
+  }
+  return { copy: next, hits };
+}
+
 function readCopy(raw: unknown, facts: string): PatternCopy {
   const c = (raw ?? {}) as Record<string, unknown>;
   const h = Array.isArray(c.headline) ? c.headline : [];
@@ -124,7 +158,8 @@ export async function planPatterns(
     const prompt = String(p?.prompt ?? "").trim();
     if (prompt.length < 20) continue;
     let archetype: Archetype = isArchetype(p?.archetype) ? p.archetype : "scene";
-    const copy = readCopy(p?.copy, facts);
+    const checked = factChecks(readCopy(p?.copy, facts), facts);
+    const copy: PatternCopy = checked.hits.length ? { ...checked.copy, factHits: checked.hits } : checked.copy;
     // 数字・実績の型なのに、事実で裏づけられる数字が無いときは「利用シーン」に落とす
     if ((archetype === "number" || archetype === "proof") && !copy.emphasis) archetype = "scene";
     const side = String(p?.subject ?? "");
@@ -162,10 +197,13 @@ export async function guardPatterns(patterns: BannerPattern[], industry: Industr
   return patterns.map((p, i) => {
     const r = res[i];
     if (!p.copy) return p;
-    const verdict: GuardVerdict =
+    const base: GuardVerdict =
       r.status === "fulfilled" && r.value
         ? r.value
         : { level: "yellow", hits: [{ text: "", reason: "法令チェックを実行できませんでした。人が確認してください", law: "", suggestion: "", severity: "medium" }] };
+    // 事実との照合で見つかった問題（期間・数量の無い限定、販売実績の無い価格比較）は、法令チェックの結果に足して赤にする
+    const fh = p.copy.factHits ?? [];
+    const verdict: GuardVerdict = fh.length ? { level: "red", hits: [...fh, ...base.hits] } : base;
     return { ...p, copy: { ...p.copy, guard: verdict } };
   });
 }

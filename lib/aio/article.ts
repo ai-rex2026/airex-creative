@@ -7,6 +7,7 @@ import { checkGuard } from "../guardrail";
 import { normalizeJapanese } from "../meo-ops/japanese";
 import type { GuardVerdict } from "../types";
 import { MAX_INLINE_IMAGES, type AioArticleImage, type AioChannel, type AioChannelKind, type AioMetric } from "./content-types";
+import { fixLeads } from "./answer-first";
 import { bodyChars, h2List } from "./md";
 import type { AioCheck, AioProject } from "./types";
 
@@ -164,8 +165,16 @@ export async function draftArticle(
   }>(kind === "satellite" ? SYSTEM + satelliteRules(ch?.satellite?.ownFirst !== false) : SYSTEM, lines.join("\n"), { maxTokens: 10000, timeoutMs: 170_000 });
 
   const n = (v: unknown, max: number) => normalizeJapanese(String(v ?? "").trim()).slice(0, max);
-  const bodyMd = normalizeJapanese(String(res.body ?? "").trim()).replace(/^#\s+.+\n+/, "");
+  let bodyMd = normalizeJapanese(String(res.body ?? "").trim()).replace(/^#\s+.+\n+/, "");
   if (bodyChars(bodyMd) < 500) throw new Error("記事を書けませんでした。事業内容（対象の設定）を足してもう一度お試しください");
+  // 見出しの直後の要約（50〜150字）をコードで検査し、足りない節だけ AI 1回で書き直す（note は一人称の読み物なので対象外。失敗しても本文はそのまま）
+  if (kind !== "note") {
+    try {
+      bodyMd = (await fixLeads(bodyMd, (s, u) => askJson(s, u, { maxTokens: 2500, timeoutMs: 60_000 }))).md;
+    } catch {
+      /* 本文はそのまま */
+    }
+  }
   const title = n(res.title, 120) || b.title || "（無題）";
   const h2n = h2List(bodyMd).length;
 
