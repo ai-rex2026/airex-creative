@@ -3,7 +3,7 @@ import { withKnowhow } from "../../knowhow";
 
 const askJson = withKnowhow(rawAskJson, ["meo"]);
 import { checkGuard, checkGuardDict } from "../../guardrail";
-import type { Industry } from "../../types";
+import type { GuardScope, Industry } from "../../types";
 import { ask } from "../ai-search";
 import { normalizeJapanese } from "../japanese";
 import type { MeoStoreSnapshot } from "../types";
@@ -472,28 +472,30 @@ function buildJsonLd(c: KitCtx, d: Diagnosis, faq: { q: string; a: string }[]) {
 // ── 言葉のチェック ────────────────────────────────
 export async function stepGuard(c: KitCtx): Promise<GuardPack> {
   const r = c.results;
-  const texts: { where: string; text: string }[] = [];
+  const texts: { where: string; text: string; scope?: GuardScope }[] = [];
   if (r.hpb) for (const x of Object.values(r.hpb)) texts.push({ where: `ホットペッパー ${x.field}`, text: x.text });
   if (r.meo) {
-    texts.push({ where: "Google 説明文", text: r.meo.description.text });
+    texts.push({ where: "Google 説明文", text: r.meo.description.text, scope: "description" });
     r.meo.posts.forEach((p) => texts.push({ where: `Google ${p.field}`, text: p.text }));
     (r.meo.menu ?? []).forEach((m) => texts.push({ where: `Google ${m.field}`, text: m.text }));
   }
   if (r.kit) {
-    r.kit.pop.forEach((p, i) => texts.push({ where: `POP ${i + 1}`, text: p }));
-    r.kit.talk.forEach((p, i) => texts.push({ where: `依頼トーク ${i + 1}`, text: p }));
-    texts.push({ where: "LINE依頼文", text: r.kit.line });
+    r.kit.pop.forEach((p, i) => texts.push({ where: `POP ${i + 1}`, text: p, scope: "review_ask" }));
+    r.kit.talk.forEach((p, i) => texts.push({ where: `依頼トーク ${i + 1}`, text: p, scope: "review_ask" }));
+    texts.push({ where: "LINE依頼文", text: r.kit.line, scope: "review_ask" });
   }
   if (r.coupon) r.coupon.items.forEach((x, i) => texts.push({ where: `クーポン ${i + 1}`, text: `${x.title}\n${x.body}\n${x.condition}` }));
   if (r.aio) r.aio.faq.forEach((q, i) => texts.push({ where: `よくある質問 ${i + 1}`, text: `${q.q}\n${q.a}` }));
   const list = texts.filter((t) => t.text.trim());
   // 辞書は文ごとに当てて「どこの」言葉かを出す。文脈が要るものは AI がまとめて見る（多くても2件）
-  const dict = list.flatMap((t) => checkGuardDict([t.text], c.industry).map((h) => ({ ...h, where: t.where })));
+  const dict = list.flatMap((t) => checkGuardDict([t.text], c.industry, t.scope).map((h) => ({ ...h, where: t.where })));
   const verdict = await checkGuard(list.map((t) => t.text), c.industry);
   const ai = verdict.hits
     .filter((h) => !dict.some((x) => x.text === h.text))
     .map((h) => ({ ...h, where: list.find((t) => t.text.includes(h.text))?.where ?? "文章全体" }));
-  return { hits: [...dict, ...ai], checked: list.length, level: verdict.level };
+  // 用途つきのルールに当たった分は、まとめての判定（用途なし）には入らないので、ここで赤に上げる
+  const level = dict.some((h) => h.severity === "high") ? "red" : verdict.level;
+  return { hits: [...dict, ...ai], checked: list.length, level };
 }
 
 // ── AIが挙げる店の分析 ──────────────────────────────

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { GUARD_SCOPES, type GuardScope } from "@/lib/types";
 
 /**
  * 承認したノウハウを、実際のルールに反映する（2026-11-18）。反映するのは status=approved のものだけ。
@@ -13,6 +14,8 @@ export type KnowhowArea = "meo" | "seo" | "aio" | "lpo" | "image" | "legal" | "a
 export const MAX_NOTES = 20;
 export const MAX_NOTE_CHARS = 1500;
 export const MAX_APPLIED_TEXT = 200;
+/** 辞書は AI の指示に入らず、コードが照合するだけなので件数の制約は小さい。暴走を防ぐ安全弁として大きめに置く（2026-11-19：50 → 500） */
+export const MAX_LEGAL_RULES = 500;
 
 export async function knowhowBlock(areas: KnowhowArea[]): Promise<string> {
   try {
@@ -47,7 +50,7 @@ export function withKnowhow<F extends (system: string, ...rest: any[]) => Promis
   return (async (system: string, ...rest: unknown[]) => fn(system + (await knowhowBlock(areas)), ...rest)) as unknown as F;
 }
 
-export type ExtraRule = { pattern: RegExp; reason: string; law: string; suggestion: string; industries?: string[] };
+export type ExtraRule = { pattern: RegExp; reason: string; law: string; suggestion: string; industries?: string[]; scopes?: GuardScope[] };
 
 /** 管理者が承認した rule（JSON）を検査用の規則にする。壊れた正規表現・長すぎるものは捨てる */
 export function toRule(raw: unknown): ExtraRule | null {
@@ -65,6 +68,7 @@ export function toRule(raw: unknown): ExtraRule | null {
       law,
       suggestion: typeof r.suggestion === "string" ? r.suggestion : "",
       industries: Array.isArray(r.industries) ? r.industries.filter((x): x is string => typeof x === "string") : undefined,
+      scopes: Array.isArray(r.scopes) ? r.scopes.filter((x): x is GuardScope => (GUARD_SCOPES as readonly string[]).includes(x as string)) : undefined,
     };
   } catch {
     return null;
@@ -78,7 +82,7 @@ const LEGAL_TTL_MS = 60_000;
 export async function loadLegalRules(): Promise<ExtraRule[]> {
   if (legalCache && Date.now() - legalCache.at < LEGAL_TTL_MS) return legalCache.rules;
   try {
-    const { data } = await createAdminClient().from("knowhow_items").select("rule").eq("status", "approved").eq("form", "legal_rule").limit(50);
+    const { data } = await createAdminClient().from("knowhow_items").select("rule").eq("status", "approved").eq("form", "legal_rule").limit(MAX_LEGAL_RULES);
     const rules = (data ?? []).map((r) => toRule(r.rule)).filter((x): x is ExtraRule => !!x);
     legalCache = { at: Date.now(), rules };
     return rules;

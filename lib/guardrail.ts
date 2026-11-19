@@ -1,6 +1,6 @@
 import { askJson, MODEL_FAST } from "./anthropic";
 import { cachedLegalRules, loadLegalRules } from "./knowhow";
-import type { GuardHit, GuardVerdict, Industry } from "./types";
+import type { GuardHit, GuardScope, GuardVerdict, Industry } from "./types";
 
 /**
  * 法令ガードレール（ロードマップ #10 / リスク R-02）。
@@ -51,9 +51,12 @@ const BY_INDUSTRY: Record<Industry, Rule[]> = {
   general: [],
 };
 
-function dictScan(texts: string[], industry: Industry): GuardHit[] {
+function dictScan(texts: string[], industry: Industry, scope?: GuardScope): GuardHit[] {
   // 管理者が承認した法令ルール（lib/knowhow.ts）も辞書に加える
-  const extra = cachedLegalRules().filter((r) => !r.industries?.length || r.industries.includes(industry));
+  // 業種で絞り、用途（scopes）つきのルールは、その用途を指定した検査にだけ当てる
+  const extra = cachedLegalRules().filter(
+    (r) => (!r.industries?.length || r.industries.includes(industry)) && (!r.scopes?.length || (!!scope && r.scopes.includes(scope)))
+  );
   const rules: Rule[] = [...COMMON, ...BY_INDUSTRY[industry], ...extra];
   const hits: GuardHit[] = [];
   for (const t of texts) {
@@ -81,13 +84,13 @@ function dedupe(hits: GuardHit[]): GuardHit[] {
  * 辞書だけで検査する。AI を呼ばないので無料。
  * チャットの回答のように「毎回 AI に通すとコストが釣り合わない」場面で使う。
  */
-export function checkGuardDict(texts: string[], industry: Industry): GuardHit[] {
-  return dedupe(dictScan(texts, industry));
+export function checkGuardDict(texts: string[], industry: Industry, scope?: GuardScope): GuardHit[] {
+  return dedupe(dictScan(texts, industry, scope));
 }
 
-export async function checkGuard(texts: string[], industry: Industry): Promise<GuardVerdict> {
+export async function checkGuard(texts: string[], industry: Industry, scope?: GuardScope): Promise<GuardVerdict> {
   await loadLegalRules();
-  const dictHits = dedupe(dictScan(texts, industry));
+  const dictHits = dedupe(dictScan(texts, industry, scope));
   let aiHits: GuardHit[] = [];
   try {
     const res = await askJson<{ hits: GuardHit[] }>(

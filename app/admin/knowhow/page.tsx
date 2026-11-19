@@ -29,7 +29,7 @@ type Item = {
   created_at: string;
   form: string;
   applied_text: string;
-  rule: { pattern?: string; reason?: string; law?: string; suggestion?: string } | null;
+  rule: { pattern?: string; reason?: string; law?: string; suggestion?: string; scopes?: string[]; industries?: string[] } | null;
 };
 
 const AREA: Record<string, string> = { meo: "MEO", seo: "SEO", aio: "AIO", lpo: "LPO", image: "画像生成", legal: "法令", ads: "広告" };
@@ -210,6 +210,9 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
                     理由：{it.rule.reason}（{it.rule.law}）
                     <br />
                     言い換え：{it.rule.suggestion}
+                    <br />
+                    適用する用途：{it.rule.scopes?.length ? it.rule.scopes.join("・") : "すべて"}
+                    {it.rule.industries?.length ? `／業種：${it.rule.industries.join("・")}` : ""}
                   </div>
                 </div>
               ) : it.kind === "nochange" ? (

@@ -52,7 +52,7 @@ export async function draftReply(review: Pick<MeoReview, "rating" | "authorName"
   const reply = normalizeJapanese(String(res.reply ?? "").trim());
   if (!reply) throw new Error("返信文を作れませんでした");
   // 返信はクチコミへの応答なので広告審査ほど厳密でなくてよい。辞書だけで無料で見る
-  const guardHits: GuardHit[] = checkGuardDict([reply], "general");
+  const guardHits: GuardHit[] = checkGuardDict([reply], "general", "reply");
   // NGワードが混ざっていたら指摘として出す（AIが指示を守らないことがある）
   for (const w of s.ngWords) {
     if (w && reply.includes(w)) guardHits.push({ text: w, reason: "設定のNGワードが含まれています", law: "店舗の設定", suggestion: "別の言い方に直してください", severity: "high" });
@@ -165,7 +165,7 @@ export async function draftDescription(
   const res = await askJson<{ description?: string }>(DESCRIPTION_SYSTEM, facts.join("\n"), { model: MODEL_FAST, maxTokens: 1500, timeoutMs: 60_000 });
   const description = normalizeJapanese(String(res.description ?? "").trim()).slice(0, 750);
   if (!description) throw new Error("説明文を作れませんでした");
-  const verdict = await checkGuard([description], industry);
+  const verdict = await checkGuard([description], industry, "description");
   // 店舗情報にない時刻・曜日・金額・割引などが混ざっていないか（AIの作り話の検出）
   const unverified = findUnverifiedFacts([description], facts.join("\n"));
   const level = unverified.length > 0 && verdict.level === "green" ? "yellow" : verdict.level;
