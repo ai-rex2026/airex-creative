@@ -34,7 +34,7 @@ export async function decideKnowhowAction(fd: FormData): Promise<void> {
   if (!id || !(decision in DECISIONS)) return fail("操作が不正です");
 
   const sb = createAdminClient();
-  const { data: item } = await sb.from("knowhow_items").select("id, risk, evidence, status, form, kind, rule").eq("id", id).maybeSingle();
+  const { data: item } = await sb.from("knowhow_items").select("id, risk, evidence, status, form, kind, rule, impl_status").eq("id", id).maybeSingle();
   if (!item) return fail("案が見つかりません");
 
   if (decision === "approve") {
@@ -50,6 +50,8 @@ export async function decideKnowhowAction(fd: FormData): Promise<void> {
   if (decision === "approve") {
     if (item.form === "legal_rule") {
       if (!toRule(item.rule)) return fail("法令ルールの形式が正しくありません（承認できません）");
+    } else if (item.form === "code") {
+      // コードで実装する案：承認は「実装する」という判断の記録。AI への指示・辞書には何も足さない
     } else if (item.kind !== "nochange") {
       appliedText = String(fd.get("applied_text") ?? "").trim();
       if (!appliedText) return fail("反映する文が空です");
@@ -69,6 +71,10 @@ export async function decideKnowhowAction(fd: FormData): Promise<void> {
       decision_note: note,
       updated_at: now,
       ...(appliedText !== null ? { applied_text: appliedText } : {}),
+      // コードの案：承認＝実装待ち。実装済みのまま承認し直しても戻さない。それ以外の判断では対象外に戻す
+      ...(item.form === "code"
+        ? { impl_note: String(fd.get("impl_note") ?? "").slice(0, 1000), ...(status === "approved" ? (item.impl_status === "done" ? {} : { impl_status: "todo" }) : { impl_status: "none" }) }
+        : {}),
     })
     .eq("id", id);
   if (error) return fail("保存に失敗しました");
@@ -76,6 +82,21 @@ export async function decideKnowhowAction(fd: FormData): Promise<void> {
   revalidatePath("/admin/knowhow");
   // 同じ URL への redirect は画面が更新されないことがあるので、結果つきの別の URL へ送る（結果は画面の上に出す）
   redirect(`/admin/knowhow?${keep.toString()}${keep.size ? "&" : ""}done=${decision}&t=${Date.now()}`);
+}
+
+/** 実装待ちの案を「実装済み」にする（または実装待ちに戻す）。実装したら、AGENTS.md への追記と合わせて押す */
+export async function markKnowhowImplAction(fd: FormData): Promise<void> {
+  const { userId, tier } = await getTier();
+  if (tier !== "admin" || !userId) throw new Error("権限がありません");
+  const id = String(fd.get("id") ?? "");
+  const to = fd.get("to") === "done" ? "done" : "todo";
+  const sb = createAdminClient();
+  const { data: it } = await sb.from("knowhow_items").select("id, form, status").eq("id", id).maybeSingle();
+  if (!it || it.form !== "code" || it.status !== "approved") redirect("/admin/knowhow?s=impl&err=" + encodeURIComponent("実装待ちの案ではありません"));
+  await sb.from("knowhow_items").update({ impl_status: to, updated_at: new Date().toISOString() }).eq("id", id);
+  await sb.from("knowhow_log").insert({ item_id: id, action: to === "done" ? "impl_done" : "impl_todo", by_user: userId, note: "" });
+  revalidatePath("/admin/knowhow");
+  redirect(`/admin/knowhow?s=impl&done=${to === "done" ? "impl_done" : "impl_todo"}&t=${Date.now()}`);
 }
 
 // ---- 確認する公式ページの管理（管理者だけ） ----
