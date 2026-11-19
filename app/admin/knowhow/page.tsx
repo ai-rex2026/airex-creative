@@ -4,6 +4,7 @@ import { Shell } from "@/components/Shell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/tier";
 import { decideKnowhowAction, markKnowhowImplAction } from "@/app/knowhow-actions";
+import { MAX_NOTES, MAX_NOTE_CHARS, pickNotes } from "@/lib/knowhow";
 import { manualStatus, type ManualRow } from "@/lib/knowhow-manual";
 
 export const metadata = { title: "ノウハウ更新案｜AI-REX Studio" };
@@ -87,6 +88,22 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
     filtered(sb.from("knowhow_items").select("status, form, impl_status")).limit(2000),
   ]);
   const items = (data ?? []) as Item[];
+  // AI の指示の「枠」の使用状況。実際の反映（knowhowBlock）と同じ選び方で数える。SEO と AIO は記事づくりで同じ枠を共有する
+  const { data: noteRows } = await sb
+    .from("knowhow_items")
+    .select("id, area, applied_text")
+    .eq("status", "approved")
+    .eq("form", "note")
+    .neq("kind", "nochange")
+    .neq("applied_text", "")
+    .order("decided_at", { ascending: true })
+    .limit(2000);
+  const POOLS: [string, string[]][] = [["MEO", ["meo"]], ["SEO・AIO（記事づくりで共有）", ["seo", "aio"]], ["LPO", ["lpo"]], ["画像生成", ["image"]]];
+  const slot = POOLS.map(([label, areas]) => {
+    const r = pickNotes((noteRows ?? []).filter((x) => areas.includes(String(x.area))));
+    return { label, count: r.used.length, total: r.used.length + r.skipped.length, chars: r.chars, skipped: r.skipped.map((x) => String(x.id)), areas };
+  });
+  const notInSlot = new Set(slot.flatMap((s) => s.skipped));
   const n = new Map<string, number>();
   for (const r of counts.data ?? []) {
     n.set(String(r.status), (n.get(String(r.status)) ?? 0) + 1);
@@ -116,6 +133,17 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
             {DONE[sp.done]}
           </p>
         )}
+
+        <div style={{ fontSize: 12.5, marginTop: 14, background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 6, padding: "10px 12px", lineHeight: 1.9 }}>
+          <b>AIへの指示の枠の使用状況</b>（1回の呼び出しに足せるのは {MAX_NOTES} 件・{MAX_NOTE_CHARS} 文字まで。承認が古い順に入ります）
+          {slot.map((s) => (
+            <div key={s.label}>
+              {s.label}：{s.count}／{MAX_NOTES} 件・{s.chars}／{MAX_NOTE_CHARS} 文字
+              {s.skipped.length > 0 && <span style={{ color: "var(--ng)" }}>　枠に入っていない承認済み {s.skipped.length} 件</span>}
+            </div>
+          ))}
+          <div style={{ color: "var(--muted)" }}>法令の辞書・コードの案は、この枠に数えません。</div>
+        </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18 }}>
           {TABS.map(([k, label]) => (
@@ -203,7 +231,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
             </p>
             {it.status === "approved" && it.kind !== "nochange" && it.form !== "code" && (
               <p style={{ fontSize: 12.5, marginTop: 8 }}>
-                <span className="tag ok">反映中</span>
+                {notInSlot.has(it.id) ? <span className="tag ng">枠に入っていません（上限を超えているため、AIの指示に足されていません）</span> : <span className="tag ok">反映中</span>}
               </p>
             )}
             {it.status === "approved" && it.form === "code" && (
