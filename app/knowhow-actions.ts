@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkGuardDict } from "@/lib/guardrail";
 import { MAX_APPLIED_TEXT, TASKS, toRule, type KnowhowTask } from "@/lib/knowhow";
-import { checkPendingConflicts } from "@/lib/knowhow-conflicts-run";
+import { checkAllPendingConflicts } from "@/lib/knowhow-conflicts-run";
 import { assertPublicUrl } from "@/lib/aio/net";
 import { runKnowhowFullIngest, runKnowhowSources } from "@/lib/knowhow-run";
 import { getTier } from "@/lib/tier";
@@ -205,17 +205,17 @@ export async function addManualCheckAction(fd: FormData): Promise<void> {
   back("done=madded");
 }
 
-/** 矛盾チェックがまだの判断待ちの案を、最大10件ずつ判定する（管理者のボタン） */
+/** 矛盾チェックがまだの判断待ちの案を、10件ずつ続けて全件判定する（時間切れなら残りは続けて押す）（管理者のボタン） */
 export async function checkKnowhowConflictsAction(): Promise<void> {
   const { userId, tier } = await getTier();
   if (tier !== "admin" || !userId) throw new Error("権限がありません");
-  let r: { checked: number; withConflict: number; failed: boolean };
+  let r: { checked: number; withConflict: number; failed: boolean; remaining: number };
   try {
-    r = await checkPendingConflicts();
+    r = await checkAllPendingConflicts(120_000);
   } catch {
-    r = { checked: 0, withConflict: 0, failed: true };
+    r = { checked: 0, withConflict: 0, failed: true, remaining: 0 };
   }
   revalidatePath("/admin/knowhow");
   if (r.failed) redirect("/admin/knowhow?err=" + encodeURIComponent("矛盾チェックに失敗しました。もう一度お試しください"));
-  redirect(`/admin/knowhow?done=conflict&n=${r.checked}&c=${r.withConflict}`);
+  redirect(`/admin/knowhow?done=conflict&n=${r.checked}&c=${r.withConflict}&r=${r.remaining}`);
 }
