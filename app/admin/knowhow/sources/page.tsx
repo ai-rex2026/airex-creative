@@ -4,6 +4,7 @@ import { Shell } from "@/components/Shell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/tier";
 import { addKnowhowSourceAction, addManualCheckAction, markManualCheckedAction, runKnowhowIngestAllAction, runKnowhowSourcesAction, toggleKnowhowSourceAction } from "@/app/knowhow-actions";
+import { PendingButton } from "@/components/admin/PendingButton";
 import { manualStatus, type ManualRow } from "@/lib/knowhow-manual";
 
 export const metadata = { title: "確認している公式ページ｜AI-REX Studio" };
@@ -63,6 +64,11 @@ export default async function KnowhowSources({ searchParams }: { searchParams: P
             {Number(sp.ing_left) > 0 && Number(sp.ing_err) === 0 ? "（残りがあるので、もう一度押してください）" : ""}
           </p>
         )}
+        {sp.ing !== undefined && sp.ing_notes && (
+          <p style={{ marginTop: 8, fontSize: 12.5, color: "var(--ng)", lineHeight: 1.8, whiteSpace: "pre-line" }}>
+            {sp.ing_notes}
+          </p>
+        )}
         {sp.done === "added" && <p className="tag ok" style={{ marginTop: 12 }}>追加しました</p>}
         {sp.done === "madded" && <p className="tag ok" style={{ marginTop: 12 }}>手動点検の対象を追加しました</p>}
         {sp.done === "checked" && <p className="tag ok" style={{ marginTop: 12 }}>点検を記録しました</p>}
@@ -101,12 +107,12 @@ export default async function KnowhowSources({ searchParams }: { searchParams: P
         <h3 style={{ fontSize: 16, marginTop: 28 }}>自動で取得するページ</h3>
 
         <form action={runKnowhowSourcesAction} style={{ marginTop: 16 }}>
-          <button className="btn sm" type="submit">今すぐ確認する</button>
+          <PendingButton className="btn sm" pendingText="公式ページを確認しています。1〜2分かかることがあります（このままお待ちください）">今すぐ確認する</PendingButton>
           <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 10 }}>AI を使うのは、変わったページだけです（1回6件まで）</span>
         </form>
 
         <form action={runKnowhowIngestAllAction} style={{ marginTop: 12 }}>
-          <button className="btn sm" type="submit">過去分を含めて全部取り込む</button>
+          <PendingButton className="btn sm" pendingText="取り込み中です。AI で案を作るため、1〜2分かかります（このままお待ちください。終わると結果が出ます）">過去分を含めて全部取り込む</PendingButton>
           <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 10, lineHeight: 1.8 }}>
             保存済みの全文を小分けにして、AI で案にします（受信箱の判断待ちに入ります）。1回14回まで AI を呼びます。済んだ分は飛ばすので、残りがあれば続けて押してください
           </span>

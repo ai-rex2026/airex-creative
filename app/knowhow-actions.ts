@@ -166,7 +166,7 @@ export async function runKnowhowIngestAllAction(): Promise<void> {
   const r = await runKnowhowFullIngest({ deadlineMs: 100_000 });
   revalidatePath("/admin/knowhow/sources");
   revalidatePath("/admin/knowhow");
-  back(`ing=${r.chunks}&ing_done=${r.done}&ing_left=${r.remaining}&ing_err=${r.errors}&ing_new=${r.created}`);
+  back(`ing=${r.chunks}&ing_done=${r.done}&ing_left=${r.remaining}&ing_err=${r.errors}&ing_new=${r.created}&ing_notes=${encodeURIComponent(r.notes.slice(0, 5).map((n) => n.slice(0, 160)).join("\n"))}`);
 }
 
 /** 手動点検：点検しました（日付と結果を記録）。管理者だけ */
