@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/tier";
 import { checkKnowhowConflictsAction, decideKnowhowAction, markKnowhowImplAction } from "@/app/knowhow-actions";
 import { MAX_NOTES, MAX_NOTE_CHARS, TASKS, TASK_KEYS, forTask, pickNotes } from "@/lib/knowhow";
+import { PendingButton } from "@/components/admin/PendingButton";
 import { manualStatus, type ManualRow } from "@/lib/knowhow-manual";
 
 export const metadata = { title: "ノウハウ更新案｜AI-REX Studio" };
@@ -101,6 +102,8 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
     .neq("applied_text", "")
     .order("decided_at", { ascending: true })
     .limit(2000);
+  const { count: uncheckedCount } = await sb.from("knowhow_items").select("id", { count: "exact", head: true }).eq("status", "pending").is("conflict_checked_at", null);
+  const unchecked = uncheckedCount ?? 0;
   // 用途ごとに数える（承認した文は、当てはまる用途の呼び出しにだけ足される。用途の指定が無い文はその領域のすべての用途に足される）
   const slot = TASK_KEYS.map((t) => {
     const areas = TASKS[t].area === "seo" || TASKS[t].area === "aio" ? ["seo", "aio"] : [TASKS[t].area as string];
@@ -151,8 +154,13 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
               {s.skipped.length > 0 && <span style={{ color: "var(--ng)" }}>　枠に入っていない承認済み {s.skipped.length} 件</span>}
             </div>
           ))}
-          <form action={checkKnowhowConflictsAction} style={{ marginTop: 6 }}>
-            <button className="btn sm ghost" type="submit">矛盾チェックがまだの判断待ちの案を、全件確認する</button>
+          <form action={checkKnowhowConflictsAction} style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <PendingButton pendingText="AIで確認しています。10件ずつ続けて処理するため、数分かかることがあります（このままお待ちください）">
+              矛盾チェックがまだの判断待ちの案を、全件確認する（未確認 {unchecked} 件）
+            </PendingButton>
+            <PendingButton name="redo" value="1" pendingText="確認し直しています。数分かかることがあります（このままお待ちください）">
+              判断待ちの全件を確認し直す
+            </PendingButton>
           </form>
           <div style={{ color: "var(--muted)" }}>法令の辞書・コードの案は、この枠に数えません。</div>
         </div>
