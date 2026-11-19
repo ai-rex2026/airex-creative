@@ -91,6 +91,25 @@ export function addedLines(before: string, after: string): string[] {
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
+/**
+ * 反映する文（AI への指示に足す短い文）を決める。AI の文が空・断定語を含むときは、案の「運用への取り入れ方」（proposal）を使う（管理者が一から書かなくて済むように）。
+ * 候補は 200 字以内に収め（長ければ文の区切りで切る）、辞書チェックを通ったものだけ。どれも通らなければ空（管理者が書く）
+ */
+export function pickApplied(d: Draft, proposal: string, guardOk: (t: string) => boolean): string {
+  const fit = (t: string) => {
+    const x = t.trim();
+    if (x.length <= 200) return x;
+    const cut = x.slice(0, 200);
+    const i = cut.lastIndexOf("。");
+    return i >= 40 ? cut.slice(0, i + 1) : "";
+  };
+  for (const c of [str(d.applied_text, 400), proposal]) {
+    const t = fit(c);
+    if (t && guardOk(t)) return t;
+  }
+  return "";
+}
+
 export function toItems(source: Source, drafts: Draft[], deps: Pick<CheckDeps, "guardOk" | "now">): ItemInsert[] {
   const day = deps.now().toISOString().slice(0, 10);
   const stamp = day.replace(/-/g, "");
@@ -99,8 +118,7 @@ export function toItems(source: Source, drafts: Draft[], deps: Pick<CheckDeps, "
     const title = str(d.title, 80);
     const proposal = str(d.proposal, 300);
     if (!title || !proposal) continue;
-    let applied = str(d.applied_text, 200);
-    if (applied && !deps.guardOk(applied)) applied = ""; // 断定語を含む文は反映文にしない（管理者が書き直す）
+    const applied = pickApplied(d, proposal, deps.guardOk); // 断定語を含む文は使わない（proposal で補い、それも通らなければ空）
     out.push({
       key: `src-${source.key}-${stamp}-${out.length + 1}`,
       area: source.area,
@@ -220,8 +238,7 @@ export function toFullItems(source: Source, drafts: Draft[], deps: Pick<FullDeps
     const title = str(d.title, 80);
     const proposal = str(d.proposal, 300);
     if (!title || !proposal) continue;
-    let applied = str(d.applied_text, 200);
-    if (applied && !deps.guardOk(applied)) applied = "";
+    const applied = pickApplied(d, proposal, deps.guardOk);
     out.push({
       key: `full-${source.key}-${hashText(title).slice(0, 10)}`,
       area: source.area,

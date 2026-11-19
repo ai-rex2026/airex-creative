@@ -249,3 +249,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## ノウハウ案の見出しに日付を入れない（2026-11-19 追記）
 
 - 案の見出し（`title`）に、原文の更新日（「1月3日：」など）を入れない。更新履歴ページの見出しの日付を AI が拾っていたが、年が抜けたり推測になったりして信頼できないため（`DRAFT_SYSTEM`／`FULL_SYSTEM` の title の指示）。取得日は画面の「出典（◯◯ 取得）」に出る。すでにある案の見出し先頭・末尾の日付は SQL で外した
+
+## 反映する文を AI が空にしない（2026-11-19 追記）
+
+- 公式ページから作る note の案は、`applied_text` を必ず書かせる（`DRAFT_SYSTEM`／`FULL_SYSTEM`）。AI の文が空・断定語を含むときは、`pickApplied`（`lib/knowhow-sources.ts`）が案の「運用への取り入れ方」（proposal）を 200 字以内（長ければ文の区切りで切る）にして、辞書チェックを通ったものを使う。どれも通らなければ空（管理者が書く）。管理者が承認前に直せるのは従来どおり
