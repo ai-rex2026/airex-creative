@@ -273,3 +273,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 広告（area=ads）の承認済み note は、①全体レポートの広告施策案（媒体プラン `lib/media-plan.ts`＝用途 `ads_plan`、キャンペーン構成・原稿 `lib/ad-ops.ts`＝用途 `ads_build`）の AI への指示に足される。②連携した広告アカウントを分析して改善案・施策案を出す AI（画面は今後。作るときは `withKnowhow(askJson, ["ads"], "ads_plan")` で包む）にも同じ文を使う想定
 - 公式ページから作る広告の案は、①②の AI への指示として書く（`ADS_FRAME`・`lib/knowhow-run.ts`）：仕様・審査基準・配信ルール・入稿規定の変更が、「改善案・施策案で何を勧めてよいか／避けるか／確認すべき数値や設定」にどう効くかの観点で、applied_text は「〜を提案するときは…」の形。広告の運用自体（入稿・予算変更）は自動で行わない
 - 用途は `ads_plan`（媒体・施策案）・`ads_build`（キャンペーン構成・原稿）。tasks が空の文は両方に足される。全体レポートの「広告以外の施策」（`lib/tactics.ts`）は広告の領域には含めない
+- 2026-11-19：案の保存で impl_note（not-null）が null になり失敗していた（code と note が1回の upsert に混ざったとき）。note の案も impl_note を空文字で必ず入れる（`formFields`）
