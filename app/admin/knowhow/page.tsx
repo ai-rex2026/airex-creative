@@ -158,9 +158,6 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
             <PendingButton pendingText="AIで確認しています。10件ずつ続けて処理するため、数分かかることがあります（このままお待ちください）">
               矛盾チェックがまだの判断待ちの案を、全件確認する（未確認 {unchecked} 件）
             </PendingButton>
-            <PendingButton name="redo" value="1" pendingText="確認し直しています。数分かかることがあります（このままお待ちください）">
-              判断待ちの全件を確認し直す
-            </PendingButton>
           </form>
           <div style={{ color: "var(--muted)" }}>法令の辞書・コードの案は、この枠に数えません。</div>
         </div>
