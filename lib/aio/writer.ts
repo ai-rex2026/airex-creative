@@ -1,7 +1,7 @@
 import { askJson as rawAskJson, MODEL_FAST } from "../anthropic";
 import { withKnowhow } from "../knowhow";
 
-const askJson = withKnowhow(rawAskJson, ["aio", "seo"]);
+const askJson = withKnowhow(rawAskJson, ["aio", "seo"], "aio_prompts");
 import { checkGuard } from "../guardrail";
 import { normalizeJapanese } from "../meo-ops/japanese";
 import { fetchSiteSummary } from "../meo-ops/writer";

@@ -1,8 +1,8 @@
 import { askJson as rawAskJson, askJsonWithImages as rawAskJsonWithImages } from "../anthropic";
 import { withKnowhow } from "../knowhow";
 
-const askJson = withKnowhow(rawAskJson, ["lpo"]);
-const askJsonWithImages = withKnowhow(rawAskJsonWithImages, ["lpo"]);
+const askJson = withKnowhow(rawAskJson, ["lpo"], "lpo_heatmap");
+const askJsonWithImages = withKnowhow(rawAskJsonWithImages, ["lpo"], "lpo_heatmap");
 import { normalizeJapanese } from "../meo-ops/japanese";
 import type { LpoPlan } from "../deep";
 import type { Diagnosis } from "../types";

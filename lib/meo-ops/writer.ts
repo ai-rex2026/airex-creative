@@ -2,7 +2,7 @@ import { askJson as rawAskJson, MODEL_FAST } from "../anthropic";
 import { withKnowhow } from "../knowhow";
 
 /** 承認済みのMEOのノウハウを、AIへの指示に足す（lib/knowhow.ts） */
-const askJson = withKnowhow(rawAskJson, ["meo"]);
+const askJson = withKnowhow(rawAskJson, ["meo"], "meo_write");
 import { checkGuard, checkGuardDict } from "../guardrail";
 import type { GuardHit, Industry } from "../types";
 import { normalizeJapanese } from "./japanese";

@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { askJson as rawAskJson, MODEL_FAST } from "../anthropic";
 import { withKnowhow } from "../knowhow";
 
-const askJson = withKnowhow(rawAskJson, ["meo"]);
+const askJson = withKnowhow(rawAskJson, ["meo"], "meo_keywords");
 import { jstDateKey, jstPeriodKey } from "./daily";
 import { normalizeJapanese } from "./japanese";
 import { guessAreaFromAddress } from "./logic";

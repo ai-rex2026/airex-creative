@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkGuardDict } from "@/lib/guardrail";
-import { MAX_APPLIED_TEXT, toRule } from "@/lib/knowhow";
+import { MAX_APPLIED_TEXT, TASKS, toRule, type KnowhowTask } from "@/lib/knowhow";
+import { checkPendingConflicts } from "@/lib/knowhow-conflicts-run";
 import { assertPublicUrl } from "@/lib/aio/net";
 import { runKnowhowFullIngest, runKnowhowSources } from "@/lib/knowhow-run";
 import { getTier } from "@/lib/tier";
@@ -34,7 +35,7 @@ export async function decideKnowhowAction(fd: FormData): Promise<void> {
   if (!id || !(decision in DECISIONS)) return fail("操作が不正です");
 
   const sb = createAdminClient();
-  const { data: item } = await sb.from("knowhow_items").select("id, risk, evidence, status, form, kind, rule, impl_status").eq("id", id).maybeSingle();
+  const { data: item } = await sb.from("knowhow_items").select("id, area, risk, evidence, status, form, kind, rule, impl_status, conflicts, conflict_ok").eq("id", id).maybeSingle();
   if (!item) return fail("案が見つかりません");
 
   if (decision === "approve") {
@@ -44,6 +45,17 @@ export async function decideKnowhowAction(fd: FormData): Promise<void> {
       if (fd.get("confirmed") !== "on") return fail("原文を確認したチェックを入れてください");
     }
   }
+
+  // 矛盾の疑いがある案は、内容を見て確認した上でなければ承認できない（再確認）
+  const conflicts = Array.isArray(item.conflicts) ? item.conflicts : [];
+  const conflictOk = fd.get("conflict_ok") === "on";
+  if (decision === "approve" && conflicts.length > 0 && !conflictOk) return fail("いまのルールと矛盾する可能性があります。内容を確認して、チェックを入れてから承認してください");
+
+  // 適用する用途（note の案だけ）。領域に属する用途だけ受け取る。空＝その領域のすべての用途
+  const tasks =
+    item.form === "note" && fd.get("tasks_present") === "1"
+      ? (fd.getAll("tasks").map(String).filter((t): t is KnowhowTask => t in TASKS && (TASKS[t as KnowhowTask].area === item.area || (item.area === "aio" && TASKS[t as KnowhowTask].area === "seo")))) as string[]
+      : null;
 
   // 承認すると実際のルールに反映される。反映される文（管理者が直せる）と法令ルールは、ここで中身を確かめる
   let appliedText: string | null = null;
@@ -71,6 +83,9 @@ export async function decideKnowhowAction(fd: FormData): Promise<void> {
       decision_note: note,
       updated_at: now,
       ...(appliedText !== null ? { applied_text: appliedText } : {}),
+      ...(tasks !== null ? { tasks } : {}),
+      ...(decision === "approve" && conflicts.length > 0 ? { conflict_ok: true } : {}),
+      ...(status === "pending" ? { conflict_ok: false } : {}),
       // コードの案：承認＝実装待ち。実装済みのまま承認し直しても戻さない。それ以外の判断では対象外に戻す
       ...(item.form === "code"
         ? { impl_note: String(fd.get("impl_note") ?? "").slice(0, 1000), ...(status === "approved" ? (item.impl_status === "done" ? {} : { impl_status: "todo" }) : { impl_status: "none" }) }
@@ -188,4 +203,19 @@ export async function addManualCheckAction(fd: FormData): Promise<void> {
   if (error) return back("err=" + encodeURIComponent("保存に失敗しました"));
   revalidatePath("/admin/knowhow/sources");
   back("done=madded");
+}
+
+/** 矛盾チェックがまだの判断待ちの案を、最大10件ずつ判定する（管理者のボタン） */
+export async function checkKnowhowConflictsAction(): Promise<void> {
+  const { userId, tier } = await getTier();
+  if (tier !== "admin" || !userId) throw new Error("権限がありません");
+  let r: { checked: number; withConflict: number; failed: boolean };
+  try {
+    r = await checkPendingConflicts();
+  } catch {
+    r = { checked: 0, withConflict: 0, failed: true };
+  }
+  revalidatePath("/admin/knowhow");
+  if (r.failed) redirect("/admin/knowhow?err=" + encodeURIComponent("矛盾チェックに失敗しました。もう一度お試しください"));
+  redirect(`/admin/knowhow?done=conflict&n=${r.checked}&c=${r.withConflict}`);
 }
