@@ -144,7 +144,7 @@ export type AutoLogEntry = {
 
 /** 画面の一番上の「今の数字」。前回比つき */
 /** ビジネスプロフィールの本人確認・管理の状態（Business Verifications API の VoiceOfMerchantState から。lib/gbp/api.ts の parseVoiceOfMerchant） */
-export type GbpVerifyState = "ok" | "verify" | "verify_pending" | "wait" | "conflict" | "guidelines" | "unknown";
+export type GbpVerifyState = "ok" | "verify" | "verify_pending" | "wait" | "conflict" | "guidelines";
 
 export type KitNumber = { key: string; label: string; value: string; prev: string | null; delta: "up" | "down" | "same" | null; note: string };
 
