@@ -1,7 +1,7 @@
 import { askJson as rawAskJson, MODEL_FAST } from "../../anthropic";
 import { withKnowhow } from "../../knowhow";
 
-const askJson = withKnowhow(rawAskJson, ["meo"]);
+const askJson = withKnowhow(rawAskJson, ["meo"], "meo_kit");
 import { checkGuard, checkGuardDict } from "../../guardrail";
 import type { GuardScope, Industry } from "../../types";
 import { ask } from "../ai-search";

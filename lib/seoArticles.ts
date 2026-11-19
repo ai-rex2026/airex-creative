@@ -1,7 +1,7 @@
 import { askJson as rawAskJson } from "./anthropic";
 import { withKnowhow } from "./knowhow";
 
-const askJson = withKnowhow(rawAskJson, ["seo"]);
+const askJson = withKnowhow(rawAskJson, ["seo"], "article");
 import type { Diagnosis } from "./types";
 import type { SiteScan } from "./site-scan";
 import type { KeywordPlan } from "./deep";

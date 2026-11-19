@@ -2,7 +2,7 @@ import { askJson as rawAskJson } from "../anthropic";
 import { withKnowhow } from "../knowhow";
 
 /** 承認済みの画像・バナーのノウハウを、絵の基本パターンの指示に足す（lib/knowhow.ts） */
-const askJson = withKnowhow(rawAskJson, ["image"]);
+const askJson = withKnowhow(rawAskJson, ["image"], "banner");
 import { checkGuard } from "../guardrail";
 import { normalizeJapanese } from "../meo-ops/japanese";
 import type { Diagnosis, GuardHit, GuardVerdict, Industry } from "../types";

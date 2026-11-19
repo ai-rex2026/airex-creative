@@ -3,8 +3,8 @@ import { notFound } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/tier";
-import { decideKnowhowAction, markKnowhowImplAction } from "@/app/knowhow-actions";
-import { MAX_NOTES, MAX_NOTE_CHARS, pickNotes } from "@/lib/knowhow";
+import { checkKnowhowConflictsAction, decideKnowhowAction, markKnowhowImplAction } from "@/app/knowhow-actions";
+import { MAX_NOTES, MAX_NOTE_CHARS, TASKS, TASK_KEYS, forTask, pickNotes } from "@/lib/knowhow";
 import { manualStatus, type ManualRow } from "@/lib/knowhow-manual";
 
 export const metadata = { title: "ノウハウ更新案｜AI-REX Studio" };
@@ -32,6 +32,9 @@ type Item = {
   applied_text: string;
   impl_status?: string;
   impl_note?: string;
+  tasks?: string[];
+  conflicts?: { with: string; label: string; why: string }[];
+  conflict_checked_at?: string | null;
   rule: { pattern?: string; reason?: string; law?: string; suggestion?: string; scopes?: string[]; industries?: string[] } | null;
 };
 
@@ -47,7 +50,7 @@ const fmt = (iso: string) =>
 const TABS: [string, string][] = [["pending", "判断待ち"], ["approved", "承認"], ["held", "保留"], ["rejected", "却下"], ["impl", "実装待ち"]];
 
 /** ノウハウ更新案の受信箱。管理者だけ（ほかの人には存在も見せない）。スマホで1件ずつ 承認／保留／却下 を選ぶ */
-export default async function KnowhowInbox({ searchParams }: { searchParams: Promise<{ s?: string; a?: string; by?: string; from?: string; to?: string; err?: string; done?: string }> }) {
+export default async function KnowhowInbox({ searchParams }: { searchParams: Promise<{ s?: string; a?: string; by?: string; from?: string; to?: string; err?: string; done?: string; n?: string; c?: string }> }) {
   const { tier } = await getTier();
   if (tier !== "admin") notFound();
   const sp = await searchParams;
@@ -91,17 +94,18 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
   // AI の指示の「枠」の使用状況。実際の反映（knowhowBlock）と同じ選び方で数える。SEO と AIO は記事づくりで同じ枠を共有する
   const { data: noteRows } = await sb
     .from("knowhow_items")
-    .select("id, area, applied_text")
+    .select("id, area, applied_text, tasks")
     .eq("status", "approved")
     .eq("form", "note")
     .neq("kind", "nochange")
     .neq("applied_text", "")
     .order("decided_at", { ascending: true })
     .limit(2000);
-  const POOLS: [string, string[]][] = [["MEO", ["meo"]], ["SEO・AIO（記事づくりで共有）", ["seo", "aio"]], ["LPO", ["lpo"]], ["画像生成", ["image"]]];
-  const slot = POOLS.map(([label, areas]) => {
-    const r = pickNotes((noteRows ?? []).filter((x) => areas.includes(String(x.area))));
-    return { label, count: r.used.length, total: r.used.length + r.skipped.length, chars: r.chars, skipped: r.skipped.map((x) => String(x.id)), areas };
+  // 用途ごとに数える（承認した文は、当てはまる用途の呼び出しにだけ足される。用途の指定が無い文はその領域のすべての用途に足される）
+  const slot = TASK_KEYS.map((t) => {
+    const areas = TASKS[t].area === "seo" || TASKS[t].area === "aio" ? ["seo", "aio"] : [TASKS[t].area as string];
+    const r = pickNotes(forTask((noteRows ?? []).filter((x) => areas.includes(String(x.area))), t));
+    return { label: TASKS[t].label, count: r.used.length, total: r.used.length + r.skipped.length, chars: r.chars, skipped: r.skipped.map((x) => String(x.id)) };
   });
   const notInSlot = new Set(slot.flatMap((s) => s.skipped));
   const n = new Map<string, number>();
@@ -128,6 +132,11 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
           </p>
         )}
         {sp.err && <p style={{ marginTop: 12, fontSize: 13, color: "var(--ng)" }}>{sp.err}</p>}
+        {sp.done === "conflict" && (
+          <p className="tag ok" style={{ marginTop: 12 }}>
+            矛盾チェックをしました（{sp.n ?? 0} 件中、矛盾の可能性ありは {sp.c ?? 0} 件）
+          </p>
+        )}
         {sp.done && DONE[sp.done] && (
           <p className="tag ok" style={{ marginTop: 12 }}>
             {DONE[sp.done]}
@@ -135,13 +144,16 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
         )}
 
         <div style={{ fontSize: 12.5, marginTop: 14, background: "var(--sunk)", border: "1px solid var(--line)", borderRadius: 6, padding: "10px 12px", lineHeight: 1.9 }}>
-          <b>AIへの指示の枠の使用状況</b>（1回の呼び出しに足せるのは {MAX_NOTES} 件・{MAX_NOTE_CHARS} 文字まで。承認が古い順に入ります）
+          <b>AIへの指示の枠の使用状況</b>（用途ごとの1回の呼び出しに足せるのは {MAX_NOTES} 件・{MAX_NOTE_CHARS} 文字まで。承認が古い順に入ります。用途を指定した文は、その用途にだけ足されます）
           {slot.map((s) => (
             <div key={s.label}>
               {s.label}：{s.count}／{MAX_NOTES} 件・{s.chars}／{MAX_NOTE_CHARS} 文字
               {s.skipped.length > 0 && <span style={{ color: "var(--ng)" }}>　枠に入っていない承認済み {s.skipped.length} 件</span>}
             </div>
           ))}
+          <form action={checkKnowhowConflictsAction} style={{ marginTop: 6 }}>
+            <button className="btn sm ghost" type="submit">矛盾チェックがまだの判断待ちの案を確認する（10件ずつ）</button>
+          </form>
           <div style={{ color: "var(--muted)" }}>法令の辞書・コードの案は、この枠に数えません。</div>
         </div>
 
@@ -281,6 +293,37 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
                   <textarea className="box" name="applied_text" rows={3} maxLength={200} defaultValue={it.applied_text} />
                 </label>
               )}
+              {it.form === "note" && it.kind !== "nochange" && (
+                <fieldset style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "8px 12px", fontSize: 12.5 }}>
+                  <legend style={{ padding: "0 4px" }}><b>適用する用途</b>（何も選ばなければ、{AREA[it.area] ?? it.area}のすべての用途に足されます）</legend>
+                  <input type="hidden" name="tasks_present" value="1" />
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                    {TASK_KEYS.filter((t) => TASKS[t].area === it.area || (it.area === "aio" && TASKS[t].area === "seo")).map((t) => (
+                      <label key={t} style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                        <input type="checkbox" name="tasks" value={t} defaultChecked={(it.tasks ?? []).includes(t)} />
+                        {TASKS[t].label}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+              {it.status !== "approved" && (it.conflicts ?? []).length > 0 && (
+                <div style={{ fontSize: 12.5, border: "1px solid var(--ng)", borderRadius: 6, padding: "10px 12px", lineHeight: 1.8 }}>
+                  <b style={{ color: "var(--ng)" }}>いまのルール・承認済みの案と矛盾する可能性があります</b>
+                  <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                    {(it.conflicts ?? []).map((c) => (
+                      <li key={c.with}>
+                        「{c.label}」と：{c.why}
+                      </li>
+                    ))}
+                  </ul>
+                  <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 6 }}>
+                    <input type="checkbox" name="conflict_ok" style={{ marginTop: 4 }} />
+                    <span>矛盾の内容を確認した上で、この案を採用します（承認するときだけ必要）</span>
+                  </label>
+                </div>
+              )}
+              {it.status === "pending" && !it.conflict_checked_at && <p style={{ fontSize: 12, color: "var(--muted)" }}>矛盾チェック：まだ</p>}
               <textarea className="box" name="note" rows={2} placeholder="メモ（任意）" defaultValue={it.decision_note} />
               {it.risk === "legal" && it.status !== "approved" && (
                 <label style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "flex-start" }}>

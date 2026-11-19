@@ -240,3 +240,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
   - 記事の見出し直後の要約（`lib/aio/answer-first.ts`）：自社サイト・サテライトの記事を保存する前に、各節の最初の段落が40〜180字（目標は50〜150字）かをコードで検査し、外れた節だけ AI 1回で書き直す（節の本文に書かれていることだけ・失敗したら本文はそのまま・note は対象外）
 - MEO（2026-11-19 実装）：①本人確認の状態（`lib/gbp/api.ts` の `getVoiceOfMerchant`／`parseVoiceOfMerchant`。My Business Verifications API の `VoiceOfMerchantState`。読み取りのみ）を、店舗ホームを開くたびに取り（`kitDataAction`・1つ8秒で打ち切り・失敗したら出さない）、認証済み（ok）以外のときだけ、「やること」の先頭に `gbp-verify` を固定で出す（文言は `VERIFY_TEXT`。AI に挙げさせない）。②行動データ（電話・ルート検索・サイトのクリック・表示回数。直近28日と、その前の28日）を `metricNumbers` で「今の数字」に出す（順位への効果は書かない）。**GCP で「My Business Verifications API」の有効化が要る**（無効だと①は黙って出ない。`fetchMetrics` の Performance API は既に使っている）。検証は `parseVoiceOfMerchant`・`metricNumbers`・`buildPlan` の純粋な処理で行った（Google は呼んでいない。実機での確認は、API を有効にした本番で店舗ホームを開いて行う）
 - コード化した承認済みの案は `form` を `code`・`impl_status=done` にして、AI の指示の枠から外した（元の文は `applied_text` に残してある）
+
+## ノウハウの「適用する用途」と矛盾チェック（2026-11-19 追記）
+
+- 用途（`lib/knowhow.ts` の `TASKS`・`forTask`）：承認した note は、`knowhow_items.tasks` が空ならその領域のすべての AI 呼び出しに足す（従来どおり）。用途を選んだものは、その用途の `withKnowhow(askJson, areas, task)` にだけ足す。枠の上限（40件・3500字）は用途ごとに数え、管理画面の使用状況も用途ごと。用途を足すときは `TASKS` に足し、その AI 呼び出しの `withKnowhow` に task を渡す。SQL は `Docs/sql/2026-11-19-knowhow-tasks-conflicts.sql`
+- 矛盾チェック（`lib/knowhow-conflicts.ts`・`knowhow-conflicts-run.ts`）：新しい案（判断待ち・未確認）を、同じ領域で承認済みの案（AI への指示の文・辞書のルール・コードの案）と AI（Haiku）1回でまとめて照らし、`conflicts` に保存する（SEO と AIO は相互に比べる）。公式ページの取得（定期・全取り込み）のあとに最大10件を自動で確認し、残りは管理画面「矛盾チェックがまだの判断待ちの案を確認する」で10件ずつ。矛盾の疑いがある案は、内容を見て「確認した上で採用します」にチェックを入れないと承認できない（Server Action で強制）。AI が失敗したら未確認のまま残り、次回やり直す。判断待ちに戻すとチェックの印は外れる。検証は `detectConflicts` の `ask` を差し替えて行う

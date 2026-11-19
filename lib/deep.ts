@@ -50,7 +50,7 @@ export async function generateLpo(d: Diagnosis, site: SiteScan | null, priorityN
   // 測定は返らないことがあるので工程の最後に回しており、ここでは持っていない。
 
   // LP改善の指摘にも、承認済みの LPO ノウハウ（法令・表示ルール）を足す。同じファイルの他の生成（キーワード・LINE）には足さない
-  const askLpo = withKnowhow(askJson, ["lpo"]);
+  const askLpo = withKnowhow(askJson, ["lpo"], "lpo_plan");
   const res = await askLpo<LpoPlan>(
     `あなたはランディングページ改善（LPO）の実務者です。広告の受け皿としてサイトを直す指摘を出します。
 

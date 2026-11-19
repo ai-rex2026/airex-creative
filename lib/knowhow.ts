@@ -15,6 +15,32 @@ export type KnowhowArea = "meo" | "seo" | "aio" | "lpo" | "image" | "legal" | "a
 export const MAX_NOTES = 40;
 export const MAX_NOTE_CHARS = 3500;
 export const MAX_APPLIED_TEXT = 200;
+
+/**
+ * 用途（2026-11-19）。承認した文は、領域の全部の AI 呼び出しに足すのではなく、当てはまる用途にだけ足せる。
+ * knowhow_items.tasks が空なら、領域のすべての用途に足す（従来どおり）。用途を足すときは、その AI 呼び出しの withKnowhow に task を渡す
+ */
+export const TASKS = {
+  meo_write: { area: "meo", label: "MEO：返信・投稿・説明文" },
+  meo_keywords: { area: "meo", label: "MEO：キーワード" },
+  meo_kit: { area: "meo", label: "MEO：やること（工程）" },
+  article: { area: "seo", label: "記事づくり（SEO・AIO）" },
+  aio_prompts: { area: "aio", label: "AIO：プロンプト" },
+  lpo_plan: { area: "lpo", label: "LPO：LP改善" },
+  lpo_heatmap: { area: "lpo", label: "LPO：ヒートマップ" },
+  banner: { area: "image", label: "バナー制作" },
+} as const;
+export type KnowhowTask = keyof typeof TASKS;
+export const TASK_KEYS = Object.keys(TASKS) as KnowhowTask[];
+
+/** 用途に当てはまる行だけ残す。tasks が空の行はすべての用途に当てはまる。task を渡さなければ絞らない */
+export function forTask<T extends { tasks?: unknown }>(rows: T[], task?: KnowhowTask): T[] {
+  if (!task) return rows;
+  return rows.filter((r) => {
+    const t = Array.isArray(r.tasks) ? (r.tasks as unknown[]) : [];
+    return t.length === 0 || t.includes(task);
+  });
+}
 /** 辞書は AI の指示に入らず、コードが照合するだけなので件数の制約は小さい。暴走を防ぐ安全弁として大きめに置く（2026-11-19：50 → 500） */
 export const MAX_LEGAL_RULES = 500;
 
@@ -41,19 +67,19 @@ export function pickNotes<T extends { applied_text?: unknown }>(rows: T[]): { us
   return { used, skipped, chars };
 }
 
-export async function knowhowBlock(areas: KnowhowArea[]): Promise<string> {
+export async function knowhowBlock(areas: KnowhowArea[], task?: KnowhowTask): Promise<string> {
   try {
     const { data } = await createAdminClient()
       .from("knowhow_items")
-      .select("applied_text")
+      .select("applied_text, tasks")
       .eq("status", "approved")
       .eq("form", "note")
       .neq("kind", "nochange")
       .neq("applied_text", "")
       .in("area", areas)
       .order("decided_at", { ascending: true })
-      .limit(MAX_NOTES);
-    const lines = pickNotes(data ?? []).used.map((u) => `- ${u.text}`);
+      .limit(1000);
+    const lines = pickNotes(forTask(data ?? [], task)).used.map((u) => `- ${u.text}`);
     if (lines.length === 0) return "";
     return `\n\n【運営が確認した最新のノウハウ（参考にする。効果や順位を断定する根拠には使わない）】\n${lines.join("\n")}`;
   } catch {
@@ -63,8 +89,8 @@ export async function knowhowBlock(areas: KnowhowArea[]): Promise<string> {
 
 /** askJson 系の関数に「承認済みノウハウを system の末尾へ足す」処理を被せる。引数と戻り値の型はそのまま */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function withKnowhow<F extends (system: string, ...rest: any[]) => Promise<any>>(fn: F, areas: KnowhowArea[]): F {
-  return (async (system: string, ...rest: unknown[]) => fn(system + (await knowhowBlock(areas)), ...rest)) as unknown as F;
+export function withKnowhow<F extends (system: string, ...rest: any[]) => Promise<any>>(fn: F, areas: KnowhowArea[], task?: KnowhowTask): F {
+  return (async (system: string, ...rest: unknown[]) => fn(system + (await knowhowBlock(areas, task)), ...rest)) as unknown as F;
 }
 
 export type ExtraRule = { pattern: RegExp; reason: string; law: string; suggestion: string; industries?: string[]; scopes?: GuardScope[] };

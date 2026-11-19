@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { askJson, MODEL_FAST } from "@/lib/anthropic";
 import { checkGuardDict } from "@/lib/guardrail";
 import { htmlToText, publicFetch } from "@/lib/aio/net";
+import { checkPendingConflicts } from "@/lib/knowhow-conflicts-run";
 import { checkSource, hashText, ingestStep, normalizeText, type CheckDeps, type Draft, type FullDeps, type Source } from "@/lib/knowhow-sources";
 
 /**
@@ -88,7 +89,18 @@ export async function runKnowhowSources(opts: { force?: boolean; deadlineMs?: nu
     if (res.outcome === "baseline") out.baseline++;
     if (res.outcome === "error") out.errors++;
   }
+  await conflictPass(out.notes);
   return out;
+}
+
+/** 新しい案の矛盾チェック（最大10件。失敗しても案の保存には影響させない。残りは管理画面のボタンか次回） */
+async function conflictPass(notes: string[]) {
+  try {
+    const r = await checkPendingConflicts();
+    if (r.failed) notes.push("矛盾チェックに失敗しました（案は保存済み。管理画面から再実行できます）");
+  } catch {
+    notes.push("矛盾チェックに失敗しました（案は保存済み）");
+  }
 }
 
 // ── 過去分を含めた全取り込み（2026-11-19）──────────────────────────
@@ -194,5 +206,6 @@ export async function runKnowhowFullIngest(
       if (finished) out.done++;
     }
   }
+  await conflictPass(out.notes);
   return out;
 }
