@@ -6,7 +6,6 @@ import { getTier } from "@/lib/tier";
 import { checkKnowhowConflictsAction, decideKnowhowAction, markKnowhowImplAction } from "@/app/knowhow-actions";
 import { MAX_NOTES, MAX_NOTE_CHARS, TASKS, TASK_KEYS, forTask, pickNotes } from "@/lib/knowhow";
 import { PendingButton } from "@/components/admin/PendingButton";
-import { manualStatus, type ManualRow } from "@/lib/knowhow-manual";
 
 export const metadata = { title: "ノウハウ更新案｜AI-REX Studio" };
 export const dynamic = "force-dynamic";
@@ -83,10 +82,6 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
   const back = qs({});
 
   const sb = createAdminClient();
-  const { data: mrows } = await sb.from("knowhow_manual_checks").select("key,title,interval_days,last_checked_at").limit(100);
-  const overdue = ((mrows ?? []) as Pick<ManualRow, "key" | "title" | "interval_days" | "last_checked_at">[])
-    .map((m) => ({ m, st: manualStatus(m) }))
-    .filter((x) => x.st.overdue);
   const [{ data }, counts]: [{ data: unknown }, { data: { status: string; form: string; impl_status: string }[] | null }] = await Promise.all([
     filtered((tab === "impl" ? sb.from("knowhow_items").select("*").eq("form", "code").eq("impl_status", "todo") : sb.from("knowhow_items").select("*")).eq("status", status)).order(by === "decided" ? "decided_at" : "created_at", { ascending: false }).limit(100),
     filtered(sb.from("knowhow_items").select("status, form, impl_status")).limit(2000),
@@ -128,12 +123,6 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
         <p style={{ fontSize: 12.5, marginTop: 6 }}>
           <Link href="/admin/knowhow/sources" style={{ textDecoration: "underline" }}>確認している公式ページ（週1回・変わったときだけ案を作成）</Link>
         </p>
-        {overdue.length > 0 && (
-          <p style={{ marginTop: 10, fontSize: 13, color: "var(--ng)", lineHeight: 1.8 }}>
-            点検が必要なページが {overdue.length} 件あります：{overdue.map((x) => `${x.m.title}（${x.st.label}）`).join("、")}。
-            <Link href="/admin/knowhow/sources" style={{ textDecoration: "underline", marginLeft: 6 }}>点検する</Link>
-          </p>
-        )}
         {sp.err && <p style={{ marginTop: 12, fontSize: 13, color: "var(--ng)" }}>{sp.err}</p>}
         {sp.done === "conflict" && (
           <p className="tag ok" style={{ marginTop: 12 }}>

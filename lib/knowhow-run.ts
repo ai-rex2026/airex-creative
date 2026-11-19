@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { askJson, MODEL_FAST } from "@/lib/anthropic";
 import { checkGuardDict } from "@/lib/guardrail";
-import { htmlToText, publicFetch } from "@/lib/aio/net";
+import { apifyRender, makeFetchText } from "@/lib/knowhow-render";
 import { checkAllPendingConflicts } from "@/lib/knowhow-conflicts-run";
 import { checkSource, hashText, ingestStep, normalizeText, type CheckDeps, type Draft, type FullDeps, type Source } from "@/lib/knowhow-sources";
 
@@ -24,11 +24,7 @@ form の選び方：コードで確実に守るべき仕組み（判定・数値
 
 function realDeps(): CheckDeps {
   return {
-    fetchText: async (url) => {
-      const res = await publicFetch(url, { timeoutMs: 20_000 });
-      if (!res.ok) throw new Error(`取得できませんでした（HTTP ${res.status}）`);
-      return htmlToText((await res.text()).slice(0, 1_500_000));
-    },
+    fetchText: makeFetchText(apifyRender(createAdminClient())),
     draft: async (source, added) => {
       const res = await askJson<{ items?: Draft[] }>(DRAFT_SYSTEM, `対象：${source.title}（${source.url}）\n追加された行：\n${added}`, {
         model: MODEL_FAST,
@@ -69,7 +65,7 @@ export async function runKnowhowSources(opts: { force?: boolean; deadlineMs?: nu
       out.notes.push("AI の呼び出しの上限に達したため、残りは次回に回しました");
       continue;
     }
-    const src: Source = { key: r.key, area: r.area, title: r.title, url: r.url, official: !!r.official, last_hash: r.last_hash ?? null, last_text: r.last_text ?? "" };
+    const src: Source = { key: r.key, area: r.area, title: r.title, url: r.url, official: !!r.official, last_hash: r.last_hash ?? null, last_text: r.last_text ?? "", fetch_mode: r.fetch_mode ?? "auto" };
     let called = false;
     const res = await checkSource(src, { ...deps, draft: async (s, a) => ((called = true), deps.draft(s, a)) }, failed);
     if (called) aiCalls++;
@@ -144,11 +140,7 @@ export async function runKnowhowFullIngest(
   const deps = opts.deps ?? realFullDeps();
   const fetchText =
     opts.fetchText ??
-    (async (url: string) => {
-      const res = await publicFetch(url, { timeoutMs: 20_000 });
-      if (!res.ok) throw new Error(`取得できませんでした（HTTP ${res.status}）`);
-      return htmlToText((await res.text()).slice(0, 1_500_000));
-    });
+    makeFetchText(apifyRender(admin));
   const maxCalls = opts.maxAiCalls ?? MAX_FULL_AI_CALLS;
   const deadline = Date.now() + (opts.deadlineMs ?? 100_000);
   const out: IngestSummary = { sources: 0, done: 0, chunks: 0, created: 0, remaining: 0, errors: 0, notes: [] };
@@ -160,12 +152,12 @@ export async function runKnowhowFullIngest(
       out.remaining++;
       continue;
     }
-    const src: Source = { key: r.key, area: r.area, title: r.title, url: r.url, official: !!r.official, last_hash: r.last_hash ?? null, last_text: r.last_text ?? "" };
+    const src: Source = { key: r.key, area: r.area, title: r.title, url: r.url, official: !!r.official, last_hash: r.last_hash ?? null, last_text: r.last_text ?? "", fetch_mode: r.fetch_mode ?? "auto" };
     let text = src.last_text;
     if (!text) {
       // 基準がまだ無いページ：取得して基準としても保存する（次回からの差分の比較元になる）
       try {
-        text = normalizeText(await fetchText(src.url));
+        text = normalizeText(await fetchText(src.url, src.fetch_mode));
         if (text.length < 200) throw new Error("本文がほとんど取れませんでした");
       } catch (e) {
         out.errors++;

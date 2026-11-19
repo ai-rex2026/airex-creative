@@ -15,6 +15,8 @@ export type Source = {
   official: boolean;
   last_hash: string | null;
   last_text: string;
+  /** auto＝普通に取り、取れなければブラウザ表示／browser＝いつもブラウザ表示 */
+  fetch_mode?: string;
 };
 
 export type Draft = { title?: unknown; summary?: unknown; proposal?: unknown; applied_text?: unknown; caveat?: unknown; is_guess?: unknown; kind?: unknown; form?: unknown; impl_note?: unknown };
@@ -59,7 +61,7 @@ export type SourceUpdate = {
 
 export type CheckDeps = {
   /** ページの本文（テキスト）を返す。取れなければ throw */
-  fetchText: (url: string) => Promise<string>;
+  fetchText: (url: string, mode?: string) => Promise<string>;
   /** 追加された行から、更新案の下書きを作る（AI）。呼ぶのは「変わったとき」だけ */
   draft: (source: Source, added: string) => Promise<Draft[]>;
   /** 反映される文に断定語などが無いか（true = 問題なし） */
@@ -150,7 +152,7 @@ export async function checkSource(source: Source, deps: CheckDeps, prevFailCount
   const nowIso = deps.now().toISOString();
   let text: string;
   try {
-    text = normalizeText(await deps.fetchText(source.url));
+    text = normalizeText(await deps.fetchText(source.url, source.fetch_mode));
     if (text.length < 200) throw new Error("本文がほとんど取れませんでした");
   } catch (e) {
     return {

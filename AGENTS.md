@@ -258,3 +258,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - 「今すぐ確認する」「過去分を含めて全部取り込む」は `PendingButton`（回るマークと説明）。全取り込みの結果には、失敗などの理由（`notes` の先頭5件）も出す。失敗した理由は、取得の失敗も案の保存の失敗も、そのページの `last_error` に残して、ページ一覧に赤く出す（理由が空のときも「取得に失敗しました」を入れる）
 - 「手動で点検するページ」は、サーバーから自動で取れないページ。全取り込み・定期取得の対象外で、人（またはブラウザを操作できるセッション）が開いて確認し、「点検しました」で記録する。アプリが自分でブラウザを開いて点検する仕組みは無い
+
+## 公式ページの取得：ブラウザ表示（2026-11-19 追記）
+
+- 手動点検（`knowhow_manual_checks`）は廃止し、3ページ（Meta 広告基準・X 広告ポリシー更新履歴・Microsoft Advertising ブログ）を `knowhow_sources`（`fetch_mode='browser'`）に移した。定期取得・「今すぐ確認」・「過去分を含めて全部取り込む」とも、ほかのページと同じ流れで動く（`Docs/sql/2026-11-19-knowhow-browser-fetch.sql`）
+- 本文の取り方は `lib/knowhow-render.ts` の `makeFetchText`：`auto`（既定）は普通に取り、失敗か本文200字未満のときだけブラウザ表示に切り替える。`browser` はいつもブラウザ表示。ブラウザ表示は Apify の `apify/website-content-crawler`（playwright:firefox・Apify プロキシ）。AI がブラウザを操作するのではなく、ブラウザで表示された本文を取るだけ（AI を使うのは、従来どおり変わった行を案にする所）
+- 有料なので、1日30回（`RENDER_DAILY_MAX`）の上限を fetch の直前の1箇所で `claim_knowhow_render_call` に通す。取れたページの本文は保存して再取得しない。ログイン・同意操作が要るページは取れない
+- 検証は `makeFetchText(render, plain)`・`apifyRender(admin, fetch)` を差し替えて行う
