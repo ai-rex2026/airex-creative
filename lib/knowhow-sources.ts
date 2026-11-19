@@ -47,7 +47,8 @@ export type ItemInsert = {
  */
 export function formFields(d: Draft, applied: string): { form: "note" | "code"; applied_text: string; impl_note?: string } {
   if (d.form === "code") return { form: "code", applied_text: "", impl_note: str(d.impl_note, 1000) || str(d.proposal, 300) };
-  return { form: "note", applied_text: applied };
+  // impl_note は not-null。note の案も空文字で必ず入れる（code と note が1回の upsert に混ざると、キーの無い行が null になって保存に失敗する）
+  return { form: "note", applied_text: applied, impl_note: "" };
 }
 
 export type SourceUpdate = {
