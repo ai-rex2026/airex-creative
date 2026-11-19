@@ -6,7 +6,9 @@ import type { Industry } from "@/lib/types";
 import { createPostAction, publishPostAction, replyToReviewAction } from "@/app/meo-actions";
 import { kindOf } from "@/lib/meo-ops/kit/text";
 import { autoSteps } from "@/lib/meo-ops/kit/plan";
-import { loadKitData, loadSteps, rowToLog, saveStep, saveStepError, toAuto, toInput, toPlan, type KitRow } from "@/lib/meo-ops/kit/store";
+import { fetchMetrics, getVoiceOfMerchant } from "@/lib/gbp/api";
+import { gbpAccessToken } from "@/lib/gbp/oauth";
+import { loadKitData, loadSteps, rowToLog, saveStep, saveStepError, toAuto, toInput, toPlan, type GbpExtra, type KitRow } from "@/lib/meo-ops/kit/store";
 import {
   nextSeriesPost,
   rewriteCopy,
@@ -83,9 +85,32 @@ function refresh(id: string) {
   revalidatePath(`/stores/${id}`, "layout");
 }
 
+/** Google への問い合わせは画面を待たせすぎないよう、1つ8秒で打ち切る（取れなかった分は出さない） */
+const withTimeout = <T,>(p: Promise<T>, ms = 8000): Promise<T> => Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+
 export async function kitDataAction(id: string): Promise<KitData> {
-  const { sb, row } = await owned(id);
-  return loadKitData(sb, row);
+  const { sb, row, user } = await owned(id);
+  // 連携済みなら、本人確認の状態と行動データ（直近28日・その前28日）を Google から取る。読み取りのみ。失敗しても他の表示は出す
+  const extra: GbpExtra = {};
+  if (row.meo_gbp_location) {
+    try {
+      const token = await gbpAccessToken(user.id);
+      if (token) {
+        const loc = row.meo_gbp_location;
+        const prevEnd = new Date(Date.now() - 28 * 864e5);
+        const [vom, now, prev] = await Promise.allSettled([
+          withTimeout(getVoiceOfMerchant(token, loc)),
+          withTimeout(fetchMetrics(token, loc)),
+          withTimeout(fetchMetrics(token, loc, prevEnd)),
+        ]);
+        if (vom.status === "fulfilled") extra.state = vom.value.state === "unknown" ? null : vom.value.state;
+        if (now.status === "fulfilled") extra.metrics = { now: now.value, prev: prev.status === "fulfilled" ? prev.value : null };
+      }
+    } catch {
+      /* 取れなければ出さない */
+    }
+  }
+  return loadKitData(sb, row, extra);
 }
 
 export async function saveKitInputAction(id: string, input: KitInput) {

@@ -1,4 +1,4 @@
-import type { KitKind, KitResults, KitStepId } from "./types";
+import type { GbpVerifyState, KitKind, KitResults, KitStepId } from "./types";
 
 /**
  * 「やること」。画面はこの一覧が先頭で、各項目を開くとその場で「今 → こう変える → なぜ」と貼る文章が出る。
@@ -13,6 +13,7 @@ export type Render =
   | "gbp-posts"
   | "gbp-menu"
   | "gbp-profile"
+  | "gbp-verify"
   | "kit"
   | "greviews"
   | "coupon"
@@ -39,13 +40,52 @@ export type PlanItem = {
   ready: boolean;
 };
 
-export function buildPlan(r: KitResults, kind: KitKind, ctx: { unreplied: number; profilePending: number }): PlanItem[] {
+/** 本人確認・管理の状態ごとの、やることの文言（Google の VoiceOfMerchantState に対応。断定しすぎず、Google の画面の案内に従ってもらう） */
+export const VERIFY_TEXT: Record<Exclude<GbpVerifyState, "ok">, { title: string; why: string; minutes: number; body: string }> = {
+  verify: {
+    title: "ビジネスプロフィールの本人確認を済ませる",
+    why: "本人確認が済んでいないと、説明文や写真を直しても Google マップに反映されないことがあります。ほかのやることより先に済ませます",
+    minutes: 15,
+    body: "Google ビジネスプロフィールの管理画面で「確認」を開き、案内される方法（動画・電話・メールなど。店舗によって選べる方法は変わります）で認証してください。",
+  },
+  verify_pending: {
+    title: "本人確認の手続きを完了させる",
+    why: "確認の手続きは始まっていますが、完了していません。完了するまで、変更が地図に反映されないことがあります",
+    minutes: 10,
+    body: "届いた確認コードの入力、または動画の提出など、Google ビジネスプロフィールの管理画面に出ている残りの手続きを完了してください。",
+  },
+  wait: {
+    title: "Google の審査が終わるのを待つ",
+    why: "プロフィールが Google の審査中です。通過すると、編集が地図に反映されるようになります",
+    minutes: 1,
+    body: "こちらでできることはありません。審査が終わってから、ほかのやることを進めてください。数日たっても変わらないときは、管理画面の案内を確認してください。",
+  },
+  conflict: {
+    title: "同じ場所の別のプロフィールを確認する",
+    why: "同じ場所に、すでに良好な状態の別のプロフィールがあります。このままでは、こちらの編集が反映されません",
+    minutes: 15,
+    body: "Google ビジネスプロフィールの管理画面で、同じ場所のプロフィールの所有者（自社の別アカウントのことも多い）に管理権限を依頼するか、重複しているプロフィールを整理してください。",
+  },
+  guidelines: {
+    title: "ガイドライン違反の指摘を解消する",
+    why: "プロフィールが停止・無効になっているおそれがあります。解消するまで、地図に出ない可能性があります",
+    minutes: 30,
+    body: "Google ビジネスプロフィールの管理画面に出ている理由を確認し、案内に従って修正のうえ、再審査を申請してください。",
+  },
+};
+
+export function buildPlan(r: KitResults, kind: KitKind, ctx: { unreplied: number; profilePending: number; verify?: GbpVerifyState | null }): PlanItem[] {
   const d = r.diagnose;
   const obj = d?.objections?.[0];
   const st = d?.strengths?.[0];
   const items: PlanItem[] = [];
   const push = (x: Omit<PlanItem, "ready"> & { ready?: boolean }) => items.push({ ...x, ready: x.ready ?? (x.source ? !!r[x.source as keyof KitResults] : true) });
 
+  // 本人確認が済んでいないと、説明文や写真を直しても Google に反映されない。状態が取れて、済んでいないときだけ、いちばん先に出す
+  if (ctx.verify && ctx.verify !== "ok") {
+    const v = VERIFY_TEXT[ctx.verify];
+    push({ id: "gbp-verify", render: "gbp-verify", source: null, title: v.title, where: "Googleビジネスプロフィール", minutes: v.minutes, why: v.why });
+  }
   if (kind === "beauty") {
     push({ id: "hpb-catch", render: "hpb-catch", source: "hpb", title: "ホットペッパーのキャッチを差し替える", where: "SALON BOARD → 掲載管理", minutes: 2, why: "キャッチは一覧で最初に目に入る一文です。今の文と並べて見られます" });
     push({ id: "hpb-intro", render: "hpb-intro", source: "hpb", title: "サロン紹介文を差し替える", where: "SALON BOARD → 掲載管理", minutes: 3, why: obj ? `「${obj}」と思って選ばない人に、紹介文で先に答えます` : "強みが最初の3行に入っていないと読まれません" });
