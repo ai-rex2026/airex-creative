@@ -12,6 +12,8 @@ import { checkSource, hashText, ingestStep, normalizeText, type CheckDeps, type 
  */
 export const CHECK_INTERVAL_DAYS = 6;
 export const MAX_FAILS = 2;
+/** 「今すぐ確認」で、この分数以内に確認したページは飛ばす */
+export const FORCE_SKIP_MIN = 30;
 /** 1回の実行で AI を呼ぶ上限（費用の頭打ち） */
 export const MAX_AI_CALLS = 6;
 
@@ -55,8 +57,9 @@ export async function runKnowhowSources(opts: { force?: boolean; deadlineMs?: nu
     }
     const checkedAt = r.last_checked_at ? Date.parse(String(r.last_checked_at)) : 0;
     const failed = Number(r.fail_count ?? 0);
-    // 確認済み（直近）・今週すでに2回失敗したものは飛ばす。「今すぐ確認」は直近の確認だけ無視する
-    if ((!opts.force && checkedAt > due) || (failed >= MAX_FAILS && checkedAt > due)) {
+    // 確認済み（直近）・今週すでに2回失敗したものは飛ばす。「今すぐ確認」は6日の間隔だけ無視するが、
+    // 直近 FORCE_SKIP_MIN 分以内に確認したページは飛ばす（全ページを毎回先頭から回すと、後ろのページが時間切れで永久に届かない）
+    if ((!opts.force && checkedAt > due) || (opts.force && checkedAt > Date.now() - FORCE_SKIP_MIN * 60_000) || (failed >= MAX_FAILS && checkedAt > due)) {
       out.skipped++;
       continue;
     }

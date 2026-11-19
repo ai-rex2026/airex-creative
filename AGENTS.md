@@ -265,3 +265,5 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 本文の取り方は `lib/knowhow-render.ts` の `makeFetchText`：`auto`（既定）は普通に取り、失敗か本文200字未満のときだけブラウザ表示に切り替える。`browser` はいつもブラウザ表示。ブラウザ表示は Apify の `apify/website-content-crawler`（playwright:firefox・Apify プロキシ）。AI がブラウザを操作するのではなく、ブラウザで表示された本文を取るだけ（AI を使うのは、従来どおり変わった行を案にする所）
 - 有料なので、1日30回（`RENDER_DAILY_MAX`）の上限を fetch の直前の1箇所で `claim_knowhow_render_call` に通す。取れたページの本文は保存して再取得しない。ログイン・同意操作が要るページは取れない
 - 検証は `makeFetchText(render, plain)`・`apifyRender(admin, fetch)` を差し替えて行う
+
+- 2026-11-19：「今すぐ確認」（force）は6日の間隔を無視するが、直近30分（`FORCE_SKIP_MIN`）以内に確認したページは飛ばす。以前は毎回全ページを先頭から回したため、一覧の後ろのページ（X 広告ポリシーなど）が1回の実行時間に収まらず、何度押しても届かなかった
