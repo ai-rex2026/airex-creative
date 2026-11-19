@@ -1,8 +1,11 @@
 import { lengthIn, limitLabel, specFor, type AdSpec } from "./ad-specs";
-import { askJson } from "./anthropic";
+import { askJson as rawAskJson } from "./anthropic";
+import { withKnowhow } from "./knowhow";
 import { checkGuard } from "./guardrail";
 import { budgetOf, type BudgetBand, type Diagnosis, type GuardVerdict, type MediaPlanItem } from "./types";
 import type { SiteScan } from "./site-scan";
+
+const askJson = withKnowhow(rawAskJson, ["ads"], "ads_build");
 
 /**
  * 広告運用設計。キャンペーン構造・キーワード・RSA原稿・計測タグ診断まで、

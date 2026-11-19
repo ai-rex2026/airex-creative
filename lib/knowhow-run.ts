@@ -24,11 +24,18 @@ const DRAFT_SYSTEM = `あなたは日本の広告・集客運用（MEO・SEO・A
 form の選び方：コードで確実に守るべき仕組み（判定・数値の上限・必須の表示・禁止表現の照合・順序や条件の制御など。AIへの指示では守られないもの）は code、文章の書き方や考え方の指針は note。迷ったら note。
 守ること：原文に無いことを書かない。効果・順位・成果を断定しない（「必ず」「絶対」「No.1」等は使わない）。推測を含むなら is_guess を true にする。`;
 
+/** 広告の案は、アカウント分析からの改善案・施策案と、全体レポートの広告施策案をつくる AI への指示として書く（2026-11-19） */
+const ADS_FRAME = `
+このページは「広告」の領域です。承認した案は、次の2つの AI への指示に足されます：①連携した広告アカウント（Google・Meta・Yahoo!・LINE・TikTok・X・Microsoft）の実績を分析して改善案・施策案を出す AI、②全体レポートの広告施策案（媒体プラン・キャンペーン構成）を出す AI。
+そのため、仕様・審査基準・配信ルール・入稿規定の変更が、「改善案・施策案で何を勧めてよいか／避けるべきか／確認すべき数値や設定は何か」にどう効くかの観点で書きます。applied_text は「〜を提案するときは…」「〜の場合は…を前提にする」の形にします。
+広告の運用自体（入稿・予算変更）はこのアプリでは自動で行いません。`;
+const frameFor = (system: string, area: string) => (area === "ads" ? system + ADS_FRAME : system);
+
 function realDeps(): CheckDeps {
   return {
     fetchText: makeFetchText(apifyRender(createAdminClient())),
     draft: async (source, added) => {
-      const res = await askJson<{ items?: Draft[] }>(DRAFT_SYSTEM, `対象：${source.title}（${source.url}）\n追加された行：\n${added}`, {
+      const res = await askJson<{ items?: Draft[] }>(frameFor(DRAFT_SYSTEM, source.area), `対象：${source.title}（${source.url}）\n追加された行：\n${added}`, {
         model: MODEL_FAST,
         maxTokens: 1500,
         timeoutMs: 60_000,
@@ -122,7 +129,7 @@ form の選び方：コードで確実に守るべき仕組み（判定・数値
 function realFullDeps(): FullDeps {
   return {
     draftFull: async (source, chunk, i, n) => {
-      const res = await askJson<{ items?: Draft[] }>(FULL_SYSTEM, `対象：${source.title}（${source.url}）　本文の${i}／${n}\n${chunk}`, {
+      const res = await askJson<{ items?: Draft[] }>(frameFor(FULL_SYSTEM, source.area), `対象：${source.title}（${source.url}）　本文の${i}／${n}\n${chunk}`, {
         model: MODEL_FAST,
         maxTokens: 1500,
         timeoutMs: 60_000,

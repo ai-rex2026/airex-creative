@@ -1,6 +1,9 @@
-import { askJson } from "./anthropic";
+import { askJson as rawAskJson } from "./anthropic";
+import { withKnowhow } from "./knowhow";
 import { budgetOf, type BudgetBand, type Diagnosis, type MediaPlanItem } from "./types";
 import type { SiteScan } from "./site-scan";
+
+const askJson = withKnowhow(rawAskJson, ["ads"], "ads_plan");
 
 /**
  * 広告手法の提案。どの媒体に、どういう理由で、予算の何割を割くか。
