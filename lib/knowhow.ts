@@ -7,7 +7,7 @@ import { GUARD_SCOPES, type GuardScope } from "@/lib/types";
  *  - form=note … 領域ごとの AI への指示の末尾に、短い文を足す（knowhowBlock / withKnowhow）
  *  - form=legal_rule … 法令チェックの辞書に足す（loadLegalRules。lib/guardrail.ts が使う）
  */
-/** ads は広告運用（画面ができたら、承認した案の反映先をつなぐ。いまは案を溜めるだけ） */
+/** ads は広告（全体レポートの広告施策案・媒体プラン・キャンペーン構成と、今後の広告アカウント分析からの改善案・施策案に使う。2026-11-19） */
 export type KnowhowArea = "meo" | "seo" | "aio" | "lpo" | "image" | "legal" | "ads";
 
 /** 1回の呼び出しに足す量の上限（指示が長くなりすぎて、本来の指示が薄まらないように） */
@@ -29,6 +29,8 @@ export const TASKS = {
   lpo_plan: { area: "lpo", label: "LPO：LP改善" },
   lpo_heatmap: { area: "lpo", label: "LPO：ヒートマップ" },
   banner: { area: "image", label: "バナー制作" },
+  ads_plan: { area: "ads", label: "広告：媒体・施策案（全体レポート・アカウント分析）" },
+  ads_build: { area: "ads", label: "広告：キャンペーン構成・原稿" },
 } as const;
 export type KnowhowTask = keyof typeof TASKS;
 export const TASK_KEYS = Object.keys(TASKS) as KnowhowTask[];
