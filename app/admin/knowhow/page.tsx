@@ -50,7 +50,7 @@ const fmt = (iso: string) =>
 const TABS: [string, string][] = [["pending", "判断待ち"], ["approved", "承認"], ["held", "保留"], ["rejected", "却下"], ["impl", "実装待ち"]];
 
 /** ノウハウ更新案の受信箱。管理者だけ（ほかの人には存在も見せない）。スマホで1件ずつ 承認／保留／却下 を選ぶ */
-export default async function KnowhowInbox({ searchParams }: { searchParams: Promise<{ s?: string; a?: string; by?: string; from?: string; to?: string; err?: string; done?: string; n?: string; c?: string }> }) {
+export default async function KnowhowInbox({ searchParams }: { searchParams: Promise<{ s?: string; a?: string; by?: string; from?: string; to?: string; err?: string; done?: string; n?: string; c?: string; r?: string }> }) {
   const { tier } = await getTier();
   if (tier !== "admin") notFound();
   const sp = await searchParams;
@@ -134,7 +134,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
         {sp.err && <p style={{ marginTop: 12, fontSize: 13, color: "var(--ng)" }}>{sp.err}</p>}
         {sp.done === "conflict" && (
           <p className="tag ok" style={{ marginTop: 12 }}>
-            矛盾チェックをしました（{sp.n ?? 0} 件中、矛盾の可能性ありは {sp.c ?? 0} 件）
+            矛盾チェックをしました（{sp.n ?? 0} 件中、矛盾の可能性ありは {sp.c ?? 0} 件。未確認の残り {sp.r ?? 0} 件）
           </p>
         )}
         {sp.done && DONE[sp.done] && (
@@ -152,7 +152,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
             </div>
           ))}
           <form action={checkKnowhowConflictsAction} style={{ marginTop: 6 }}>
-            <button className="btn sm ghost" type="submit">矛盾チェックがまだの判断待ちの案を確認する（10件ずつ）</button>
+            <button className="btn sm ghost" type="submit">矛盾チェックがまだの判断待ちの案を、全件確認する</button>
           </form>
           <div style={{ color: "var(--muted)" }}>法令の辞書・コードの案は、この枠に数えません。</div>
         </div>
@@ -295,7 +295,7 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
               )}
               {it.form === "note" && it.kind !== "nochange" && (
                 <fieldset style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "8px 12px", fontSize: 12.5 }}>
-                  <legend style={{ padding: "0 4px" }}><b>適用する用途</b>（何も選ばなければ、{AREA[it.area] ?? it.area}のすべての用途に足されます）</legend>
+                  <legend style={{ padding: "0 4px" }}><b>適用する用途</b>（AIが当てはまる用途を提案します。何も選ばなければ、{AREA[it.area] ?? it.area}のすべての用途に足されます）</legend>
                   <input type="hidden" name="tasks_present" value="1" />
                   <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
                     {TASK_KEYS.filter((t) => TASKS[t].area === it.area || (it.area === "aio" && TASKS[t].area === "seo")).map((t) => (

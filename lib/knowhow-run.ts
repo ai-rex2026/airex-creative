@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { askJson, MODEL_FAST } from "@/lib/anthropic";
 import { checkGuardDict } from "@/lib/guardrail";
 import { htmlToText, publicFetch } from "@/lib/aio/net";
-import { checkPendingConflicts } from "@/lib/knowhow-conflicts-run";
+import { checkAllPendingConflicts } from "@/lib/knowhow-conflicts-run";
 import { checkSource, hashText, ingestStep, normalizeText, type CheckDeps, type Draft, type FullDeps, type Source } from "@/lib/knowhow-sources";
 
 /**
@@ -93,10 +93,11 @@ export async function runKnowhowSources(opts: { force?: boolean; deadlineMs?: nu
   return out;
 }
 
-/** 新しい案の矛盾チェック（最大10件。失敗しても案の保存には影響させない。残りは管理画面のボタンか次回） */
+/** 新しい案の矛盾チェックと用途の提案（10件ずつ続けて、時間の許す限り全件。失敗しても案の保存には影響させない。残りは管理画面のボタンか次回） */
 async function conflictPass(notes: string[]) {
   try {
-    const r = await checkPendingConflicts();
+    const r = await checkAllPendingConflicts(60_000);
+    if (r.remaining > 0 && !r.failed) notes.push(`矛盾チェックが${r.remaining}件残っています（管理画面のボタンで続けられます）`);
     if (r.failed) notes.push("矛盾チェックに失敗しました（案は保存済み。管理画面から再実行できます）");
   } catch {
     notes.push("矛盾チェックに失敗しました（案は保存済み）");

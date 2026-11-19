@@ -4,9 +4,11 @@
  * AI は1回の呼び出しで、新しい案をまとめて判定する（案ごとには呼ばない）。矛盾が疑われる案は管理者が内容を見て、確認した上で承認する（承認の自動ブロックではない）
  */
 export type ConflictRef = { id: string; area: string; form: string; title: string; text: string };
-export type NewItem = { key: string; area: string; title: string; text: string };
+/** taskOptions … この案が選べる用途（キー→表示名）。note の案だけ。AI が当てはまる用途を提案する */
+export type NewItem = { key: string; area: string; title: string; text: string; taskOptions?: Record<string, string> };
+export type Checked = { conflicts: Conflict[]; tasks: string[] };
 export type Conflict = { with: string; label: string; why: string };
-export type ConflictAsk = (system: string, user: string) => Promise<{ results?: { key?: string; conflicts?: { with?: number; why?: string }[] }[] }>;
+export type ConflictAsk = (system: string, user: string) => Promise<{ results?: { key?: string; conflicts?: { with?: number; why?: string }[]; tasks?: string[] }[] }>;
 
 /** 1回の判定に出す比較対象の上限（長くなりすぎないように）と、1件の文字数 */
 export const MAX_REFS = 80;
@@ -18,11 +20,12 @@ const SYSTEM = `あなたは広告・集客ツールのルール管理者です�
 - 同じ趣旨の重複、言い換え、補足、対象が違うだけのものは矛盾ではありません（出さない）。
 - 少しでも疑わしいだけのときは出さない。確かに食い違うものだけを挙げる。
 - with は「いまのルール」の番号。why は日本語で、どこがどう食い違うかを60字以内で。
-出力は JSON のみ：{"results":[{"key":"新しい案のkey","conflicts":[{"with":番号,"why":"…"}]}]}。矛盾の無い案は conflicts を空配列にする。`;
+- 新しい案に「用途の候補」が付いているときは、その案が当てはまる用途のキーを tasks に入れる。その領域のどの場面にも当てはまる案は tasks を空配列にする（空＝すべての用途）。候補に無いキーは入れない。
+出力は JSON のみ：{"results":[{"key":"新しい案のkey","conflicts":[{"with":番号,"why":"…"}],"tasks":["用途のキー"]}]}。矛盾の無い案は conflicts を空配列にする。`;
 
 /** 新しい案（最大 MAX_NEW 件）を、同じ領域のいまのルールと照らす。AI が失敗したら null（呼び出し側は「未確認」のまま残す） */
-export async function detectConflicts(items: NewItem[], existing: ConflictRef[], ask: ConflictAsk): Promise<Map<string, Conflict[]> | null> {
-  const out = new Map<string, Conflict[]>();
+export async function detectConflicts(items: NewItem[], existing: ConflictRef[], ask: ConflictAsk): Promise<Map<string, Checked> | null> {
+  const out = new Map<string, Checked>();
   const batch = items.slice(0, MAX_NEW);
   if (batch.length === 0) return out;
   // 比較対象は、新しい案の領域のものだけ（SEO と AIO は記事づくりで共有なので、相互に比べる）
@@ -30,11 +33,11 @@ export async function detectConflicts(items: NewItem[], existing: ConflictRef[],
   const areasOf = (a: string) => SHARED[a] ?? [a];
   const refs = existing.filter((e) => batch.some((b) => areasOf(b.area).includes(e.area))).slice(0, MAX_REFS);
   if (refs.length === 0) {
-    for (const b of batch) out.set(b.key, []);
+    for (const b of batch) out.set(b.key, { conflicts: [], tasks: [] });
     return out;
   }
   const user = `いまのルール：\n${refs.map((r, i) => `${i}. [${r.area}/${r.form}] ${clip(r.title, 40)}：${clip(r.text, 160)}`).join("\n")}\n\n新しい案：\n${batch
-    .map((b) => `key=${b.key} [${b.area}] ${clip(b.title, 40)}：${clip(b.text, 200)}`)
+    .map((b) => `key=${b.key} [${b.area}] ${clip(b.title, 40)}：${clip(b.text, 200)}${b.taskOptions ? `\n  用途の候補：${Object.entries(b.taskOptions).map(([k, v]) => `${k}=${v}`).join(" / ")}` : ""}`)
     .join("\n")}`;
   let res;
   try {
@@ -42,11 +45,12 @@ export async function detectConflicts(items: NewItem[], existing: ConflictRef[],
   } catch {
     return null;
   }
-  const byKey = new Map((res.results ?? []).map((r) => [String(r.key ?? ""), r.conflicts ?? []]));
+  const byKey = new Map((res.results ?? []).map((r) => [String(r.key ?? ""), r]));
   for (const b of batch) {
     const list: Conflict[] = [];
     const seen = new Set<string>();
-    for (const c of byKey.get(b.key) ?? []) {
+    const got = byKey.get(b.key);
+    for (const c of got?.conflicts ?? []) {
       const ref = typeof c.with === "number" ? refs[c.with] : undefined;
       const why = String(c.why ?? "").trim();
       // 同じ領域の相手だけ・番号が正しいものだけ・理由があるものだけ
@@ -54,7 +58,8 @@ export async function detectConflicts(items: NewItem[], existing: ConflictRef[],
       seen.add(ref.id);
       list.push({ with: ref.id, label: clip(ref.title, 60), why: clip(why, 120) });
     }
-    out.set(b.key, list);
+    const tasks = b.taskOptions ? [...new Set((got?.tasks ?? []).map(String).filter((t) => t in b.taskOptions!))] : [];
+    out.set(b.key, { conflicts: list, tasks });
   }
   return out;
 }
