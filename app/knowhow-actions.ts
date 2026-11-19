@@ -206,11 +206,9 @@ export async function addManualCheckAction(fd: FormData): Promise<void> {
 }
 
 /** 矛盾チェックがまだの判断待ちの案を、10件ずつ続けて全件判定する（時間切れなら残りは続けて押す）（管理者のボタン） */
-export async function checkKnowhowConflictsAction(fd: FormData): Promise<void> {
+export async function checkKnowhowConflictsAction(): Promise<void> {
   const { userId, tier } = await getTier();
   if (tier !== "admin" || !userId) throw new Error("権限がありません");
-  // 「確認し直す」：判断待ちの案の確認済みの印を外してからやり直す（以前の版で確認した案に、用途の提案を付けるときなど）
-  if (fd.get("redo") === "1") await createAdminClient().from("knowhow_items").update({ conflict_checked_at: null }).eq("status", "pending");
   let r: { checked: number; withConflict: number; failed: boolean; remaining: number };
   try {
     r = await checkAllPendingConflicts(120_000);
