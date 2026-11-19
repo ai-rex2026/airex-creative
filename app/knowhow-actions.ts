@@ -6,7 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { checkGuardDict } from "@/lib/guardrail";
 import { MAX_APPLIED_TEXT, toRule } from "@/lib/knowhow";
 import { assertPublicUrl } from "@/lib/aio/net";
-import { runKnowhowSources } from "@/lib/knowhow-run";
+import { runKnowhowFullIngest, runKnowhowSources } from "@/lib/knowhow-run";
 import { getTier } from "@/lib/tier";
 
 /**
@@ -122,6 +122,15 @@ export async function runKnowhowSourcesAction(): Promise<void> {
   revalidatePath("/admin/knowhow/sources");
   revalidatePath("/admin/knowhow");
   back(`ran=${r.checked}&changed=${r.changed}&base=${r.baseline}&err_n=${r.errors}&created=${r.created}`);
+}
+
+/** 過去分を含めた全取り込み（保存済みの全文を小分けにして案にする。1回14回まで AI を呼ぶので、残りがあれば続けて押す） */
+export async function runKnowhowIngestAllAction(): Promise<void> {
+  await adminOnly();
+  const r = await runKnowhowFullIngest({ deadlineMs: 100_000 });
+  revalidatePath("/admin/knowhow/sources");
+  revalidatePath("/admin/knowhow");
+  back(`ing=${r.chunks}&ing_done=${r.done}&ing_left=${r.remaining}&ing_err=${r.errors}&ing_new=${r.created}`);
 }
 
 /** 手動点検：点検しました（日付と結果を記録）。管理者だけ */

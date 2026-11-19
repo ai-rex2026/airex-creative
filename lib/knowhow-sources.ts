@@ -170,3 +170,81 @@ export async function checkSource(source: Source, deps: CheckDeps, prevFailCount
   }
   return { outcome: "changed", items: toItems(source, drafts, deps), update: { ...base, last_changed_at: nowIso } };
 }
+
+// ── 過去分を含めた全取り込み（2026-11-19）────────────────────────────
+// 定期取得は「前回との差分」だけを案にする。初回に保存した全文（基準）から、一度だけ案を作るための処理。
+// 全文を小分けにして1つずつ AI に通し、1つ済むごとに進み具合（full_cursor）を保存する。やり直しても済んだ分は呼ばない
+
+/** 1回の AI 呼び出しに渡す文字数 */
+export const FULL_CHUNK_CHARS = 6_000;
+/** 1つの小分けから作る案の上限 */
+export const FULL_ITEMS_PER_CHUNK = 2;
+
+/** 行の途中で切らずに、size 文字以内の小分けにする（長い1行はそのまま1つにする） */
+export function chunkText(text: string, size = FULL_CHUNK_CHARS): string[] {
+  const out: string[] = [];
+  let cur = "";
+  for (const line of text.split("\n")) {
+    if (cur && cur.length + line.length + 1 > size) {
+      out.push(cur);
+      cur = "";
+    }
+    cur += (cur ? "\n" : "") + line;
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+}
+
+export type FullDeps = {
+  /** 全文の小分け（i 番目／全 n 個）から、更新案の下書きを作る（AI） */
+  draftFull: (source: Source, chunk: string, i: number, n: number) => Promise<Draft[]>;
+  guardOk: (text: string) => boolean;
+  now: () => Date;
+};
+
+/** 全取り込みの案。key は見出しから決める（同じ案を再実行で重複して作らない） */
+export function toFullItems(source: Source, drafts: Draft[], deps: Pick<FullDeps, "guardOk" | "now">): ItemInsert[] {
+  const day = deps.now().toISOString().slice(0, 10);
+  const out: ItemInsert[] = [];
+  for (const d of drafts.slice(0, FULL_ITEMS_PER_CHUNK)) {
+    const title = str(d.title, 80);
+    const proposal = str(d.proposal, 300);
+    if (!title || !proposal) continue;
+    let applied = str(d.applied_text, 200);
+    if (applied && !deps.guardOk(applied)) applied = "";
+    out.push({
+      key: `full-${source.key}-${hashText(title).slice(0, 10)}`,
+      area: source.area,
+      kind: d.kind === "change" ? "change" : "add",
+      title,
+      summary: str(d.summary, 300),
+      proposal,
+      applied_text: applied,
+      target: "",
+      sources: [{ title: source.title, url: source.url }],
+      evidence: source.official ? "official" : "vendor",
+      caveat: str(d.caveat, 300) || "公式ページの全文から自動で作成した案。原文を確認してから承認すること。",
+      is_guess: d.is_guess === true,
+      risk: source.area === "legal" ? "legal" : "normal",
+      form: "note",
+      fetched_on: day,
+    });
+  }
+  return out;
+}
+
+export type IngestStep = { items: ItemInsert[]; nextCursor: number; done: boolean; total: number; error?: string };
+
+/** 小分けを1つだけ処理する。例外は投げず、失敗は error で返す（nextCursor は進めない） */
+export async function ingestStep(source: Source, text: string, cursor: number, deps: FullDeps): Promise<IngestStep> {
+  const chunks = chunkText(text);
+  const total = chunks.length;
+  if (cursor >= total) return { items: [], nextCursor: total, done: true, total };
+  try {
+    const drafts = await deps.draftFull(source, chunks[cursor], cursor + 1, total);
+    const items = toFullItems(source, drafts, deps);
+    return { items, nextCursor: cursor + 1, done: cursor + 1 >= total, total };
+  } catch (e) {
+    return { items: [], nextCursor: cursor, done: false, total, error: `案の作成に失敗：${(e instanceof Error ? e.message : String(e)).slice(0, 200)}` };
+  }
+}
