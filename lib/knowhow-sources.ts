@@ -17,7 +17,7 @@ export type Source = {
   last_text: string;
 };
 
-export type Draft = { title?: unknown; summary?: unknown; proposal?: unknown; applied_text?: unknown; caveat?: unknown; is_guess?: unknown; kind?: unknown };
+export type Draft = { title?: unknown; summary?: unknown; proposal?: unknown; applied_text?: unknown; caveat?: unknown; is_guess?: unknown; kind?: unknown; form?: unknown; impl_note?: unknown };
 
 export type ItemInsert = {
   key: string;
@@ -33,9 +33,20 @@ export type ItemInsert = {
   caveat: string;
   is_guess: boolean;
   risk: "normal" | "legal";
-  form: "note";
+  form: "note" | "code";
+  /** form=code のときだけ。何をどう実装するか */
+  impl_note?: string;
   fetched_on: string;
 };
+
+/**
+ * 案の実装の形。コードで確実に守るべきもの（判定・数値の上限・必須の表示・文言のチェックなど。AI への指示では守られないもの）は code。
+ * code の案は AI の指示に足さない（applied_text は空）。実装の要点は impl_note に入れ、承認すると「実装待ち」に入る
+ */
+export function formFields(d: Draft, applied: string): { form: "note" | "code"; applied_text: string; impl_note?: string } {
+  if (d.form === "code") return { form: "code", applied_text: "", impl_note: str(d.impl_note, 1000) || str(d.proposal, 300) };
+  return { form: "note", applied_text: applied };
+}
 
 export type SourceUpdate = {
   last_hash: string;
@@ -97,14 +108,13 @@ export function toItems(source: Source, drafts: Draft[], deps: Pick<CheckDeps, "
       title,
       summary: str(d.summary, 300),
       proposal,
-      applied_text: applied,
+      ...formFields(d, applied),
       target: "",
       sources: [{ title: source.title, url: source.url }],
       evidence: source.official ? "official" : "vendor",
       caveat: str(d.caveat, 300) || "公式ページの更新から自動で作成した案。原文を確認してから承認すること。",
       is_guess: d.is_guess === true,
       risk: source.area === "legal" ? "legal" : "normal",
-      form: "note",
       fetched_on: day,
     });
   }
@@ -219,14 +229,13 @@ export function toFullItems(source: Source, drafts: Draft[], deps: Pick<FullDeps
       title,
       summary: str(d.summary, 300),
       proposal,
-      applied_text: applied,
+      ...formFields(d, applied),
       target: "",
       sources: [{ title: source.title, url: source.url }],
       evidence: source.official ? "official" : "vendor",
       caveat: str(d.caveat, 300) || "公式ページの全文から自動で作成した案。原文を確認してから承認すること。",
       is_guess: d.is_guess === true,
       risk: source.area === "legal" ? "legal" : "normal",
-      form: "note",
       fetched_on: day,
     });
   }

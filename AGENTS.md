@@ -226,3 +226,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `form=code` の案は承認しても AI の指示・辞書には何も足さない（`lib/knowhow.ts` は note と legal_rule だけを読む）。承認＝「実装する」という判断で、`impl_status` が todo（実装待ち）になる。画面 `/admin/knowhow` のタブ「実装待ち」に出て、実装したら「実装済みにする」（`markKnowhowImplAction`）。保留・却下・判断待ちに戻すと none に戻る。実装済みのまま承認し直しても done は戻さない
 - AI が公式ページから作る案は、いまは note だけ。コードの案は SQL で入れる（form='code'・applied_text=''）か、今後 AI の案づくりに足す
 - 実装したら、AGENTS.md への追記と合わせて「実装済みにする」を押す
+
+## AI 指示の枠の拡大・使用状況の表示・AI が「コード」の案を分ける（2026-11-19 追記）
+
+- 領域ごとの AI への指示に足す量の上限は 20件・1500字 → **40件・3500字**（`MAX_NOTES`・`MAX_NOTE_CHARS`）。選び方は `pickNotes`（承認が古い順に、上限に入らない文は飛ばす）で、反映（`knowhowBlock`）と管理画面が同じ関数を使う。上限を変えるときは定数だけ直す
+- `/admin/knowhow` の上部に「AIへの指示の枠の使用状況」（MEO／SEO・AIO（記事づくりで共有）／LPO／画像生成の件数・文字数）を出す。上限を超えて AI の指示に足されていない承認済みの案には、カードに「枠に入っていません」と出す。法令の辞書・コードの案は枠に数えない。領域が近づいたら、用途ごとに選ぶ方式（ステップ4）に移る
+- 公式ページから AI が作る案（定期取得・全取り込みとも）に `form`（note|code）を足した（`formFields`）。コードで確実に守るべき仕組み（判定・数値の上限・必須の表示・禁止表現の照合など）は code、文章の書き方の指針は note、迷ったら note。code の案は `applied_text` を空にし、実装の要点を `impl_note` に入れて、判断待ちに出す（承認すると実装待ち）。AI が法令の辞書（legal_rule）を作ることは、いまはしない
