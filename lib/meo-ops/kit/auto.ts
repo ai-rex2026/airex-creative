@@ -107,7 +107,7 @@ async function autoReplies(admin: SupabaseClient, row: StoreRow, industry: Indus
     const rating = Number(rv.rating) || 0;
     try {
       const d = await deps.draftReply({ rating, authorName: String(rv.author_name ?? ""), text: String(rv.text ?? "") }, s);
-      const verdict = await deps.checkGuard([d.reply], industry);
+      const verdict = await deps.checkGuard([d.reply], industry, "reply");
       const hits = [...d.guardHits, ...verdict.hits];
       const ok = minStars > 0 && rating >= minStars && verdict.level === "green" && d.guardHits.length === 0;
       if (!ok) {

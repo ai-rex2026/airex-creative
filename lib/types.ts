@@ -47,6 +47,13 @@ export type BrandProfile = {
 };
 
 /** 法令ガードレールの判定（ロードマップ #10。生成と同時に必ず通す） */
+/**
+ * 法令チェックの辞書ルールを適用する用途（2026-11-19）。ルールに scopes があるときは、その用途を指定した検査にだけ当てる。
+ * scopes の無いルールは、これまでどおりすべての検査に当てる。用途を指定しない検査には、scopes つきのルールは当てない。
+ */
+export const GUARD_SCOPES = ["reply", "description", "review_ask", "post", "lp", "banner", "article"] as const;
+export type GuardScope = (typeof GUARD_SCOPES)[number];
+
 export type GuardSeverity = "high" | "medium" | "low";
 
 export type GuardHit = {
