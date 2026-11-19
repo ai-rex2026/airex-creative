@@ -16,7 +16,7 @@ import {
 } from "@/app/meo-kit-actions";
 import { MeoPageHeader, SectionTitle, useMeo } from "@/components/meo/Workspace";
 import { Btn, Card, ErrorNote, GuardNotes, Icon, Input, Label, Textarea, cn } from "@/components/meo/ui";
-import { buildPlan, type PlanItem } from "@/lib/meo-ops/kit/plan";
+import { buildPlan, VERIFY_TEXT, type PlanItem } from "@/lib/meo-ops/kit/plan";
 import { hpbSalonUrl } from "@/lib/meo-ops/kit/text";
 import type { KitData, KitInput, KitResults, KitStepId, PlanState } from "@/lib/meo-ops/kit/types";
 import { meoPath } from "@/lib/meo-ops/logic";
@@ -105,7 +105,7 @@ export function KitHome({ storeId, data }: { storeId: string; data: KitData }) {
   if (!hasKit) return <Entry storeId={storeId} data={data} errors={runErrors} onRun={(input) => runAll(input)} />;
 
   const pending = ws.checklist.filter((c) => !c.done).length;
-  const items = buildPlan(results, data.kind, { unreplied: data.unrepliedReviews, profilePending: pending }).filter((i) => !LOOK.has(i.id));
+  const items = buildPlan(results, data.kind, { unreplied: data.unrepliedReviews, profilePending: pending, verify: data.gbpState }).filter((i) => !LOOK.has(i.id));
   const once = items.filter((i) => !i.repeat);
   const keep = items.filter((i) => !!i.repeat);
   const left = (list: PlanItem[]) => list.filter((i) => (plan[i.id] ?? "todo") === "todo").length;
@@ -373,7 +373,7 @@ function Fold({ title, sub, children }: { title: string; sub: string; children: 
 }
 
 function ItemBody({ item, ctx }: { item: PlanItem; ctx: Ctx }) {
-  const { storeId, results: r, patch } = ctx;
+  const { storeId, data, results: r, patch } = ctx;
   const h = r.hpb;
   const m = r.meo;
   switch (item.render) {
@@ -407,6 +407,17 @@ function ItemBody({ item, ctx }: { item: PlanItem; ctx: Ctx }) {
       ) : null;
     case "series":
       return <SeriesView ctx={ctx} />;
+    case "gbp-verify": {
+      const v = data.gbpState && data.gbpState !== "ok" ? VERIFY_TEXT[data.gbpState] : null;
+      return v ? (
+        <div className="space-y-3 text-sm">
+          <p>{v.body}</p>
+          <a href="https://business.google.com/" target="_blank" rel="noreferrer">
+            <Btn size="sm" variant="outline">Googleビジネスプロフィールを開く</Btn>
+          </a>
+        </div>
+      ) : null;
+    }
     case "gbp-profile":
       return <ProfileView ctx={ctx} />;
     case "kit":

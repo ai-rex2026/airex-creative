@@ -1,9 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { GbpMetrics } from "../../gbp/api";
 import type { GuardHit, Industry } from "../../types";
 import { jstDateKey } from "../daily";
 import type { MeoStoreSnapshot } from "../types";
 import { kindOf, writeReviewUrl } from "./text";
-import { DEFAULT_AUTO, type AutoLogEntry, type AutoSettings, type KitData, type KitInput, type KitNumber, type KitResults, type KitStepId, type KitStepState, type PlanState } from "./types";
+import { DEFAULT_AUTO, type AutoLogEntry, type AutoSettings, type GbpVerifyState, type KitData, type KitInput, type KitNumber, type KitResults, type KitStepId, type KitStepState, type PlanState } from "./types";
 
 /**
  * キットの保存と読み込み。
@@ -165,7 +166,34 @@ export async function buildNumbers(sb: SupabaseClient, storeId: string, store: M
 
 export type KitRow = { id: string; name: string | null; industry: Industry | null; meo_store: MeoStoreSnapshot | null; meo_place_id: string | null; meo_gbp_location: string | null };
 
-export async function loadKitData(sb: SupabaseClient, row: KitRow): Promise<KitData> {
+/** Google から取った本人確認の状態と、直近28日・その前28日の行動の数（取れたときだけ。lib/gbp/api.ts） */
+export type GbpExtra = { state?: GbpVerifyState | null; metrics?: { now: GbpMetrics; prev: GbpMetrics | null } | null };
+
+const fmtN = (n: number) => n.toLocaleString("ja-JP");
+
+/**
+ * 行動データ（電話・ルート検索・サイトのクリック）を「今の数字」に出す。数えるだけで、順位への効果は書かない。
+ * 承認済みのノウハウ「行動データの月次確認」をコードにしたもの（AI に頼らず、Google の実測から）
+ */
+export function metricNumbers(m: { now: GbpMetrics; prev: GbpMetrics | null } | null | undefined): KitNumber[] {
+  if (!m) return [];
+  const rows: [string, string, keyof Pick<GbpMetrics, "calls" | "directions" | "websiteClicks" | "impressions">][] = [
+    ["calls", "電話をかけた人", "calls"],
+    ["directions", "ルート検索", "directions"],
+    ["site", "サイトを開いた人", "websiteClicks"],
+    ["views", "マップ・検索での表示", "impressions"],
+  ];
+  return rows.map(([key, label, f]) => ({
+    key: `gbp-${key}`,
+    label,
+    value: `${fmtN(m.now[f])}回`,
+    prev: m.prev ? `${fmtN(m.prev[f])}回（その前の28日）` : null,
+    delta: m.prev ? cmp(m.now[f], m.prev[f]) : null,
+    note: "Google の実測（直近28日）。数が増えても、順位が上がるとは限りません",
+  }));
+}
+
+export async function loadKitData(sb: SupabaseClient, row: KitRow, extra: GbpExtra = {}): Promise<KitData> {
   const industry: Industry = row.industry ?? "general";
   const store = row.meo_store;
   const kind = kindOf(industry, store);
@@ -200,7 +228,7 @@ export async function loadKitData(sb: SupabaseClient, row: KitRow): Promise<KitD
     steps,
     plan: toPlan(kit.data?.plan),
     auto: toAuto(kit.data?.auto),
-    numbers: await buildNumbers(sb, row.id, store, results.score ? { total: results.score.total, rank: results.score.rank } : null),
+    numbers: [...(await buildNumbers(sb, row.id, store, results.score ? { total: results.score.total, rank: results.score.rank } : null)), ...metricNumbers(extra.metrics)],
     pendingCount: pending.count ?? 0,
     reviewUrl,
     reviewPagePath: `/review?${qs.toString()}`,
@@ -210,5 +238,6 @@ export async function loadKitData(sb: SupabaseClient, row: KitRow): Promise<KitD
     placeCompetitors: (store?.competitors ?? []).map((c) => c.name).filter(Boolean).slice(0, 5),
     unrepliedReviews: unreplied.count ?? 0,
     gbpLinked: !!row.meo_gbp_location,
+    gbpState: extra.state ?? null,
   };
 }

@@ -389,6 +389,35 @@ export async function fetchMetrics(token: string, location: string, now = new Da
   return sumMetrics(r, iso(start), iso(end));
 }
 
+/**
+ * 本人確認・管理の状態（My Business Verifications API の locations.getVoiceOfMerchantState。読み取りのみ・スコープは business.manage）。
+ * 承認済みのノウハウ「本人確認を初期チェックに入れる」をコードにしたもの。AI に挙げさせず、状態から機械的に出す。
+ *  hasVoiceOfMerchant=true … ok／verify … 確認が必要（hasPendingVerification なら手続き中）／waitForVoiceOfMerchant … 審査中／
+ *  resolveOwnershipConflict … 同じ場所の別プロフィールが先にある／complyWithGuidelines … ガイドライン違反で停止・無効
+ */
+export type VoiceOfMerchant = { state: "ok" | "verify" | "verify_pending" | "wait" | "conflict" | "guidelines" | "unknown"; hasVoice: boolean; hasAuthority: boolean };
+
+export function parseVoiceOfMerchant(raw: unknown): VoiceOfMerchant {
+  const r = (raw ?? {}) as { hasVoiceOfMerchant?: boolean; hasBusinessAuthority?: boolean; verify?: { hasPendingVerification?: boolean }; waitForVoiceOfMerchant?: unknown; resolveOwnershipConflict?: unknown; complyWithGuidelines?: unknown };
+  const hasVoice = r.hasVoiceOfMerchant === true;
+  const hasAuthority = r.hasBusinessAuthority === true;
+  let state: VoiceOfMerchant["state"] = "unknown";
+  if (r.complyWithGuidelines) state = "guidelines";
+  else if (r.resolveOwnershipConflict) state = "conflict";
+  else if (r.verify) state = r.verify.hasPendingVerification ? "verify_pending" : "verify";
+  else if (r.waitForVoiceOfMerchant) state = "wait";
+  else if (hasVoice) state = "ok";
+  return { state, hasVoice, hasAuthority };
+}
+
+/** location は "locations/456" でも "accounts/1/locations/456" でもよい */
+export async function getVoiceOfMerchant(token: string, location: string): Promise<VoiceOfMerchant> {
+  const loc = location.match(/locations\/[^/]+/)?.[0];
+  if (!loc) throw new Error("店舗の指定が正しくありません");
+  const r = await gget<unknown>(`https://mybusinessverifications.googleapis.com/v1/${loc}/VoiceOfMerchantState`, token, "本人確認の状態");
+  return parseVoiceOfMerchant(r);
+}
+
 export type GbpMedia = { name: string; format: "PHOTO" | "VIDEO"; url: string; category: string; description: string };
 
 /**
