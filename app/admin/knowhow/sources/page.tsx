@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/tier";
-import { addKnowhowSourceAction, addManualCheckAction, markManualCheckedAction, runKnowhowSourcesAction, toggleKnowhowSourceAction } from "@/app/knowhow-actions";
+import { addKnowhowSourceAction, addManualCheckAction, markManualCheckedAction, runKnowhowIngestAllAction, runKnowhowSourcesAction, toggleKnowhowSourceAction } from "@/app/knowhow-actions";
 import { manualStatus, type ManualRow } from "@/lib/knowhow-manual";
 
 export const metadata = { title: "確認している公式ページ｜AI-REX Studio" };
@@ -27,6 +27,8 @@ type Row = {
   last_error: string;
   fail_count: number;
   last_hash: string | null;
+  full_cursor?: number | null;
+  full_ingested_at?: string | null;
 };
 
 /** 一次情報（公式ページ）の一覧。週1回取得し、前回から変わったときだけ更新案を作る（管理者だけ） */
@@ -53,6 +55,12 @@ export default async function KnowhowSources({ searchParams }: { searchParams: P
         {sp.ran !== undefined && (
           <p className="tag ok" style={{ marginTop: 12 }}>
             確認しました：{sp.ran}件／変化あり {sp.changed}件／初回の基準 {sp.base}件／失敗 {sp.err_n}件／作成した案 {sp.created}件
+          </p>
+        )}
+        {sp.ing !== undefined && (
+          <p className="tag ok" style={{ marginTop: 12 }}>
+            全取り込み：{sp.ing}か所を処理／ページ単位で済み {sp.ing_done}件／残りのページ {sp.ing_left}件／失敗 {sp.ing_err}件／作成した案 {sp.ing_new}件
+            {Number(sp.ing_left) > 0 && Number(sp.ing_err) === 0 ? "（残りがあるので、もう一度押してください）" : ""}
           </p>
         )}
         {sp.done === "added" && <p className="tag ok" style={{ marginTop: 12 }}>追加しました</p>}
@@ -97,6 +105,13 @@ export default async function KnowhowSources({ searchParams }: { searchParams: P
           <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 10 }}>AI を使うのは、変わったページだけです（1回6件まで）</span>
         </form>
 
+        <form action={runKnowhowIngestAllAction} style={{ marginTop: 12 }}>
+          <button className="btn sm" type="submit">過去分を含めて全部取り込む</button>
+          <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 10, lineHeight: 1.8 }}>
+            保存済みの全文を小分けにして、AI で案にします（受信箱の判断待ちに入ります）。1回14回まで AI を呼びます。済んだ分は飛ばすので、残りがあれば続けて押してください
+          </span>
+        </form>
+
         {rows.map((r) => (
           <section key={r.key} style={{ marginTop: 14, background: "#fff", border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px" }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -111,6 +126,11 @@ export default async function KnowhowSources({ searchParams }: { searchParams: P
             <p style={{ fontSize: 12, marginTop: 6, color: "var(--muted)", lineHeight: 1.8 }}>
               最終確認：{fmt(r.last_checked_at)}　／　最後に変化：{r.last_hash ? fmt(r.last_changed_at) : "まだ（初回の基準待ち）"}
             </p>
+            {r.enabled && (
+              <p style={{ fontSize: 12, color: "var(--muted)" }}>
+                全取り込み：{r.full_ingested_at ? `済み（${fmt(r.full_ingested_at)}）` : (r.full_cursor ?? 0) > 0 ? `途中（${r.full_cursor}か所まで）` : "まだ"}
+              </p>
+            )}
             {r.note && <p style={{ fontSize: 12, color: "var(--muted)" }}>{r.note}</p>}
             {r.last_error && <p style={{ fontSize: 12.5, marginTop: 4, color: "var(--ng)" }}>{r.last_error}（連続失敗 {r.fail_count}回）</p>}
             <form action={toggleKnowhowSourceAction} style={{ marginTop: 10 }}>
