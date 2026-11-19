@@ -78,7 +78,8 @@ export async function runKnowhowSources(opts: { force?: boolean; deadlineMs?: nu
       const { error } = await admin.from("knowhow_items").upsert(res.items, { onConflict: "key", ignoreDuplicates: true });
       if (error) {
         out.errors++;
-        out.notes.push(`${r.title}：案の保存に失敗しました`);
+        out.notes.push(`${r.title}：案の保存に失敗しました（${error.message.slice(0, 80)}）`);
+        await admin.from("knowhow_sources").update({ last_error: `案の保存に失敗：${error.message}`.slice(0, 300) }).eq("key", r.key);
         continue; // 状態を更新しない（次回、同じ差分からやり直す）
       }
       out.created += res.items.length;
@@ -169,7 +170,7 @@ export async function runKnowhowFullIngest(
       } catch (e) {
         out.errors++;
         out.remaining++;
-        await admin.from("knowhow_sources").update({ last_error: (e instanceof Error ? e.message : String(e)).slice(0, 300) }).eq("key", r.key);
+        await admin.from("knowhow_sources").update({ last_error: ((e instanceof Error ? e.message : String(e)) || "取得に失敗しました（理由なし）").slice(0, 300) }).eq("key", r.key);
         continue;
       }
       await admin.from("knowhow_sources").update({ last_hash: hashText(text), last_text: text, last_checked_at: deps.now().toISOString(), last_error: "" }).eq("key", r.key);
@@ -195,7 +196,8 @@ export async function runKnowhowFullIngest(
         if (error) {
           out.errors++;
           out.remaining++;
-          out.notes.push(`${r.title}：案の保存に失敗しました`);
+          out.notes.push(`${r.title}：案の保存に失敗しました（${error.message.slice(0, 80)}）`);
+          await admin.from("knowhow_sources").update({ last_error: `案の保存に失敗：${error.message}`.slice(0, 300) }).eq("key", r.key);
           break; // 進み具合を進めない
         }
         out.created += step.items.length;
