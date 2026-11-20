@@ -35,7 +35,7 @@ export default async function KnowhowWeb({ searchParams }: { searchParams: Promi
         </p>
         <h2 style={{ fontSize: 20, marginTop: 8 }}>第三者の情報から集める（ウェブ・X）</h2>
         <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 6, lineHeight: 1.9 }}>
-          公式サイト以外のウェブと X から、領域ごとにノウハウ案を集めます。見つかったページの本文を実際に読み、<b>独立した2か所以上</b>に書かれている内容だけを案にします（広告は、公式ページの根拠が1つ以上必要です。X は広告では使いません）。案は受信箱（判断待ち）に「意見・分析」または「事業者・解説の報告」として入り、自動では反映しません。
+          公式サイト以外のウェブと X から、領域ごとにノウハウ案を集めます。見つかったページの本文を実際に読み、出典がある内容を案にします（根拠が1か所だけの案には、その旨を注記します。広告は、公式ページの根拠が1つ以上必要です。X は広告では使いません）。案は受信箱（判断待ち）に「意見・分析」または「事業者・解説の報告」として入り、自動では反映しません。
         </p>
         <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.9 }}>
           いまは手動だけです（週1回の自動実行は、各領域の出来を確かめてから入れます）。同じ週に済んだ調べ物は飛ばすので、押し直しても有料の検索・AI は繰り返しません。X の検索は1日12回までです。
@@ -55,6 +55,11 @@ export default async function KnowhowWeb({ searchParams }: { searchParams: Promi
               <form action={runWebScanAction}>
                 <input type="hidden" name="area" value={area} />
                 <PendingButton className="btn sm" pendingText="集めています。2〜4分かかります（このままお待ちください。終わると結果が出ます）">{WEB_AREA_LABEL[area]}を集める</PendingButton>
+              </form>
+              <form action={runWebScanAction}>
+                <input type="hidden" name="area" value={area} />
+                <input type="hidden" name="again" value="1" />
+                <PendingButton className="btn sm ghost" pendingText="やり直しています。2〜4分かかります（このままお待ちください）">今週済みの分も含めてやり直す</PendingButton>
               </form>
             </div>
             <ul style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.9, color: "var(--muted)" }}>

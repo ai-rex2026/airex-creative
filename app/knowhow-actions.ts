@@ -220,7 +220,7 @@ export async function runWebScanAction(fd: FormData): Promise<void> {
   if (!WEB_AREAS.includes(area)) redirect("/admin/knowhow/web?err=" + encodeURIComponent("領域が不正です"));
   let q = "";
   try {
-    const r = await runWebScan(area);
+    const r = await runWebScan(area, { again: fd.get("again") === "1" });
     const notes: string[] = [];
     await conflictPass(notes);
     q = `area=${area}&new=${r.created}&u=${encodeURIComponent(r.units.map((u) => `${u.label}：${u.status === "done" ? `読んだ${u.read}件→案${u.created}件` : u.status === "skipped" ? u.note : "失敗"}${u.dropped ? `（見送り${u.dropped}件）` : ""}${u.status === "failed" && u.note ? `［${u.note.slice(0, 80)}］` : ""}`).join("\n"))}`;
