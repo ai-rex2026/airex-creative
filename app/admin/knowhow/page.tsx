@@ -128,6 +128,8 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
         </p>
         <p style={{ fontSize: 12.5, marginTop: 6 }}>
           <Link href="/admin/knowhow/sources" style={{ textDecoration: "underline" }}>確認している公式ページ（週1回・変わったときだけ案を作成）</Link>
+          {" ／ "}
+          <Link href="/admin/knowhow/web" style={{ textDecoration: "underline" }}>第三者の情報から集める（ウェブ・X）</Link>
         </p>
         {sp.err && <p style={{ marginTop: 12, fontSize: 13, color: "var(--ng)" }}>{sp.err}</p>}
         {sp.done === "dedupe" && (

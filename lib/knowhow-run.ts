@@ -30,7 +30,7 @@ const ADS_FRAME = `
 このページは「広告」の領域です。承認した案は、次の2つの AI への指示に足されます：①連携した広告アカウント（Google・Meta・Yahoo!・LINE・TikTok・X・Microsoft）の実績を分析して改善案・施策案を出す AI、②全体レポートの広告施策案（媒体プラン・キャンペーン構成）を出す AI。
 そのため、仕様・審査基準・配信ルール・入稿規定の変更が、「改善案・施策案で何を勧めてよいか／避けるべきか／確認すべき数値や設定は何か」にどう効くかの観点で書きます。applied_text は「〜を提案するときは…」「〜の場合は…を前提にする」の形にします。
 広告の運用自体（入稿・予算変更）はこのアプリでは自動で行いません。`;
-const frameFor = (system: string, area: string) => (area === "ads" ? system + ADS_FRAME : system);
+export const frameFor = (system: string, area: string) => (area === "ads" ? system + ADS_FRAME : system);
 
 function realDeps(): CheckDeps {
   return {
@@ -104,7 +104,7 @@ export async function runKnowhowSources(opts: { force?: boolean; deadlineMs?: nu
 }
 
 /** 新しい案の矛盾チェックと用途の提案（10件ずつ続けて、時間の許す限り全件。失敗しても案の保存には影響させない。残りは管理画面のボタンか次回） */
-async function conflictPass(notes: string[]) {
+export async function conflictPass(notes: string[]) {
   try {
     await sweepDuplicates(); // 似ている判断待ちの案を先に除く（AI の矛盾チェックの無駄を省く）
   } catch {

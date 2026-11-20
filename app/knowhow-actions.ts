@@ -8,7 +8,9 @@ import { MAX_APPLIED_TEXT, TASKS, toRule, type KnowhowTask } from "@/lib/knowhow
 import { checkAllPendingConflicts } from "@/lib/knowhow-conflicts-run";
 import { sweepDuplicates } from "@/lib/knowhow-dedupe-run";
 import { assertPublicUrl } from "@/lib/aio/net";
-import { runKnowhowFullIngest, runKnowhowSources } from "@/lib/knowhow-run";
+import { conflictPass, runKnowhowFullIngest, runKnowhowSources } from "@/lib/knowhow-run";
+import { runWebScan } from "@/lib/knowhow-web-run";
+import { WEB_AREAS, type WebArea } from "@/lib/knowhow-web";
 import { getTier } from "@/lib/tier";
 
 /**
@@ -207,4 +209,25 @@ export async function sweepDuplicatesAction(): Promise<void> {
   }
   revalidatePath("/admin/knowhow");
   redirect(`/admin/knowhow?done=dedupe&n=${n}`);
+}
+
+/** 第三者の情報（公式サイト以外のウェブ・X）から、1つの領域のノウハウ案を集める（管理者のボタン。有料の検索・AI・Apify を使うので、押した領域だけ）。
+ *  同じ週に済んだ単位は飛ばす。終わったら、新しい案の矛盾チェックまで流す */
+export async function runWebScanAction(fd: FormData): Promise<void> {
+  const { tier } = await getTier();
+  if (tier !== "admin") throw new Error("権限がありません");
+  const area = String(fd.get("area") ?? "") as WebArea;
+  if (!WEB_AREAS.includes(area)) redirect("/admin/knowhow/web?err=" + encodeURIComponent("領域が不正です"));
+  let q = "";
+  try {
+    const r = await runWebScan(area);
+    const notes: string[] = [];
+    await conflictPass(notes);
+    q = `area=${area}&new=${r.created}&u=${encodeURIComponent(r.units.map((u) => `${u.label}：${u.status === "done" ? `読んだ${u.read}件→案${u.created}件` : u.status === "skipped" ? u.note : "失敗"}${u.dropped ? `（見送り${u.dropped}件）` : ""}${u.status === "failed" && u.note ? `［${u.note.slice(0, 80)}］` : ""}`).join("\n"))}`;
+  } catch (e) {
+    q = "err=" + encodeURIComponent(`集められませんでした：${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`);
+  }
+  revalidatePath("/admin/knowhow");
+  revalidatePath("/admin/knowhow/web");
+  redirect(`/admin/knowhow/web?${q}`);
 }

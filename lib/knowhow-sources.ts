@@ -31,7 +31,7 @@ export type ItemInsert = {
   applied_text: string;
   target: string;
   sources: { title: string; url: string }[];
-  evidence: "official" | "vendor";
+  evidence: "official" | "vendor" | "opinion";
   caveat: string;
   is_guess: boolean;
   risk: "normal" | "legal";
