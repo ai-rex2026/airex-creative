@@ -91,7 +91,7 @@ export const OFFICIAL_DOMAINS: RegExp[] = [
 ];
 
 export type WebPage = { n: number; url: string; title: string; text: string };
-export type XPost = { n: number; url: string; author: string; text: string; likes: number | null };
+export type XPost = { n: number; url: string; author: string; text: string; likes: number | null; postedAt: string | null };
 
 export type WebDraft = Draft & { source_ids?: unknown };
 
@@ -101,7 +101,7 @@ export type WebDeps = {
   /** ページの本文を読む。読めなければ throw */
   readPage: (url: string) => Promise<string>;
   /** X を検索する（領域のキーワード）。反応のある投稿だけ */
-  searchX: (keywords: string[]) => Promise<{ url: string; author: string; text: string; likes: number | null }[]>;
+  searchX: (keywords: string[]) => Promise<{ url: string; author: string; text: string; likes: number | null; postedAt?: string | null }[]>;
   /** 読んだ本文・投稿から案の下書きを作る（AI） */
   draft: (area: WebArea, label: string, pages: WebPage[], posts: XPost[]) => Promise<WebDraft[]>;
   guardOk: (text: string) => boolean;
@@ -111,6 +111,10 @@ export type WebDeps = {
 export const MAX_PAGES = 5;
 export const PAGE_CAP = 5_000;
 export const MAX_ITEMS_PER_UNIT = 3;
+/** X の投稿を根拠にする古さの上限（日） */
+export const X_MAX_AGE_DAYS = 365;
+/** 見出しに使わない断定的な語（見出しは承認の判断に直接効くため、コードでも確かめる） */
+export const ASSERTIVE_TITLE = /(最強|必須|絶対|必ず|確実|唯一|No\.?\s?1|ナンバーワン|最も|史上|圧倒的|一択)/;
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
@@ -170,6 +174,10 @@ function toWebItems(area: WebArea, label: string, drafts: WebDraft[], pages: Web
     const title = str(d.title, 80);
     const proposal = str(d.proposal, 300);
     if (!title || !proposal) continue;
+    if (ASSERTIVE_TITLE.test(title)) {
+      dropped.push({ title, reason: "見出しが断定的" });
+      continue;
+    }
     const ids = Array.isArray(d.source_ids) ? d.source_ids.map((x) => Number(x)).filter((x) => byN.has(x)) : [];
     const used = [...new Set(ids)].map((n) => byN.get(n)!);
     const q = qualifies(area, used.map((u) => u.url));
@@ -232,8 +240,10 @@ export async function runUnit(area: WebArea, unit: { kind: "web"; topic: WebTopi
     for (const f of found) {
       const a = f.author.toLowerCase();
       if (!f.text.trim() || seen.has(a)) continue; // 1人1件（同じ人の複数投稿を独立した出典と数えない）
+      // 古い投稿は根拠にしない（日付が分かるもので、1年より前のもの）
+      if (f.postedAt && Date.parse(f.postedAt) < deps.now().getTime() - X_MAX_AGE_DAYS * 864e5) continue;
       seen.add(a);
-      posts.push({ n: posts.length + 1, url: f.url, author: f.author, text: f.text.slice(0, 600), likes: f.likes });
+      posts.push({ n: posts.length + 1, url: f.url, author: f.author, text: f.text.slice(0, 600), likes: f.likes, postedAt: f.postedAt ?? null });
       if (posts.length >= 12) break;
     }
   }
