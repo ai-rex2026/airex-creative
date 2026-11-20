@@ -3,6 +3,7 @@ import { askJson, MODEL_FAST } from "@/lib/anthropic";
 import { checkGuardDict } from "@/lib/guardrail";
 import { apifyRender, makeFetchText } from "@/lib/knowhow-render";
 import { checkAllPendingConflicts } from "@/lib/knowhow-conflicts-run";
+import { dropDuplicates, sweepDuplicates } from "@/lib/knowhow-dedupe-run";
 import { checkSource, hashText, ingestStep, normalizeText, type CheckDeps, type Draft, type FullDeps, type Source } from "@/lib/knowhow-sources";
 
 /**
@@ -80,15 +81,17 @@ export async function runKnowhowSources(opts: { force?: boolean; deadlineMs?: nu
     const res = await checkSource(src, { ...deps, draft: async (s, a) => ((called = true), deps.draft(s, a)) }, failed);
     if (called) aiCalls++;
     // 1ページごとにその場で保存する（案 → 状態の順。案は key で一意なので、やり直しても重複しない）
-    if (res.items.length) {
-      const { error } = await admin.from("knowhow_items").upsert(res.items, { onConflict: "key", ignoreDuplicates: true });
+    const fresh = await dropDuplicates(res.items);
+    if (fresh.dropped) out.notes.push(`${r.title}：既存の案と似ているため ${fresh.dropped} 件は保存しませんでした`);
+    if (fresh.kept.length) {
+      const { error } = await admin.from("knowhow_items").upsert(fresh.kept, { onConflict: "key", ignoreDuplicates: true });
       if (error) {
         out.errors++;
         out.notes.push(`${r.title}：案の保存に失敗しました（${error.message.slice(0, 80)}）`);
         await admin.from("knowhow_sources").update({ last_error: `案の保存に失敗：${error.message}`.slice(0, 300) }).eq("key", r.key);
         continue; // 状態を更新しない（次回、同じ差分からやり直す）
       }
-      out.created += res.items.length;
+      out.created += fresh.kept.length;
     }
     await admin.from("knowhow_sources").update(res.update).eq("key", r.key);
     out.checked++;
@@ -102,6 +105,11 @@ export async function runKnowhowSources(opts: { force?: boolean; deadlineMs?: nu
 
 /** 新しい案の矛盾チェックと用途の提案（10件ずつ続けて、時間の許す限り全件。失敗しても案の保存には影響させない。残りは管理画面のボタンか次回） */
 async function conflictPass(notes: string[]) {
+  try {
+    await sweepDuplicates(); // 似ている判断待ちの案を先に除く（AI の矛盾チェックの無駄を省く）
+  } catch {
+    // 除けなくても案は残る
+  }
   try {
     const r = await checkAllPendingConflicts(60_000);
     if (r.remaining > 0 && !r.failed) notes.push(`矛盾チェックが${r.remaining}件残っています（管理画面のボタンで続けられます）`);
@@ -193,8 +201,10 @@ export async function runKnowhowFullIngest(
         await admin.from("knowhow_sources").update({ last_error: step.error }).eq("key", r.key); // 進み具合は進めない（次回この小分けから）
         break;
       }
-      if (step.items.length) {
-        const { error } = await admin.from("knowhow_items").upsert(step.items, { onConflict: "key", ignoreDuplicates: true });
+      const fresh = await dropDuplicates(step.items);
+      if (fresh.dropped) out.notes.push(`${r.title}：既存の案と似ているため ${fresh.dropped} 件は保存しませんでした`);
+      if (fresh.kept.length) {
+        const { error } = await admin.from("knowhow_items").upsert(fresh.kept, { onConflict: "key", ignoreDuplicates: true });
         if (error) {
           out.errors++;
           out.remaining++;
@@ -202,7 +212,7 @@ export async function runKnowhowFullIngest(
           await admin.from("knowhow_sources").update({ last_error: `案の保存に失敗：${error.message}`.slice(0, 300) }).eq("key", r.key);
           break; // 進み具合を進めない
         }
-        out.created += step.items.length;
+        out.created += fresh.kept.length;
       }
       out.chunks++;
       cursor = step.nextCursor;

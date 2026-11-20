@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { checkGuardDict } from "@/lib/guardrail";
 import { MAX_APPLIED_TEXT, TASKS, toRule, type KnowhowTask } from "@/lib/knowhow";
 import { checkAllPendingConflicts } from "@/lib/knowhow-conflicts-run";
+import { sweepDuplicates } from "@/lib/knowhow-dedupe-run";
 import { assertPublicUrl } from "@/lib/aio/net";
 import { runKnowhowFullIngest, runKnowhowSources } from "@/lib/knowhow-run";
 import { getTier } from "@/lib/tier";
@@ -175,6 +176,7 @@ export async function checkKnowhowConflictsAction(): Promise<void> {
   if (tier !== "admin" || !userId) throw new Error("権限がありません");
   let r: { checked: number; withConflict: number; failed: boolean; remaining: number };
   try {
+    await sweepDuplicates().catch(() => 0); // 似ている判断待ちの案を先に除く
     r = await checkAllPendingConflicts(120_000);
   } catch {
     r = { checked: 0, withConflict: 0, failed: true, remaining: 0 };
@@ -182,4 +184,14 @@ export async function checkKnowhowConflictsAction(): Promise<void> {
   revalidatePath("/admin/knowhow");
   if (r.failed) redirect("/admin/knowhow?err=" + encodeURIComponent("矛盾チェックに失敗しました。もう一度お試しください"));
   redirect(`/admin/knowhow?done=conflict&n=${r.checked}&c=${r.withConflict}&r=${r.remaining}`);
+}
+
+/** 重複として除いた案を、一覧に戻す（管理者だけ） */
+export async function restoreDuplicateAction(fd: FormData): Promise<void> {
+  const sb = await adminOnly();
+  const id = String(fd.get("id") ?? "");
+  if (!id) return;
+  await sb.from("knowhow_items").update({ dup_of: null }).eq("id", id);
+  revalidatePath("/admin/knowhow");
+  redirect("/admin/knowhow");
 }

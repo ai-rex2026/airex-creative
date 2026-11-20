@@ -36,7 +36,7 @@ export async function loadRefs(areas: string[]): Promise<ConflictRef[]> {
  */
 export async function checkPendingConflicts(ask?: ConflictAsk, itemIds?: string[]): Promise<{ checked: number; withConflict: number; failed: boolean }> {
   const sb = createAdminClient();
-  let q = sb.from("knowhow_items").select("id, key, area, form, title, applied_text, impl_note, tasks").eq("status", "pending").is("conflict_checked_at", null).order("created_at", { ascending: true }).limit(MAX_NEW);
+  let q = sb.from("knowhow_items").select("id, key, area, form, title, applied_text, impl_note, tasks").eq("status", "pending").is("dup_of", null).is("conflict_checked_at", null).order("created_at", { ascending: true }).limit(MAX_NEW);
   if (itemIds?.length) q = q.in("id", itemIds);
   const { data } = await q;
   const rows = data ?? [];
@@ -72,6 +72,6 @@ export async function checkAllPendingConflicts(deadlineMs = 120_000, ask?: Confl
     }
     if (r.checked === 0) break;
   }
-  const { count } = await createAdminClient().from("knowhow_items").select("id", { count: "exact", head: true }).eq("status", "pending").is("conflict_checked_at", null);
+  const { count } = await createAdminClient().from("knowhow_items").select("id", { count: "exact", head: true }).eq("status", "pending").is("dup_of", null).is("conflict_checked_at", null);
   return { checked, withConflict, failed, remaining: count ?? 0 };
 }
