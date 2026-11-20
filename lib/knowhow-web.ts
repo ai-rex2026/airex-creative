@@ -147,12 +147,11 @@ export function isOfficialUrl(url: string): boolean {
 /** 案にするのに必要な、独立した出典の数。1＝出典が1つでも案にする（広くあげて、承認の段階で判断する）。2にすると「独立した2か所以上」に戻る */
 export const MIN_SOURCES = 1;
 
-/** 裏取り：出典の数（MIN_SOURCES）。広告は、公式ドメインのページが1つ以上 */
+/** 裏取り：出典の数（MIN_SOURCES）。広告も公式ページは必須にしない（2026-11-20：広く挙げて承認で判断。公式を含まない広告の案は、注意書きで公式での確認を促す） */
 export function qualifies(area: WebArea, urls: string[], min: number = MIN_SOURCES): { ok: boolean; reason: string; official: boolean } {
   const keys = new Set(urls.map(sourceKey).filter(Boolean));
   const official = urls.some(isOfficialUrl);
   if (keys.size < Math.max(1, min)) return { ok: false, reason: keys.size ? `独立した出典が${min}つ未満` : "出典が読めたページ・投稿に結び付かない", official };
-  if (area === "ads" && !official) return { ok: false, reason: "広告の案に必要な公式ページの根拠がない", official };
   return { ok: true, reason: "", official };
 }
 
@@ -205,6 +204,7 @@ function toWebItems(area: WebArea, label: string, drafts: WebDraft[], pages: Web
         (str(d.caveat, 200) ? str(d.caveat, 200) + "／" : "") +
         `第三者の情報（${label}）から自動で作成した案。出典は${used.length}件（${[...new Set(used.map((u) => sourceKey(u.url)))].slice(0, 4).join("・")}）。` +
         (used.length < 2 ? "根拠は1か所のみ（他のページでの裏付けは未確認）。" : "") +
+        (area === "ads" && !q.official ? "広告の仕様・審査基準は変わりやすいので、公式ページ（各媒体のヘルプ・ポリシー）で確かめてから承認すること。" : "") +
         (onlyX ? "X の投稿のみが根拠です。公式の情報で確かめてから承認すること。" : q.official ? "公式ページを含む出典。" : "公式の裏付けは未確認。原文を確認してから承認すること。"),
       is_guess: d.is_guess === true || onlyX,
       risk: "normal",
