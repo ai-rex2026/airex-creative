@@ -195,3 +195,16 @@ export async function restoreDuplicateAction(fd: FormData): Promise<void> {
   revalidatePath("/admin/knowhow");
   redirect("/admin/knowhow");
 }
+
+/** 似ている判断待ちの案を、一覧から除く（AI は使わない。管理者だけ） */
+export async function sweepDuplicatesAction(): Promise<void> {
+  await adminOnly();
+  let n = 0;
+  try {
+    n = await sweepDuplicates();
+  } catch {
+    redirect("/admin/knowhow?err=" + encodeURIComponent("重複の判定に失敗しました。もう一度お試しください"));
+  }
+  revalidatePath("/admin/knowhow");
+  redirect(`/admin/knowhow?done=dedupe&n=${n}`);
+}

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/tier";
-import { checkKnowhowConflictsAction, decideKnowhowAction, markKnowhowImplAction, restoreDuplicateAction } from "@/app/knowhow-actions";
+import { checkKnowhowConflictsAction, decideKnowhowAction, markKnowhowImplAction, restoreDuplicateAction, sweepDuplicatesAction } from "@/app/knowhow-actions";
 import { MAX_NOTES, MAX_NOTE_CHARS, TASKS, TASK_KEYS, forTask, pickNotes } from "@/lib/knowhow";
 import { PendingButton } from "@/components/admin/PendingButton";
 
@@ -130,6 +130,13 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
           <Link href="/admin/knowhow/sources" style={{ textDecoration: "underline" }}>確認している公式ページ（週1回・変わったときだけ案を作成）</Link>
         </p>
         {sp.err && <p style={{ marginTop: 12, fontSize: 13, color: "var(--ng)" }}>{sp.err}</p>}
+        {sp.done === "dedupe" && (
+          <p className="tag ok" style={{ marginTop: 12 }}>似ている判断待ちの案を {sp.n ?? 0} 件、一覧から除きました（下の「除いた案」から戻せます）</p>
+        )}
+        <form action={sweepDuplicatesAction} style={{ marginTop: 10 }}>
+          <button className="btn sm ghost" type="submit">似ている判断待ちの案を除く</button>
+          <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 10 }}>AI は使いません。公式ページの取り込みのあとにも自動で行います</span>
+        </form>
         {sp.done === "conflict" && (
           <p className="tag ok" style={{ marginTop: 12 }}>
             矛盾チェックをしました（{sp.n ?? 0} 件中、矛盾の可能性ありは {sp.c ?? 0} 件。未確認の残り {sp.r ?? 0} 件）
