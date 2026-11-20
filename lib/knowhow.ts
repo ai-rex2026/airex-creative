@@ -12,8 +12,9 @@ export type KnowhowArea = "meo" | "seo" | "aio" | "lpo" | "image" | "legal" | "a
 
 /** 1回の呼び出しに足す量の上限（指示が長くなりすぎて、本来の指示が薄まらないように） */
 // 2026-11-19：20件・1500字 → 40件・3500字（ノウハウが増える前提。足す量は画面 /admin/knowhow の「枠の使用状況」で見る）
-export const MAX_NOTES = 40;
-export const MAX_NOTE_CHARS = 3500;
+// 2026-11-20：記事づくり（SEO＋AIO）が上限（3365/3500字）に近づいたため 40件・3500字 → 80件・7000字
+export const MAX_NOTES = 80;
+export const MAX_NOTE_CHARS = 7000;
 export const MAX_APPLIED_TEXT = 200;
 
 /**
