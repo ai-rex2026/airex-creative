@@ -110,7 +110,7 @@ export type WebDeps = {
 
 export const MAX_PAGES = 5;
 export const PAGE_CAP = 5_000;
-export const MAX_ITEMS_PER_UNIT = 3;
+export const MAX_ITEMS_PER_UNIT = 5;
 /** X の投稿を根拠にする古さの上限（日） */
 export const X_MAX_AGE_DAYS = 365;
 /** 見出しに使わない断定的な語（見出しは承認の判断に直接効くため、コードでも確かめる） */
@@ -144,11 +144,14 @@ export function isOfficialUrl(url: string): boolean {
   }
 }
 
-/** 裏取り：独立した出典が2つ以上。広告は、公式ドメインのページが1つ以上 */
-export function qualifies(area: WebArea, urls: string[]): { ok: boolean; reason: string; official: boolean } {
+/** 案にするのに必要な、独立した出典の数。1＝出典が1つでも案にする（広くあげて、承認の段階で判断する）。2にすると「独立した2か所以上」に戻る */
+export const MIN_SOURCES = 1;
+
+/** 裏取り：出典の数（MIN_SOURCES）。広告は、公式ドメインのページが1つ以上 */
+export function qualifies(area: WebArea, urls: string[], min: number = MIN_SOURCES): { ok: boolean; reason: string; official: boolean } {
   const keys = new Set(urls.map(sourceKey).filter(Boolean));
   const official = urls.some(isOfficialUrl);
-  if (keys.size < 2) return { ok: false, reason: "独立した出典が2つ未満", official };
+  if (keys.size < Math.max(1, min)) return { ok: false, reason: keys.size ? `独立した出典が${min}つ未満` : "出典が読めたページ・投稿に結び付かない", official };
   if (area === "ads" && !official) return { ok: false, reason: "広告の案に必要な公式ページの根拠がない", official };
   return { ok: true, reason: "", official };
 }
@@ -201,6 +204,7 @@ function toWebItems(area: WebArea, label: string, drafts: WebDraft[], pages: Web
       caveat:
         (str(d.caveat, 200) ? str(d.caveat, 200) + "／" : "") +
         `第三者の情報（${label}）から自動で作成した案。出典は${used.length}件（${[...new Set(used.map((u) => sourceKey(u.url)))].slice(0, 4).join("・")}）。` +
+        (used.length < 2 ? "根拠は1か所のみ（他のページでの裏付けは未確認）。" : "") +
         (onlyX ? "X の投稿のみが根拠です。公式の情報で確かめてから承認すること。" : q.official ? "公式ページを含む出典。" : "公式の裏付けは未確認。原文を確認してから承認すること。"),
       is_guess: d.is_guess === true || onlyX,
       risk: "normal",
