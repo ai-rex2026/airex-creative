@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/tier";
-import { checkKnowhowConflictsAction, decideKnowhowAction, markKnowhowImplAction } from "@/app/knowhow-actions";
+import { checkKnowhowConflictsAction, decideKnowhowAction, markKnowhowImplAction, restoreDuplicateAction } from "@/app/knowhow-actions";
 import { MAX_NOTES, MAX_NOTE_CHARS, TASKS, TASK_KEYS, forTask, pickNotes } from "@/lib/knowhow";
 import { PendingButton } from "@/components/admin/PendingButton";
 
@@ -83,8 +83,8 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
 
   const sb = createAdminClient();
   const [{ data }, counts]: [{ data: unknown }, { data: { status: string; form: string; impl_status: string }[] | null }] = await Promise.all([
-    filtered((tab === "impl" ? sb.from("knowhow_items").select("*").eq("form", "code").eq("impl_status", "todo") : sb.from("knowhow_items").select("*")).eq("status", status)).order(by === "decided" ? "decided_at" : "created_at", { ascending: false }).limit(100),
-    filtered(sb.from("knowhow_items").select("status, form, impl_status")).limit(2000),
+    filtered((tab === "impl" ? sb.from("knowhow_items").select("*").eq("form", "code").eq("impl_status", "todo") : sb.from("knowhow_items").select("*")).eq("status", status).is("dup_of", null)).order(by === "decided" ? "decided_at" : "created_at", { ascending: false }).limit(100),
+    filtered(sb.from("knowhow_items").select("status, form, impl_status").is("dup_of", null)).limit(2000),
   ]);
   const items = (data ?? []) as Item[];
   // AI の指示の「枠」の使用状況。実際の反映（knowhowBlock）と同じ選び方で数える。SEO と AIO は記事づくりで同じ枠を共有する
@@ -97,8 +97,14 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
     .neq("applied_text", "")
     .order("decided_at", { ascending: true })
     .limit(2000);
-  const { count: uncheckedCount } = await sb.from("knowhow_items").select("id", { count: "exact", head: true }).eq("status", "pending").is("conflict_checked_at", null);
+  const { count: uncheckedCount } = await sb.from("knowhow_items").select("id", { count: "exact", head: true }).eq("status", "pending").is("dup_of", null).is("conflict_checked_at", null);
   const unchecked = uncheckedCount ?? 0;
+  // 重複・類似として一覧から除いた案（消していない。戻せる）
+  const { data: dupData } = await sb.from("knowhow_items").select("id, area, title, dup_of").not("dup_of", "is", null).eq("status", "pending").order("created_at", { ascending: false }).limit(200);
+  const dupRows = (dupData ?? []) as { id: string; area: string; title: string; dup_of: string }[];
+  const dupOfIds = [...new Set(dupRows.map((d) => d.dup_of))];
+  const { data: dupOrig } = dupOfIds.length ? await sb.from("knowhow_items").select("id, title, status").in("id", dupOfIds) : { data: [] as { id: string; title: string; status: string }[] };
+  const origOf = new Map((dupOrig ?? []).map((o) => [o.id, o]));
   // 用途ごとに数える（承認した文は、当てはまる用途の呼び出しにだけ足される。用途の指定が無い文はその領域のすべての用途に足される）
   const slot = TASK_KEYS.map((t) => {
     const areas = TASKS[t].area === "seo" || TASKS[t].area === "aio" ? ["seo", "aio"] : [TASKS[t].area as string];
@@ -342,6 +348,28 @@ export default async function KnowhowInbox({ searchParams }: { searchParams: Pro
             </form>
           </section>
         ))}
+
+        {dupRows.length > 0 && (
+          <details style={{ marginTop: 28, fontSize: 12.5, color: "var(--muted)" }}>
+            <summary style={{ cursor: "pointer" }}>似ているため一覧から除いた案：{dupRows.length}件（消してはいません）</summary>
+            {dupRows.map((d) => {
+              const o = origOf.get(d.dup_of);
+              return (
+                <div key={d.id} style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ flex: "1 1 300px", lineHeight: 1.7 }}>
+                    {AREA[d.area] ?? d.area}：{d.title}
+                    <br />
+                    <span style={{ fontSize: 12 }}>似ている案：{o ? `${o.title}（${o.status === "pending" ? "判断待ち" : o.status === "approved" ? "承認済み" : o.status === "held" ? "保留" : "却下"}）` : "（不明）"}</span>
+                  </span>
+                  <form action={restoreDuplicateAction}>
+                    <input type="hidden" name="id" value={d.id} />
+                    <button className="btn sm ghost" type="submit">一覧に戻す</button>
+                  </form>
+                </div>
+              );
+            })}
+          </details>
+        )}
       </div>
     </Shell>
   );
