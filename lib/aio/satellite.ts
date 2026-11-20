@@ -85,6 +85,6 @@ export function applySatellite(html: string, sat: AioSatellite, bodyMd: string, 
     return matchHost(host, domains) ? `<a href="${href}" rel="sponsored noopener" target="_blank">` : `<a href="${href}" rel="noopener" target="_blank">`;
   });
   const d = disclosureText(sat, bodyMd, projectUrl);
-  const box = `<p class="airex-disclosure" style="border:1px solid #ddd;padding:8px 12px;font-size:0.9em;">${d.pr ? "<strong>PR</strong>　" : ""}${esc(d.text.replace(/^PR：/, ""))}</p>`;
+  const box = `<p class="airex-disclosure" style="border:1px solid #ddd;padding:8px 12px;font-size:1em;color:inherit;">${d.pr ? "<strong>PR</strong>　" : ""}${esc(d.text.replace(/^PR：/, ""))}</p>`;
   return `${box}\n${linked}`;
 }
