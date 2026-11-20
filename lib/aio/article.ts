@@ -4,6 +4,7 @@ import { withKnowhow } from "../knowhow";
 /** 承認済みの SEO・AIO のノウハウを、記事づくりの指示に足す（lib/knowhow.ts） */
 const askJson = withKnowhow(rawAskJson, ["seo", "aio"], "article");
 import { checkGuard } from "../guardrail";
+import { articleRuleHits } from "./article-rules";
 import { normalizeJapanese } from "../meo-ops/japanese";
 import type { GuardVerdict } from "../types";
 import { MAX_INLINE_IMAGES, type AioArticleImage, type AioChannel, type AioChannelKind, type AioMetric } from "./content-types";
@@ -213,6 +214,12 @@ export async function draftArticle(
 }
 
 /** 法令チェック（記事を保存した直後に、画像づくりと同じ工程で必ず通す。通るまで公開できない） */
-export function guardArticle(a: { title: string; metaDescription: string; bodyMd: string }, industry: AioProject["industry"]): Promise<GuardVerdict> {
-  return checkGuard([a.title, a.metaDescription, a.bodyMd.slice(0, 9000)], industry);
+export async function guardArticle(a: { title: string; metaDescription: string; bodyMd: string }, industry: AioProject["industry"]): Promise<GuardVerdict> {
+  const v = await checkGuard([a.title, a.metaDescription, a.bodyMd.slice(0, 9000)], industry, "article");
+  // コードで確実に守る記事のルール（医療の禁止事項・PR 表示の混ぜ書き・比較の出典と時点）。AI は呼ばない
+  const rule = articleRuleHits([a.title, a.metaDescription, a.bodyMd], industry);
+  if (!rule.length) return v;
+  const hits = [...v.hits, ...rule];
+  const level: GuardVerdict["level"] = v.level === "red" || rule.some((h) => h.severity === "high") ? "red" : v.level === "yellow" || rule.length ? "yellow" : "green";
+  return { level, hits };
 }

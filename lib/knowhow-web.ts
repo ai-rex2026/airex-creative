@@ -110,7 +110,7 @@ export type WebDeps = {
 
 export const MAX_PAGES = 5;
 export const PAGE_CAP = 5_000;
-export const MAX_ITEMS_PER_UNIT = 5;
+export const MAX_ITEMS_PER_UNIT = 8;
 /** X の投稿を根拠にする古さの上限（日） */
 export const X_MAX_AGE_DAYS = 365;
 /** 見出しに使わない断定的な語（見出しは承認の判断に直接効くため、コードでも確かめる） */
