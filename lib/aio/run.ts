@@ -28,10 +28,16 @@ export function buildAioPrompt(area: string, category: string): string {
   return `${where}${category.trim()}を探しています。\nおすすめの会社・サービスを5〜8件、それぞれ選んだ理由と情報源（URL）つきで教えてください。`;
 }
 
-/** 手動実測の月次上限。月次の自動計測（source = monthly）は数えない */
+/** 手動実測の月次上限。月次の自動計測（source = monthly）と、失敗した実測（2026-11-24〜）は数えない */
 export async function quota(sb: SupabaseClient, projectId: string) {
   const period = jstPeriodKey();
-  const { count } = await sb.from("aio_checks").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("period", period).neq("source", "monthly");
+  const { count } = await sb
+    .from("aio_checks")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId)
+    .eq("period", period)
+    .neq("source", "monthly")
+    .neq("status", "failed");
   const used = count ?? 0;
   return { period, limit: AIO_MONTHLY_LIMIT, used, remaining: Math.max(0, AIO_MONTHLY_LIMIT - used) };
 }

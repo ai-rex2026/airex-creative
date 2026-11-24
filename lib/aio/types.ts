@@ -124,7 +124,8 @@ export type AioDraft = {
 };
 
 /** 1か月（JST）に手動で実行できる実測の回数（1回ごとに web 検索つきの AI 呼び出しが走る）。月次の自動計測は別枠 */
-export const AIO_MONTHLY_LIMIT = 30;
+/** 手動実測の月の上限（対象ごと・プロンプト1本＝1回）。2026-11-24 に 30 → 100（1本 約 $0.02〜0.06） */
+export const AIO_MONTHLY_LIMIT = 100;
 
 /** 対策プロンプト（Vector 等の AIO サービスでいう Prompt Design。狙う問いを決め、月次で全部測る） */
 export type AioPromptCategory = "issue" | "recommend" | "compare" | "track_record" | "select" | "trust" | "recruit";
