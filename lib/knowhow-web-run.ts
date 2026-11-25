@@ -153,7 +153,7 @@ export type WebScanSummary = {
   created: number;
 };
 
-type UnitSpec = { id: string; label: string; unit: { kind: "web"; topic: { label: string; query: string } } | { kind: "x"; keywords: string[] } };
+type UnitSpec = { id: string; label: string; unit: { kind: "web"; topic: { label: string; query: string } } | { kind: "x"; keywords: string[]; keywordsEn?: string[] } };
 
 export function unitsFor(area: WebArea): UnitSpec[] {
   const plan = WEB_PLANS[area];
