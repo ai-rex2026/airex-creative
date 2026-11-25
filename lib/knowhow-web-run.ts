@@ -6,7 +6,8 @@ import { geminiGenerate, hasGemini } from "@/lib/gemini";
 import { claudeSearch } from "@/lib/aio/comparison";
 import { htmlToText, publicFetch } from "@/lib/aio/net";
 import { toObservedX, type ApifyRunner } from "@/lib/sns-ops/apify";
-import { dropDuplicates, sweepDuplicates } from "@/lib/knowhow-dedupe-run";
+import { dropDuplicates, loadPool, sweepDuplicates } from "@/lib/knowhow-dedupe-run";
+import { applyVerdicts, judgeItems, type PoolBrief } from "@/lib/knowhow-judge";
 import { conflictPass, frameFor } from "@/lib/knowhow-run";
 import { WEB_AREAS, WEB_AREA_LABEL, WEB_PLANS, X_MAX_AGE_DAYS, runUnit, weekKey, type WebArea, type WebDeps, type WebDraft, type WebPage, type XPost } from "@/lib/knowhow-web";
 
@@ -26,7 +27,8 @@ const DRAFT_SYSTEM = `あなたは日本の広告・集客運用のノウハウ�
 守ること：
 - 入力の本文・投稿に書かれていることだけを使う。あなたの知識で補わない。source_ids には、その知見を実際に書いている番号だけを入れる（書いていない番号を入れない）
 - 2つ以上の別々のページ・投稿が同じ内容を書いているものを優先して先に並べる。1つのページにしか書かれていないものも、具体的で運用に使えるなら出してよい（その場合は caveat に「根拠は1か所」と書く）
-- ありふれた一般論（「質の高いコンテンツを作る」など）、宣伝、特定の会社の自慢話は出さない。具体的で、運用の判断や実装に使えるものだけ
+- 一般論は出さない。どの業界・どの運用でも言える心得・原則（「質の高いコンテンツを作る」「ユーザーの行動を起点に考える」「次の行動を書く」など）で、具体的な数値・条件・手順・仕様の変更・対象が書かれていないものは対象外。宣伝、特定の会社の自慢話も出さない。数値・仕様・手順・条件があり、運用の判断や実装が変わるものだけ
+- 同じ入力の中で、同じ内容を言い換えて複数の案にしない（1件にまとめる）
 - 効果・順位・成果を断定しない。「必ず」「絶対」「No.1」「最強」「必須」等は、見出しにも本文にも使わない。見出しは事実を述べる中立な表現にする。法令（景表法・医療広告・薬機法など）の解釈は案にしない
 - 古い情報（1年以上前の仕様・手法・投稿）は出さない。時期が読み取れないときは caveat に書く
 - form の選び方：コードで確実に守るべき仕組み（判定・数値の上限・必須の表示・照合・順序や条件の制御）は code、文章の書き方や考え方の指針は note。迷ったら note`;
@@ -116,6 +118,15 @@ export function realWebDeps(admin: SupabaseClient = createAdminClient()): WebDep
     },
     guardOk: (t) => checkGuardDict([t], "general").length === 0,
     now: () => new Date(),
+    judge: async (area, items) => {
+      let pool: PoolBrief[] = [];
+      try {
+        pool = (await loadPool(admin)).map((p) => ({ id: p.id, area: p.area, status: p.status, title: p.title, body: p.applied_text || p.impl_note || p.summary || "" }));
+      } catch {
+        /* 台帳が読めなくても、同じ入力の中の重複と一般論は判定する */
+      }
+      return judgeItems(area, items, pool, (system, user) => askJson(system, user, { model: MODEL_FAST, maxTokens: 1500, timeoutMs: 60_000 }));
+    },
   };
 }
 
@@ -153,6 +164,10 @@ export async function runWebScan(area: WebArea, opts: { deps?: WebDeps; admin?: 
     try {
       const res = await runUnit(area, s.unit, deps);
       const fresh = await dropDuplicates(res.items);
+      // 文字の重なりでは見つからない「意味が同じ」案と、一般論を、AI 1回で除く（AI が失敗したら除かずに通す）
+      const judged = deps.judge && fresh.kept.length ? await deps.judge(area, fresh.kept.map((it) => ({ title: it.title, body: it.applied_text || it.impl_note || it.summary || it.proposal }))) : null;
+      const applied = judged ? applyVerdicts(fresh.kept, judged.verdicts, (it) => it.title) : { kept: fresh.kept, dropped: [] as { title: string; reason: string }[] };
+      fresh.kept = applied.kept;
       if (fresh.kept.length) {
         const { error } = await admin.from("knowhow_items").upsert(fresh.kept, { onConflict: "key", ignoreDuplicates: true });
         if (error) throw new Error(`案の保存に失敗：${error.message}`);
@@ -160,12 +175,14 @@ export async function runWebScan(area: WebArea, opts: { deps?: WebDeps; admin?: 
       const notes = [
         res.error ?? "",
         fresh.dropped ? `既存の案と似ているため ${fresh.dropped} 件は保存せず` : "",
+        applied.dropped.length ? `判定で除外：${applied.dropped.map((d) => `${d.title.slice(0, 30)}（${d.reason}）`).join("、")}` : "",
+        judged?.failed ? "意味の重複・一般論の判定ができなかったため、除かずに保存" : "",
         res.dropped.length ? `裏取りが足りず見送り：${res.dropped.map((d) => `${d.title.slice(0, 30)}（${d.reason}）`).join("、")}` : "",
       ].filter(Boolean);
       // 根拠が見つからなかった単位は「失敗」にして、次回やり直す（見つかった上で案が0件のときは済み）
       const failed = !!res.error && res.read === 0;
       await admin.from("knowhow_web_runs").upsert({ key, area, unit: s.id, week, status: failed ? "failed" : "done", attempts, created: fresh.kept.length, read: res.read, note: notes.join("／").slice(0, 600), ran_at: new Date().toISOString() }, { onConflict: "key" });
-      return { s, r: { status: failed ? ("failed" as const) : ("done" as const), read: res.read, created: fresh.kept.length, dropped: res.dropped.length + fresh.dropped, note: notes.join("／") } };
+      return { s, r: { status: failed ? ("failed" as const) : ("done" as const), read: res.read, created: fresh.kept.length, dropped: res.dropped.length + fresh.dropped + applied.dropped.length, note: notes.join("／") } };
     } catch (e) {
       const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
       await admin.from("knowhow_web_runs").upsert({ key, area, unit: s.id, week, status: "failed", attempts, created: 0, read: 0, note: msg, ran_at: new Date().toISOString() }, { onConflict: "key" });
