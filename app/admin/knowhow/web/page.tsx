@@ -89,7 +89,7 @@ export default async function KnowhowWeb({ searchParams }: { searchParams: Promi
                 return (
                   <li key={u.id}>
                     ・{u.label}
-                    {u.unit.kind === "x" ? `（${WEB_PLANS[area].xKeywords.join("・")}）` : ""}
+                    {u.unit.kind === "x" ? `（日本語：${WEB_PLANS[area].xKeywords.join("・")}${WEB_PLANS[area].xKeywordsEn?.length ? `／英語：${WEB_PLANS[area].xKeywordsEn!.join("・")}` : ""}）` : ""}
                     {r ? (
                       <span>
                         {" "}— {r.status === "done" ? `済み（${fmt(r.ran_at)}・読んだ ${r.read} 件・案 ${r.created} 件）` : `失敗（${r.attempts}回目・${fmt(r.ran_at)}）`}

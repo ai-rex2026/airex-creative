@@ -8,6 +8,7 @@ import { htmlToText, publicFetch } from "@/lib/aio/net";
 import { toObservedX, type ApifyRunner } from "@/lib/sns-ops/apify";
 import { dropDuplicates, loadPool, sweepDuplicates } from "@/lib/knowhow-dedupe-run";
 import { discoverSkills } from "@/lib/knowhow-skills-run";
+import { extractUrls } from "@/lib/knowhow-skills";
 import { applyVerdicts, judgeItems, type PoolBrief } from "@/lib/knowhow-judge";
 import { conflictPass, frameFor } from "@/lib/knowhow-run";
 import { WEB_AREAS, WEB_AREA_LABEL, WEB_PLANS, X_MAX_AGE_DAYS, runUnit, weekKey, type WebArea, type WebDeps, type WebDraft, type WebPage, type XPost } from "@/lib/knowhow-web";
@@ -99,19 +100,34 @@ export function realWebDeps(admin: SupabaseClient = createAdminClient()): WebDep
       if (!/text\/html|text\/plain/i.test(ct)) throw new Error("HTML ではありません");
       return htmlToText((await res.text()).slice(0, 1_000_000));
     },
-    searchX: async (keywords) => {
+    searchX: async (keywords, keywordsEn) => {
       const ks = keywords.map((k) => k.trim()).filter(Boolean).slice(0, 3);
-      if (!ks.length) return [];
+      const en = (keywordsEn ?? []).map((k) => k.trim()).filter(Boolean).slice(0, 3);
+      if (!ks.length && !en.length) return [];
       const since = new Date(Date.now() - X_MAX_AGE_DAYS * 864e5).toISOString().slice(0, 10);
+      // 日本語は反応20以上、英語は50以上（英語は投稿の数が多いので絞る）。Apify の呼び出しは1回のまま
       const items = await run(process.env.APIFY_ACTOR_X || "apidojo/twitter-scraper-lite", {
-        searchTerms: ks.map((k) => `${k} lang:ja min_faves:20 -filter:replies since:${since}`),
-        maxItems: 30,
+        searchTerms: [...ks.map((k) => `${k} lang:ja min_faves:20 -filter:replies since:${since}`), ...en.map((k) => `${k} lang:en min_faves:50 -filter:replies since:${since}`)],
+        maxItems: ks.length && en.length ? 45 : 30,
         sort: "Top",
       });
-      return items
-        .map(toObservedX)
-        .filter((x): x is NonNullable<ReturnType<typeof toObservedX>> => !!x && !!x.author && !!x.url)
-        .map((x) => ({ url: x.url, author: x.author, text: x.text, likes: x.likes, postedAt: x.postedAt }));
+      // 投稿が載せているリンク。t.co は転送先に直す（上限つき）
+      let budget = 25;
+      const out = await Promise.all(
+        items.map(async (it) => {
+          const x = toObservedX(it);
+          if (!x || !x.author || !x.url) return null;
+          const urls: string[] = [];
+          for (const u of extractUrls(JSON.stringify(it))) {
+            if (/^https?:\/\/t\.co\//i.test(u)) {
+              if (budget-- <= 0) continue;
+              urls.push(await resolveRedirect(u));
+            } else urls.push(u);
+          }
+          return { url: x.url, author: x.author, text: x.text, likes: x.likes, postedAt: x.postedAt, urls };
+        })
+      );
+      return out.filter((x): x is NonNullable<typeof x> => !!x);
     },
     draft: async (area, label, pages, posts) => {
       const res = await askJson<{ items?: WebDraft[] }>(frameFor(DRAFT_SYSTEM, area), buildUser(label, pages, posts), { model: MODEL_FAST, maxTokens: 2500, timeoutMs: 90_000 });
@@ -137,12 +153,12 @@ export type WebScanSummary = {
   created: number;
 };
 
-type UnitSpec = { id: string; label: string; unit: { kind: "web"; topic: { label: string; query: string } } | { kind: "x"; keywords: string[] } };
+type UnitSpec = { id: string; label: string; unit: { kind: "web"; topic: { label: string; query: string } } | { kind: "x"; keywords: string[]; keywordsEn?: string[] } };
 
 export function unitsFor(area: WebArea): UnitSpec[] {
   const plan = WEB_PLANS[area];
   const out: UnitSpec[] = plan.topics.map((t, i) => ({ id: `w${i + 1}`, label: t.label, unit: { kind: "web", topic: t } }));
-  if (plan.xKeywords.length) out.push({ id: "x", label: "X での話題", unit: { kind: "x", keywords: plan.xKeywords } });
+  if (plan.xKeywords.length || plan.xKeywordsEn?.length) out.push({ id: "x", label: "X での話題と紹介された記事", unit: { kind: "x", keywords: plan.xKeywords, keywordsEn: plan.xKeywordsEn } });
   return out;
 }
 
