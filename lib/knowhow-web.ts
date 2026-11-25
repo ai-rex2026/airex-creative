@@ -33,8 +33,9 @@ export const WEB_PLANS: Record<WebArea, WebPlan> = {
       { label: "検索アルゴリズムの更新と対応", query: "Google 検索 アップデート 影響 対応 最新" },
       { label: "記事の作り方（E-E-A-T・構成）", query: "SEO 記事 作り方 E-E-A-T 構成 最新 実務" },
       { label: "技術SEO（構造化データ・内部リンク・クロール）", query: "技術SEO 構造化データ 内部リンク クロール 最新" },
+      { label: "SEO・構造化データの Agent Skills（SKILL.md）", query: "SEO 診断 構造化データ Agent Skills SKILL.md 公開 Claude" },
     ],
-    xKeywords: ["SEO コアアップデート", "SEO 記事 順位"],
+    xKeywords: ["SEO コアアップデート", "SEO 記事 順位", "Agent Skills SEO"],
   },
   aio: {
     topics: [
@@ -49,8 +50,9 @@ export const WEB_PLANS: Record<WebArea, WebPlan> = {
       { label: "LP 改善（CVR）", query: "ランディングページ 改善 CVR ノウハウ 最新" },
       { label: "ファーストビュー・フォーム改善", query: "LP ファーストビュー フォーム EFO 改善 事例" },
       { label: "表示速度（Core Web Vitals）", query: "Core Web Vitals 表示速度 LP 改善 最新" },
+      { label: "Web 改善の Agent Skills（表示速度・アクセシビリティ）", query: "Core Web Vitals 表示速度 アクセシビリティ Agent Skills SKILL.md 公開" },
     ],
-    xKeywords: ["LP 改善 CVR", "ランディングページ 改善"],
+    xKeywords: ["LP 改善 CVR", "ランディングページ 改善", "Agent Skills Web制作"],
   },
   image: {
     topics: [

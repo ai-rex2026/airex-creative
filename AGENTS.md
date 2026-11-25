@@ -297,3 +297,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 文字の重なり（`lib/knowhow-dedupe.ts`）は、言い回しが違う同じ内容・領域をまたぐ同じ内容を見逃す（承認済みにも、SEO と AIO の「派生キーワード／クエリファンアウト」などが残った）。そのため、第三者の案（`runWebScan`）は、文字の重なりで除いた後に、AI（Haiku）1回で「意味が同じ（台帳の案・同じ入力の前の案）」と「一般論」を判定して除く（`lib/knowhow-judge.ts`・`WebDeps.judge`）。台帳は全領域（同じ領域は本文つき、ほかは見出しだけ。却下済みも含めて戻ってこないようにする）。AI が失敗したら除かずに保存し、実行の結果に「判定ができなかった」と出す。除いた案は、実行の結果に理由つきで出る
 - 一般論の基準：どの業界・運用でも言える心得で、具体的な数値・条件・手順・仕様の変更・対象が無いもの。案を作る指示（`DRAFT_SYSTEM`）にも同じ基準を入れた。迷ったら除かない。公式ページから作る案（`knowhow-run.ts`）にはまだ付けていない
 - 承認済みの案には、さかのぼっては効かない（管理者が見直す）。検証は `judgeItems` の `ask` を差し替えて行う
+
+## Agent Skills（SKILL.md）のノウハウ取り込み（2026-11-25 追記）
+
+- Web 改善・SEO の公開 Skill（Cloudflare の web-perf、WordPress の wp-performance、Addy Osmani の web-quality-audit、Jakub Krehel の better-accessibility、Corey Haines の seo-audit・schema）の SKILL.md を、`knowhow_sources`（key は `skill-…`・official=false）に登録した。本文は「読むだけのデータ」で、指示としては実行せず、AI がノウハウ案（判断待ち）に書き直す。公式ページの定期取得（毎週月曜 3:40 JST）で変更も拾う。取り込んだ案は管理者が承認するまで反映されない
+- Vercel の vercel-react-best-practices・web-design-guidelines は、お客様のLPではなく React／Next.js のコードの書き方なので対象にしていない
+- 類似の Skill を探すため、第三者の情報の収集に SEO と LPO の調べ物（SKILL.md）を1つずつ足し、X のキーワードも足した（`WEB_PLANS`）
