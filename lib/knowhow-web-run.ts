@@ -7,6 +7,7 @@ import { claudeSearch } from "@/lib/aio/comparison";
 import { htmlToText, publicFetch } from "@/lib/aio/net";
 import { toObservedX, type ApifyRunner } from "@/lib/sns-ops/apify";
 import { dropDuplicates, loadPool, sweepDuplicates } from "@/lib/knowhow-dedupe-run";
+import { discoverSkills } from "@/lib/knowhow-skills-run";
 import { applyVerdicts, judgeItems, type PoolBrief } from "@/lib/knowhow-judge";
 import { conflictPass, frameFor } from "@/lib/knowhow-run";
 import { WEB_AREAS, WEB_AREA_LABEL, WEB_PLANS, X_MAX_AGE_DAYS, runUnit, weekKey, type WebArea, type WebDeps, type WebDraft, type WebPage, type XPost } from "@/lib/knowhow-web";
@@ -44,7 +45,7 @@ function buildUser(label: string, pages: WebPage[], posts: XPost[]): string {
 }
 
 /** Gemini の出典（Google の中継 URL）を、転送先の実際の URL にする。取れなければ元の URL のまま（クリックすれば開く） */
-async function resolveRedirect(uri: string): Promise<string> {
+export async function resolveRedirect(uri: string): Promise<string> {
   try {
     const res = await publicFetch(uri, { maxRedirects: 0, timeoutMs: 8_000 });
     return res.headers.get("location") || uri;
@@ -56,7 +57,7 @@ async function resolveRedirect(uri: string): Promise<string> {
 const SEARCH_SYSTEM = `あなたは日本の広告・集客運用の調査担当です。Web 検索で、指定の話題について、最近（直近1年以内）の具体的な変更点・調査結果・運用ノウハウが書かれているページを探します。公式サイト・専門メディア・実務者のブログなど、複数の別々のサイトから探してください。見つけた内容を短くまとめてください。`;
 
 /** X の検索（Apify）。実際の fetch の直前の1箇所で、1日の上限を通す */
-function xRunner(admin: SupabaseClient, f: typeof fetch = fetch): ApifyRunner {
+export function xRunner(admin: SupabaseClient, f: typeof fetch = fetch): ApifyRunner {
   return async (actorId, input) => {
     const token = process.env.APIFY_API_TOKEN;
     if (!token) throw new Error("Apify の API トークンが未設定です");
@@ -214,6 +215,15 @@ export async function runWebScanAll(opts: { deadlineMs?: number; deps?: WebDeps 
       break;
     }
     areas.push(await runWebScan(area, { deps: opts.deps }));
+  }
+  // X で話題の Skill を探す（週1回。済みなら飛ばす）。時間が残っているときだけ
+  if (Date.now() < deadline - 120_000) {
+    try {
+      const sk = await discoverSkills();
+      if (sk.status !== "skipped") notes.push(`Skill の探索：${sk.status === "failed" ? "失敗（" + sk.note + "）" : sk.note}`);
+    } catch (e) {
+      notes.push(`Skill の探索に失敗：${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`);
+    }
   }
   await conflictPass(notes);
   return { areas, notes };
