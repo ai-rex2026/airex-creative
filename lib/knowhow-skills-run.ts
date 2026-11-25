@@ -6,7 +6,7 @@ import { runKnowhowFullIngest, type IngestSummary } from "@/lib/knowhow-run";
 import { weekKey, X_MAX_AGE_DAYS } from "@/lib/knowhow-web";
 import { resolveRedirect, xRunner } from "@/lib/knowhow-web-run";
 import {
-  MAX_NEW_SKILLS, SKILL_JUDGE_SYSTEM, SKILL_X_KEYWORDS, buildSkillJudgeUser, extractUrls, parseSkillVerdicts, pickCandidates, skillKey,
+  MAX_NEW_SKILLS, MAX_REPOS, PER_REPO, SKILL_JUDGE_SYSTEM, SKILL_X_KEYWORDS, buildSkillJudgeUser, extractUrls, parseSkillVerdicts, pickCandidates, skillKey, skillPathsFromTree, toRawSkillUrl, toRepoRef,
   type SkillCandidate, type SkillVerdict,
 } from "@/lib/knowhow-skills";
 
@@ -20,6 +20,8 @@ export type SkillDeps = {
   searchX: () => Promise<{ postUrl: string; postText: string; urls: string[] }[]>;
   resolve: (url: string) => Promise<string>;
   fetchSkill: (rawUrl: string) => Promise<string>;
+  /** リポジトリの中の SKILL.md のパス一覧（GitHub の木）。取れなければ throw */
+  listSkillPaths: (owner: string, repo: string) => Promise<string[]>;
   judge: (items: { id: number; name: string; repo: string; body: string; postText: string }[]) => Promise<SkillVerdict[]>;
 };
 
@@ -42,6 +44,14 @@ export function realSkillDeps(admin: SupabaseClient): SkillDeps {
       }));
     },
     resolve: resolveRedirect,
+    listSkillPaths: async (owner, repo) => {
+      const headers: Record<string, string> = { accept: "application/vnd.github+json" };
+      if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+      const res = await publicFetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`, { timeoutMs: 15_000, headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const j = (await res.json()) as { tree?: { path?: string; type?: string }[] };
+      return (j.tree ?? []).filter((t) => t.type === "blob" && t.path).map((t) => String(t.path));
+    },
     fetchSkill: async (rawUrl) => {
       const res = await publicFetch(rawUrl, { timeoutMs: 15_000 });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -87,7 +97,36 @@ export async function discoverSkills(opts: { admin?: SupabaseClient; deps?: Skil
         return { ...p, urls: urls.filter((u) => /github\.com|githubusercontent\.com/i.test(u)) };
       })
     );
-    const cands: SkillCandidate[] = pickCandidates(expanded, known);
+    // リポジトリのトップだけの URL は、リポジトリの中の SKILL.md を探す（上限つき）
+    const direct = new Set(expanded.flatMap((p) => p.urls.map((u) => toRawSkillUrl(u)?.repo.toLowerCase()).filter(Boolean) as string[]));
+    const repoMap = new Map<string, { owner: string; repo: string; postUrl: string; postText: string }>();
+    for (const p of expanded) {
+      for (const u of p.urls) {
+        const ref = toRepoRef(u);
+        if (!ref) continue;
+        const k = `${ref.owner}/${ref.repo}`.toLowerCase();
+        if (!direct.has(k) && !repoMap.has(k)) repoMap.set(k, { ...ref, postUrl: p.postUrl, postText: p.postText });
+      }
+    }
+    const repos = Array.from(repoMap.values()).slice(0, MAX_REPOS);
+    const listed = await Promise.allSettled(repos.map((r) => deps.listSkillPaths(r.owner, r.repo)));
+    let listFail = 0;
+    const viaRepo: { postUrl: string; postText: string; urls: string[] }[] = [];
+    listed.forEach((l, i) => {
+      if (l.status !== "fulfilled") {
+        listFail++;
+        return;
+      }
+      const r = repos[i];
+      const urls = skillPathsFromTree(l.value)
+        .map((path) => `https://raw.githubusercontent.com/${r.owner}/${r.repo}/HEAD/${path}`)
+        .filter((raw) => !known.has(raw))
+        .slice(0, PER_REPO);
+      viaRepo.push({ postUrl: r.postUrl, postText: r.postText, urls });
+    });
+    const urlCount = posts.reduce((n, p) => n + p.urls.length, 0);
+    const ghCount = expanded.reduce((n, p) => n + p.urls.length, 0);
+    const cands: SkillCandidate[] = pickCandidates([...expanded, ...viaRepo], known);
     out.candidates = cands.length;
     const read = await Promise.allSettled(cands.map((c) => deps.fetchSkill(c.rawUrl)));
     const items: { id: number; c: SkillCandidate; body: string }[] = [];
@@ -126,7 +165,7 @@ export async function discoverSkills(opts: { admin?: SupabaseClient; deps?: Skil
       const { error } = await admin.from("knowhow_sources").upsert(rows, { onConflict: "key", ignoreDuplicates: true });
       if (error) throw new Error(`登録に失敗：${error.message}`);
     }
-    out.note = `投稿 ${out.posts} 件／候補 ${out.candidates} 件／読めた ${out.read} 件／登録 ${out.registered.length} 件／対象外 ${out.excluded} 件`;
+    out.note = `投稿 ${out.posts} 件（URL ${urlCount} 件・GitHub ${ghCount} 件・リポジトリ ${repos.length} 件調べ${listFail ? `・木が取れず ${listFail} 件` : ""}）／候補 ${out.candidates} 件／読めた ${out.read} 件／登録 ${out.registered.length} 件／対象外 ${out.excluded} 件`;
     await record("done", out.note);
     // 登録した分は、そのまま案（判断待ち）にする（有料の AI は登録した Skill の分だけ）
     if (opts.ingest !== false && out.registered.length) out.ingest = await runKnowhowFullIngest({ maxAiCalls: 14 });
