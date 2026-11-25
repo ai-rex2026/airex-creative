@@ -5,7 +5,7 @@ import { findDup, type DupRow } from "@/lib/knowhow-dedupe";
 type PoolRow = DupRow & { id: string; status: string; created_at: string };
 
 /** 比べる相手：除かれていない案のすべて（判断待ち・承認・保留・却下） */
-async function loadPool(sb: SupabaseClient): Promise<PoolRow[]> {
+export async function loadPool(sb: SupabaseClient): Promise<PoolRow[]> {
   const { data } = await sb
     .from("knowhow_items")
     .select("id, area, form, title, summary, applied_text, impl_note, status, created_at")

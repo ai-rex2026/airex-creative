@@ -1,3 +1,4 @@
+import type { Verdict } from "@/lib/knowhow-judge";
 import { formFields, pickApplied, type Draft, type ItemInsert } from "@/lib/knowhow-sources";
 
 /**
@@ -106,6 +107,8 @@ export type WebDeps = {
   draft: (area: WebArea, label: string, pages: WebPage[], posts: XPost[]) => Promise<WebDraft[]>;
   guardOk: (text: string) => boolean;
   now: () => Date;
+  /** 保存する前の案を、意味の重複・一般論で判定する（AI）。無ければ判定しない */
+  judge?: (area: WebArea, items: { title: string; body: string }[]) => Promise<{ verdicts: Verdict[]; failed: boolean }>;
 };
 
 export const MAX_PAGES = 5;
