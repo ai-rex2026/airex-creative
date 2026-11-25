@@ -303,3 +303,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Web 改善・SEO の公開 Skill（Cloudflare の web-perf、WordPress の wp-performance、Addy Osmani の web-quality-audit、Jakub Krehel の better-accessibility、Corey Haines の seo-audit・schema）の SKILL.md を、`knowhow_sources`（key は `skill-…`・official=false）に登録した。本文は「読むだけのデータ」で、指示としては実行せず、AI がノウハウ案（判断待ち）に書き直す。公式ページの定期取得（毎週月曜 3:40 JST）で変更も拾う。取り込んだ案は管理者が承認するまで反映されない
 - Vercel の vercel-react-best-practices・web-design-guidelines は、お客様のLPではなく React／Next.js のコードの書き方なので対象にしていない
 - X で話題の Skill を見つけて取り込む（`lib/knowhow-skills.ts`＝純粋な処理、`lib/knowhow-skills-run.ts`＝実行、管理画面 `/admin/knowhow/web` の「Skill を探す」、第三者収集の週次実行（`runWebScanAll`）の最後にも入る）：X を検索（「SKILL.md」「Agent Skills github」「Claude Code スキル 公開」・いいね20以上・Apify 1回・`claim_knowhow_x_call` の上限内）→ 投稿の URL（t.co は転送先に直す）から GitHub の SKILL.md だけを拾う（リポジトリのトップだけの URL は対象外）→ 登録済みの URL は読み直さない → 本文を読み AI（Haiku）1回で、このSaaSのノウハウの材料になるか・領域を判定 → なるものを `knowhow_sources`（key `skill-x-…`・official=false・最大5件）に登録して、そのまま全取り込みで案（判断待ち）にする。対象外は enabled=false の「対象外」として残し、同じ判定をやり直さない。1週間に1回（`knowhow_web_runs` の `<週>-skills`）。以前に足した SEO・LPO の「Agent Skills」の調べ物と X キーワードは、この仕組みに置き換えて外した。検証は `SkillDeps`（searchX・resolve・fetchSkill・judge）を差し替えて行った
+
+## 第三者収集：X の投稿が紹介している記事を読む・英語の投稿も探す（2026-11-25 追記）
+
+- 「X での話題と紹介された記事」の単位（`runUnit` の x）：X の検索（日本語は反応20以上・英語は50以上。Apify は1回のまま）で見つけた投稿が載せているリンク（t.co は転送先に直す・25件まで）のうち、記事として読めるもの（`isArticleUrl`：X・画像・動画・SNS・GitHub・トップページだけの URL は除く）を、反応の多い投稿のものから読む（同じ書き手は1ページ・最大5ページ）。読んだ記事は X の投稿と並べて AI に渡し、案の出典は記事（ページ）と投稿の通し番号で結ぶ（記事が先・投稿が後。以前は番号が重なりうる作りだった）。記事の出典があれば「X の投稿のみが根拠」の注意書きは付かない
+- 英語の投稿（`WebPlan.xKeywordsEn`）：MEO・SEO・AIO・LPO・画像生成に足した（海外の実験・解説は英語が先に出るため）。広告は従来どおり X を使わない。AIO は「GEO 生成AI 引用 ブランド」「AI Overviews citations study」などを足した。語は `WEB_PLANS` で直す
+- GitHub の SKILL.md は別の仕組み（上の「Agent Skills」）で拾うので、この単位では読まない。検証は `WebDeps.searchX`（urls つき）・`readPage` を差し替えて行った

@@ -16,7 +16,7 @@ export const WEB_AREAS: WebArea[] = ["meo", "seo", "aio", "lpo", "image", "ads"]
 export const WEB_AREA_LABEL: Record<WebArea, string> = { meo: "MEO", seo: "SEO", aio: "AIO", lpo: "LPO", image: "画像生成", ads: "広告" };
 
 export type WebTopic = { label: string; query: string };
-export type WebPlan = { topics: WebTopic[]; xKeywords: string[] };
+export type WebPlan = { topics: WebTopic[]; xKeywords: string[]; /** 英語の投稿を探す語（海外の SEO・AEO・CRO などの最新の実験・解説は英語が先に出る） */ xKeywordsEn?: string[] };
 
 /** 領域ごとの調べる話題（週1回。件数を増やすと検索・AI の費用が増える）。X は広告では使わない（公式の裏取りが要るため） */
 export const WEB_PLANS: Record<WebArea, WebPlan> = {
@@ -27,6 +27,7 @@ export const WEB_PLANS: Record<WebArea, WebPlan> = {
       { label: "ローカルSEOの順位要因の調査", query: "ローカルSEO 順位要因 調査 ビジネスプロフィール" },
     ],
     xKeywords: ["MEO ビジネスプロフィール", "Googleマップ 順位 対策"],
+    xKeywordsEn: ["local SEO Google Business Profile ranking", "Google Maps ranking factors study"],
   },
   seo: {
     topics: [
@@ -35,6 +36,7 @@ export const WEB_PLANS: Record<WebArea, WebPlan> = {
       { label: "技術SEO（構造化データ・内部リンク・クロール）", query: "技術SEO 構造化データ 内部リンク クロール 最新" },
     ],
     xKeywords: ["SEO コアアップデート", "SEO 記事 順位"],
+    xKeywordsEn: ["SEO core update impact", "technical SEO study"],
   },
   aio: {
     topics: [
@@ -42,7 +44,8 @@ export const WEB_PLANS: Record<WebArea, WebPlan> = {
       { label: "LLMO・GEO の実務", query: "LLMO GEO 生成AI検索 対策 ノウハウ 最新" },
       { label: "ChatGPT・Perplexity の引用傾向の調査", query: "ChatGPT Perplexity 引用 出典 傾向 調査" },
     ],
-    xKeywords: ["LLMO 対策", "AI Overviews 引用"],
+    xKeywords: ["LLMO 対策", "AI Overviews 引用", "GEO 生成AI 引用 ブランド"],
+    xKeywordsEn: ["AI Overviews citations study", "AEO GEO brand mentions", "AI Mode SEO"],
   },
   lpo: {
     topics: [
@@ -51,6 +54,7 @@ export const WEB_PLANS: Record<WebArea, WebPlan> = {
       { label: "表示速度（Core Web Vitals）", query: "Core Web Vitals 表示速度 LP 改善 最新" },
     ],
     xKeywords: ["LP 改善 CVR", "ランディングページ 改善"],
+    xKeywordsEn: ["landing page conversion test results", "CRO A/B test learnings"],
   },
   image: {
     topics: [
@@ -59,6 +63,7 @@ export const WEB_PLANS: Record<WebArea, WebPlan> = {
       { label: "ショート動画広告のクリエイティブ", query: "ショート動画 広告 クリエイティブ 最新 傾向" },
     ],
     xKeywords: ["バナー 広告 クリエイティブ", "AI画像 広告 バナー"],
+    xKeywordsEn: ["ad creative testing results", "AI generated ad creative performance"],
   },
   ads: {
     topics: [
@@ -102,7 +107,7 @@ export type WebDeps = {
   /** ページの本文を読む。読めなければ throw */
   readPage: (url: string) => Promise<string>;
   /** X を検索する（領域のキーワード）。反応のある投稿だけ */
-  searchX: (keywords: string[]) => Promise<{ url: string; author: string; text: string; likes: number | null; postedAt?: string | null }[]>;
+  searchX: (keywords: string[], keywordsEn?: string[]) => Promise<{ url: string; author: string; text: string; likes: number | null; postedAt?: string | null; /** 投稿が載せているリンク（t.co は転送先に直したもの） */ urls?: string[] }[]>;
   /** 読んだ本文・投稿から案の下書きを作る（AI） */
   draft: (area: WebArea, label: string, pages: WebPage[], posts: XPost[]) => Promise<WebDraft[]>;
   guardOk: (text: string) => boolean;
@@ -135,6 +140,21 @@ export function sourceKey(url: string): string {
     return host;
   } catch {
     return "";
+  }
+}
+
+/** X の投稿のリンクのうち、記事として読む価値のあるもの。X・画像・動画・GitHub（Skill は別の仕組み）・短縮のままの URL は除く */
+export function isArticleUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return false;
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+    if (/(^|\.)(x|twitter|t)\.co(m)?$/.test(host) || /^(x|twitter)\.com$/.test(host) || host === "t.co") return false;
+    if (/(twimg\.com|youtube\.com|youtu\.be|instagram\.com|facebook\.com|tiktok\.com|linkedin\.com|github\.com|githubusercontent\.com|pic\.x\.com)$/.test(host)) return false;
+    if (/\.(png|jpe?g|gif|webp|mp4|pdf)$/i.test(u.pathname)) return false;
+    return u.pathname.length > 1; // トップページだけの URL は記事ではない
+  } catch {
+    return false;
   }
 }
 
@@ -218,7 +238,7 @@ function toWebItems(area: WebArea, label: string, drafts: WebDraft[], pages: Web
 }
 
 /** 調べる単位1つ（話題の検索、または X 検索）を最後まで流して、案の候補を返す。保存はしない（呼び出し側が1単位ごとに保存する） */
-export async function runUnit(area: WebArea, unit: { kind: "web"; topic: WebTopic } | { kind: "x"; keywords: string[] }, deps: WebDeps): Promise<UnitResult> {
+export async function runUnit(area: WebArea, unit: { kind: "web"; topic: WebTopic } | { kind: "x"; keywords: string[]; keywordsEn?: string[] }, deps: WebDeps): Promise<UnitResult> {
   let pages: WebPage[] = [];
   let posts: XPost[] = [];
   let label = "";
@@ -241,18 +261,39 @@ export async function runUnit(area: WebArea, unit: { kind: "web"; topic: WebTopi
       pages.push({ n: pages.length + 1, url: picked[i].url, title: picked[i].title, text: r.value.trim().slice(0, PAGE_CAP) });
     }
   } else {
-    label = "X での話題";
-    const found = await deps.searchX(unit.keywords);
+    label = "X での話題と紹介された記事";
+    const found = await deps.searchX(unit.keywords, unit.keywordsEn);
     const seen = new Set<string>();
+    const linked: { url: string; likes: number }[] = [];
     for (const f of found) {
       const a = f.author.toLowerCase();
       if (!f.text.trim() || seen.has(a)) continue; // 1人1件（同じ人の複数投稿を独立した出典と数えない）
       // 古い投稿は根拠にしない（日付が分かるもので、1年より前のもの）
       if (f.postedAt && Date.parse(f.postedAt) < deps.now().getTime() - X_MAX_AGE_DAYS * 864e5) continue;
       seen.add(a);
+      for (const u of f.urls ?? []) if (isArticleUrl(u)) linked.push({ url: u, likes: f.likes ?? 0 });
       posts.push({ n: posts.length + 1, url: f.url, author: f.author, text: f.text.slice(0, 600), likes: f.likes, postedAt: f.postedAt ?? null });
       if (posts.length >= 12) break;
     }
+    // 投稿が紹介している記事（X 以外のページ）を読む。反応の多い投稿のものから、同じ書き手は1ページ（独立した出典を集める）
+    const seenKey = new Set<string>();
+    const picked: string[] = [];
+    for (const l of linked.sort((a, b) => b.likes - a.likes)) {
+      const key = sourceKey(l.url);
+      if (!key || seenKey.has(key)) continue;
+      seenKey.add(key);
+      picked.push(l.url);
+      if (picked.length >= MAX_PAGES + 3) break;
+    }
+    const read = await Promise.allSettled(picked.map((u) => deps.readPage(u)));
+    for (let i = 0; i < picked.length && pages.length < MAX_PAGES; i++) {
+      const r = read[i];
+      if (r.status !== "fulfilled" || r.value.trim().length < 300) continue;
+      const text = r.value.trim();
+      pages.push({ n: pages.length + 1, url: picked[i], title: text.split("\n")[0].slice(0, 60) || sourceKey(picked[i]), text: text.slice(0, PAGE_CAP) });
+    }
+    // 番号はページ→投稿の通し番号にする（出典の番号が、ページと投稿で重ならないように）
+    posts = posts.map((p, i) => ({ ...p, n: pages.length + i + 1 }));
   }
   if (!pages.length && !posts.length) return { items: [], read: 0, dropped: [], error: "根拠にできるページ・投稿が見つかりませんでした" };
   const drafts = await deps.draft(area, label, pages, posts);
