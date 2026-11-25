@@ -51,6 +51,10 @@
     {
       "path": "/api/cron/knowhow-sources",
       "schedule": "40 18 * * 0"
+    },
+    {
+      "path": "/api/cron/knowhow-web",
+      "schedule": "50 18 * * 2,3,4,5"
     }
   ]
 }

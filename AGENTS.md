@@ -309,3 +309,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - 「X での話題と紹介された記事」の単位（`runUnit` の x）：X の検索（日本語は反応20以上・英語は50以上。Apify は1回のまま）で見つけた投稿が載せているリンク（t.co は転送先に直す・25件まで）のうち、記事として読めるもの（`isArticleUrl`：X・画像・動画・SNS・GitHub・トップページだけの URL は除く）を、反応の多い投稿のものから読む（同じ書き手は1ページ・最大5ページ）。読んだ記事は X の投稿と並べて AI に渡し、案の出典は記事（ページ）と投稿の通し番号で結ぶ（記事が先・投稿が後。以前は番号が重なりうる作りだった）。記事の出典があれば「X の投稿のみが根拠」の注意書きは付かない
 - 英語の投稿（`WebPlan.xKeywordsEn`）：MEO・SEO・AIO・LPO・画像生成に足した（海外の実験・解説は英語が先に出るため）。広告は従来どおり X を使わない。AIO は「GEO 生成AI 引用 ブランド」「AI Overviews citations study」などを足した。語は `WEB_PLANS` で直す
 - GitHub の SKILL.md は別の仕組み（上の「Agent Skills」）で拾うので、この単位では読まない。検証は `WebDeps.searchX`（urls つき）・`readPage` を差し替えて行った
+
+## 第三者収集の週次実行（2026-11-25 追記）
+
+- `/api/cron/knowhow-web`（`vercel.json`）：水〜土の 3:50 JST。1回の実行（最大300秒）では全領域（1領域2〜4分）を回しきれないので、複数の日に分けて呼ぶ。同じ週に済んだ調べ物の単位と Skill の探索は飛ばす（`knowhow_web_runs`）ので、有料の検索・AI・Apify は重複しない。失敗した単位は1週に2回まで。時間切れの領域は、次の日の実行が続ける
