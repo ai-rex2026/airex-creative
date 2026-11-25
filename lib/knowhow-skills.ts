@@ -9,6 +9,9 @@ export const SKILL_X_KEYWORDS = ["SKILL.md", "Agent Skills github", "Claude Code
 export const MAX_NEW_SKILLS = 5;
 /** 1回の探索で中身を読む候補の上限 */
 export const MAX_CANDIDATES = 12;
+/** 1回に木を調べるリポジトリの上限（GitHub API の無認証は1時間60回） */
+export const MAX_REPOS = 8;
+export const PER_REPO = 6;
 export const SKILL_AREAS = ["meo", "seo", "aio", "lpo", "image", "ads", "legal"] as const;
 export type SkillArea = (typeof SKILL_AREAS)[number];
 
@@ -43,6 +46,25 @@ export function toRawSkillUrl(url: string): { rawUrl: string; repo: string; name
   if (!dir.length && !isFile) return null;
   const raw = `https://raw.githubusercontent.com/${o}/${r}/${ref}/${[...dir, "SKILL.md"].join("/")}`;
   return { rawUrl: raw, repo: `${o}/${r}`, name: dir.length ? dir[dir.length - 1] : r };
+}
+
+/** GitHub のリポジトリ（owner/repo）を取り出す。SKILL.md に結び付く URL でなくても、リポジトリが分かればその中の SKILL.md を探せる */
+export function toRepoRef(url: string): { owner: string; repo: string } | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname !== "github.com" && u.hostname !== "www.github.com") return null;
+    const [o, r] = u.pathname.split("/").filter(Boolean);
+    if (!o || !r || !/^[\w.-]+$/.test(o) || !/^[\w.-]+$/.test(r.replace(/\.git$/, ""))) return null;
+    if (["orgs", "topics", "sponsors", "settings", "features", "marketplace", "login", "about"].includes(o)) return null;
+    return { owner: o, repo: r.replace(/\.git$/, "") };
+  } catch {
+    return null;
+  }
+}
+
+/** リポジトリの木（パスの一覧）から SKILL.md のパスを選ぶ。1リポジトリあたりの上限つき */
+export function skillPathsFromTree(paths: string[], perRepo = 6): string[] {
+  return paths.filter((p) => /(^|\/)SKILL\.md$/i.test(p) && !/(^|\/)(node_modules|\.git|test|tests|examples?|fixtures?)\//i.test(p)).slice(0, perRepo * 4);
 }
 
 export function skillKey(rawUrl: string): string {

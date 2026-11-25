@@ -63,6 +63,10 @@ export default async function KnowhowWeb({ searchParams }: { searchParams: Promi
           <form action={discoverSkillsAction} style={{ marginTop: 10 }}>
             <PendingButton className="btn sm" pendingText="探しています。2〜4分かかります（このままお待ちください。終わると結果が出ます）">Skill を探す</PendingButton>
           </form>
+          <form action={discoverSkillsAction} style={{ marginTop: 8 }}>
+            <input type="hidden" name="again" value="1" />
+            <PendingButton className="btn sm ghost" pendingText="やり直しています。2〜4分かかります（このままお待ちください）">今週済みでもやり直す</PendingButton>
+          </form>
         </section>
 
         {WEB_AREAS.map((area) => (
