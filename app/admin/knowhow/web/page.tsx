@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getTier } from "@/lib/tier";
-import { runWebScanAction } from "@/app/knowhow-actions";
+import { discoverSkillsAction, runWebScanAction } from "@/app/knowhow-actions";
 import { PendingButton } from "@/components/admin/PendingButton";
 import { WEB_AREAS, WEB_AREA_LABEL, WEB_PLANS, weekKey } from "@/lib/knowhow-web";
 import { unitsFor } from "@/lib/knowhow-web-run";
@@ -47,6 +47,23 @@ export default async function KnowhowWeb({ searchParams }: { searchParams: Promi
             {sp.u}
           </div>
         )}
+
+        {sp.skills && (
+          <div className="tag ok" style={{ marginTop: 12, display: "block", whiteSpace: "pre-wrap", lineHeight: 1.8 }}>
+            Skill を探しました（{sp.st === "skipped" ? "今週は済み" : sp.st === "failed" ? "失敗" : "完了"}）：{sp.n}
+            {sp.reg ? `\n登録：\n${sp.reg}` : ""}
+            {"\n"}判断待ちに入れた案 {sp.new ?? 0} 件{Number(sp.left ?? 0) > 0 ? `（取り込みが残っています。公式ページの画面の「過去分を含めて全部取り込む」を押してください）` : ""}
+          </div>
+        )}
+        <section className="card" style={{ marginTop: 16, padding: 16 }}>
+          <h3 style={{ fontSize: 16 }}>X で話題の Agent Skills を探す</h3>
+          <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.9 }}>
+            X で反応のある投稿（「SKILL.md」「Agent Skills」「Claude Code スキル」など）に付いた GitHub の SKILL.md を探し、AI がこのSaaSのノウハウ（サイト・LP・SEO・広告・法令など）の材料になるかを判定します。なるものだけ取り込み対象に登録し、案（判断待ち）にします（1回に最大5件）。対象外のものは「対象外」として残し、同じ判定をやり直しません。Skill の本文は読むだけで、指示としては実行しません。承認するまで何にも反映されません。
+          </p>
+          <form action={discoverSkillsAction} style={{ marginTop: 10 }}>
+            <PendingButton className="btn sm" pendingText="探しています。2〜4分かかります（このままお待ちください。終わると結果が出ます）">Skill を探す</PendingButton>
+          </form>
+        </section>
 
         {WEB_AREAS.map((area) => (
           <section key={area} className="card" style={{ marginTop: 16, padding: 16 }}>

@@ -1,5 +1,6 @@
 "use server";
 
+import { discoverSkills } from "@/lib/knowhow-skills-run";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -229,5 +230,24 @@ export async function runWebScanAction(fd: FormData): Promise<void> {
   }
   revalidatePath("/admin/knowhow");
   revalidatePath("/admin/knowhow/web");
+  redirect(`/admin/knowhow/web?${q}`);
+}
+
+/** X で話題の Agent Skills を見つけて、ノウハウの取り込み対象に登録し、案（判断待ち）にする（管理者のボタン。X の検索と AI を使うので、押したときだけ） */
+export async function discoverSkillsAction(fd: FormData): Promise<void> {
+  const { tier } = await getTier();
+  if (tier !== "admin") throw new Error("権限がありません");
+  let q = "";
+  try {
+    const r = await discoverSkills({ again: fd.get("again") === "1" });
+    const notes: string[] = [];
+    await conflictPass(notes);
+    q = `skills=1&st=${r.status}&n=${encodeURIComponent(r.note)}&reg=${encodeURIComponent(r.registered.map((x) => x.title).join("\n"))}&new=${r.ingest?.created ?? 0}&left=${r.ingest?.remaining ?? 0}`;
+  } catch (e) {
+    q = "err=" + encodeURIComponent(`探せませんでした：${(e instanceof Error ? e.message : String(e)).slice(0, 160)}`);
+  }
+  revalidatePath("/admin/knowhow");
+  revalidatePath("/admin/knowhow/web");
+  revalidatePath("/admin/knowhow/sources");
   redirect(`/admin/knowhow/web?${q}`);
 }
